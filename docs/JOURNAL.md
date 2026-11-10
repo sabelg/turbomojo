@@ -899,3 +899,29 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
     passed Ctrl-Alt-Down through; window managers often grab these keys).
   - No "select all occurrences" command; extra cursors are not kept in swap files.
 - Verified: `check.sh` CHECK OK (26 files, 556 tests).
+
+## 2026-11-10 · P1-11 column selection · done
+
+- Built on the multi-cursor work: `Window.box_select(ar, av, r, v)` makes one cursor per
+  row between two corners given as (row, screen column), each selecting the part of its
+  line inside the columns; a line that ends before the rectangle gets a cursor at its
+  end. `box_extend(dr, dv)` moves the moving corner (starting from the cursor, or from
+  an ordinary selection's anchor); `box_active` tells whether the cursors are still
+  that box. Any other cursor operation ends the box.
+- Keys: Ctrl-Shift-Alt-arrows (handled in `App.editor_key`, like Shift-arrows; they are
+  not registry commands because every command must sit in a menu, so they cannot be
+  rebound yet). Mouse: Alt+drag from the place of the Alt-click.
+- Editing, copy and paste come from multi-cursor: typing replaces the box on each line,
+  copy gives the block one line per row, and pasting it at as many cursors keeps its
+  shape.
+- Tests: 11 more in `tests/test_multi.mojo` (34 total): both drag directions, ragged
+  lines, tabs and wide characters, zero-width box, extend/shrink/flip with keys, reach
+  past short lines, start from a selection, block copy/paste, the key sequence as a
+  terminal sends it (`CSI 1;8B`), Alt+drag. All passed on the first run.
+- Tried by hand in tmux: Ctrl-Shift-Alt-Down twice, Right twice, then typing.
+- Not done / unverified:
+  - No virtual space: on lines shorter than the box the cursor sits at the line end, so
+    typing there does not pad the line with blanks.
+  - Pasting a block at a single cursor inserts it as ordinary lines, not as a block.
+  - Ctrl-Shift-Alt-arrows and Alt+drag were not tried on a real terminal emulator.
+- Verified: `check.sh` CHECK OK (26 files, 567 tests).

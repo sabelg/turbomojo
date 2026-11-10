@@ -72,6 +72,11 @@ struct Window(Copyable, Movable):
     var follow: Bool
     var gut: Int
     var extra: List[Cur]  # additional cursors (multi-cursor editing)
+    var box_on: Bool      # the cursors form a column (box) selection
+    var box_ar: Int       # its fixed corner: row and screen column
+    var box_av: Int
+    var box_r: Int        # its moving corner
+    var box_v: Int
     var forced_group: Int # while set, every edit joins this undo group
     var hs: Search        # the search whose matches are highlighted
     var hs_on: Bool
@@ -113,6 +118,11 @@ struct Window(Copyable, Movable):
         self.gut = 0
         self.clustered = False
         self.extra = List[Cur]()
+        self.box_on = False
+        self.box_ar = 0
+        self.box_av = 0
+        self.box_r = 0
+        self.box_v = 0
         self.forced_group = 0
         self.hs = Search()
         self.hs_on = False

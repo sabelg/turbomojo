@@ -138,6 +138,16 @@ __extension App:
         var base = k & ~MOD_SHIFT
         var none = List[Int]()
         var word = ctl or (k & MOD_ALT) != 0
+        if shift and ctl and (k & MOD_ALT) != 0:
+            # Ctrl+Shift+Alt+arrows: column (box) selection
+            var arrow = k & ~(MOD_SHIFT | MOD_CTRL | MOD_ALT)
+            if arrow == KEY_UP or arrow == KEY_DOWN or arrow == KEY_LEFT or arrow == KEY_RIGHT:
+                var dr = -1 if arrow == KEY_UP else (1 if arrow == KEY_DOWN else 0)
+                var dv = -1 if arrow == KEY_LEFT else (1 if arrow == KEY_RIGHT else 0)
+                self.wins[t].box_extend(dr, dv)
+                if self.wins[t].has_multi():
+                    self.say(String(self.wins[t].cursor_count()) + " lines in the column selection")
+                return
         if base == KEY_LEFT or base == (KEY_LEFT | MOD_CTRL) or base == (KEY_LEFT | MOD_ALT):
             self.wins[t].multi(OP_LEFT, 0, shift, word, none)
         elif base == KEY_RIGHT or base == (KEY_RIGHT | MOD_CTRL) or base == (KEY_RIGHT | MOD_ALT):

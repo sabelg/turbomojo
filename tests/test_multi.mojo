@@ -349,6 +349,106 @@ def test_extra_cursors_and_selections_are_drawn() raises:
     assert_equal(scr.bg_at(1, 3), p.ed_bg)
 
 
+# --------------------------------------------------------- column selection
+def test_box_select_takes_the_same_columns_on_every_row() raises:
+    var w = win("abcdef\nabcdef\nabcdef\nabcdef")
+    w.box_select(1, 1, 3, 4)
+    assert_equal(cursors(w), "1:1-4 2:1-4 *3:1-4 ")
+    assert_equal(to_str(w.selections_text()), "bcd\nbcd\nbcd")
+    # dragging the other way: the cursors sit on the left edge
+    w.box_select(3, 4, 1, 1)
+    assert_equal(cursors(w), "*1:4-1 2:4-1 3:4-1 ")
+    assert_true(w.box_active())
+
+
+def test_box_select_on_ragged_lines() raises:
+    var w = win("abcdefgh\nab\n\nabcde")
+    w.box_select(0, 3, 3, 6)
+    # short lines get a cursor at their end; the last line is cut at its end
+    assert_equal(cursors(w), "0:3-6 1:2 2:0 *3:3-5 ")
+    typ(w, "X")
+    assert_equal(text(w), "abcXgh\nabX\nX\nabcX")
+    w.undo()
+    assert_equal(text(w), "abcdefgh\nab\n\nabcde")
+
+
+def test_box_select_uses_screen_columns() raises:
+    # a tab (4 columns) and wide characters (2 columns each)
+    var w = win("\tabcd\n日本語xy\nabcdefgh")
+    w.box_select(0, 4, 2, 6)
+    assert_equal(cursors(w), "0:1-3 1:2-3 *2:4-6 ")
+    assert_equal(to_str(w.selections_text()), "ab\n語\nef")
+
+
+def test_zero_width_box_is_a_column_of_cursors() raises:
+    var w = win("ab\ncd\nef")
+    w.box_select(0, 1, 2, 1)
+    assert_equal(cursors(w), "0:1 1:1 *2:1 ")
+    typ(w, "|")
+    assert_equal(text(w), "a|b\nc|d\ne|f")
+
+
+def test_box_extend_with_keys() raises:
+    var w = win("abcdef\nabcdef\nabcdef")
+    at(w, 0, 2)
+    w.box_extend(1, 0)
+    assert_equal(cursors(w), "0:2 *1:2 ")
+    w.box_extend(1, 0)
+    w.box_extend(0, 1)
+    w.box_extend(0, 1)
+    assert_equal(cursors(w), "0:2-4 1:2-4 *2:2-4 ")
+    w.box_extend(-1, 0)                                # shrink back up
+    assert_equal(cursors(w), "0:2-4 *1:2-4 ")
+    w.box_extend(0, -3)                                # past the fixed corner: flips
+    assert_equal(cursors(w), "0:2-1 *1:2-1 ")
+    w.box_extend(-1, 0)
+    assert_equal(cursors(w), "*0:2-1 ")
+    assert_false(w.has_multi())
+    w.box_extend(-1, 0)                                # top of the text: stays
+    assert_equal(cursors(w), "*0:2-1 ")
+
+
+def test_box_can_reach_past_short_lines() raises:
+    var w = win("ab\nabcdefgh")
+    at(w, 0, 2)
+    w.box_extend(0, 1)
+    w.box_extend(0, 1)
+    w.box_extend(0, 1)                                 # columns 2..5: beyond the first line
+    w.box_extend(1, 0)
+    assert_equal(cursors(w), "0:2 *1:2-5 ")
+
+
+def test_box_starts_from_an_ordinary_selection() raises:
+    var w = win("abcdef\nabcdef")
+    at(w, 0, 1)
+    w.move_right(True, False)
+    w.move_right(True, False)                          # "bc" selected
+    w.box_extend(1, 0)
+    assert_equal(cursors(w), "0:1-3 *1:1-3 ")
+
+
+def test_a_new_box_starts_after_other_cursor_work() raises:
+    var w = win("abcdef\nabcdef\nabcdef")
+    w.box_select(0, 1, 1, 3)
+    w.multi(OP_RIGHT, 0, False, False, List[Int]())    # ordinary movement ends the box
+    assert_false(w.box_active())
+    assert_equal(cursors(w), "0:3 *1:3 ")
+    w.box_extend(1, 0)                                 # starts again at the main cursor
+    assert_equal(cursors(w), "1:3 *2:3 ")
+    w.goto(0, 0)
+    assert_false(w.box_active())
+
+
+def test_block_copy_and_paste() raises:
+    var w = win("abcd\nefgh\n\n\n")
+    w.box_select(0, 1, 1, 3)
+    var clip = w.selections_text()
+    assert_equal(to_str(clip), "bc\nfg")
+    w.box_select(2, 0, 3, 0)                           # two cursors on the empty lines
+    w.paste_multi(clip)
+    assert_equal(text(w), "abcd\nefgh\nbc\nfg\n")
+
+
 # ---------------------------------------------------------------------- app
 def make(src: String) raises -> App:
     var app = App()
@@ -435,6 +535,47 @@ def test_alt_click_adds_a_cursor_and_a_plain_click_drops_them() raises:
     assert_false(app.wins[t].has_multi())
     assert_equal(app.wins[t].cr, 0)
     assert_equal(app.wins[t].cc, 1)
+
+
+def test_ctrl_shift_alt_arrows_select_a_column() raises:
+    var app = make("abcdef\nabcdef\nabcdef")
+    var t = app.top()
+    var all = MOD_CTRL | MOD_SHIFT | MOD_ALT
+    app.handle(key_event(KEY_RIGHT))
+    app.handle(key_event(KEY_DOWN | all))
+    app.handle(key_event(KEY_DOWN | all))
+    app.handle(key_event(KEY_RIGHT | all))
+    app.handle(key_event(KEY_RIGHT | all))
+    assert_equal(cursors(app.wins[t]), "0:1-3 1:1-3 *2:1-3 ")
+    assert_equal(app.status, "3 lines in the column selection")
+    keys(app, "_")
+    assert_equal(to_str(app.wins[t].buf.all_text()), "a_def\na_def\na_def")
+    app.exec(CM_UNDO)
+    assert_equal(to_str(app.wins[t].buf.all_text()), "abcdef\nabcdef\nabcdef")
+    # the same keys parsed from what a terminal sends (modifier parameter 8)
+    var term = Terminal()
+    var evs = term.feed(str_bytes("\x1b[1;8B"), False)
+    assert_equal(len(evs), 1)
+    assert_equal(evs[0].key, KEY_DOWN | all)
+
+
+def test_alt_drag_selects_a_column() raises:
+    var app = make("abcdef\nabcdef\nabcdef\nabcdef")
+    var t = app.top()
+    var wx = app.wins[t].x + 1 + app.wins[t].gut
+    var wy = app.wins[t].y + 1
+    app.handle(Event(EV_MOUSE, MOD_ALT, wx + 1, wy, MB_LEFT, True, False, List[Int]()))
+    app.handle(Event(EV_MOUSE, MOD_ALT, wx + 3, wy + 1, MB_LEFT, True, True, List[Int]()))
+    app.handle(Event(EV_MOUSE, MOD_ALT, wx + 4, wy + 2, MB_LEFT, True, True, List[Int]()))
+    app.handle(Event(EV_MOUSE, MOD_ALT, wx + 4, wy + 2, MB_LEFT, False, False, List[Int]()))
+    assert_equal(cursors(app.wins[t]), "0:1-4 1:1-4 *2:1-4 ")
+    app.exec(CM_COPY)
+    assert_equal(to_str(app.clipboard), "bcd\nbcd\nbcd")
+    # a later plain drag is an ordinary selection again
+    app.handle(Event(EV_MOUSE, 0, wx, wy + 3, MB_LEFT, True, False, List[Int]()))
+    app.handle(Event(EV_MOUSE, 0, wx + 2, wy + 3, MB_LEFT, True, True, List[Int]()))
+    app.handle(Event(EV_MOUSE, 0, wx + 2, wy + 3, MB_LEFT, False, False, List[Int]()))
+    assert_equal(cursors(app.wins[t]), "*3:0-2 ")
 
 
 def test_mouse_modifiers_are_parsed() raises:

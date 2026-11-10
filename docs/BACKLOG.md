@@ -42,7 +42,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P1-08 Search upgrade: regex/case/whole-word/in-selection options, highlight all matches, match count, replace with capture groups, incremental search as you type
 - [x] P1-09 Find in files: background `rg --json` (or built-in walker), results window with jump-to
 - [x] P1-10 Multi-cursor: add next occurrence, add cursor above/below, Alt-click; all cursors edit and undo as one step
-- [ ] P1-11 Column (box) selection
+- [x] P1-11 Column (box) selection
 - [ ] P1-12 Soft wrap
 - [ ] P1-13 Folding by indentation with fold markers in the gutter
 - [ ] P1-14 Rulers; trim trailing whitespace on save; auto-closing pairs; move line up/down; join lines; sort lines; case conversion

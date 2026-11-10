@@ -56,6 +56,7 @@ __extension Window:
     def collapse(mut self):
         """Back to one cursor: the main one stays."""
         self.extra.clear()
+        self.box_on = False
 
     def main_cur(self) -> Cur:
         return Cur(self.cr, self.cc, self.sel, self.ar, self.ac, self.want)
@@ -153,6 +154,7 @@ __extension Window:
     def multi_texts(mut self, op: Int, a: Int, flag: Bool, flag2: Bool, text: List[Int], texts: List[List[Int]]):
         """Like multi(); for OP_INSERT a non-empty `texts` gives each cursor its own text
         (in the order of the cursors in the document)."""
+        self.box_on = False
         if not self.has_multi():
             self.do_op(op, a, flag, flag2, text)
             return
@@ -232,6 +234,7 @@ __extension Window:
         """Add a cursor and make it the main one (the view follows it)."""
         if self.cursor_count() >= MAX_CURSORS:
             return
+        self.box_on = False
         var cs = self.all_cursors()
         cs.append(self.clamp_cur(c))
         self.set_cursors(cs^, len(self.extra) + 1)
@@ -317,6 +320,61 @@ __extension Window:
                     return True
                 c = m[1]
         return False
+
+    # ------------------------------------------------------- column selection
+    def box_select(mut self, ar: Int, av: Int, r: Int, v: Int):
+        """Select the rectangle between two corners given as (row, screen column): one
+        cursor per row, each selecting the part of its line inside the columns. A line
+        that ends before the rectangle gets a cursor at its end. The cursor of the moving
+        corner's row becomes the main one."""
+        var last = self.buf.count() - 1
+        var a_row = max(0, min(ar, last))
+        var m_row = max(0, min(r, last))
+        if m_row - a_row >= MAX_CURSORS:
+            m_row = a_row + MAX_CURSORS - 1
+        elif a_row - m_row >= MAX_CURSORS:
+            m_row = a_row - MAX_CURSORS + 1
+        var a_v = max(0, av)
+        var m_v = max(0, v)
+        var cs = List[Cur]()
+        var main = 0
+        var lo = min(a_row, m_row)
+        var hi = max(a_row, m_row)
+        for row in range(lo, hi + 1):
+            var ac = self.col_at_vcol(row, a_v)
+            var cc = self.col_at_vcol(row, m_v)
+            if row == m_row:
+                main = len(cs)
+            cs.append(Cur(row, cc, ac != cc, row, ac, m_v))
+        self.set_cursors(cs^, main)
+        self.box_on = True
+        self.box_ar = a_row
+        self.box_av = a_v
+        self.box_r = m_row
+        self.box_v = m_v
+        self.break_group()
+        self.follow = True
+
+    def box_active(self) -> Bool:
+        """Do the cursors still form the box that box_select made?"""
+        return self.box_on and self.cr == self.box_r and self.cursor_count() == abs(self.box_r - self.box_ar) + 1
+
+    def box_extend(mut self, dr: Int, dv: Int):
+        """Move the moving corner of the column selection by rows / screen columns,
+        starting a new one at the cursor if there is none."""
+        if not self.box_active():
+            var v0 = self.vcol(self.cr, self.cc)
+            var a0 = v0
+            var ar0 = self.cr
+            if self.has_sel() and not self.has_multi():
+                # grow from an ordinary selection: its anchor is the fixed corner
+                ar0 = self.ar
+                a0 = self.vcol(self.ar, self.ac)
+            self.box_ar = ar0
+            self.box_av = a0
+            self.box_r = self.cr
+            self.box_v = v0
+        self.box_select(self.box_ar, self.box_av, self.box_r + dr, self.box_v + dv)
 
     def in_extra_sel(self, r: Int, c: Int) -> Bool:
         for e in self.extra:
