@@ -8,7 +8,7 @@ from term import (
     KEY_HOME, KEY_END, KEY_PGUP, KEY_PGDN, KEY_INSERT, KEY_DELETE, KEY_F1, MOD_SHIFT, MOD_ALT,
     MOD_CTRL, KEY_MASK, fkey, ctrl, alt,
 )
-from util import decode, to_str, encode_cp, bytes_to_str
+from util import decode, to_str, encode_cp, bytes_to_str, slice_str
 
 # ------------------------------------------------------------------ command ids
 comptime CM_NONE = 0
@@ -62,6 +62,30 @@ comptime CM_JOIN = 118
 comptime CM_SORT = 119
 comptime CM_UPPER = 120
 comptime CM_LOWER = 121
+comptime CM_KEYMAP0 = 124          # modern, turbo, emacs: three consecutive ids
+comptime CM_KEYMAP1 = 125
+comptime CM_KEYMAP2 = 126
+comptime KEYMAP_COUNT = 3
+# cursor commands: not in any menu, they exist so that keymaps can bind keys to them
+comptime CM_CUR_LEFT = 130
+comptime CM_CUR_RIGHT = 131
+comptime CM_CUR_UP = 132
+comptime CM_CUR_DOWN = 133
+comptime CM_CUR_WORD_LEFT = 134
+comptime CM_CUR_WORD_RIGHT = 135
+comptime CM_CUR_LINE_START = 136
+comptime CM_CUR_LINE_END = 137
+comptime CM_CUR_PAGE_UP = 138
+comptime CM_CUR_PAGE_DOWN = 139
+comptime CM_CUR_TOP = 140
+comptime CM_CUR_BOTTOM = 141
+comptime CM_DEL_CHAR = 142
+comptime CM_DEL_WORD = 143
+comptime CM_KILL_LINE = 144
+comptime CM_SCROLL_UP = 145
+comptime CM_SCROLL_DOWN = 146
+comptime CM_INSERT_MODE = 147
+comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
 comptime CM_CURBELOW = 112
@@ -109,8 +133,40 @@ def hot_char(label: String) -> Int:
     return -1
 
 
+def chord(first: Int, second: Int) -> Int:
+    """A two-key binding such as Ctrl-K S: press `first`, then `second`."""
+    return (first << CHORD_SHIFT) | second
+
+
+def chord_first(k: Int) -> Int:
+    """The prefix key of a two-key binding (0 for an ordinary key)."""
+    return k >> CHORD_SHIFT
+
+
+def keymap_name(i: Int) -> String:
+    if i == 1:
+        return "turbo"
+    if i == 2:
+        return "emacs"
+    return "modern"
+
+
+def keymap_from_name(name: String) -> Int:
+    """0 modern, 1 turbo (also "wordstar"), 2 emacs; -1 if unknown."""
+    if name == "modern":
+        return 0
+    if name == "turbo" or name == "wordstar":
+        return 1
+    if name == "emacs":
+        return 2
+    return -1
+
+
 def key_name(k: Int) -> String:
-    """Human-readable name of a key code, e.g. 'Ctrl-S', 'Alt-F3', 'Shift-Del'."""
+    """Human-readable name of a key code, e.g. 'Ctrl-S', 'Alt-F3', 'Shift-Del'; a
+    two-key binding reads 'Ctrl-K S'."""
+    if chord_first(k) != 0:
+        return key_name(chord_first(k)) + " " + key_name(k & ((1 << CHORD_SHIFT) - 1))
     var s = String("")
     if (k & MOD_CTRL) != 0:
         s += "Ctrl-"
@@ -173,7 +229,20 @@ def strip_prefix_ci(cps: List[Int], start: Int, prefix: String) -> Int:
 
 
 def parse_key(name: String) -> Int:
-    """Inverse of key_name(): 'Ctrl-Shift-F5' -> key code. Returns 0 if not understood."""
+    """Inverse of key_name(): 'Ctrl-Shift-F5' -> key code, 'Ctrl-K S' -> a two-key
+    binding. Returns 0 if not understood."""
+    var all = decode(name)
+    var sp = -1
+    for q in range(len(all)):
+        if all[q] == 32:
+            sp = q
+            break
+    if sp > 0 and sp + 1 < len(all):
+        var a = parse_key(slice_str(all, 0, sp))
+        var b = parse_key(slice_str(all, sp + 1, len(all)))
+        if a == 0 or b == 0 or chord_first(a) != 0 or chord_first(b) != 0:
+            return 0
+        return chord(a, b)
     var cps = decode(name)
     var i = 0
     var mods = 0
@@ -254,11 +323,62 @@ struct Registry(Copyable, Movable):
     var cmds: List[Command]
     var menu_titles: List[String]
     var layout: List[Placement]
+    var hidden: List[Int]      # commands that are in no menu on purpose (palette and keys only)
 
     def __init__(out self):
         self.cmds = List[Command]()
         self.menu_titles = List[String]()
         self.layout = List[Placement]()
+        self.hidden = List[Int]()
+
+    def hide(mut self, id: Int, name: String, title: String, hint: String):
+        """A command without a menu entry."""
+        self.cmds.append(Command(id, name, title, hint, List[Int]()))
+        self.hidden.append(id)
+
+    def is_hidden(self, id: Int) -> Bool:
+        for h in self.hidden:
+            if h == id:
+                return True
+        return False
+
+    def is_prefix(self, k: Int) -> Bool:
+        """Is k the first key of some two-key binding?"""
+        for i in range(len(self.cmds)):
+            for b in self.cmds[i].keys:
+                if chord_first(b) == k:
+                    return True
+        return False
+
+    def find_chord(self, first: Int, second: Int) -> Int:
+        """The command bound to the two keys. If there is no exact match the second key
+        is tried without Ctrl and in lower case, so Ctrl-K Ctrl-S and Ctrl-K S are the
+        same unless both are bound."""
+        var cmd = self.find_key(chord(first, second))
+        if cmd != CM_NONE:
+            return cmd
+        var base = second & KEY_MASK
+        if base >= 65 and base <= 90:
+            base += 32
+        var plain = (second & ~(MOD_CTRL | KEY_MASK)) | base
+        if plain != second:
+            return self.find_key(chord(first, plain))
+        return CM_NONE
+
+    def bind(mut self, id: Int, k: Int):
+        """Give key k to a command, taking it away from whichever command had it. A
+        two-key binding also frees its first key, which now only starts the sequence."""
+        var first = chord_first(k)
+        for i in range(len(self.cmds)):
+            var kept = List[Int]()
+            for b in self.cmds[i].keys:
+                if b == k or (first != 0 and b == first) or (first == 0 and chord_first(b) == k):
+                    continue
+                kept.append(b)
+            self.cmds[i].keys = kept^
+        var ci = self.index_of(id)
+        if ci >= 0:
+            self.cmds[ci].keys.append(k)
 
     # ------------------------------------------------------------ building
     def cmd(mut self, id: Int, name: String, title: String, hint: String, var keys: List[Int] = List[Int]()):
@@ -321,8 +441,105 @@ struct Registry(Copyable, Movable):
         return True
 
 
+def apply_keymap(mut r: Registry, which: Int):
+    """Change the default (modern) bindings into another classic set. Keys the map needs
+    are taken from the commands that had them; those keep their other keys."""
+    if which == 1:
+        # Turbo / WordStar: the cursor diamond, and Ctrl-K / Ctrl-Q sequences
+        r.bind(CM_CUR_LEFT, ctrl(115))
+        r.bind(CM_CUR_RIGHT, ctrl(100))
+        r.bind(CM_CUR_UP, ctrl(101))
+        r.bind(CM_CUR_DOWN, ctrl(120))
+        r.bind(CM_CUR_WORD_LEFT, ctrl(97))
+        r.bind(CM_CUR_WORD_RIGHT, ctrl(102))
+        r.bind(CM_CUR_PAGE_UP, ctrl(114))
+        r.bind(CM_CUR_PAGE_DOWN, ctrl(99))
+        r.bind(CM_DEL_CHAR, ctrl(103))
+        r.bind(CM_DEL_WORD, ctrl(116))
+        r.bind(CM_DELLINE, ctrl(121))
+        r.bind(CM_SCROLL_UP, ctrl(119))
+        r.bind(CM_SCROLL_DOWN, ctrl(122))
+        r.bind(CM_INSERT_MODE, ctrl(118))
+        r.bind(CM_REDO, KEY_BACKSPACE | MOD_ALT | MOD_SHIFT)
+        var k = ctrl(107)
+        r.bind(CM_SAVE, chord(k, 115))
+        r.bind(CM_SAVE, chord(k, 100))
+        r.bind(CM_QUIT, chord(k, 120))
+        r.bind(CM_CLOSE, chord(k, 113))
+        r.bind(CM_COPY, chord(k, 99))
+        r.bind(CM_PASTE, chord(k, 118))
+        r.bind(CM_CLEAR, chord(k, 121))
+        r.bind(CM_INDENT, chord(k, 105))
+        r.bind(CM_UNINDENT, chord(k, 117))
+        r.bind(CM_OPEN, chord(k, 114))
+        r.bind(CM_SAVEAS, chord(k, 119))
+        r.bind(CM_ADDNEXT, chord(k, 116))
+        var q = ctrl(113)
+        r.bind(CM_FIND, chord(q, 102))
+        r.bind(CM_REPLACE, chord(q, 97))
+        r.bind(CM_CUR_TOP, chord(q, 114))
+        r.bind(CM_CUR_BOTTOM, chord(q, 99))
+        r.bind(CM_CUR_LINE_START, chord(q, 115))
+        r.bind(CM_CUR_LINE_END, chord(q, 100))
+        r.bind(CM_KILL_LINE, chord(q, 121))
+        r.bind(CM_MATCH, chord(q, 91))
+        r.bind(CM_MATCH, chord(q, 93))
+        r.bind(CM_GOTO, chord(q, 103))
+        r.bind(CM_SELALL, chord(q, 98))
+    elif which == 2:
+        # Emacs, the common subset
+        r.bind(CM_CUR_LINE_START, ctrl(97))
+        r.bind(CM_CUR_LINE_END, ctrl(101))
+        r.bind(CM_CUR_RIGHT, ctrl(102))
+        r.bind(CM_CUR_LEFT, ctrl(98))
+        r.bind(CM_CUR_DOWN, ctrl(110))
+        r.bind(CM_CUR_UP, ctrl(112))
+        r.bind(CM_DEL_CHAR, ctrl(100))
+        r.bind(CM_KILL_LINE, ctrl(107))
+        r.bind(CM_PASTE, ctrl(121))
+        r.bind(CM_CUT, ctrl(119))
+        r.bind(CM_FIND, ctrl(115))
+        r.bind(CM_CUR_PAGE_DOWN, ctrl(118))
+        r.bind(CM_CUR_PAGE_UP, alt(118))
+        r.bind(CM_UNDO, ctrl(47))
+        r.bind(CM_CUR_TOP, alt(60))
+        r.bind(CM_CUR_BOTTOM, alt(62))
+        r.bind(CM_DEL_WORD, alt(100))
+        r.bind(CM_PALETTE, alt(120))
+        var x = ctrl(120)
+        r.bind(CM_SAVE, chord(x, ctrl(115)))
+        r.bind(CM_OPEN, chord(x, ctrl(102)))
+        r.bind(CM_QUIT, chord(x, ctrl(99)))
+        r.bind(CM_SAVEAS, chord(x, ctrl(119)))
+        r.bind(CM_SAVEALL, chord(x, 115))
+        r.bind(CM_CLOSE, chord(x, 107))
+        r.bind(CM_UNDO, chord(x, 117))
+        r.bind(CM_SELALL, chord(x, 104))
+        r.bind(CM_NEXTWIN, chord(x, 111))
+        r.bind(CM_WINLIST, chord(x, 98))
+
+
 def build_registry() -> Registry:
     var r = Registry()
+    # ---- cursor commands (no menu entries; bound by the Turbo and Emacs keymaps)
+    r.hide(CM_CUR_LEFT, "cursor.left", "Cursor left", "Move the cursor one character left")
+    r.hide(CM_CUR_RIGHT, "cursor.right", "Cursor right", "Move the cursor one character right")
+    r.hide(CM_CUR_UP, "cursor.up", "Cursor up", "Move the cursor one line up")
+    r.hide(CM_CUR_DOWN, "cursor.down", "Cursor down", "Move the cursor one line down")
+    r.hide(CM_CUR_WORD_LEFT, "cursor.wordLeft", "Cursor word left", "Move the cursor to the previous word")
+    r.hide(CM_CUR_WORD_RIGHT, "cursor.wordRight", "Cursor word right", "Move the cursor to the next word")
+    r.hide(CM_CUR_LINE_START, "cursor.lineStart", "Cursor to line start", "Move the cursor to the start of the line")
+    r.hide(CM_CUR_LINE_END, "cursor.lineEnd", "Cursor to line end", "Move the cursor to the end of the line")
+    r.hide(CM_CUR_PAGE_UP, "cursor.pageUp", "Cursor page up", "Move the cursor one page up")
+    r.hide(CM_CUR_PAGE_DOWN, "cursor.pageDown", "Cursor page down", "Move the cursor one page down")
+    r.hide(CM_CUR_TOP, "cursor.top", "Cursor to top", "Move the cursor to the start of the text")
+    r.hide(CM_CUR_BOTTOM, "cursor.bottom", "Cursor to bottom", "Move the cursor to the end of the text")
+    r.hide(CM_DEL_CHAR, "edit.deleteChar", "Delete character", "Delete the character under the cursor")
+    r.hide(CM_DEL_WORD, "edit.deleteWordRight", "Delete word right", "Delete from the cursor to the start of the next word")
+    r.hide(CM_KILL_LINE, "edit.killLine", "Cut to end of line", "Cut from the cursor to the end of the line")
+    r.hide(CM_SCROLL_UP, "view.scrollUp", "Scroll up", "Scroll the text one line up")
+    r.hide(CM_SCROLL_DOWN, "view.scrollDown", "Scroll down", "Scroll the text one line down")
+    r.hide(CM_INSERT_MODE, "edit.toggleInsertMode", "Insert / overwrite", "Switch between insert and overwrite mode")
     # ---- File
     r.cmd(CM_NEW, "file.new", "~N~ew", "Create a new edit window", [ctrl(110)])
     r.cmd(CM_OPEN, "file.open", "~O~pen...", "Locate and open a file in an edit window", [fkey(3), ctrl(111)])
@@ -348,6 +565,8 @@ def build_registry() -> Registry:
     r.cmd(CM_FOLD, "edit.toggleFold", "~F~old or unfold", "Hide or show the indented block at the cursor", [alt(45)])
     r.cmd(CM_FOLDALL, "edit.foldAll", "F~o~ld all", "Hide every indented block")
     r.cmd(CM_UNFOLDALL, "edit.unfoldAll", "E~x~pand all", "Show all folded blocks", [alt(61)])
+    r.cmd(CM_INDENT, "text.indentLines", "~I~ndent lines", "Indent the current line or the selected lines one level")
+    r.cmd(CM_UNINDENT, "text.unindentLines", "U~n~indent lines", "Remove one level of indentation from the current or selected lines")
     r.cmd(CM_LINEUP, "text.moveLineUp", "Move line ~u~p", "Move the current line or the selected lines up", [KEY_UP | MOD_ALT])
     r.cmd(CM_LINEDOWN, "text.moveLineDown", "Move line ~d~own", "Move the current line or the selected lines down", [KEY_DOWN | MOD_ALT])
     r.cmd(CM_JOIN, "text.joinLines", "~J~oin lines", "Join the next line (or the selected lines) onto this one", [alt(106)])
@@ -387,6 +606,9 @@ def build_registry() -> Registry:
     r.cmd(CM_WRAP, "options.softWrap", "Soft w~r~ap", "Continue long lines on the next screen row instead of scrolling sideways", [alt(122)])
     r.cmd(CM_USETABS, "options.indentWithTabs", "Indent with ~t~abs", "Tab key and auto-indent use tab characters (auto-detected)")
     r.cmd(CM_CRLF, "options.crlf", "CRLF line ~e~ndings", "Save the file with Windows line endings (auto-detected)")
+    r.cmd(CM_KEYMAP0, "options.keymapModern", "Keys: Mo~d~ern", "Ctrl-S, Ctrl-C/V, Ctrl-F... as in current editors")
+    r.cmd(CM_KEYMAP1, "options.keymapTurbo", "Keys: T~u~rbo / WordStar", "The cursor diamond and Ctrl-K / Ctrl-Q sequences of Turbo's editor")
+    r.cmd(CM_KEYMAP2, "options.keymapEmacs", "Keys: Emac~s~", "Ctrl-A/E/F/B/N/P, Ctrl-K, Ctrl-Y and Ctrl-X sequences")
     r.cmd(CM_THEME0, "options.themeClassic", "Theme: Turbo ~C~lassic", "The 1992 CGA blue look")
     r.cmd(CM_THEME1, "options.themeMidnight", "Theme: ~M~idnight Neon", "A modern dark truecolor theme")
     r.cmd(CM_THEME2, "options.themeAmber", "Theme: Am~b~er CRT", "Phosphor monochrome terminal")
@@ -451,6 +673,9 @@ def build_registry() -> Registry:
     r.item(CM_JOIN)
     r.item(CM_SORT)
     r.sep()
+    r.item(CM_INDENT)
+    r.item(CM_UNINDENT)
+    r.sep()
     r.item(CM_UPPER)
     r.item(CM_LOWER)
 
@@ -493,6 +718,10 @@ def build_registry() -> Registry:
     r.item(CM_WRAP)
     r.item(CM_USETABS)
     r.item(CM_CRLF)
+    r.sep()
+    r.item(CM_KEYMAP0)
+    r.item(CM_KEYMAP1)
+    r.item(CM_KEYMAP2)
     r.sep()
     r.item(CM_THEME0)
     r.item(CM_THEME1)

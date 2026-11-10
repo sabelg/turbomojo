@@ -8,6 +8,7 @@ Example:
 
     [ui]
     theme = "midnight"          # classic | midnight | amber
+    keymap = "modern"           # modern | turbo (WordStar keys) | emacs
     line_numbers = true
     highlight_line = true
     clock = true
@@ -33,6 +34,7 @@ Example:
 Options changed from the Options menu are written back to the user file; everything else
 in that file (comments, order, other keys) is left as it is."""
 from std.collections import List
+from commands import keymap_from_name
 from toml import TomlDoc, toml_parse, T_STR, T_BOOL, T_LIST, T_INT
 from util import env_or, path_exists, dirname, join_path
 
@@ -100,6 +102,7 @@ def read_text(path: String) -> String:
 
 struct Settings(Copyable, Movable):
     var theme: Int
+    var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var line_numbers: Bool
     var auto_indent: Bool
     var highlight_line: Bool
@@ -120,6 +123,7 @@ struct Settings(Copyable, Movable):
     def __init__(out self):
         """The built-in defaults."""
         self.theme = 0
+        self.keymap = 0
         self.line_numbers = True
         self.auto_indent = True
         self.highlight_line = True
@@ -186,6 +190,13 @@ struct Settings(Copyable, Movable):
             else:
                 self.warnings.append("editor.rulers must be a list of column numbers from 1 to 1000")
         self.auto_indent = self.take_bool(doc, "editor.auto_indent", self.auto_indent)
+        var ki2 = doc.find("ui.keymap")
+        if ki2 >= 0:
+            var km = keymap_from_name(doc.vals[ki2].s) if doc.vals[ki2].kind == T_STR else -1
+            if km < 0:
+                self.warnings.append("ui.keymap must be \"modern\", \"turbo\" or \"emacs\"")
+            else:
+                self.keymap = km
         var ti = doc.find("ui.theme")
         if ti >= 0:
             var t = theme_from_name(doc.vals[ti].s) if doc.vals[ti].kind == T_STR else -1
@@ -216,7 +227,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.auto_pairs", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler"]:
+        for k in ["ui.theme", "ui.keymap", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.auto_pairs", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys."):

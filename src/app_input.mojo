@@ -72,6 +72,24 @@ __extension App:
         if self.mode == M_COMPLETE:
             if self.complete_key(k):
                 return
+        if self.chord != 0:
+            # the second key of a sequence such as Ctrl-K S
+            var first = self.chord
+            self.chord = 0
+            if k == KEY_ESC:
+                self.say("")
+                return
+            var ccmd = self.reg.find_chord(first, k)
+            if ccmd != CM_NONE:
+                self.say("")
+                self.exec(ccmd)
+            else:
+                self.say(key_name(first) + " " + key_name(k) + " is not a command")
+            return
+        if self.reg.is_prefix(k):
+            self.chord = k
+            self.say(key_name(k) + " ...")
+            return
         if k == fkey(10):
             self.open_menu(1)
             return

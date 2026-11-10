@@ -1037,3 +1037,42 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
     empty line after the final newline.
   - Alt-Up/Down and the other Alt keys were exercised through tests and tmux only.
 - Verified: `check.sh` CHECK OK (29 files, 625 tests).
+
+## 2026-11-10 · P1-15 keymaps and chords · done
+
+- Chords: a two-key binding is stored as one value, `(first << 32) | second`, so the
+  registry, the `[keys]` table, menus and `key_name`/`parse_key` ("Ctrl-K S") needed no
+  new structure. `Registry.is_prefix`, `find_chord` (exact match first, then the second
+  key without Ctrl and in lower case, so Ctrl-K Ctrl-S equals Ctrl-K S), `bind` (takes a
+  key from whichever command had it; a chord frees its prefix key).
+- App: a pending prefix shows "Ctrl-K ..." in the status line; the next key runs the
+  command or reports "Ctrl-K Z is not a command" (and is not typed); Esc gives up.
+  Only in the editor, not in dialogs or menus.
+- Hidden commands (`Registry.hide`): cursor left/right/up/down, word left/right, line
+  start/end, page up/down, top/bottom, delete character, delete word right, cut to end
+  of line, scroll up/down, insert/overwrite. They have no menu entry and exist so keymaps
+  and users can bind keys to them; they work with several cursors.
+- Keymaps (`apply_keymap`): Modern (unchanged defaults), Turbo/WordStar, Emacs-lite.
+  Setting `ui.keymap`, Options > Keys: ... (remembered). Order: defaults, keymap, then
+  the user's `[keys]`, which survive a keymap change.
+- New Text menu entries Indent lines / Unindent lines: the ids `CM_INDENT`/`CM_UNINDENT`
+  existed but were never registered or handled; a test of Ctrl-K U found that.
+- Tests: `tests/test_keymap.mojo` (15 tests): chord names both ways, prefix rules,
+  exact-over-relaxed match, no key bound twice and no prefix that is also a key in any
+  keymap, essential commands keep a key in every keymap, the modern map is unchanged,
+  the WordStar diamond and sequences, Emacs keys, cursor commands with two cursors,
+  switching, settings with user keys on top, bad values. `test_commands` rules were
+  refined: a command is in a menu or hidden (not both), and only menu commands need a
+  hot letter. Options menu golden regenerated (three new rows; screen enlarged so the
+  whole menu is captured).
+- Not done / unverified:
+  - No WordStar block markers; Ctrl-K C/V/Y use the normal selection. No Ctrl-K 0..9
+    bookmarks. Emacs: no mark/region model, no incremental search, no Alt-F/B/W (the
+    menus keep those), no kill ring.
+  - Sequences longer than two keys are rejected.
+  - The status-line hints ("^P Commands", "F2 Save") are fixed texts and do not follow
+    the keymap.
+  - Not tried by hand at all, in tmux or on a real terminal: Ctrl-S/Ctrl-Q depend on
+    flow control being off (the IDE's raw mode does that), and Ctrl-/ may arrive as a
+    different code on some terminals.
+- Verified: `check.sh` CHECK OK (30 files, 640 tests), run again after these records.

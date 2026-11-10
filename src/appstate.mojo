@@ -101,6 +101,10 @@ struct App(Movable):
     var hl: Highlighter
     var wins: List[Window]
     var reg: Registry
+    var keymap: Int            # 0 modern, 1 turbo / WordStar, 2 emacs
+    var chord: Int             # first key of a two-key binding, waiting for the second
+    var user_key_cmds: List[String]         # [keys] from the config files
+    var user_key_names: List[List[String]]
     var menus: List[Menu]
     var mode: Int
     var menu_idx: Int
@@ -192,6 +196,10 @@ struct App(Movable):
         self.hl = Highlighter()
         self.wins = List[Window]()
         self.reg = build_registry()
+        self.keymap = 0
+        self.chord = 0
+        self.user_key_cmds = List[String]()
+        self.user_key_names = List[List[String]]()
         self.menus = build_menus(self.reg)
         self.mode = M_NORMAL
         self.menu_idx = 0
@@ -366,20 +374,34 @@ struct App(Movable):
         # the environment variable still wins over the files for the compiler
         self.compiler = env_or("TURBOMOJO_COMPILER", s.compiler)
         self.config_warnings = s.warnings.copy()
-        for i in range(len(s.key_commands)):
+        self.keymap = s.keymap
+        self.user_key_cmds = s.key_commands.copy()
+        self.user_key_names = List[List[String]]()
+        for i in range(len(s.key_names)):
+            self.user_key_names.append(s.key_names[i].copy())
+        self.rebuild_keys(True)
+
+    def rebuild_keys(mut self, warn: Bool):
+        """Bindings from scratch: the defaults, then the chosen keymap, then the user's
+        [keys] entries on top."""
+        self.reg = build_registry()
+        apply_keymap(self.reg, self.keymap)
+        self.chord = 0
+        for i in range(len(self.user_key_cmds)):
             var keys = List[Int]()
             var bad = False
-            for name in s.key_names[i]:
+            for name in self.user_key_names[i]:
                 var k = parse_key(name)
                 if k == 0:
-                    self.config_warnings.append("keys." + s.key_commands[i] + ": unknown key \"" + name + "\"")
+                    if warn:
+                        self.config_warnings.append("keys." + self.user_key_cmds[i] + ": unknown key \"" + name + "\"")
                     bad = True
                 else:
                     keys.append(k)
             if bad:
                 continue
-            if not self.reg.rebind(s.key_commands[i], keys^):
-                self.config_warnings.append("keys: unknown command \"" + s.key_commands[i] + "\"")
+            if not self.reg.rebind(self.user_key_cmds[i], keys^) and warn:
+                self.config_warnings.append("keys: unknown command \"" + self.user_key_cmds[i] + "\"")
         self.menus = build_menus(self.reg)
 
     def load_config(mut self):

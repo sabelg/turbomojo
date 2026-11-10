@@ -45,7 +45,8 @@ def test_ids_and_names_are_unique() raises:
         assert_true(r.cmds[i].id != CM_NONE)
         assert_true(r.cmds[i].name.byte_length() > 0)
         assert_true(r.cmds[i].hint.byte_length() > 0, "missing hint: " + r.cmds[i].name)
-        assert_true(hot_char(r.cmds[i].title) >= 0, "missing hot letter: " + r.cmds[i].name)
+        # a hot letter is for picking the command in its menu; hidden ones have no menu
+        assert_true(hot_char(r.cmds[i].title) >= 0 or r.is_hidden(r.cmds[i].id), "missing hot letter: " + r.cmds[i].name)
         for j in range(i + 1, len(r.cmds)):
             assert_true(r.cmds[i].id != r.cmds[j].id, "duplicate id: " + r.cmds[j].name)
             assert_true(r.cmds[i].name != r.cmds[j].name, "duplicate name: " + r.cmds[j].name)
@@ -67,7 +68,8 @@ def test_every_command_is_in_a_menu_and_every_menu_item_exists() raises:
         for p in r.layout:
             if p.cmd == c.id:
                 placed = True
-        assert_true(placed, "command not in any menu: " + c.name)
+        # cursor commands are bound by keymaps and found in the palette; they have no menu
+        assert_true(placed != r.is_hidden(c.id), "command must be in a menu or hidden, not both: " + c.name)
     for p in r.layout:
         assert_true(p.menu >= 0 and p.menu < len(r.menu_titles))
         if p.cmd != CM_NONE:

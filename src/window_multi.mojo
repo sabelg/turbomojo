@@ -26,6 +26,7 @@ comptime OP_VERT = 8
 comptime OP_HOME = 9
 comptime OP_END = 10
 comptime OP_DELSEL = 11
+comptime OP_LINE_START = 12       # column 0 (Home toggles with the indentation instead)
 
 comptime MAX_CURSORS = 2000
 
@@ -153,6 +154,10 @@ __extension Window:
             self.end(flag, False)
         elif op == OP_DELSEL:
             _ = self.delete_sel(self.new_group())
+        elif op == OP_LINE_START:
+            self.begin_move(flag)
+            self.cc = 0
+            self.sync_want()
 
     def multi(mut self, op: Int, a: Int, flag: Bool, flag2: Bool, text: List[Int]):
         """Carry out `op` at every cursor as one undo step."""

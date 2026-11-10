@@ -185,9 +185,9 @@ def test_clock_is_hidden_when_it_would_cover_a_menu() raises:
 
 
 def test_dropdown_golden() raises:
-    var s = Screen(60, 16)
+    var s = Screen(60, 20)
     var p = theme(0)
-    s.fill(0, 0, 60, 16, 32, 0, 0)
+    s.fill(0, 0, 60, 20, 32, 0, 0)
     var menus = build_menus(build_registry())
     var checks = List[Int]()
     checks.append(CM_LINENUM)

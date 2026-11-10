@@ -1,16 +1,20 @@
   ≡  File  Edit  Text  Search  Run  Compile  Options  Window
-                                ┌────────────────────────┐
-                                │√Line numbers           │
-                                │ Auto indent            │
-                                │ Highlight line         │
-                                │ Clock                  │
-                                │ Show whitespace        │
-                                │ Soft wrap        Alt-Z │
-                                │ Indent with tabs       │
-                                │ CRLF line endings      │
-                                ├────────────────────────┤
-                                │ Theme: Turbo Classic   │
-                                │ Theme: Midnight Neon   │
-                                │ Theme: Amber CRT       │
-                                └────────────────────────┘
+                              ┌──────────────────────────┐
+                              │√Line numbers             │
+                              │ Auto indent              │
+                              │ Highlight line           │
+                              │ Clock                    │
+                              │ Show whitespace          │
+                              │ Soft wrap          Alt-Z │
+                              │ Indent with tabs         │
+                              │ CRLF line endings        │
+                              ├──────────────────────────┤
+                              │ Keys: Modern             │
+                              │ Keys: Turbo / WordStar   │
+                              │ Keys: Emacs              │
+                              ├──────────────────────────┤
+                              │ Theme: Turbo Classic     │
+                              │ Theme: Midnight Neon     │
+                              │ Theme: Amber CRT         │
+                              └──────────────────────────┘
 

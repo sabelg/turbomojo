@@ -44,6 +44,79 @@ __extension App:
         """Command bound to key k (bindings live in the command registry)."""
         return self.reg.find_key(k)
 
+    def cursor_command(mut self, cmd: Int) raises:
+        """The commands that keymaps bind to cursor movement and small deletions. They do
+        what the corresponding key does in the active window."""
+        var t = self.top()
+        if t < 0:
+            return
+        if cmd == CM_INSERT_MODE:
+            self.insert_mode = not self.insert_mode
+            return
+        if self.wins[t].kind == WK_MESSAGE:
+            if cmd == CM_CUR_UP:
+                self.message_key(KEY_UP)
+            elif cmd == CM_CUR_DOWN:
+                self.message_key(KEY_DOWN)
+            return
+        if cmd == CM_CUR_LEFT:
+            self.editor_key(KEY_LEFT)
+        elif cmd == CM_CUR_RIGHT:
+            self.editor_key(KEY_RIGHT)
+        elif cmd == CM_CUR_UP:
+            self.editor_key(KEY_UP)
+        elif cmd == CM_CUR_DOWN:
+            self.editor_key(KEY_DOWN)
+        elif cmd == CM_CUR_WORD_LEFT:
+            self.editor_key(KEY_LEFT | MOD_CTRL)
+        elif cmd == CM_CUR_WORD_RIGHT:
+            self.editor_key(KEY_RIGHT | MOD_CTRL)
+        elif cmd == CM_CUR_LINE_START:
+            self.wins[t].multi(OP_LINE_START, 0, False, False, List[Int]())
+        elif cmd == CM_CUR_LINE_END:
+            self.editor_key(KEY_END)
+        elif cmd == CM_CUR_PAGE_UP:
+            self.editor_key(KEY_PGUP)
+        elif cmd == CM_CUR_PAGE_DOWN:
+            self.editor_key(KEY_PGDN)
+        elif cmd == CM_CUR_TOP:
+            self.editor_key(KEY_HOME | MOD_CTRL)
+        elif cmd == CM_CUR_BOTTOM:
+            self.editor_key(KEY_END | MOD_CTRL)
+        elif cmd == CM_DEL_CHAR:
+            self.editor_key(KEY_DELETE)
+        elif cmd == CM_SCROLL_UP:
+            self.wins[t].scroll(-1)
+        elif cmd == CM_SCROLL_DOWN:
+            self.wins[t].scroll(1)
+        elif cmd == CM_DEL_WORD:
+            self.wins[t].collapse()
+            if not self.wins[t].has_sel():
+                self.wins[t].move_right(True, True)
+            _ = self.wins[t].delete_sel(self.wins[t].new_group())
+            self.wins[t].follow = True
+        elif cmd == CM_KILL_LINE:
+            # cut to the end of the line; at the end of a line, the line break
+            self.wins[t].collapse()
+            var r = self.wins[t].cr
+            var c = self.wins[t].cc
+            var n = self.wins[t].buf.llen(r)
+            self.wins[t].sel = True
+            self.wins[t].ar = r
+            self.wins[t].ac = c
+            if c < n:
+                self.wins[t].cc = n
+            elif r + 1 < self.wins[t].buf.count():
+                self.wins[t].cr = r + 1
+                self.wins[t].cc = 0
+            if self.wins[t].has_sel():
+                self.clipboard = self.wins[t].selected_text()
+                self.osc52(self.clipboard.copy())
+                _ = self.wins[t].delete_sel(self.wins[t].new_group())
+            self.wins[t].sel = False
+            self.wins[t].sync_want()
+            self.wins[t].follow = True
+
     def exec(mut self, cmd: Int) raises:
         self.exec_command(cmd)
         # Options are remembered across sessions
@@ -61,12 +134,14 @@ __extension App:
             self.persist_option("editor", "auto_indent", toml_bool(self.auto_indent))
         elif cmd >= CM_THEME0 and cmd < CM_THEME0 + THEME_COUNT:
             self.persist_option("ui", "theme", toml_quote(theme_name(self.theme_idx)))
+        elif cmd >= CM_KEYMAP0 and cmd < CM_KEYMAP0 + KEYMAP_COUNT:
+            self.persist_option("ui", "keymap", toml_quote(keymap_name(self.keymap)))
 
     def exec_command(mut self, cmd: Int) raises:
         var ai = self.active_editor()
         if ai >= 0 and self.wins[ai].has_multi():
             # only these know about several cursors; everything else works on the main one
-            if not (cmd == CM_ADDNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO):
+            if not (cmd == CM_ADDNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO or (cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE)):
                 self.wins[ai].collapse()
         if cmd == CM_NEW:
             var name = String("NONAME")
@@ -141,6 +216,16 @@ __extension App:
         elif cmd == CM_CLEAR:
             if ai >= 0:
                 self.wins[ai].multi(OP_DELSEL, 0, False, False, List[Int]())
+        elif cmd >= CM_KEYMAP0 and cmd < CM_KEYMAP0 + KEYMAP_COUNT:
+            self.keymap = cmd - CM_KEYMAP0
+            self.rebuild_keys(False)
+            self.say("Keys: " + keymap_name(self.keymap))
+        elif cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE:
+            self.cursor_command(cmd)
+        elif cmd == CM_INDENT or cmd == CM_UNINDENT:
+            if ai >= 0:
+                self.wins[ai].indent_lines(1 if cmd == CM_INDENT else -1)
+                self.wins[ai].follow = True
         elif cmd == CM_LINEUP or cmd == CM_LINEDOWN:
             if ai >= 0:
                 _ = self.wins[ai].move_lines(-1 if cmd == CM_LINEUP else 1)
