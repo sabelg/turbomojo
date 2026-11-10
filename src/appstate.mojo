@@ -46,6 +46,8 @@ comptime FSEARCH_SLICE_MS = 8          # work per loop pass while searching file
 comptime FSEARCH_REDRAW_MS = 150       # how often new hits are shown while it runs
 comptime EV_COMMAND = 100               # a macro step that runs a command (Event.key holds its id)
 comptime MACRO_MAX = 100000            # recording stops by itself at this many steps
+comptime LSP_MAX_RESTARTS = 3            # automatic restarts of a crashed language server...
+comptime LSP_CRASH_WINDOW_S = 60         # ...within this many seconds; after that it stays off
 comptime STATUS_MS = 4000        # how long a status-line message stays
 comptime RESIZE_POLL_MS = 250    # until SIGWINCH handling lands (P0-11)
 comptime SPINNER_MS = 100
@@ -140,6 +142,9 @@ struct App(Movable):
     var fo_top: Int
     var run_args: String
     var compiler: String
+    var lsp_server: String     # the language server program
+    var include_paths: List[String]   # extra -I folders, already made absolute
+    var project_dir: String    # folder of the project's .turbomojo.toml ('' if there is none)
     var errs: List[ErrLoc]
     var err_idx: Int
     var status: String
@@ -180,6 +185,11 @@ struct App(Movable):
     var lsp_change_due: Int
     var lsp_last_latency_ms: Int
     var lsp_reported_failure: Bool
+    var lsp_crashes: List[Int]       # when the server died unexpectedly (ns), most recent last
+    var lsp_restart_due: Int         # when to start it again (0 = no restart pending)
+    var lsp_restart_path: String     # the file to track again after the restart
+    var lsp_restart_base_ms: Int     # first waiting time; doubles with every crash
+    var lsp_announced: Bool          # "ready" has been said for this run of the server
     var watch: Watcher         # inotify on the directories of open files
     var watch_enabled: Bool    # periodic checking when inotify is unavailable (set by run())
     var watch_due: Int
@@ -241,6 +251,9 @@ struct App(Movable):
         self.fo_top = 0
         self.run_args = ""
         self.compiler = env_or("TURBOMOJO_COMPILER", "mojo")
+        self.lsp_server = env_or("TURBOMOJO_LSP", "mojo-lsp-server")
+        self.include_paths = List[String]()
+        self.project_dir = ""
         self.errs = List[ErrLoc]()
         self.err_idx = -1
         self.status = ""
@@ -281,6 +294,11 @@ struct App(Movable):
         self.lsp_change_due = 0
         self.lsp_last_latency_ms = -1
         self.lsp_reported_failure = False
+        self.lsp_crashes = List[Int]()
+        self.lsp_restart_due = 0
+        self.lsp_restart_path = ""
+        self.lsp_restart_base_ms = 1000
+        self.lsp_announced = False
         self.watch = Watcher()
         self.watch_enabled = False
         self.watch_due = 0
@@ -349,6 +367,8 @@ struct App(Movable):
             t = min(t, (self.swap_due - now) // 1000000 + 1)
         if self.lsp_change_due > now:
             t = min(t, (self.lsp_change_due - now) // 1000000 + 1)
+        if self.lsp_restart_due > 0:
+            t = min(t, max(1, (self.lsp_restart_due - now) // 1000000 + 1))
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.watch_enabled and not self.watch.active():
@@ -363,6 +383,13 @@ struct App(Movable):
             self.tool_env_known = True
             self.tool_env = toolchain_env(env_or("MODULAR_HOME", ""), which(self.compiler))
         return self.tool_env + command
+
+    def include_flags(self) -> String:
+        """" -I dir" for each configured include folder ('' if there are none)."""
+        var out = String("")
+        for ip in self.include_paths:
+            out += " -I " + shell_quote(ip)
+        return out
 
     def compiler_cmd(mut self) -> String:
         """The configured compiler command with the environment it needs."""
@@ -391,6 +418,13 @@ struct App(Movable):
         self.large_file_bytes = s.large_file_mb * 1024 * 1024
         # the environment variable still wins over the files for the compiler
         self.compiler = env_or("TURBOMOJO_COMPILER", s.compiler)
+        self.lsp_server = env_or("TURBOMOJO_LSP", s.lsp_server)
+        # relative include folders belong to the project file's folder (or where we run)
+        self.include_paths = List[String]()
+        var base = self.project_dir if self.project_dir.byte_length() > 0 else String(self.cwd)
+        for ip in s.include_paths:
+            if ip.byte_length() > 0:
+                self.include_paths.append(abs_path(base, ip))
         self.config_warnings = s.warnings.copy()
         self.keymap = s.keymap
         self.user_key_cmds = s.key_commands.copy()
@@ -426,6 +460,7 @@ struct App(Movable):
         """Read the user and project config files and apply them."""
         self.config_path = user_config_path()
         var project = find_project_config(self.cwd)
+        self.project_dir = dirname(project) if project.byte_length() > 0 else String("")
         self.apply_settings(load_settings(read_text(self.config_path), read_text(project)))
 
     def show_config_warnings(mut self):

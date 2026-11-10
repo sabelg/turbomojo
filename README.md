@@ -66,6 +66,9 @@ large_file_mb = 50          # files above this size open in large-file mode
 
 [tools]
 compiler = "mojo"           # the TURBOMOJO_COMPILER environment variable overrides this
+lsp_server = "mojo-lsp-server"   # TURBOMOJO_LSP overrides this
+include_paths = []          # extra -I folders for build, run and the language server;
+                            # relative ones start at the folder of the config file
 
 [keys]                      # command name = one key or a list of keys
 "file.save" = ["F2", "Ctrl-S"]
@@ -184,6 +187,7 @@ scripts/tui-test.sh stop
 - Searching works line by line: a pattern cannot match across a line break, and matches of length zero are skipped. In texts over 50,000 lines the search runs when you press Enter instead of while you type, and matches are not counted.
 - Only UTF-8 and Latin-1 are handled: other encodings (UTF-16, Windows-1252's extra characters, Shift-JIS...) open as Latin-1 characters. There is no command to convert a file between encodings or to add or remove the byte order mark. If you type a character Latin-1 cannot hold into a Latin-1 file, it is saved as UTF-8 and the status line says so.
 - The saved undo history contains text you deleted, in plain form, in your state directory (the folder is created for your user only). It is written when you save, close an unchanged file or quit; if another program changes the file, its history is not used again.
+- If the language server stops unexpectedly it is started again for the file it was checking, after 1, 2 and 4 seconds; after three crashes within a minute it stays off until you press F7 again. What it offers is written to the log file when it starts.
 - Find in files reads files from disk (unsaved changes are not seen), lists one hit per matching line, and skips hidden files, `node_modules`, `__pycache__`, binary files, files over 5 MB and the simple entries of the folder's `.gitignore` (`name`, `name/`, `*.ext`); other `.gitignore` rules are not applied. It stops after 5,000 hits.
 - With several cursors, commands other than typing, deleting, moving and the clipboard (Tab indent, comment, duplicate line, PgUp/PgDn, Find...) first go back to one cursor. Undo also returns to one cursor. Alt-click needs a terminal that passes Alt with mouse clicks to the program.
 - With soft wrap, Home and End still go to the start and end of the whole line, continuation rows are not indented, and the Message window does not wrap.

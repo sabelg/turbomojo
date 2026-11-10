@@ -111,6 +111,198 @@ struct DocDiags(Copyable, Movable):
         self.version = -1
 
 
+comptime SYNC_NONE = 0
+comptime SYNC_FULL = 1
+comptime SYNC_INCREMENTAL = 2
+
+
+struct LspCaps(Copyable, Movable):
+    """What the server said it can do, read once from the `initialize` result. Later
+    features ask this table instead of digging through the JSON."""
+    var sync_kind: Int                    # SYNC_NONE / SYNC_FULL / SYNC_INCREMENTAL
+    var sync_open_close: Bool
+    var sync_save: Bool                   # the server wants didSave
+    var position_encoding: String         # "utf-16" unless the server chose another
+    var completion: Bool
+    var completion_resolve: Bool
+    var completion_triggers: List[String]
+    var hover: Bool
+    var signature_help: Bool
+    var signature_triggers: List[String]
+    var definition: Bool
+    var declaration: Bool
+    var type_definition: Bool
+    var implementation: Bool
+    var references: Bool
+    var document_highlight: Bool
+    var rename: Bool
+    var prepare_rename: Bool
+    var code_action: Bool
+    var document_symbol: Bool
+    var workspace_symbol: Bool
+    var formatting: Bool
+    var folding_range: Bool
+    var inlay_hint: Bool
+    var semantic_tokens: Bool
+    var semantic_full: Bool
+    var semantic_range: Bool
+    var token_types: List[String]         # the semantic token legend
+    var token_modifiers: List[String]
+
+    def __init__(out self):
+        self.sync_kind = SYNC_NONE
+        self.sync_open_close = False
+        self.sync_save = False
+        self.position_encoding = "utf-16"
+        self.completion = False
+        self.completion_resolve = False
+        self.completion_triggers = List[String]()
+        self.hover = False
+        self.signature_help = False
+        self.signature_triggers = List[String]()
+        self.definition = False
+        self.declaration = False
+        self.type_definition = False
+        self.implementation = False
+        self.references = False
+        self.document_highlight = False
+        self.rename = False
+        self.prepare_rename = False
+        self.code_action = False
+        self.document_symbol = False
+        self.workspace_symbol = False
+        self.formatting = False
+        self.folding_range = False
+        self.inlay_hint = False
+        self.semantic_tokens = False
+        self.semantic_full = False
+        self.semantic_range = False
+        self.token_types = List[String]()
+        self.token_modifiers = List[String]()
+
+    def describe(self) -> List[String]:
+        """One line per feature the server offers, for the log and for people."""
+        var out = List[String]()
+        var sync = String("none")
+        if self.sync_kind == SYNC_FULL:
+            sync = "whole document"
+        elif self.sync_kind == SYNC_INCREMENTAL:
+            sync = "incremental"
+        out.append("document sync: " + sync + (", save notifications" if self.sync_save else ""))
+        out.append("positions: " + self.position_encoding)
+        var names = List[String]()
+        if self.completion:
+            names.append("completion")
+        if self.hover:
+            names.append("hover")
+        if self.signature_help:
+            names.append("signature help")
+        if self.definition:
+            names.append("go to definition")
+        if self.references:
+            names.append("references")
+        if self.document_highlight:
+            names.append("highlights")
+        if self.rename:
+            names.append("rename")
+        if self.code_action:
+            names.append("code actions")
+        if self.document_symbol:
+            names.append("document symbols")
+        if self.workspace_symbol:
+            names.append("workspace symbols")
+        if self.formatting:
+            names.append("formatting")
+        if self.folding_range:
+            names.append("folding")
+        if self.inlay_hint:
+            names.append("inlay hints")
+        if self.semantic_tokens:
+            names.append("semantic tokens")
+        var line = String("features: ")
+        for i in range(len(names)):
+            line += (", " if i > 0 else "") + names[i]
+        if len(names) == 0:
+            line += "none"
+        out.append(line)
+        return out^
+
+
+def cap_on(caps: Json, key: String) -> Bool:
+    """A capability counts if it is present and neither `false` nor null (servers may
+    give `true` or an options object)."""
+    var n = caps.get(0, key)
+    if n < 0 or caps.is_null(n):
+        return False
+    if caps.kind(n) == 1:             # J_BOOL
+        return caps.bool(n)
+    return True
+
+
+def string_items(doc: Json, node: Int) -> List[String]:
+    var out = List[String]()
+    if node < 0:
+        return out^
+    for c in doc.children(node):
+        out.append(doc.str(c))
+    return out^
+
+
+def parse_caps(caps: Json) -> LspCaps:
+    """Read the `capabilities` object of an initialize result."""
+    var c = LspCaps()
+    if not caps.valid(0):
+        return c^
+    var sync = caps.get(0, "textDocumentSync")
+    if sync >= 0 and not caps.is_null(sync):
+        if caps.kind(sync) == 2:      # J_NUMBER: just the kind
+            c.sync_kind = caps.int(sync)
+            c.sync_open_close = c.sync_kind != SYNC_NONE
+        else:
+            c.sync_kind = caps.int(caps.get(sync, "change"), SYNC_NONE)
+            c.sync_open_close = caps.bool(caps.get(sync, "openClose"))
+            var save = caps.get(sync, "save")
+            if save >= 0 and not caps.is_null(save):
+                c.sync_save = caps.bool(save) if caps.kind(save) == 1 else True
+    if c.sync_kind < SYNC_NONE or c.sync_kind > SYNC_INCREMENTAL:
+        c.sync_kind = SYNC_NONE
+    var enc = caps.get(0, "positionEncoding")
+    if enc >= 0 and caps.str(enc).byte_length() > 0:
+        c.position_encoding = caps.str(enc)
+    c.completion = cap_on(caps, "completionProvider")
+    if c.completion:
+        c.completion_resolve = caps.bool(caps.path(0, "completionProvider/resolveProvider"))
+        c.completion_triggers = string_items(caps, caps.path(0, "completionProvider/triggerCharacters"))
+    c.hover = cap_on(caps, "hoverProvider")
+    c.signature_help = cap_on(caps, "signatureHelpProvider")
+    if c.signature_help:
+        c.signature_triggers = string_items(caps, caps.path(0, "signatureHelpProvider/triggerCharacters"))
+    c.definition = cap_on(caps, "definitionProvider")
+    c.declaration = cap_on(caps, "declarationProvider")
+    c.type_definition = cap_on(caps, "typeDefinitionProvider")
+    c.implementation = cap_on(caps, "implementationProvider")
+    c.references = cap_on(caps, "referencesProvider")
+    c.document_highlight = cap_on(caps, "documentHighlightProvider")
+    c.rename = cap_on(caps, "renameProvider")
+    if c.rename:
+        c.prepare_rename = caps.bool(caps.path(0, "renameProvider/prepareProvider"))
+    c.code_action = cap_on(caps, "codeActionProvider")
+    c.document_symbol = cap_on(caps, "documentSymbolProvider")
+    c.workspace_symbol = cap_on(caps, "workspaceSymbolProvider")
+    c.formatting = cap_on(caps, "documentFormattingProvider")
+    c.folding_range = cap_on(caps, "foldingRangeProvider")
+    c.inlay_hint = cap_on(caps, "inlayHintProvider")
+    c.semantic_tokens = cap_on(caps, "semanticTokensProvider")
+    if c.semantic_tokens:
+        var full = caps.path(0, "semanticTokensProvider/full")
+        c.semantic_full = full >= 0 and not caps.is_null(full) and (caps.kind(full) != 1 or caps.bool(full))
+        var rng = caps.path(0, "semanticTokensProvider/range")
+        c.semantic_range = rng >= 0 and not caps.is_null(rng) and (caps.kind(rng) != 1 or caps.bool(rng))
+        c.token_types = string_items(caps, caps.path(0, "semanticTokensProvider/legend/tokenTypes"))
+        c.token_modifiers = string_items(caps, caps.path(0, "semanticTokensProvider/legend/tokenModifiers"))
+    return c^
+
+
 @fieldwise_init
 struct OpenDoc(Copyable, Movable):
     var uri: String
@@ -130,6 +322,9 @@ struct LspClient(Copyable, Movable):
     var updated: List[String]          # URIs whose diagnostics changed since last take_updated()
     var server_name: String
     var caps: Json                     # the server's capabilities object (empty until ready)
+    var table: LspCaps                 # the same, as a typed table
+    var was_ready: Bool                # this run of the server got through initialize
+    var starts: Int                    # how many times a server has been launched
     var last_error: String
     var log: List[String]              # window/logMessage and showMessage texts (latest last)
 
@@ -145,6 +340,9 @@ struct LspClient(Copyable, Movable):
         self.updated = List[String]()
         self.server_name = ""
         self.caps = Json()
+        self.table = LspCaps()
+        self.was_ready = False
+        self.starts = 0
         self.last_error = ""
         self.log = List[String]()
 
@@ -159,20 +357,40 @@ struct LspClient(Copyable, Movable):
         self.queued_text.clear()
         self.diags.clear()
         self.updated.clear()
+        self.was_ready = False
+        self.caps = Json()
+        self.table = LspCaps()
         if not self.conn.start(cmd, stderr_path):
             self.state = LSP_FAILED
             self.last_error = "could not start " + cmd
             return False
+        self.starts += 1
         var w = JsonWriter()
         w.begin_obj()
         w.kv_int("processId", pid)
         w.kv_str("rootUri", self.root_uri)
+        w.key("workspaceFolders")
+        w.begin_arr()
+        w.begin_obj()
+        w.kv_str("uri", self.root_uri)
+        w.kv_str("name", "workspace")
+        w.end_obj()
+        w.end_arr()
         w.key("clientInfo")
         w.begin_obj()
         w.kv_str("name", "TurboMojo")
         w.end_obj()
+        # what this client can take; kept to what is implemented, so the server does not
+        # send things nobody handles
         w.key("capabilities")
         w.begin_obj()
+        w.key("general")
+        w.begin_obj()
+        w.key("positionEncodings")
+        w.begin_arr()
+        w.str("utf-16")
+        w.end_arr()
+        w.end_obj()
         w.key("textDocument")
         w.begin_obj()
         w.key("synchronization")
@@ -182,6 +400,7 @@ struct LspClient(Copyable, Movable):
         w.key("publishDiagnostics")
         w.begin_obj()
         w.kv_bool("relatedInformation", False)
+        w.kv_bool("versionSupport", True)
         w.end_obj()
         w.end_obj()
         w.end_obj()
@@ -344,6 +563,8 @@ struct LspClient(Copyable, Movable):
                 var c = m.doc.path(0, "result/capabilities")
                 if c >= 0:
                     self.caps = json_subtree(m.doc, c)
+                self.table = parse_caps(self.caps)
+                self.was_ready = True
                 self.server_name = m.doc.str(m.doc.path(0, "result/serverInfo/name"), "language server")
                 self.state = LSP_READY
                 self.conn.notify("initialized", "{}")

@@ -18,10 +18,11 @@ comptime LSP_DEBOUNCE_MS = 300     # quiet time after the last edit before the s
 
 __extension App:
     def lsp_server_command(mut self, path: String) -> String:
-        """Command line of the language server, with include paths for the file's folder
-        and the working directory so that sibling modules resolve."""
-        var exe = env_or("TURBOMOJO_LSP", "mojo-lsp-server")
-        return self.tool(exe) + " -I " + shell_quote(dirname(path)) + " -I " + shell_quote(self.cwd)
+        """Command line of the language server, with include paths so that modules
+        resolve: the file's folder, the working directory, and the project's own
+        (`tools.include_paths`)."""
+        var exe = String(self.lsp_server)
+        return self.tool(exe) + " -I " + shell_quote(dirname(path)) + " -I " + shell_quote(self.cwd) + self.include_flags()
 
     def lsp_command(mut self):
         """Compile > Check with language server: start live diagnostics for the current
@@ -35,6 +36,12 @@ __extension App:
         if self.wins[i].buf.large:
             self.say("The language server is off in large-file mode")
             return
+        if self.lsp_restart_due > 0 and self.lsp_restart_path == self.wins[i].path:
+            # asked again while a restart was pending: that cancels it
+            self.lsp_stop()
+            self.say("Language server stopped")
+            return
+        self.lsp_crashes.clear()            # a deliberate start gets a fresh allowance
         if self.lsp.active() and self.lsp_path == self.wins[i].path:
             self.lsp_stop()
             self.say("Language server stopped")
@@ -47,6 +54,8 @@ __extension App:
         if not self.lsp.active():
             var log = (dirname(self.log_path) + "/lsp.log") if self.log_path.byte_length() > 0 else String("/dev/null")
             self.lsp_reported_failure = False
+            self.lsp_announced = False
+            self.lsp_restart_due = 0
             if not self.lsp.start(self.lsp_server_command(path), self.cwd, log, own_pid(), now):
                 self.say("Could not start the language server")
                 return
@@ -65,6 +74,8 @@ __extension App:
 
     def lsp_stop(mut self):
         self.lsp.stop()
+        self.lsp_restart_due = 0
+        self.lsp_restart_path = ""
         self.lsp_path = ""
         self.lsp_uri = ""
         self.lsp_change_due = 0
@@ -97,16 +108,53 @@ __extension App:
 
     def lsp_tick(mut self, now: Int):
         """Called on every pass of the event loop while a language server is in use."""
+        if self.lsp_restart_due > 0 and now >= self.lsp_restart_due:
+            # time to bring a crashed server back for the file it was checking
+            self.lsp_restart_due = 0
+            var ri = self.find_editor(self.lsp_restart_path)
+            self.lsp_restart_path = ""
+            if ri >= 0:
+                self.lsp_track(ri, now)
+            return
         if not self.lsp.conn.proc.running:
             return
         self.lsp.poll()
+        if self.lsp.state == LSP_READY and not self.lsp_announced:
+            self.lsp_announced = True
+            for line in self.lsp.table.describe():
+                self.log_error("language server " + self.lsp.server_name + ": " + line)
         if self.lsp.state == LSP_FAILED:
-            if not self.lsp_reported_failure:
-                self.lsp_reported_failure = True
-                self.say("Language server: " + self.lsp.last_error)
-                self.log_error("language server: " + self.lsp.last_error)
+            var crashed = self.lsp.was_ready        # it had been working: not a start-up problem
             _ = self.lsp.conn.stop()
             self.lsp.state = LSP_STOPPED
+            self.log_error("language server: " + self.lsp.last_error)
+            # forget crashes that are long ago, then decide whether to try again
+            var recent = List[Int]()
+            for t in self.lsp_crashes:
+                if now - t < LSP_CRASH_WINDOW_S * 1000000000:
+                    recent.append(t)
+            self.lsp_crashes = recent^
+            var tracked = String(self.lsp_path)
+            self.lsp_path = ""
+            self.lsp_uri = ""
+            self.lsp_change_due = 0
+            self.lsp_sent_ns = 0
+            if crashed and tracked.byte_length() > 0 and len(self.lsp_crashes) < LSP_MAX_RESTARTS:
+                self.lsp_crashes.append(now)
+                var n = len(self.lsp_crashes)
+                var wait_ms = self.lsp_restart_base_ms
+                for _ in range(n - 1):
+                    wait_ms *= 2
+                self.lsp_restart_due = now + wait_ms * 1000000
+                self.lsp_restart_path = tracked
+                self.say("Language server stopped unexpectedly - restarting (" + String(n) + " of " + String(LSP_MAX_RESTARTS) + ")")
+                return
+            if not self.lsp_reported_failure:
+                self.lsp_reported_failure = True
+                if crashed:
+                    self.say("Language server keeps stopping - press " + self.reg.key_label(CM_LSP) + " to try again")
+                else:
+                    self.say("Language server: " + self.lsp.last_error)
             return
         var i = self.find_editor(self.lsp_path) if self.lsp_path.byte_length() > 0 else -1
         if i < 0:

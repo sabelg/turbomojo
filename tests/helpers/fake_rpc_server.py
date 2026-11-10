@@ -36,6 +36,12 @@ def read_message():
 
 
 def main():
+    # FAKE_START_LOG=path: note every launch (tests count restarts with it)
+    import os
+    log = os.environ.get("FAKE_START_LOG")
+    if log:
+        with open(log, "a") as f:
+            f.write(" ".join(sys.argv[1:]) + "\n")
     while True:
         msg = read_message()
         if msg is None:
@@ -48,7 +54,9 @@ def main():
         # ---- a minimal language server
         if method == "initialize":
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "capabilities": {"textDocumentSync": 1, "hoverProvider": True, "foldingRangeProvider": False},
+                "capabilities": {"textDocumentSync": 1, "hoverProvider": True, "foldingRangeProvider": False,
+                                 "completionProvider": {"triggerCharacters": [".", "("], "resolveProvider": True},
+                                 "renameProvider": {"prepareProvider": True}},
                 "serverInfo": {"name": "fake-lsp"}}})
             continue
         if method == "initialized":

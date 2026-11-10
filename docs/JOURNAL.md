@@ -1252,3 +1252,44 @@ soft wrap, folding, line operations, auto-closing pairs, rulers, keymaps with tw
 sequences, the kitty keyboard protocol, macros, BOM/Latin-1 handling, and undo history
 kept between sessions. Things verified only by unit tests, never on a real terminal
 emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinations.
+
+## 2026-11-10 · P2-01 LSP client core · done
+
+- Already there from the Phase 0 spike: launch, `initialize`/`initialized`, `shutdown`/
+  `exit`, replies to the server's own requests, full-document open/change/close,
+  diagnostics. Added in this task:
+- Capability table: `LspCaps` and `parse_caps` read the server's `capabilities` once
+  into typed fields (sync kind and save, position encoding, completion with trigger
+  characters and resolve, hover, signature help with triggers, definition and its
+  relatives, references, highlights, rename with prepare, code actions, document and
+  workspace symbols, formatting, folding, inlay hints, semantic tokens with legend).
+  `true`, an options object and `{}` count as offered; `false`, null and absent do not;
+  an unknown sync kind is treated as "none". `describe()` gives three readable lines,
+  written to the log when the server becomes ready. `LspClient.table`, `was_ready`,
+  `starts`.
+- Client side of `initialize`: `workspaceFolders`, `general.positionEncodings`
+  ("utf-16"), `publishDiagnostics.versionSupport`. Nothing is declared that is not
+  implemented yet; later tasks extend it.
+- Restart on crash (`App.lsp_tick`): a server that had been ready and then exits is
+  started again for the tracked file after 1 s, then 2 s, then 4 s; a fourth crash
+  within 60 s stops the attempts with a message. F7 cancels a pending restart, and a
+  deliberate start resets the count. A server that never gets through `initialize` is
+  reported and not retried. The event loop wakes up for the restart time.
+- Include paths: `tools.include_paths` (a folder or a list; relative ones start at the
+  folder of the project's `.turbomojo.toml`, else the working directory) are passed as
+  `-I` to the language server and to build and run. `tools.lsp_server` names the server
+  program (`TURBOMOJO_LSP` still wins).
+- Tests (+9 in `tests/test_lsp.mojo`, 25): two for the table from JSON texts, one for
+  the client against the fake server, restart and re-check after a crash, growing waits
+  and giving up after three, cancelling a pending restart, no restart for a server that
+  cannot start, include paths in settings and commands, and the flags as the fake
+  server received them. The fake server can log each launch (`FAKE_START_LOG`). The
+  older "dead server" test now expects the planned restart. Two first failures were
+  timing assumptions in my tests; the suite then passed four runs in a row.
+- Not done / unverified:
+  - No request timeout: a server that hangs without exiting is not noticed.
+  - Only one server and one tracked file, as before (P2-02 widens document sync).
+  - `include_paths` was checked as command text and with the fake server, not by
+    building a real two-folder Mojo project.
+  - The format command does not get the include flags (it does not need imports).
+- Verified: `check.sh` CHECK OK (32 files, 684 tests).

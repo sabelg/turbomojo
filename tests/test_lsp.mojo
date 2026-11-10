@@ -17,6 +17,7 @@ from commands import CM_LSP, CM_NONE, build_registry
 from term import fkey
 from signals import own_pid
 from util import decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
+from config import load_settings, read_text
 
 comptime FAKE = "python3 tests/helpers/fake_rpc_server.py"
 comptime MS = 1000000
@@ -373,22 +374,283 @@ def test_closing_the_tracked_window_closes_the_document() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
-def test_dead_server_is_reported_once_and_cleaned_up() raises:
+def test_dead_server_is_noticed_and_cleaned_up() raises:
     var dir = scratch("dead")
     _ = run_system("printf 'x\\n' > '" + dir + "/a.mojo'")
     var app = App()
     app.scr.resize(100, 30)
     app.cwd = dir
+    app.lsp_server = FAKE
+    app.lsp_restart_base_ms = 60000                      # keep the restart pending for the test
     app.open_path(dir + "/a.mojo")
-    assert_true(app.lsp.start(FAKE, dir, "/dev/null", own_pid(), now_ns()))
-    app.lsp_track(app.top(), now_ns())
+    app.exec(CM_LSP)
     run_ticks(app, 5000, True)
     _ = app.lsp.conn.request("die", "")
     run_ticks(app, 1500, False)
     assert_false(app.lsp.active())
-    assert_false(app.lsp.conn.proc.running)
-    assert_true(app.status.find("Language server") >= 0)
-    assert_true(app.lsp_reported_failure)
+    assert_false(app.lsp.conn.proc.running)              # the dead process was reaped
+    assert_true(app.status.find("Language server stopped unexpectedly") >= 0, app.status)
+    assert_true(app.lsp_restart_due > 0)                 # and it will be brought back
+    assert_equal(app.lsp_restart_path, dir + "/a.mojo")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+# ------------------------------------------------------ capability table
+def caps_of(text: String) -> LspCaps:
+    return parse_caps(json_parse(text))
+
+
+def test_capability_table_from_a_full_answer() raises:
+    var c = caps_of(
+        "{\"textDocumentSync\": {\"openClose\": true, \"change\": 2, \"save\": {\"includeText\": false}},"
+        + "\"positionEncoding\": \"utf-16\","
+        + "\"completionProvider\": {\"triggerCharacters\": [\".\", \":\"], \"resolveProvider\": true},"
+        + "\"hoverProvider\": true, \"signatureHelpProvider\": {\"triggerCharacters\": [\"(\", \",\"]},"
+        + "\"definitionProvider\": {}, \"referencesProvider\": true, \"documentHighlightProvider\": false,"
+        + "\"renameProvider\": {\"prepareProvider\": true}, \"codeActionProvider\": {\"codeActionKinds\": [\"quickfix\"]},"
+        + "\"documentSymbolProvider\": true, \"workspaceSymbolProvider\": null, \"inlayHintProvider\": true,"
+        + "\"semanticTokensProvider\": {\"legend\": {\"tokenTypes\": [\"type\", \"function\"], \"tokenModifiers\": [\"readonly\"]}, \"full\": {\"delta\": true}, \"range\": false}}"
+    )
+    assert_equal(c.sync_kind, SYNC_INCREMENTAL)
+    assert_true(c.sync_open_close)
+    assert_true(c.sync_save)
+    assert_equal(c.position_encoding, "utf-16")
+    assert_true(c.completion)
+    assert_true(c.completion_resolve)
+    assert_equal(len(c.completion_triggers), 2)
+    assert_equal(c.completion_triggers[1], ":")
+    assert_true(c.hover)
+    assert_true(c.signature_help)
+    assert_equal(c.signature_triggers[0], "(")
+    assert_true(c.definition)                           # an empty options object counts
+    assert_true(c.references)
+    assert_false(c.document_highlight)                  # false
+    assert_true(c.rename)
+    assert_true(c.prepare_rename)
+    assert_true(c.code_action)
+    assert_true(c.document_symbol)
+    assert_false(c.workspace_symbol)                    # null
+    assert_false(c.formatting)                          # absent
+    assert_false(c.folding_range)
+    assert_true(c.inlay_hint)
+    assert_true(c.semantic_tokens)
+    assert_true(c.semantic_full)
+    assert_false(c.semantic_range)
+    assert_equal(len(c.token_types), 2)
+    assert_equal(c.token_types[1], "function")
+    assert_equal(c.token_modifiers[0], "readonly")
+    var lines = c.describe()
+    assert_equal(lines[0], "document sync: incremental, save notifications")
+    assert_true(lines[2].find("completion, hover, signature help, go to definition, references, rename") > 0, lines[2])
+
+
+def test_capability_table_from_short_and_odd_answers() raises:
+    var simple = caps_of("{\"textDocumentSync\": 1, \"renameProvider\": true}")
+    assert_equal(simple.sync_kind, SYNC_FULL)
+    assert_true(simple.sync_open_close)
+    assert_false(simple.sync_save)
+    assert_true(simple.rename)
+    assert_false(simple.prepare_rename)
+    assert_false(simple.completion)
+    assert_equal(len(simple.completion_triggers), 0)
+    var none = caps_of("{}")
+    assert_equal(none.sync_kind, SYNC_NONE)
+    assert_false(none.hover)
+    assert_equal(none.position_encoding, "utf-16")
+    assert_equal(none.describe()[2], "features: none")
+    var odd = caps_of("{\"textDocumentSync\": 7, \"positionEncoding\": \"utf-8\", \"textDocumentSyncX\": 1}")
+    assert_equal(odd.sync_kind, SYNC_NONE)              # an unknown kind is not trusted
+    assert_equal(odd.position_encoding, "utf-8")
+    var save_false = caps_of("{\"textDocumentSync\": {\"change\": 1, \"save\": false}}")
+    assert_false(save_false.sync_save)
+    assert_equal(save_false.sync_kind, SYNC_FULL)
+    var unparsed = LspCaps()
+    assert_false(unparsed.completion)
+
+
+def test_client_reads_the_table_and_declares_itself() raises:
+    var c = LspClient()
+    assert_true(c.start(FAKE, "/tmp", "/dev/null", own_pid(), now()))
+    assert_equal(c.starts, 1)
+    assert_false(c.was_ready)
+    _ = pump(c, 5000, True, 0)
+    assert_equal(c.state, LSP_READY)
+    assert_true(c.was_ready)
+    assert_equal(c.table.sync_kind, SYNC_FULL)
+    assert_true(c.table.hover)
+    assert_true(c.table.completion)
+    assert_equal(c.table.completion_triggers[0], ".")
+    assert_true(c.table.prepare_rename)
+    assert_false(c.table.folding_range)
+    c.stop()
+    assert_equal(c.state, LSP_STOPPED)
+    # a second start is a new run with a fresh table
+    assert_true(c.start(FAKE, "/tmp", "/dev/null", own_pid(), now()))
+    assert_equal(c.starts, 2)
+    assert_false(c.was_ready)
+    assert_false(c.table.hover)
+    c.stop()
+
+
+# ------------------------------------------------------- restart on crash
+def count_lines(path: String) -> Int:
+    var n = 0
+    for b in run_capture("cat '" + path + "' 2>/dev/null").out:
+        if b == 10:
+            n += 1
+    return n
+
+
+def crash_app(dir: String) raises -> App:
+    _ = run_system("printf 'has a BUG\\n' > '" + dir + "/a.mojo'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.lsp_server = "env FAKE_START_LOG=" + dir + "/starts.log " + FAKE
+    app.lsp_restart_base_ms = 100
+    app.open_path(dir + "/a.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    return app^
+
+
+def test_crashed_server_is_restarted_and_the_file_checked_again() raises:
+    var dir = scratch("restart")
+    var app = crash_app(dir)
+    assert_equal(count_lines(dir + "/starts.log"), 1)
+    assert_true(message_text(app).find("found BUG") > 0)
+    var uri = path_to_uri(dir + "/a.mojo")
+    _ = app.lsp.conn.request("die", "")
+    # until the new server has checked the file again (its diagnostics start out empty)
+    var t0 = now()
+    var back = False
+    while not back and now() - t0 < 8000 * MS:
+        run_ticks(app, 30, False)
+        back = app.lsp.starts == 2 and app.lsp.state == LSP_READY and len(app.lsp.diagnostics(uri)) == 1
+    assert_true(back, "restarted and checked again; status: " + app.status)
+    assert_equal(count_lines(dir + "/starts.log"), 2)
+    assert_equal(app.lsp_path, dir + "/a.mojo")
+    assert_equal(len(app.lsp_crashes), 1)
+    assert_true(message_text(app).find("found BUG") > 0)
+    # editing still reaches the new server
+    var ei = app.find_editor(dir + "/a.mojo")
+    app.wins[ei].goto(0, 0)
+    _ = app.wins[ei].delete_line()
+    run_ticks(app, 5000, True)
+    assert_true(message_text(app).find("No problems found") > 0, message_text(app))
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_restarts_wait_longer_each_time_and_then_stop() raises:
+    var dir = scratch("giveup")
+    var app = crash_app(dir)
+    var waits = List[Int]()
+    for round in range(3):
+        _ = app.lsp.conn.request("die", "")
+        var t0 = now()
+        # until the crash is noticed
+        while app.lsp_restart_due == 0 and now() - t0 < 3000 * MS:
+            run_ticks(app, 20, False)
+        assert_true(app.lsp_restart_due > 0, "round " + String(round) + ": no restart planned")
+        waits.append((app.lsp_restart_due - now_ns()) // MS)
+        var t1 = now()
+        while not (app.lsp.starts == round + 2 and app.lsp.state == LSP_READY) and now() - t1 < 8000 * MS:
+            run_ticks(app, 30, False)
+        assert_equal(app.lsp.state, LSP_READY, "round " + String(round))
+    assert_equal(count_lines(dir + "/starts.log"), 4)
+    assert_true(waits[1] > waits[0] and waits[2] > waits[1], "waits " + String(waits[0]) + " " + String(waits[1]) + " " + String(waits[2]))
+    # the fourth crash within the minute: no more automatic restarts
+    _ = app.lsp.conn.request("die", "")
+    run_ticks(app, 1500, False)
+    assert_equal(app.lsp_restart_due, 0)
+    assert_false(app.lsp.active())
+    assert_true(app.status.find("keeps stopping") > 0, app.status)
+    assert_equal(count_lines(dir + "/starts.log"), 4)
+    # asking again by hand works and resets the allowance
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    assert_equal(app.lsp.state, LSP_READY)
+    assert_equal(len(app.lsp_crashes), 0)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_stopping_by_hand_cancels_a_pending_restart() raises:
+    var dir = scratch("cancel")
+    var app = crash_app(dir)
+    app.lsp_restart_base_ms = 60000                      # long enough to stay pending
+    _ = app.lsp.conn.request("die", "")
+    var t0 = now()
+    while app.lsp_restart_due == 0 and now() - t0 < 3000 * MS:
+        run_ticks(app, 20, False)
+    assert_true(app.lsp_restart_due > 0)
+    # the loop is told when to come back
+    assert_true(app.next_timeout_ms(now_ns(), False, 30) <= 60001)
+    app.exec(CM_LSP)                                     # the same key: stop
+    assert_equal(app.lsp_restart_due, 0)
+    assert_false(app.lsp.active())
+    run_ticks(app, 300, False)
+    assert_equal(count_lines(dir + "/starts.log"), 1)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_a_server_that_never_starts_is_not_restarted() raises:
+    var dir = scratch("nostart")
+    _ = run_system("printf 'x\\n' > '" + dir + "/a.mojo'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.lsp_server = "sh -c 'exit 3' ignored"
+    app.lsp_restart_base_ms = 50
+    app.open_path(dir + "/a.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 1500, False)
+    assert_false(app.lsp.active())
+    assert_equal(app.lsp_restart_due, 0)
+    assert_equal(len(app.lsp_crashes), 0)
+    assert_true(app.status.find("Language server") >= 0, app.status)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+# ----------------------------------------------------------- include paths
+def test_include_paths_reach_the_server_and_the_compiler() raises:
+    var dir = scratch("inc")
+    _ = run_system("mkdir -p '" + dir + "/proj/sub' '" + dir + "/proj/lib dir'")
+    with open(dir + "/proj/.turbomojo.toml", "w") as f:
+        f.write("[tools]\ninclude_paths = [\"lib dir\", \"/opt/shared\"]\nlsp_server = \"my-lsp\"\n")
+    var app = App()
+    app.cwd = dir + "/proj/sub"                          # started in a subfolder of the project
+    app.project_dir = dir + "/proj"
+    app.apply_settings(load_settings("", read_text(dir + "/proj/.turbomojo.toml")))
+    assert_equal(len(app.config_warnings), 0)
+    assert_equal(len(app.include_paths), 2)
+    assert_equal(app.include_paths[0], dir + "/proj/lib dir")      # relative to the project file
+    assert_equal(app.include_paths[1], "/opt/shared")
+    assert_equal(app.include_flags(), " -I '" + dir + "/proj/lib dir' -I '/opt/shared'")
+    var cmd = app.lsp_server_command(dir + "/proj/sub/x.mojo")
+    assert_true(cmd.find("my-lsp -I '" + dir + "/proj/sub' -I '" + dir + "/proj/sub' -I '" + dir + "/proj/lib dir' -I '/opt/shared'") >= 0, cmd)
+    # none configured: nothing added
+    var plain = App()
+    assert_equal(plain.include_flags(), "")
+    assert_equal(plain.lsp_server, "mojo-lsp-server")
+    # a single folder and bad values
+    var one = load_settings("[tools]\ninclude_paths = \"src\"\n", "")
+    assert_equal(len(one.include_paths), 1)
+    var bad = load_settings("[tools]\ninclude_paths = 3\nlsp_server = \"\"\n", "")
+    assert_equal(len(bad.include_paths), 0)
+    assert_equal(bad.lsp_server, "mojo-lsp-server")
+    assert_equal(len(bad.warnings), 2)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_fake_server_receives_the_include_flags() raises:
+    var dir = scratch("incargs")
+    var app = crash_app(dir)
+    app.lsp_stop()
+    var first = bytes_to_str(run_capture("head -1 '" + dir + "/starts.log'").out)
+    assert_true(first.find("-I " + dir + " -I " + dir) >= 0, first)
     _ = run_system("rm -rf '" + dir + "'")
 
 
