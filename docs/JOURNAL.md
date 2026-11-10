@@ -425,3 +425,29 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
 - Measured: a 1.0 MB document (120k nodes) parses in 19 ms and dumps identically in 5 ms.
 - README source table brought up to date with the modules added since P0-09.
 - Verified: `check.sh` CHECK OK (17 files, 359 tests).
+
+## 2026-11-10 · P0-18 JSON-RPC transport · done
+
+- New `src/proc.mojo` (`Proc`): a child process with pipes in both directions. The child's
+  stdin is a pipe made here and handed to the shell that `popen` starts (`exec cmd <&N`);
+  its stdout comes back through popen's stream. Both ends are non-blocking, output goes
+  through a queue that is flushed as the child accepts it, stderr is appended to a file,
+  SIGPIPE is ignored so writing to a dead child returns an error instead of killing the
+  IDE, and `stop()` closes input, sends SIGTERM, waits up to 0.5 s for end-of-file, then
+  SIGKILLs and collects the exit status.
+- New `src/rpc.mojo`: `Framer` (Content-Length framing; header name case-insensitive,
+  extra headers ignored, stray output before a frame skipped) and `RpcConn` (requests with
+  ids and a pending table, notifications, responses and error responses to the other
+  side's requests, pairing of replies with the method we asked, time-outs, cancel).
+- `tests/helpers/fake_rpc_server.py` (python3) plays the server. `tests/test_rpc.mojo`
+  (27 tests): framing byte-by-byte, several frames per chunk, stray output, 3000 messages
+  without growth; classification of all message kinds; request text validity; time-outs;
+  and with the real child: request/response, Unicode echo, errors, notification ordering,
+  a reply split into 7-byte pieces, a burst in one write, a 300 KB reply, a 400 KB request
+  (larger than a pipe buffer), server-to-client requests answered and refused, stray
+  stdout, stderr capture, no-reply time-out, server death (exit code 3 collected, writes
+  afterwards harmless), clean exit, stop of a running server, a missing program, restart.
+- All 27 passed on the first run and in 15 consecutive runs; no child processes are left
+  behind (a first count of "2" was my own `pgrep -f` matching its own command line).
+- Verified: `check.sh` CHECK OK (18 files, 386 tests).
+- Dependency note: these tests need `python3` on PATH (present here at /usr/bin/python3).

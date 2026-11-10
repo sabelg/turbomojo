@@ -118,6 +118,7 @@ Press **F1** inside the IDE for the full keyboard reference.
 | `src/toml.mojo`, `src/config.mojo`, `src/editorconfig.mojo` | Config file reader/writer, layered settings, EditorConfig rules |
 | `src/swap.mojo`, `src/watch.mojo` | Swap files for crash recovery; detection of files changed by other programs |
 | `src/json.mojo` | JSON reader and writer (for the language-server, debugger and agent protocols) |
+| `src/proc.mojo`, `src/rpc.mojo` | Two-way non-blocking child processes; JSON-RPC with Content-Length framing |
 | `src/util.mojo` | UTF-8, display widths, paths, popen/system, base64 |
 
 ## Testing
