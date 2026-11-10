@@ -1334,3 +1334,14 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   - `willSave` and `willSaveWaitUntil` are not sent. A file changed on disk and
     reloaded is sent whole.
 - Verified: `check.sh` CHECK OK (32 files, 692 tests); the LSP suite passed three runs.
+
+### P2-02 follow-up: checked against the real server (2026-11-10)
+
+- Added `test_real_server_follows_ranged_edits_from_the_editor` (skipped when
+  mojo-lsp-server is not on PATH). With Mojo 1.2.0 the server announces "document sync:
+  incremental, save notifications". In the test the IDE opens a file with a type error,
+  fixes it with a delete and an insert from the editor (the error disappears), then adds
+  a line containing an emoji above and breaks the code again (the new error is reported
+  on the line the editor has it on). So ranged changes with UTF-16 columns work against
+  the real server, which closes the first "unverified" item of the entry above.
+- Verified: `check.sh` CHECK OK (32 files, 693 tests).

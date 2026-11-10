@@ -920,6 +920,46 @@ def test_real_server_reports_a_type_error() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
+def test_real_server_follows_ranged_edits_from_the_editor() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realsync")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'def main():\\n    var x: Int = \"oops\"\\n    print(x)\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var uri = path_to_uri(path)
+    var t0 = now()
+    while len(app.lsp.diagnostics(uri)) == 0 and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    assert_equal(len(app.lsp.diagnostics(uri)), 1)
+    print("      real server sync: " + app.lsp.table.describe()[0])
+    # replace "oops" (with its quotes) by 1, as two ordinary editor operations
+    var i = app.find_editor(path)
+    _ = app.wins[i].buf.delete(1, 17, 1, 23, 0, 0, 0)
+    _ = app.wins[i].buf.insert(1, 17, decode("1"), 0, 0, 0)
+    assert_equal(to_str(app.wins[i].buf.line(1)), "    var x: Int = 1")
+    t0 = now()
+    while len(app.lsp.diagnostics(uri)) > 0 and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    assert_equal(len(app.lsp.diagnostics(uri)), 0)       # the server saw the corrected text
+    # and an edit that breaks it again, with a wide character before the place
+    _ = app.wins[i].buf.insert(0, 0, decode("# 🔥 note\n"), 0, 0, 0)
+    _ = app.wins[i].buf.insert(2, 17, decode("\"no\" + "), 0, 0, 0)
+    t0 = now()
+    while len(app.lsp.diagnostics(uri)) == 0 and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    var d = app.lsp.diagnostics(uri)
+    assert_true(len(d) >= 1, "the new error is reported")
+    assert_equal(d[0].line, 2)                           # on the line the editor has it on
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
 def test_toolchain_environment_prefix() raises:
     var dir = scratch("toolenv")
     _ = run_system("mkdir -p '" + dir + "/pfx/bin' '" + dir + "/pfx/share/max' '" + dir + "/bare/bin'")
