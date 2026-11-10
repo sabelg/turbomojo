@@ -599,6 +599,70 @@ def parse_workspace_edit(doc: Json, result: Int) -> WorkspaceEdit:
     return we^
 
 
+def parse_semantic(doc: Json, result: Int) -> List[Int]:
+    """The `data` of a semantic tokens answer made absolute: line, start (UTF-16
+    units), length, token type index - four numbers per token, in document order.
+    Malformed data gives an empty list."""
+    var out = List[Int]()
+    var data = doc.get(result, "data") if result >= 0 and not doc.is_null(result) else -1
+    if data < 0:
+        return out^
+    var nums = List[Int]()
+    for c in doc.children(data):
+        nums.append(doc.int(c, -1))
+    if len(nums) % 5 != 0:
+        return out^
+    var line = 0
+    var start = 0
+    for k in range(len(nums) // 5):
+        var dl = nums[k * 5]
+        var ds = nums[k * 5 + 1]
+        var length = nums[k * 5 + 2]
+        var kind = nums[k * 5 + 3]
+        if dl < 0 or ds < 0 or length < 0 or kind < 0:
+            return List[Int]()
+        if dl > 0:
+            line += dl
+            start = ds
+        else:
+            start += ds
+        out.append(line)
+        out.append(start)
+        out.append(length)
+        out.append(kind)
+    return out^
+
+
+@fieldwise_init
+struct LspHint(Copyable, Movable):
+    var row: Int
+    var col16: Int
+    var label: String
+    var kind: Int           # 1 type, 2 parameter, 0 not said
+
+
+def parse_inlay(doc: Json, result: Int) -> List[LspHint]:
+    """Read an inlayHint answer; a label in parts is joined."""
+    var out = List[LspHint]()
+    if result < 0 or doc.is_null(result):
+        return out^
+    for h in doc.children(result):
+        var pos = doc.get(h, "position")
+        var lab = doc.get(h, "label")
+        if pos < 0 or lab < 0:
+            continue
+        var label = String("")
+        if doc.kind(lab) == 4:
+            for part in doc.children(lab):
+                label += doc.str(doc.get(part, "value"))
+        else:
+            label = doc.str(lab)
+        if label.byte_length() == 0:
+            continue
+        out.append(LspHint(max(0, doc.int(doc.get(pos, "line"), 0)), max(0, doc.int(doc.get(pos, "character"), 0)), label, doc.int(doc.get(h, "kind"), 0)))
+    return out^
+
+
 struct CodeAction(Copyable, Movable):
     """Something the server offers to do at a place: a fix or a refactoring."""
     var title: String
@@ -949,6 +1013,29 @@ struct LspClient(Copyable, Movable):
         w.str("plaintext")
         w.end_arr()
         w.end_obj()
+        w.key("semanticTokens")
+        w.begin_obj()
+        w.key("requests")
+        w.begin_obj()
+        w.kv_bool("full", True)
+        w.end_obj()
+        w.key("tokenTypes")
+        w.begin_arr()
+        for t in ["namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable", "property", "enumMember", "function", "method", "macro"]:
+            w.str(t)
+        w.end_arr()
+        w.key("tokenModifiers")
+        w.begin_arr()
+        w.end_arr()
+        w.key("formats")
+        w.begin_arr()
+        w.str("relative")
+        w.end_arr()
+        w.end_obj()
+        w.key("inlayHint")
+        w.begin_obj()
+        w.kv_bool("dynamicRegistration", False)
+        w.end_obj()
         w.key("codeAction")
         w.begin_obj()
         w.kv_bool("isPreferredSupport", True)
@@ -1247,6 +1334,18 @@ struct LspClient(Copyable, Movable):
         var out = self.asked_edits.copy()
         self.asked_edits.clear()
         return out^
+
+    def request_semantic(mut self, uri: String, now: Int) -> Int:
+        """Ask for the semantic tokens of a whole document. -1 if that cannot be asked."""
+        if self.state != LSP_READY or not self.table.semantic_full or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/semanticTokens/full", "{\"textDocument\":{\"uri\":" + json_quote(uri) + "}}", now)
+
+    def request_inlay(mut self, uri: String, rows: Int, now: Int) -> Int:
+        """Ask for the inlay hints of lines 0..rows of a document."""
+        if self.state != LSP_READY or not self.table.inlay_hint or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/inlayHint", "{\"textDocument\":{\"uri\":" + json_quote(uri) + "},\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":" + String(rows) + ",\"character\":0}}}", now)
 
     def request_prepare_rename(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
         """Ask whether the symbol at a position can be renamed. -1 if the server cannot

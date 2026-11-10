@@ -99,7 +99,9 @@ def main():
                 # FAKE_SYNC=2: incremental sync with save notifications
                 "capabilities": {"textDocumentSync": ({"openClose": True, "change": 2, "save": True}
                                                       if os.environ.get("FAKE_SYNC") == "2" else 1),
-                                 "hoverProvider": True, "foldingRangeProvider": False, "definitionProvider": True, "codeActionProvider": {"resolveProvider": True},
+                                 "hoverProvider": True, "foldingRangeProvider": False, "definitionProvider": True, "inlayHintProvider": True,
+                                 "semanticTokensProvider": {"full": True, "legend": {"tokenModifiers": [], "tokenTypes": [
+                                     "variable", "parameter", "function", "type", "property", "namespace", "weird"]}}, "codeActionProvider": {"resolveProvider": True},
                                  "executeCommandProvider": {"commands": ["fake.organise"]}, "referencesProvider": True,
                                  "signatureHelpProvider": {"triggerCharacters": ["(", ","]},
                                  "completionProvider": {"triggerCharacters": [".", "("], "resolveProvider": True},
@@ -428,6 +430,63 @@ def main():
                 "edit": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}}, "newText": "# organised\n"}]}}}})
             send({"jsonrpc": "2.0", "id": mid, "result": None})
             continue
+        if method == "textDocument/semanticTokens/full":
+            import re
+            uri = params["textDocument"]["uri"]
+            text = DOCS.get(uri, "")
+            main.sem_asked = getattr(main, "sem_asked", 0) + 1
+            u16 = lambda s: len(s.encode("utf-16-le")) // 2
+            data = []
+            pl, pc = 0, 0
+            for k, l in enumerate(text.split("\n")):
+                for mm in re.finditer(r"[A-Za-z_][A-Za-z_0-9]*", l):
+                    w = mm.group(0)
+                    after = l[mm.end():mm.end() + 1]
+                    before = l[mm.start() - 1:mm.start()] if mm.start() > 0 else ""
+                    if w in ("def", "var", "return", "print", "if", "x", "y"):
+                        continue
+                    if w.startswith("weird"):
+                        kind = 6
+                    elif w.startswith("arg"):
+                        kind = 1
+                    elif before == ".":
+                        kind = 4
+                    elif w == "mod":
+                        kind = 5
+                    elif w[0].isupper():
+                        kind = 3
+                    elif after == "(":
+                        kind = 2
+                    else:
+                        kind = 0
+                    col = u16(l[:mm.start()])
+                    data += [k - pl, col - pc if k == pl else col, u16(w), kind, 0]
+                    pl, pc = k, col
+            if "SEMBUSY" in text and main.sem_asked < 3:
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32801, "message": "outdated request"}})
+            else:
+                send({"jsonrpc": "2.0", "id": mid, "result": {"resultId": str(main.sem_asked), "data": data}})
+            continue
+        if method == "textDocument/inlayHint":
+            import re
+            uri = params["textDocument"]["uri"]
+            text = DOCS.get(uri, "")
+            main.hints_asked = getattr(main, "hints_asked", 0) + 1
+            u16 = lambda s: len(s.encode("utf-16-le")) // 2
+            out_hints = []
+            for k, l in enumerate(text.split("\n")):
+                mm = re.search(r"var ([A-Za-z_0-9]+) = ", l)
+                if mm:
+                    out_hints.append({"position": {"line": k, "character": u16(l[:mm.end(1)])}, "label": ": Int", "kind": 1, "paddingLeft": False})
+                mm = re.search(r"call\(", l)
+                if mm:
+                    out_hints.append({"position": {"line": k, "character": u16(l[:mm.end()])},
+                                      "label": [{"value": "count"}, {"value": ":"}], "kind": 2, "paddingRight": True})
+                    comma = l.find(", ", mm.end())
+                    if comma > 0:
+                        out_hints.append({"position": {"line": k, "character": u16(l[:comma + 2])}, "label": "name:", "kind": 2})
+            send({"jsonrpc": "2.0", "id": mid, "result": out_hints if out_hints else None})
+            continue
         if method == "textDocument/signatureHelp":
             text = DOCS.get(params["textDocument"]["uri"], "")
             main.sigs = getattr(main, "sigs", 0) + 1
@@ -495,7 +554,7 @@ def main():
             continue
         if method == "doc_state":        # what this server holds, for the tests
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "renames": getattr(main, "renames", []), "actions_asked": getattr(main, "actions_asked", []),
+                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "renames": getattr(main, "renames", []), "sem_asked": getattr(main, "sem_asked", 0), "hints_asked": getattr(main, "hints_asked", 0), "actions_asked": getattr(main, "actions_asked", []),
                 "executed": getattr(main, "executed", []), "client_answers": getattr(main, "client_answers", []),
                 "resolved_actions": getattr(main, "resolved_actions", 0), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
             continue

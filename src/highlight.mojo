@@ -13,7 +13,10 @@ comptime C_SYM = 7
 comptime C_BUILTIN = 8
 comptime C_SELF = 9
 comptime C_DEF = 10
-comptime C_COUNT = 11
+comptime C_PARAM = 11      # the three below come only from the language server
+comptime C_PROP = 12
+comptime C_NS = 13
+comptime C_COUNT = 14
 
 
 def line_state(b: List[UInt8], start: Int, end: Int, state: Int) -> Int:

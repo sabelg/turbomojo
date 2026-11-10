@@ -133,7 +133,8 @@ struct Palette(Copyable, Movable):
         self.scroll_bg = CYAN
         self.syn = List[Int]()
         # text kw type cmt str num deco sym builtin self def
-        for c in [YELLOW, WHITE, LGREEN, LGRAY, LCYAN, LMAGENTA, LGREEN, YELLOW, LCYAN, WHITE, WHITE]:
+        # ... then parameter, property, namespace (known only from the language server)
+        for c in [YELLOW, WHITE, LGREEN, LGRAY, LCYAN, LMAGENTA, LGREEN, YELLOW, LCYAN, WHITE, WHITE, LGRAY, LCYAN, LGREEN]:
             self.syn.append(c)
         self.msg_fg = BLACK
         self.msg_bg = CYAN
@@ -206,7 +207,7 @@ def theme(n: Int) -> Palette:
         p.scroll_fg = 0x3B4261
         p.scroll_bg = 0x1A1B26
         p.syn.clear()
-        for c in [0xC0CAF5, 0xBB9AF7, 0x2AC3DE, 0x565F89, 0x9ECE6A, 0xFF9E64, 0xE0AF68, 0x89DDFF, 0x7DCFFF, 0xF7768E, 0x7AA2F7]:
+        for c in [0xC0CAF5, 0xBB9AF7, 0x2AC3DE, 0x565F89, 0x9ECE6A, 0xFF9E64, 0xE0AF68, 0x89DDFF, 0x7DCFFF, 0xF7768E, 0x7AA2F7, 0xE0AF68, 0x73DACA, 0x2AC3DE]:
             p.syn.append(c)
         p.msg_fg = 0xA9B1D6
         p.msg_bg = 0x16161E
@@ -280,7 +281,7 @@ def theme(n: Int) -> Palette:
         p.scroll_fg = lo
         p.scroll_bg = bk
         p.syn.clear()
-        for c in [md, hi, hi, lo, 0xFFD27A, 0xFFD27A, hi, md, hi, hi, hi]:
+        for c in [md, hi, hi, lo, 0xFFD27A, 0xFFD27A, hi, md, hi, hi, hi, 0xFFD27A, md, hi]:
             p.syn.append(c)
         p.msg_fg = md
         p.msg_bg = bk

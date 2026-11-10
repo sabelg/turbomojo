@@ -119,6 +119,10 @@ __extension App:
             out.append(CM_SHOWWS)
         if self.soft_wrap:
             out.append(CM_WRAP)
+        if self.semantic_on:
+            out.append(CM_SEMANTIC)
+        if self.hints_on:
+            out.append(CM_HINTS)
         var ti = self.top_editor()
         if ti >= 0 and self.wins[ti].buf.use_tabs:
             out.append(CM_USETABS)

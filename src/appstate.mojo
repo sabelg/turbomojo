@@ -290,6 +290,17 @@ struct App(Movable):
     var fault: String          # fault injection for crash tests (TURBOMOJO_FAULT)
     var show_ws: Bool
     var soft_wrap: Bool
+    var semantic_on: Bool            # Options > Semantic colours
+    var hints_on: Bool               # Options > Inlay hints
+    var sem_req_id: Int              # the semantic tokens request under way
+    var sem_req_path: String
+    var sem_req_version: Int
+    var sem_req_ns: Int
+    var hint_req_id: Int
+    var hint_req_path: String
+    var hint_req_version: Int
+    var hint_req_ns: Int
+    var decor_wait_until: Int        # after a refusal: not before this time
     var auto_pairs: Bool
     var trim_trailing: Bool
     var rulers: List[Int]
@@ -474,6 +485,17 @@ struct App(Movable):
         self.fault = env_or("TURBOMOJO_FAULT", "")
         self.show_ws = False
         self.soft_wrap = False
+        self.semantic_on = True
+        self.hints_on = True
+        self.sem_req_id = -1
+        self.sem_req_path = ""
+        self.sem_req_version = -1
+        self.sem_req_ns = 0
+        self.hint_req_id = -1
+        self.hint_req_path = ""
+        self.hint_req_version = -1
+        self.hint_req_ns = 0
+        self.decor_wait_until = 0
         self.auto_pairs = True
         self.trim_trailing = False
         self.rulers = List[Int]()
@@ -582,6 +604,8 @@ struct App(Movable):
         self.show_clock = s.clock
         self.show_ws = s.show_whitespace
         self.soft_wrap = s.soft_wrap
+        self.semantic_on = s.semantic_colors
+        self.hints_on = s.inlay_hints
         self.auto_pairs = s.auto_pairs
         self.persistent_undo = s.persistent_undo
         self.trim_trailing = s.trim_trailing

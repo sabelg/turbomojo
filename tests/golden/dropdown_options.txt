@@ -6,6 +6,8 @@
                               │ Clock                    │
                               │ Show whitespace          │
                               │ Soft wrap          Alt-Z │
+                              │ Semantic colours         │
+                              │ Inlay hints              │
                               │ Indent with tabs         │
                               │ CRLF line endings        │
                               ├──────────────────────────┤
@@ -16,5 +18,3 @@
                               │ Theme: Turbo Classic     │
                               │ Theme: Midnight Neon     │
                               │ Theme: Amber CRT         │
-                              └──────────────────────────┘
-

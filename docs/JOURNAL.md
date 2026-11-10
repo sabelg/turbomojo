@@ -1650,3 +1650,51 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   - Not tried by hand in tmux; Alt-Enter depends on the terminal sending it.
   - A server-requested edit that arrives while a dialog is open is dropped with a message.
 - Verified: `check.sh` CHECK OK (33 files, 759 tests).
+
+## 2026-11-10 · P2-11 Semantic tokens over the lexer; inlay hints (toggle) · done
+
+- `src/lsp.mojo`: `request_semantic` (full document), `parse_semantic` (relative data
+  made absolute, malformed data refused), `request_inlay`, `parse_inlay` (labels in
+  parts joined); client capabilities `semanticTokens` and `inlayHint`.
+- `src/highlight.mojo` / `palette.mojo`: three colour classes that only the server can
+  tell (parameter, property, namespace) in all three themes.
+- `src/buffer.mojo`: `sem` (row, c1, c2, class per token) with `sem_apply` - only
+  identifier classes are recoloured, so keywords, strings and comments always stay the
+  lexer's - and `sem_inserted` / `sem_deleted`, which keep the colours with the text
+  between answers (rows shift, a name typed into grows, Enter and joins carry names
+  along, what cannot be kept is dropped). `hints` + `hints_text`.
+- `src/app_lsp.mojo`: `decor_tick` asks for tokens and hints of every followed file
+  whose text the server has and whose answer is older than the text (one request of
+  each kind at a time, 5 s give-up, 300 ms pause after a refusal); answers for older
+  text are discarded; `semantic_class` maps the legend. Asked again when diagnostics
+  arrive and nothing is held (see below).
+- Drawing: colours through the normal syntax path; hints after the end of the line as
+  "◂ name: Type" in the comment colour (no change to columns, wrapping or the cursor).
+- Options > Semantic colours, Inlay hints; settings `editor.semantic_colors`,
+  `editor.inlay_hints` (both default true).
+- Tests: 4 new in `tests/test_buffer.mojo` (layering, insertions, deletions, hints);
+  5 new in `tests/test_lsp.mojo` (answer forms and legend; colours on screen incl. a
+  comment the server sent tokens for, columns after a non-BMP character, colours moving
+  with an edit before any answer, re-asking only after changes, toggle, server stop;
+  refusal then answer; hints on screen, edit, toggle; the real server). The Options
+  menu golden was regenerated (two more items).
+- Real mojo-lsp-server 1.2:
+  - tokens arrive in about 1 ms; a struct name, a field, a type and a call are coloured
+    in the real-server test;
+  - parameters are reported as plain "variable", so they keep the text colour;
+  - no inlay hints for `var total = n * 2` or a call - the hint display is verified
+    against the fake server only.
+- Mistakes on the way: my first shifting rule dropped all colours behind an Enter or a
+  line join (fixed, tests extended); a real-server failure that looked like lost tokens
+  was my test holding a window index from before the Message window opened.
+- Not done / unverified:
+  - Full requests only (no `semanticTokens/delta` or `range`); token modifiers ignored;
+    plain variables are not coloured.
+  - Hints are shown after the line, not inside it at their position; paddings and
+    tooltips are ignored; all lines are asked for, not just the visible ones.
+  - Not measured on large files (every edit touches the token list of the edited row,
+    line-count changes touch all rows below).
+  - The Options menu is now 21 rows high: it fits an 80x24 terminal but its last row is
+    cut on a 20-row screen (the golden shows that); menus do not scroll.
+  - Not tried by hand in tmux.
+- Verified: `check.sh` CHECK OK (33 files, 768 tests).

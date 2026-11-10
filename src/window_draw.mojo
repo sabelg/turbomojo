@@ -73,6 +73,8 @@ __extension Window:
                 self.wrap_layout(ln, starts, vs)
                 if not plain:
                     st = hl.line(ln, st, classes)
+                    if len(self.buf.sem) > 0:
+                        self.buf.sem_apply(r, classes)
                 loaded = r
                 seg = min(seg, len(starts) - 1)
             var s0 = starts[seg]
@@ -220,6 +222,11 @@ __extension Window:
             if fi >= 0 and s1 == n and fi < len(self.buf.fold_ends) and v + 2 >= off and v + 2 < lim:
                 var hidden = self.buf.fold_ends[fi] - r
                 _ = scr.text(cx0 + v + 1 - off, yy, " ⋯ " + String(hidden) + (" line " if hidden == 1 else " lines "), pal.gutter_fg, pal.gutter_bg)
+            elif s1 == n and not is_msg and len(self.buf.hints) > 0 and v + 2 >= off and v + 4 < lim:
+                # inlay hints are shown after the end of the line, not inside it
+                var note = self.buf.hints_text(r)
+                if note.byte_length() > 0:
+                    _ = scr.text(cx0 + v + 2 - off, yy, "◂ " + note, pal.syn[3], rowbg)
             scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
             seg += 1
             if seg >= len(starts):

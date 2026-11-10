@@ -1,7 +1,7 @@
 """Tests for src/buffer.mojo: loading/saving, edits, undo/redo, randomised consistency."""
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
-from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1, CHANGES_MAX
+from buffer import TextBuffer, Pos, Hint, ENC_UTF8, ENC_LATIN1, CHANGES_MAX
 from swap import write_bytes_atomic
 from util import decode, to_str, bytes_to_str, decode_list, read_file, str_bytes, env_or, run_system
 
@@ -596,6 +596,152 @@ def test_recording_gives_up_when_there_is_too_much() raises:
     b.load(decode("another text"))                       # loading replaces everything
     assert_true(b.changes_lost)
     assert_true(b.track)
+
+
+# ------------------------------------------ semantic colours and inlay hints
+def with_tokens() -> TextBuffer:
+    """Three lines; tokens: row 0 "alpha" 4..9 class 10, row 1 "beta" 0..4 class 11 and
+    "gamma" 7..12 class 12, row 2 "delta" 2..7 class 13."""
+    var b = loaded("def alpha(): pass\nbeta + gamma\n  delta\n")
+    for v in [0, 4, 9, 10, 1, 0, 4, 11, 1, 7, 12, 12, 2, 2, 7, 13]:
+        b.sem.append(v)
+    return b^
+
+
+def tokens(b: TextBuffer) -> String:
+    """The live tokens as "row:c1-c2=class" joined by spaces."""
+    var s = String("")
+    for k in range(len(b.sem) // 4):
+        if b.sem[k * 4 + 3] < 0:
+            continue
+        if s.byte_length() > 0:
+            s += " "
+        s += String(b.sem[k * 4]) + ":" + String(b.sem[k * 4 + 1]) + "-" + String(b.sem[k * 4 + 2]) + "=" + String(b.sem[k * 4 + 3])
+    return s
+
+
+def test_semantic_colours_only_recolour_identifiers() raises:
+    var b = with_tokens()
+    # the lexer's classes for row 1 "beta + gamma": text, text.., symbol, text
+    var cls = List[Int]()
+    for v in [0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0]:
+        cls.append(v)
+    b.sem_apply(1, cls)
+    assert_equal(cls[0], 11)
+    assert_equal(cls[3], 11)
+    assert_equal(cls[4], 0)
+    assert_equal(cls[5], 7)                              # the "+" keeps its class
+    assert_equal(cls[7], 12)
+    assert_equal(cls[11], 12)
+    # a comment (3), string (4) or keyword (1) is never painted over, a stale token or not
+    var held = List[Int]()
+    for v in [3, 3, 4, 4, 1, 1, 0, 0, 0, 0, 0, 0]:
+        held.append(v)
+    b.sem.clear()
+    for v in [1, 0, 12, 10]:
+        b.sem.append(v)
+    b.sem_apply(1, held)
+    assert_equal(held[0], 3)
+    assert_equal(held[2], 4)
+    assert_equal(held[4], 1)
+    assert_equal(held[6], 10)
+    # a token longer than the line, and rows without tokens
+    var short = List[Int]()
+    short.append(0)
+    b.sem_apply(1, short)
+    assert_equal(short[0], 10)
+    var other = List[Int]()
+    other.append(0)
+    b.sem_apply(0, other)
+    assert_equal(other[0], 0)
+
+
+def test_semantic_colours_follow_edits_until_refreshed() raises:
+    var b = with_tokens()
+    assert_equal(tokens(b), "0:4-9=10 1:0-4=11 1:7-12=12 2:2-7=13")
+    # typing before a token on its row moves it; other rows stay
+    _ = b.insert_raw(1, 5, decode("++"))
+    assert_equal(tokens(b), "0:4-9=10 1:0-4=11 1:9-14=12 2:2-7=13")
+    # typing letters inside or at the end of a name makes it longer
+    _ = b.insert_raw(1, 2, decode("x"))
+    assert_equal(tokens(b), "0:4-9=10 1:0-5=11 1:10-15=12 2:2-7=13")
+    _ = b.insert_raw(1, 5, decode("y"))
+    assert_equal(tokens(b), "0:4-9=10 1:0-6=11 1:11-16=12 2:2-7=13")
+    # a bracket typed right after a name is not part of it; one typed inside splits it
+    _ = b.insert_raw(1, 6, decode("("))
+    assert_equal(tokens(b), "0:4-9=10 1:0-6=11 1:12-17=12 2:2-7=13")
+    _ = b.insert_raw(1, 14, decode(" "))
+    assert_equal(tokens(b), "0:4-9=10 1:0-6=11 2:2-7=13")
+    # letters typed right before a name do not take its colour; they push it along
+    _ = b.insert_raw(2, 2, decode("ab "))
+    assert_equal(tokens(b), "0:4-9=10 1:0-6=11 2:5-10=13")
+    # a new line above moves the rows below
+    _ = b.insert_raw(0, 0, decode("# top\n"))
+    assert_equal(tokens(b), "1:4-9=10 2:0-6=11 3:5-10=13")
+    # a line break inside a row takes what is behind it to the new line
+    _ = b.insert_raw(1, 2, decode("\n"))
+    assert_equal(tokens(b), "2:2-7=10 3:0-6=11 4:5-10=13")
+    # ... and one inside a name drops that name
+    _ = b.insert_raw(2, 4, decode("\n    "))
+    assert_equal(tokens(b), "4:0-6=11 5:5-10=13")
+    # text with a line break in front of a name: the name follows the end of that text
+    _ = b.insert_raw(4, 0, decode("a\nbc "))
+    assert_equal(tokens(b), "5:3-9=11 6:5-10=13")
+
+
+def test_semantic_colours_follow_deletions() raises:
+    var b = with_tokens()
+    # before a token on its row: it moves left; inside a name: it gets shorter
+    _ = b.delete_raw(1, 4, 1, 6)
+    assert_equal(tokens(b), "0:4-9=10 1:0-4=11 1:5-10=12 2:2-7=13")
+    _ = b.delete_raw(1, 6, 1, 8)
+    assert_equal(tokens(b), "0:4-9=10 1:0-4=11 1:5-8=12 2:2-7=13")
+    # across the edge of a name: dropped
+    _ = b.delete_raw(1, 3, 1, 5)
+    assert_equal(tokens(b), "0:4-9=10 1:3-6=12 2:2-7=13")
+    # a whole name: dropped
+    _ = b.delete_raw(1, 3, 1, 6)
+    assert_equal(tokens(b), "0:4-9=10 2:2-7=13")
+    # joining lines: the second line's names follow it onto the first
+    b = with_tokens()
+    _ = b.delete_raw(0, 17, 1, 0)
+    assert_equal(tokens(b), "0:4-9=10 0:17-21=11 0:24-29=12 1:2-7=13")
+    # a deletion over a line end that cuts into names on both sides drops those
+    b = with_tokens()
+    _ = b.delete_raw(0, 6, 1, 2)
+    assert_equal(tokens(b), "0:11-16=12 1:2-7=13")
+    # deleting whole lines
+    b = with_tokens()
+    _ = b.delete_raw(0, 0, 2, 0)
+    assert_equal(tokens(b), "0:2-7=13")
+    # loading other text forgets them
+    b.load(decode("new\n"))
+    assert_equal(len(b.sem), 0)
+
+
+def test_inlay_hints_text_and_edits() raises:
+    var b = loaded("var total = n * 2\nx = call(4, \"a, b\")\ny = f(g(1, 2), 3)\nplain\n")
+    b.hints.append(Hint(0, 9, ": Int", 1))
+    b.hints.append(Hint(1, 9, "count:", 2))
+    b.hints.append(Hint(1, 12, "name:", 2))
+    b.hints.append(Hint(2, 6, "first:", 0))              # kind not said: the colon decides
+    b.hints.append(Hint(2, 15, " -> Bool", 0))
+    assert_equal(b.hints_text(0), "total: Int")
+    assert_equal(b.hints_text(1), "count: 4, name: \"a")  # a string with a comma is cut at it
+    assert_equal(b.hints_text(2), "first: g(1, 2), -> Bool")
+    assert_equal(b.hints_text(3), "")
+    # an edit on a line drops its hints; lines below keep theirs and move
+    _ = b.insert_raw(0, 0, decode("# c\n"))
+    assert_equal(b.hints_text(1), "")
+    assert_equal(b.hints_text(2), "count: 4, name: \"a")
+    _ = b.insert_raw(2, 0, decode(" "))
+    assert_equal(b.hints_text(2), "")
+    assert_equal(b.hints_text(3), "first: g(1, 2), -> Bool")
+    _ = b.delete_raw(0, 0, 1, 0)
+    assert_equal(b.hints_text(2), "first: g(1, 2), -> Bool")
+    _ = b.delete_raw(1, 0, 3, 0)
+    assert_equal(b.hints_text(1), "")
+    assert_equal(b.hints_text(2), "")
 
 
 def main() raises:

@@ -57,6 +57,20 @@ struct Mark(Copyable, Movable):
     var message: String
 
 
+@fieldwise_init
+struct Hint(Copyable, Movable):
+    """A note the language server attaches to a place (an inferred type, the name of a
+    parameter); row -1 = dropped by an edit."""
+    var row: Int
+    var col: Int
+    var label: String
+    var kind: Int          # 1 type, 2 parameter, 0 not said
+
+
+def sem_word(c: Int) -> Bool:
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 or c >= 128
+
+
 comptime ENC_UTF8 = 0
 comptime ENC_LATIN1 = 1
 
@@ -70,6 +84,9 @@ struct TextBuffer(Copyable, Movable):
     var fold_ends: List[Int]  # last hidden row of each fold (as of fold_version)
     var fold_version: Int
     var marks: List[Mark]     # problems shown in this buffer (from the language server)
+    var sem: List[Int]        # semantic colours from the language server: row, c1, c2, class
+                              # per token, by row; class -1 = dropped by an edit
+    var hints: List[Hint]     # inlay hints from the language server
     var track: Bool           # record edits in `changes` (a language server follows this buffer)
     var changes: List[DocChange]
     var changes_lost: Bool    # too much happened, or the text was replaced: send it whole
@@ -102,6 +119,8 @@ struct TextBuffer(Copyable, Movable):
         self.encoding = ENC_UTF8
         self.mixed_eol = False
         self.marks = List[Mark]()
+        self.sem = List[Int]()
+        self.hints = List[Hint]()
         self.track = False
         self.changes = List[DocChange]()
         self.changes_lost = False
@@ -125,6 +144,8 @@ struct TextBuffer(Copyable, Movable):
     def load(mut self, cps: List[Int]):
         """Replace the content. Tabs are kept; "\r\n" becomes "\n" in memory and the file
         is remembered as CRLF; a trailing newline shows as a final empty line."""
+        self.sem.clear()
+        self.hints.clear()
         var clean = List[Int]()
         var crlf_n = 0
         var lf_n = 0
@@ -165,6 +186,8 @@ struct TextBuffer(Copyable, Movable):
         off and remembered. Bytes that are not valid UTF-8 mean the file is in another
         encoding: it is then read as Latin-1, one character per byte, which loses nothing
         and writes back the same bytes."""
+        self.sem.clear()
+        self.hints.clear()
         var n = len(bytes)
         var has_bom = n >= 3 and bytes[0] == 0xEF and bytes[1] == 0xBB and bytes[2] == 0xBF
         var clean = List[UInt8](capacity=n)
@@ -611,6 +634,150 @@ struct TextBuffer(Copyable, Movable):
             self.ldirty_from = min(self.ldirty_from, r)
             self.ldirty_to = max(old_to, r + new_extra)
 
+    # ------------------------------------------------- semantic colours
+    def sem_first(self, r: Int) -> Int:
+        """Index (in tokens) of the first token on row >= r."""
+        var lo = 0
+        var hi = len(self.sem) // 4
+        while lo < hi:
+            var mid = (lo + hi) // 2
+            if self.sem[mid * 4] < r:
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+
+    def sem_apply(self, r: Int, mut classes: List[Int]):
+        """Lay the server's colours for row r over the lexer's classes. Only plain
+        identifiers are recoloured (classes 0, 2, 8, 9, 10): keywords, strings and
+        comments stay the lexer's, so a token left stale by an edit cannot paint them."""
+        var n = len(self.sem) // 4
+        var k = self.sem_first(r)
+        while k < n and self.sem[k * 4] == r:
+            var cls = self.sem[k * 4 + 3]
+            if cls >= 0:
+                var c2 = min(self.sem[k * 4 + 2], len(classes))
+                for c in range(max(0, self.sem[k * 4 + 1]), c2):
+                    var was = classes[c]
+                    if was == 0 or was == 2 or was == 8 or was == 9 or was == 10:
+                        classes[c] = cls
+            k += 1
+
+    def sem_inserted(mut self, r: Int, c: Int, text: List[Int], breaks: Int):
+        """Keep the colours in step with an insertion until the server reports again:
+        tokens after it on its row move right, a token typed into grows, rows below
+        move down; what cannot be kept simply is dropped (the lexer's colour shows)."""
+        var n = len(self.sem) // 4
+        var k = self.sem_first(r)
+        var wordy = len(text) > 0
+        for ch in text:
+            if not sem_word(ch):
+                wordy = False
+        var tail = 0                # characters of the text after its last line break
+        for ch in text:
+            tail = 0 if ch == 10 else tail + 1
+        while k < n and self.sem[k * 4] == r:
+            var a = self.sem[k * 4 + 1]
+            var b = self.sem[k * 4 + 2]
+            if breaks > 0:
+                if a >= c:
+                    # behind the insertion: now on the last of the new lines
+                    self.sem[k * 4] = r + breaks
+                    self.sem[k * 4 + 1] = a - c + tail
+                    self.sem[k * 4 + 2] = b - c + tail
+                elif b > c:
+                    self.sem[k * 4 + 3] = -1
+            elif a >= c and not (a == c and wordy):
+                self.sem[k * 4 + 1] = a + len(text)
+                self.sem[k * 4 + 2] = b + len(text)
+            elif b >= c and a <= c:
+                if wordy:
+                    self.sem[k * 4 + 2] = b + len(text)     # typing inside or at the end of a name
+                elif b > c:
+                    self.sem[k * 4 + 3] = -1                # the name was split
+            k += 1
+        if breaks > 0:
+            while k < n:
+                self.sem[k * 4] += breaks
+                k += 1
+
+    def sem_deleted(mut self, r1: Int, c1: Int, r2: Int, c2: Int):
+        var n = len(self.sem) // 4
+        var k = self.sem_first(r1)
+        while k < n and self.sem[k * 4] <= r2:
+            var row = self.sem[k * 4]
+            var a = self.sem[k * 4 + 1]
+            var b = self.sem[k * 4 + 2]
+            if r1 == r2:
+                if a >= c2:
+                    self.sem[k * 4 + 1] = a - (c2 - c1)
+                    self.sem[k * 4 + 2] = b - (c2 - c1)
+                elif b > c1:
+                    if a <= c1 and b >= c2 and b - (c2 - c1) > a:
+                        self.sem[k * 4 + 2] = b - (c2 - c1)     # characters removed inside a name
+                    else:
+                        self.sem[k * 4 + 3] = -1
+            elif row == r2 and a >= c2:
+                # behind the removed text: now on the first line, after what is left of it
+                self.sem[k * 4] = r1
+                self.sem[k * 4 + 1] = a - c2 + c1
+                self.sem[k * 4 + 2] = b - c2 + c1
+            elif row > r1 or b > c1:
+                self.sem[k * 4 + 3] = -1
+                if row > r1:
+                    self.sem[k * 4] = r1        # keeps the list in row order
+            k += 1
+        if r2 > r1:
+            while k < n:
+                self.sem[k * 4] -= r2 - r1
+                k += 1
+
+    def hints_text(self, r: Int) -> String:
+        """What the hints on row r say, for showing after the end of the line: a type
+        hint as "name: Type", a parameter hint as "name: argument"."""
+        var out = String("")
+        var line = List[Int]()
+        var loaded = False
+        for h in self.hints:
+            if h.row != r:
+                continue
+            if not loaded:
+                line = self.line(r)
+                loaded = True
+            var col = max(0, min(h.col, len(line)))
+            var label = String(h.label.strip())
+            var piece = String("")
+            if h.kind == 2 or (h.kind == 0 and label.endswith(":")):
+                # the argument the name belongs to
+                var e = col
+                var depth = 0
+                while e < len(line) and e - col < 24:
+                    var ch = line[e]
+                    if ch == 40 or ch == 91:
+                        depth += 1
+                    elif ch == 41 or ch == 93:
+                        if depth == 0:
+                            break
+                        depth -= 1
+                    elif ch == 44 and depth == 0:
+                        break
+                    e += 1
+                var arg = List[Int]()
+                for q in range(col, e):
+                    arg.append(line[q])
+                piece = label + " " + String(to_str(arg).strip())
+            else:
+                var a = col
+                while a > 0 and sem_word(line[a - 1]):
+                    a -= 1
+                var name = List[Int]()
+                for q in range(a, col):
+                    name.append(line[q])
+                piece = to_str(name) + label
+            if piece.byte_length() > 0:
+                out += (", " if out.byte_length() > 0 else "") + piece
+        return out
+
     # --------------------------------------------------------- raw edits
     def insert_raw(mut self, r: Int, c: Int, text: List[Int]) -> Pos:
         # clamp like the rope does, so the returned end position matches what happened
@@ -625,6 +792,14 @@ struct TextBuffer(Copyable, Movable):
             if ch == 10:
                 breaks += 1
         self.note_edit(rr, 0, breaks)
+        if len(self.sem) > 0:
+            self.sem_inserted(rr, cc, text, breaks)
+        if len(self.hints) > 0:
+            for i in range(len(self.hints)):
+                if self.hints[i].row == rr:
+                    self.hints[i].row = -1          # asked for again after the edit
+                elif self.hints[i].row > rr:
+                    self.hints[i].row += breaks
         if breaks > 0 and len(self.marks) > 0:
             # problems below the insertion keep pointing at their lines until the
             # server reports again
@@ -656,6 +831,14 @@ struct TextBuffer(Copyable, Movable):
             out = self.rope.slice(a, b)
             self.rope.delete(a, b)
             self.note_edit(first, breaks, 0)
+            if len(self.sem) > 0:
+                self.sem_deleted(first, c1, first + breaks, c2)
+            if len(self.hints) > 0:
+                for i in range(len(self.hints)):
+                    if self.hints[i].row >= first and self.hints[i].row <= first + breaks:
+                        self.hints[i].row = -1
+                    elif self.hints[i].row > first + breaks:
+                        self.hints[i].row -= breaks
             if breaks > 0 and len(self.marks) > 0:
                 var left = List[Mark]()
                 for m in self.marks:

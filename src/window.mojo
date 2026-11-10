@@ -90,6 +90,8 @@ struct Window(Copyable, Movable):
     var swap_file: String    # path of this buffer's swap file ('' if none written)
     var overwrite_ok: Bool   # the user chose to keep their version over a changed file
     var lsp_sent_version: Int   # buffer version the language server has
+    var sem_version: Int        # buffer version semantic colours were last asked for
+    var hint_version: Int       # ... and inlay hints
     var lsp_seen_version: Int   # buffer version when an edit was last noticed
     var lsp_due: Int            # when the pending edits go to the server (0 = nothing pending)
     var disk_hash: Int       # hash and size of the file's bytes when last loaded or saved
@@ -126,6 +128,8 @@ struct Window(Copyable, Movable):
         self.follow = True
         self.gut = 0
         self.lsp_sent_version = -1
+        self.sem_version = -1
+        self.hint_version = -1
         self.lsp_seen_version = -1
         self.lsp_due = 0
         self.disk_hash = 0

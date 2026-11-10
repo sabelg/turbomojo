@@ -95,6 +95,8 @@ comptime CM_FORWARD = 152
 comptime CM_REFERENCES = 153
 comptime CM_RENAME = 154
 comptime CM_ACTIONS = 155
+comptime CM_SEMANTIC = 156
+comptime CM_HINTS = 157
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -623,6 +625,8 @@ def build_registry() -> Registry:
     r.cmd(CM_HLLINE, "options.highlightLine", "~H~ighlight line", "Toggle current line highlighting")
     r.cmd(CM_CLOCK, "options.clock", "Cl~o~ck", "Toggle the menu bar clock")
     r.cmd(CM_SHOWWS, "options.showWhitespace", "Show ~w~hitespace", "Show tab characters as arrows")
+    r.cmd(CM_SEMANTIC, "options.semanticColours", "Semant~i~c colours", "Colour names by what the language server says they are")
+    r.cmd(CM_HINTS, "options.inlayHints", "Inlay hi~n~ts", "Show the language server's notes (inferred types, parameter names) after each line")
     r.cmd(CM_WRAP, "options.softWrap", "Soft w~r~ap", "Continue long lines on the next screen row instead of scrolling sideways", [alt(122)])
     r.cmd(CM_USETABS, "options.indentWithTabs", "Indent with ~t~abs", "Tab key and auto-indent use tab characters (auto-detected)")
     r.cmd(CM_CRLF, "options.crlf", "CRLF line ~e~ndings", "Save the file with Windows line endings (auto-detected)")
@@ -747,6 +751,8 @@ def build_registry() -> Registry:
     r.item(CM_CLOCK)
     r.item(CM_SHOWWS)
     r.item(CM_WRAP)
+    r.item(CM_SEMANTIC)
+    r.item(CM_HINTS)
     r.item(CM_USETABS)
     r.item(CM_CRLF)
     r.sep()

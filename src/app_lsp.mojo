@@ -8,7 +8,8 @@ from window_draw import *
 from dialog import *
 from util import *
 from lsp import *
-from buffer import Mark
+from buffer import Mark, Hint
+from highlight import C_PARAM, C_DEF, C_PROP, C_TYPE, C_NS, C_SELF
 from appstate import *
 from app_files import *
 from app_dialogs import *
@@ -16,6 +17,24 @@ from app_jobs import *
 
 comptime LSP_DEBOUNCE_MS = 300     # quiet time after the last edit before the server is told
 
+
+
+def semantic_class(name: String) -> Int:
+    """The colour class for a semantic token type; -1 = leave the lexer's colour
+    (plain variables, and kinds this editor has no colour for)."""
+    if name == "parameter":
+        return C_PARAM
+    if name == "function" or name == "method" or name == "macro":
+        return C_DEF
+    if name == "property" or name == "enumMember":
+        return C_PROP
+    if name == "class" or name == "interface" or name == "type" or name == "struct" or name == "enum" or name == "typeParameter":
+        return C_TYPE
+    if name == "namespace":
+        return C_NS
+    if name == "specialVariable":
+        return C_SELF
+    return -1
 
 __extension App:
     def lsp_server_command(mut self, path: String) -> String:
@@ -121,6 +140,125 @@ __extension App:
         if self.lsp.table.sync_save:
             _ = self.lsp.did_save(uri)
 
+    # ------------------------------------- semantic colours and inlay hints
+    def decor_reset(mut self, colours: Bool, hints: Bool):
+        """Forget what the server said (after a toggle, or when it stops); with the
+        option on and a server running, everything is asked for again."""
+        for i in range(len(self.wins)):
+            if self.wins[i].kind != WK_EDITOR:
+                continue
+            if colours:
+                self.wins[i].buf.sem.clear()
+                self.wins[i].sem_version = -1
+            if hints:
+                self.wins[i].buf.hints.clear()
+                self.wins[i].hint_version = -1
+        if colours:
+            self.sem_req_id = -1
+        if hints:
+            self.hint_req_id = -1
+
+    def decor_tick(mut self, now: Int):
+        """Ask for the colours and hints of files whose text the server has and whose
+        answer is older than the text - one request of each kind at a time."""
+        if self.lsp.state != LSP_READY or now < self.decor_wait_until:
+            return
+        if self.sem_req_id >= 0 and now - self.sem_req_ns > 5000000000:
+            self.sem_req_id = -1                # never answered
+        if self.hint_req_id >= 0 and now - self.hint_req_ns > 5000000000:
+            self.hint_req_id = -1
+        var want_sem = self.semantic_on and self.lsp.table.semantic_full and self.sem_req_id < 0
+        var want_hint = self.hints_on and self.lsp.table.inlay_hint and self.hint_req_id < 0
+        if not want_sem and not want_hint:
+            return
+        for i in range(len(self.wins)):
+            if not self.lsp_wants(i):
+                continue
+            var v = self.wins[i].buf.version
+            if self.wins[i].lsp_sent_version != v:
+                continue                        # the server does not have this text yet
+            var uri = path_to_uri(self.wins[i].path)
+            if want_sem and self.wins[i].sem_version != v:
+                var id = self.lsp.request_semantic(uri, now)
+                if id >= 0:
+                    self.sem_req_id = id
+                    self.sem_req_path = self.wins[i].path
+                    self.sem_req_version = v
+                    self.sem_req_ns = now
+                    self.wins[i].sem_version = v
+                    want_sem = False
+            if want_hint and self.wins[i].hint_version != v:
+                var id = self.lsp.request_inlay(uri, self.wins[i].buf.count(), now)
+                if id >= 0:
+                    self.hint_req_id = id
+                    self.hint_req_path = self.wins[i].path
+                    self.hint_req_version = v
+                    self.hint_req_ns = now
+                    self.wins[i].hint_version = v
+                    want_hint = False
+
+    def semantic_arrived(mut self, m: RpcMessage, now: Int):
+        self.sem_req_id = -1
+        var i = self.find_editor(self.sem_req_path)
+        if i < 0:
+            return
+        if m.kind == RPC_ERROR:
+            # asked again a little later (the server may still be reading the edit)
+            self.wins[i].sem_version = -1
+            self.decor_wait_until = now + 300000000
+            return
+        if self.wins[i].buf.version != self.sem_req_version or not self.semantic_on:
+            return                              # the text moved on; decor_tick asks again
+        var toks = parse_semantic(m.doc, m.result())
+        var classes = List[Int]()
+        for name in self.lsp.table.token_types:
+            classes.append(semantic_class(name))
+        var sem = List[Int]()
+        var row = -1
+        var line = List[Int]()
+        var ascii = True
+        var count = self.wins[i].buf.count()
+        for k in range(len(toks) // 4):
+            var r = toks[k * 4]
+            var kind = toks[k * 4 + 3]
+            if r >= count or kind >= len(classes) or classes[kind] < 0:
+                continue
+            if r != row:
+                row = r
+                line = self.wins[i].buf.line(r)
+                ascii = True
+                for c in line:
+                    if c >= 128:
+                        ascii = False
+                        break
+            var a = toks[k * 4 + 1]
+            var b = a + toks[k * 4 + 2]
+            if not ascii:
+                a = utf16_to_col(line, a)
+                b = utf16_to_col(line, b)
+            sem.append(r)
+            sem.append(a)
+            sem.append(b)
+            sem.append(classes[kind])
+        self.wins[i].buf.sem = sem^
+
+    def hints_arrived(mut self, m: RpcMessage, now: Int):
+        self.hint_req_id = -1
+        var i = self.find_editor(self.hint_req_path)
+        if i < 0:
+            return
+        if m.kind == RPC_ERROR:
+            self.wins[i].hint_version = -1
+            self.decor_wait_until = now + 300000000
+            return
+        if self.wins[i].buf.version != self.hint_req_version or not self.hints_on:
+            return
+        self.wins[i].buf.hints.clear()
+        var count = self.wins[i].buf.count()
+        for h in parse_inlay(m.doc, m.result()):
+            if h.row < count:
+                self.wins[i].buf.hints.append(Hint(h.row, utf16_to_col(self.wins[i].buf.line(h.row), h.col16), h.label, h.kind))
+
     def lsp_sync(mut self, now: Int):
         """Keep the server's set of documents equal to the open files, and send edits
         LSP_DEBOUNCE_MS after typing stops."""
@@ -161,6 +299,7 @@ __extension App:
                 self.wins[i].buf.stop_tracking()
                 self.wins[i].buf.marks.clear()
                 self.wins[i].lsp_due = 0
+        self.decor_reset(True, True)
         self.lsp_restart_due = 0
         self.lsp_restart_path = ""
         self.lsp_path = ""
@@ -320,6 +459,10 @@ __extension App:
                 self.hover_arrived(m)
             elif m.id == self.sig_req_id:
                 self.sig_arrived(m)
+            elif m.id == self.sem_req_id:
+                self.semantic_arrived(m, now)
+            elif m.id == self.hint_req_id:
+                self.hints_arrived(m, now)
             elif m.id == self.act_req_id:
                 self.actions_reply(m)
             elif m.id == self.ren_req_id:
@@ -339,6 +482,7 @@ __extension App:
             self.lsp_path = ""
             self.lsp_uri = ""
         self.lsp_sync(now)
+        self.decor_tick(now)
         var changed = False
         var latency = -1
         for uri in self.lsp.take_updated():
@@ -346,6 +490,12 @@ __extension App:
             var wi = self.find_editor(uri_to_path(uri))
             if wi >= 0:
                 self.lsp_set_marks(wi)
+                # the server has just analysed this text: an answer given before that
+                # (the Mojo server sends "no tokens" while it is still reading) is replaced
+                if len(self.wins[wi].buf.sem) == 0:
+                    self.wins[wi].sem_version = -1
+                if len(self.wins[wi].buf.hints) == 0:
+                    self.wins[wi].hint_version = -1
             if uri == self.lsp_uri and self.lsp_sent_ns > 0:
                 latency = (now - self.lsp_sent_ns) // 1000000
                 self.lsp_last_latency_ms = latency

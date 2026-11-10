@@ -14,9 +14,11 @@ from app import *
 from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER, M_DIALOG
 from dialog import D_RENAME, D_RENAME_APPLY, D_INFO, D_ACTIONS
 from app_nav import plan_edits
+from app_lsp import semantic_class
+from highlight import C_TEXT, C_TYPE, C_CMT, C_STR, C_DEF, C_PARAM, C_PROP, C_NS
 from markdown import md_plain
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_REFERENCES, CM_RENAME, CM_ACTIONS, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_REFERENCES, CM_RENAME, CM_ACTIONS, CM_SEMANTIC, CM_HINTS, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
 from term import MOD_SHIFT, MOD_ALT, fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN, KEY_LEFT, KEY_HOME
 from signals import own_pid
 from util import cp_len, decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
@@ -2322,6 +2324,175 @@ def test_no_actions_retries_and_missing_server() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
+# ------------------------------------- semantic colours and inlay hints
+def wait_decor(mut app: App):
+    """Until the colours and hints for the present text have arrived."""
+    var t0 = now()
+    while now() - t0 < 5000 * MS:
+        run_ticks(app, 30, False)
+        var busy = app.sem_req_id >= 0 or app.hint_req_id >= 0
+        for i in range(len(app.wins)):
+            if app.lsp_wants(i) and ((app.semantic_on and app.wins[i].sem_version != app.wins[i].buf.version) or (app.hints_on and app.wins[i].hint_version != app.wins[i].buf.version)):
+                busy = True
+        if not busy:
+            return
+
+
+def fg_of(mut app: App, row: Int, word: String) -> Int:
+    """The text colour of the first character of `word` on a file row, as drawn."""
+    app.draw()
+    var t = app.top()
+    var y = app.wins[t].y + 1 + row - app.wins[t].top
+    var text = to_str(app.scr.row_text(y))
+    var at = text.find(word)
+    if at < 0:
+        return -1
+    return app.scr.fg_at(cp_len(String(text[byte=0:at])), y)
+
+
+def test_semantic_and_inlay_answers() raises:
+    # relative positions made absolute: line, start, length, type
+    var t = parse_semantic(json_parse("{\"resultId\": \"1\", \"data\": [0, 4, 5, 2, 0,  0, 6, 1, 1, 0,  2, 3, 4, 0, 0,  0, 5, 2, 3, 1]}"), 0)
+    assert_equal(len(t), 16)
+    var want = [0, 4, 5, 2, 0, 10, 1, 1, 2, 3, 4, 0, 2, 8, 2, 3]
+    for k in range(16):
+        assert_equal(t[k], want[k])
+    assert_equal(len(parse_semantic(json_parse("{\"data\": [0, 4, 5]}"), 0)), 0)             # not groups of five
+    assert_equal(len(parse_semantic(json_parse("{\"data\": [0, -4, 5, 0, 0]}"), 0)), 0)
+    assert_equal(len(parse_semantic(json_parse("null"), 0)), 0)
+    assert_equal(len(parse_semantic(json_parse("{}"), 0)), 0)
+    var h = parse_inlay(json_parse("[{\"position\": {\"line\": 2, \"character\": 7}, \"label\": \": Int\", \"kind\": 1}, {\"position\": {\"line\": 3, \"character\": 0}, \"label\": [{\"value\": \"n\"}, {\"value\": \":\", \"tooltip\": \"x\"}]}, {\"label\": \"lost\"}, {\"position\": {\"line\": 1, \"character\": 1}, \"label\": \"\"}]"), 0)
+    assert_equal(len(h), 2)
+    assert_equal(h[0].row, 2)
+    assert_equal(h[0].col16, 7)
+    assert_equal(h[0].label, ": Int")
+    assert_equal(h[0].kind, 1)
+    assert_equal(h[1].label, "n:")
+    assert_equal(h[1].kind, 0)
+    assert_equal(len(parse_inlay(json_parse("null"), 0)), 0)
+    # token types this editor has colours for
+    assert_equal(semantic_class("parameter"), C_PARAM)
+    assert_equal(semantic_class("method"), C_DEF)
+    assert_equal(semantic_class("class"), C_TYPE)
+    assert_equal(semantic_class("property"), C_PROP)
+    assert_equal(semantic_class("namespace"), C_NS)
+    assert_equal(semantic_class("variable"), -1)         # the lexer's colour stays
+    assert_equal(semantic_class("somethingNew"), -1)
+
+
+def test_semantic_colours_are_laid_over_the_lexer() raises:
+    var dir = scratch("sem1")
+    var app = comp_app(dir, "x = compute(arg_one, mod.field)\n# compute(arg_two) \"\U0001F600\" Thing\ny = \"\U0001F600\" + helper(Thing, weird_one)\n")
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    wait_decor(app)
+    assert_true(len(app.wins[i].buf.sem) > 0, "colours arrived")
+    var p = app.pal.copy()
+    assert_equal(fg_of(app, 0, "compute"), p.syn[C_DEF])         # a call: the lexer alone has no colour for it
+    assert_equal(fg_of(app, 0, "arg_one"), p.syn[C_PARAM])
+    assert_equal(fg_of(app, 0, "mod"), p.syn[C_NS])
+    assert_equal(fg_of(app, 0, "field"), p.syn[C_PROP])
+    # the server also sent tokens inside the comment: the comment stays a comment
+    assert_equal(fg_of(app, 1, "compute"), p.syn[C_CMT])
+    assert_equal(fg_of(app, 1, "Thing"), p.syn[C_CMT])
+    # columns after a character outside the BMP are right
+    assert_equal(fg_of(app, 2, "helper"), p.syn[C_DEF])
+    assert_equal(fg_of(app, 2, "Thing"), p.syn[C_TYPE])
+    assert_equal(fg_of(app, 2, "(Thing"), p.syn[7])               # the bracket before it is a symbol
+    # a token type without a colour here leaves the lexer's
+    assert_equal(fg_of(app, 2, "weird_one"), p.syn[C_TEXT])
+    # typing a line above: the colours move with the text at once, before any answer
+    app.wins[i].goto(0, 0)
+    type_text(app, "q")
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(fg_of(app, 1, "compute"), p.syn[C_DEF])
+    assert_equal(fg_of(app, 1, "arg_one"), p.syn[C_PARAM])
+    assert_equal(fg_of(app, 3, "helper"), p.syn[C_DEF])
+    # and they are asked for again once the server has the new text
+    var st = server_state(app)
+    var asked = st.int(st.get(0, "sem_asked"), 0)
+    wait_decor(app)
+    st = server_state(app)
+    assert_true(st.int(st.get(0, "sem_asked"), 0) > asked, "asked again after the edit")
+    assert_equal(fg_of(app, 1, "arg_one"), p.syn[C_PARAM])
+    # nothing is asked while nothing changes
+    asked = st.int(st.get(0, "sem_asked"), 0)
+    run_ticks(app, 500, False)
+    st = server_state(app)
+    assert_equal(st.int(st.get(0, "sem_asked"), 0), asked)
+    # Options > Semantic colours off: the lexer's colours; on: back
+    app.exec(CM_SEMANTIC)
+    assert_equal(app.status, "Semantic colours off")
+    assert_equal(fg_of(app, 1, "compute"), p.syn[C_TEXT])
+    run_ticks(app, 300, False)
+    assert_equal(len(app.wins[i].buf.sem), 0)
+    app.exec(CM_SEMANTIC)
+    wait_decor(app)
+    assert_equal(fg_of(app, 1, "compute"), p.syn[C_DEF])
+    # the server gone: its colours go too
+    app.lsp_stop()
+    assert_equal(fg_of(app, 1, "compute"), p.syn[C_TEXT])
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_semantic_colours_are_asked_again_after_a_refusal() raises:
+    var dir = scratch("sem2")
+    var app = comp_app(dir, "# SEMBUSY\nx = compute(1)\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    var t0 = now()
+    while len(app.wins[i].buf.sem) == 0 and now() - t0 < 5000 * MS:
+        run_ticks(app, 50, False)
+    assert_equal(fg_of(app, 1, "compute"), app.pal.syn[C_DEF])
+    var st = server_state(app)
+    assert_equal(st.int(st.get(0, "sem_asked"), 0), 3)   # refused twice, then answered
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_inlay_hints_after_the_line() raises:
+    var dir = scratch("hint1")
+    var app = comp_app(dir, "var total = 4\nx = call(total, \"n\")\nplain = 1\n")
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    wait_decor(app)
+    assert_equal(len(app.wins[i].buf.hints), 3)
+    app.draw()
+    var y0 = app.wins[i].y + 1
+    assert_true(to_str(app.scr.row_text(y0)).find("var total = 4  ◂ total: Int") > 0, to_str(app.scr.row_text(y0)))
+    assert_true(to_str(app.scr.row_text(y0 + 1)).find("x = call(total, \"n\")  ◂ count: total, name: \"n\"") > 0, to_str(app.scr.row_text(y0 + 1)))
+    assert_true(to_str(app.scr.row_text(y0 + 2)).find("◂") < 0)
+    # drawn as a note, not as text: in the comment colour, and not part of the file
+    var row = to_str(app.scr.row_text(y0))
+    assert_equal(app.scr.fg_at(cp_len(String(row[byte=0:row.find("◂")])), y0), app.pal.syn[C_CMT])
+    assert_equal(to_str(app.wins[i].buf.line(0)), "var total = 4")
+    # editing a line hides its note until the server has answered for the new text
+    app.wins[i].goto(0, 13)
+    type_text(app, "2")
+    app.draw()
+    assert_true(to_str(app.scr.row_text(y0)).find("◂") < 0)
+    assert_true(to_str(app.scr.row_text(y0 + 1)).find("◂ count: total") > 0)
+    wait_decor(app)
+    app.draw()
+    assert_true(to_str(app.scr.row_text(y0)).find("var total = 42  ◂ total: Int") > 0)
+    # Options > Inlay hints
+    app.exec(CM_HINTS)
+    assert_equal(app.status, "Inlay hints off")
+    app.draw()
+    assert_true(to_str(app.scr.to_text()).find("◂") < 0)
+    var st = server_state(app)
+    var asked = st.int(st.get(0, "hints_asked"), 0)
+    type_text(app, "1")
+    run_ticks(app, 600, False)
+    st = server_state(app)
+    assert_equal(st.int(st.get(0, "hints_asked"), 0), asked)     # off means not asked either
+    app.exec(CM_HINTS)
+    wait_decor(app)
+    app.draw()
+    assert_true(to_str(app.scr.row_text(y0)).find("◂ total: Int") > 0)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
 # ---------------------------------------------------------- document sync
 def server_state(mut app: App) raises -> Json:
     """Ask the fake server what documents it holds (a JSON object: docs, saved, ranged,
@@ -2892,6 +3063,44 @@ def test_real_server_answers_a_code_action_request() raises:
     else:
         print("      real server code actions: " + app.status)
         assert_equal(app.status, "No quick fixes or actions here")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_real_server_semantic_colours() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realsem")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'struct Point:\\n    var x: Int\\n\\ndef twice(n: Int) -> Int:\\n    return n * 2\\n\\ndef main():\\n    print(twice(4))\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var t0 = now()
+    while app.lsp.state != LSP_READY and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    t0 = now()
+    while len(app.wins[app.find_editor(path)].buf.sem) == 0 and now() - t0 < 10000 * MS:
+        run_ticks(app, 50, False)
+    var i = app.find_editor(path)                        # (the Message window may have opened meanwhile)
+    app.focus(i)
+    i = app.find_editor(path)
+    var legend = String("")
+    for t in app.lsp.table.token_types:
+        legend += t + " "
+    print("      real server token types: " + legend)
+    print("      real server tokens: " + String(len(app.wins[i].buf.sem) // 4) + ", inlay hints: " + String(len(app.wins[i].buf.hints)))
+    assert_true(len(app.wins[i].buf.sem) > 0, "the real server sent semantic tokens")
+    var p = app.pal.copy()
+    # (Mojo 1.2 reports parameters as plain "variable", so they keep the text colour)
+    assert_equal(fg_of(app, 4, "n *"), p.syn[C_TEXT])
+    assert_equal(fg_of(app, 1, "x:"), p.syn[C_PROP])             # a field
+    assert_equal(fg_of(app, 0, "Point"), p.syn[C_TYPE])
+    assert_equal(fg_of(app, 7, "twice"), p.syn[C_DEF])           # the call
+    assert_equal(fg_of(app, 3, "Int"), p.syn[C_TYPE])
     app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 

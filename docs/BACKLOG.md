@@ -65,7 +65,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P2-08 Find references results window
 - [x] P2-09 Rename with multi-file preview and apply
 - [x] P2-10 Code actions (quick-fix menu)
-- [ ] P2-11 Semantic tokens layered over the lexer; inlay hints (toggle)
+- [x] P2-11 Semantic tokens layered over the lexer; inlay hints (toggle)
 - [ ] P2-12 Outline panel: documentSymbol → scanner fallback
 - [ ] P2-13 IDE-side: highlight other uses of the word; background workspace symbol index with fuzzy search
 - [ ] P2-14 Offline docs: index `mojo doc` JSON; F1 on symbol shows its docs
