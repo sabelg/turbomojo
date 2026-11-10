@@ -89,6 +89,8 @@ struct Window(Copyable, Movable):
     var clustered: Bool   # the terminal draws a grapheme cluster as one glyph (mode 2027)
     var swap_file: String    # path of this buffer's swap file ('' if none written)
     var overwrite_ok: Bool   # the user chose to keep their version over a changed file
+    var disk_hash: Int       # hash and size of the file's bytes when last loaded or saved
+    var disk_size: Int       # (-1: unknown); the undo history on disk is tied to them
     var disk_sig: FileSig    # size/mtime of the file when it was last loaded or saved
     var swap_version: Int    # buffer version the swap file holds (-1 if none)
 
@@ -120,6 +122,8 @@ struct Window(Copyable, Movable):
         self.last_act = ACT_NONE
         self.follow = True
         self.gut = 0
+        self.disk_hash = 0
+        self.disk_size = -1
         self.top_seg = 0
         self.wrap = False
         self.clustered = False

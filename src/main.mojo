@@ -22,6 +22,7 @@ def main() raises:
     if not is_terminal():
         print("TurboMojo needs an interactive terminal (input or output is redirected).")
         external_call["exit", NoneType](Int32(2))
+    app.enable_history()
     for i in range(1, len(args)):
         try:
             app.open_path(String(args[i]))

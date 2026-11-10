@@ -78,6 +78,14 @@ __extension App:
         self.term.enter()
         self.scr.force = True
 
+    def enable_history(mut self):
+        """Start keeping undo histories and cursor positions in the state directory (if
+        the setting allows). Called before the first file is opened, so that files named
+        on the command line get theirs back."""
+        if self.persistent_undo and self.history_dir.byte_length() == 0:
+            self.history_dir = state_dir() + "/history"
+            self.prune_history()
+
     def run(mut self) raises:
         self.log_path = state_dir() + "/crash.log"
         self.term.crash_log = self.log_path
@@ -85,6 +93,7 @@ __extension App:
             self.log_error("config: " + w)
         self.term.crash_header = "TurboMojo " + VERSION + "  pid " + String(own_pid()) + "  started " + timestamp()
         self.swap_enabled = True
+        self.enable_history()
         self.watch_enabled = True
         _ = self.watch.open()
         self.term.enter()

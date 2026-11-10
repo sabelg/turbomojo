@@ -70,6 +70,9 @@ __extension App:
             self.wins[i].cr = 0
             self.wins[i].cc = 0
             self.wins[i].top = 0
+            self.wins[i].disk_hash = 0 if big else content_hash(bytes)
+            self.wins[i].disk_size = -1 if big else len(bytes)
+            self.restore_history(i)
             if big:
                 self.say("Opened in large-file mode: syntax colours, recovery snapshots and language server are off")
             else:
@@ -120,12 +123,73 @@ __extension App:
             raise Error("Could not write " + self.wins[i].path)
         self.wins[i].buf.modified = False
         self.wins[i].buf.mixed_eol = False      # written with one kind of line end
+        self.wins[i].disk_hash = 0 if self.wins[i].buf.large else content_hash(b)
+        self.wins[i].disk_size = -1 if self.wins[i].buf.large else len(b)
+        self.store_history(i)
         self.note_disk_state(i)
         self.drop_swap(i)
         self.say("Saved " + self.wins[i].path + note)
         return True
 
+    # ------------------------------------------------- history between sessions
+    def history_file(self, i: Int) -> String:
+        return self.history_dir + "/" + state_name(self.wins[i].path)
+
+    def store_history(mut self, i: Int):
+        """Write the undo history and cursor position of window i next to nothing but the
+        state directory. Only for a buffer that equals its file on disk: the history is
+        tied to that exact content."""
+        if self.history_dir.byte_length() == 0 or self.wins[i].kind != WK_EDITOR:
+            return
+        if self.wins[i].path.byte_length() == 0 or self.wins[i].buf.modified or self.wins[i].disk_size < 0:
+            return
+        if not path_exists(self.history_dir):
+            _ = run_system("mkdir -p " + shell_quote(self.history_dir) + " && chmod 700 " + shell_quote(self.history_dir))
+        var data = state_encode(
+            self.wins[i].disk_hash, self.wins[i].disk_size, self.wins[i].cr, self.wins[i].cc, self.wins[i].top,
+            self.wins[i].buf.undos, self.wins[i].buf.redos,
+        )
+        if not write_file(self.history_file(i), data):
+            self.log_error("could not write history for " + self.wins[i].path)
+
+    def restore_history(mut self, i: Int):
+        """After loading a file: bring back its cursor position and undo history if the
+        file still has the content they were saved for."""
+        if self.history_dir.byte_length() == 0 or self.wins[i].disk_size < 0:
+            return
+        var data = read_file(self.history_file(i))
+        if len(data) == 0:
+            return
+        var st = state_decode(data)
+        if not st.ok or st.hash != self.wins[i].disk_hash or st.size != self.wins[i].disk_size:
+            return
+        var top_group = 0
+        for u in st.undos:
+            top_group = max(top_group, u.group)
+        for u in st.redos:
+            top_group = max(top_group, u.group)
+        self.wins[i].buf.undos = st.undos.copy()
+        self.wins[i].buf.redos = st.redos.copy()
+        # new edits must not join a group from the earlier session
+        self.wins[i].gseq = max(self.wins[i].gseq, top_group)
+        self.wins[i].break_group()
+        self.wins[i].cr = st.cr
+        self.wins[i].cc = st.cc
+        self.wins[i].clamp()
+        self.wins[i].sync_want()
+        self.wins[i].top = max(0, min(st.top, self.wins[i].buf.count() - 1))
+        self.wins[i].follow = True
+
+    def prune_history(mut self):
+        """Keep the state directory from growing for ever: only the 500 most recently
+        written history files stay."""
+        if self.history_dir.byte_length() == 0 or not path_exists(self.history_dir):
+            return
+        var d = shell_quote(self.history_dir)
+        _ = run_system("cd " + d + " && ls -1t | tail -n +501 | while IFS= read -r f; do rm -f -- \"$f\"; done")
+
     def remove_window(mut self, i: Int):
+        self.store_history(i)   # remembers the cursor position (if the file is unchanged)
         self.drop_swap(i)       # closing is a decision: nothing left to recover
         _ = self.wins.pop(i)
 
@@ -152,4 +216,6 @@ __extension App:
             if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified:
                 self.close_window(i, NEXT_QUIT)
                 return
+        for i in range(len(self.wins)):
+            self.store_history(i)
         self.running = False

@@ -83,5 +83,30 @@ $S keys n
 sleep 0.7
 ls "$ST"/turbomojo/swap/*.swp >/dev/null 2>&1 && fail "swap file left behind after a normal quit"
 grep -q "KILLME-$$" examples/hello.mojo && fail "recovery modified the file on disk"
+# ---- history: undo and the cursor position survive a restart
+HF="$ST/hist-demo.txt"
+mkdir -p "$ST"
+printf 'first\nsecond\n' > "$HF"
+hist_start() {
+  $T kill-server 2>/dev/null && sleep 0.5 || true
+  $T new-session -d -s ide -x 100 -y 30 \
+    "XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config pixi run ./build/tmide $HF; sleep 60"
+  sleep 2.5
+}
+hist_start
+$S keys Down End
+$S keys -l " EDIT"
+$S keys F2
+$S keys M-x
+sleep 0.7
+grep -q "second EDIT" "$HF" || fail "history scenario: the edit was not saved"
+hist_start
+$S shot | grep -q " 2:12 " || fail "cursor position was not restored after a restart"
+$S keys C-z
+$S shot | grep -q "second EDIT" && fail "undo did nothing after a restart"
+$S shot | grep -q "second" || fail "history scenario: text missing after undo"
+$S keys M-x
+$S keys n
+sleep 0.5
 rm -rf "$ST"
 echo "smoke ok"

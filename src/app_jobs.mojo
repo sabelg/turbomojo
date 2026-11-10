@@ -427,6 +427,9 @@ __extension App:
         self.wins[i].cc = cc
         self.wins[i].clamp()
         self.wins[i].buf.modified = False
+        var on_disk = str_bytes(txt)
+        self.wins[i].disk_hash = content_hash(on_disk)
+        self.wins[i].disk_size = len(on_disk)
         self.note_disk_state(i)
         self.say("Formatted " + basename(path))
 

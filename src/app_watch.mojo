@@ -37,7 +37,10 @@ __extension App:
         var cr = self.wins[i].cr
         var cc = self.wins[i].cc
         var tmp = TextBuffer()
-        tmp.load_bytes(read_bytes(self.wins[i].path))
+        var disk = read_bytes(self.wins[i].path)
+        tmp.load_bytes(disk)
+        self.wins[i].disk_hash = content_hash(disk)
+        self.wins[i].disk_size = len(disk)
         self.wins[i].replace_all_text(tmp.all_text())
         self.wins[i].buf.crlf = tmp.crlf
         self.wins[i].buf.bom = tmp.bom

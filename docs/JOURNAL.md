@@ -1172,3 +1172,41 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - No commands to change encoding, BOM or to pick the line ending other than the
     existing CRLF toggle. Find in files still decodes with U+FFFD.
 - Verified: `check.sh` CHECK OK (31 files, 664 tests).
+
+## 2026-11-10 · P1-19 persistent undo and cursor position · done
+
+- New `src/filestate.mojo`: one text file per edited file in `<state>/history`, named
+  after the path, holding a hash (FNV-1a, 62 bits) and the size of the file's bytes, the
+  cursor and scroll position, and the undo and redo records. `state_decode` rejects
+  anything malformed, and an "end" line makes a cut-off file recognisable. At most 5,000
+  steps / 2 million characters are kept, cut at an undo-group boundary; redo is dropped
+  when the undo list is cut.
+- App: `store_history` runs after a save, when a window is closed and at quit, but only
+  for a buffer that equals its file on disk (its hash and size are remembered at load,
+  save, reload and format). `restore_history` runs after loading a file and applies the
+  history only if hash and size match; group numbers continue above the restored ones
+  so new edits are separate undo steps. Setting `editor.persistent_undo` (default on).
+  `prune_history` keeps the 500 newest files. Not used for large files.
+- Bugs found before commit:
+  - a truncated history file could still parse when cut inside the last number (test);
+    hence the end marker;
+  - in the real program nothing was restored for files named on the command line,
+    because they are opened before `run()` set the history directory. The unit tests
+    could not see this; trying it in tmux did. `main` now calls `enable_history()`
+    before opening files, and `scripts/smoke.sh` has a restart scenario (edit, save,
+    quit, start again: cursor at 2:12, Ctrl-Z removes the edit).
+- Tests: `tests/test_history.mojo` (11 tests): names and hash, round trip, damaged and
+  truncated files at every length, trimming at a group boundary, undo/redo after a
+  "restart" (a fresh App on the same state folder), file changed meanwhile, cursor on
+  close and on quit, discarded edits do not replace the saved history, feature off,
+  damaged file ignored and replaced, a Latin-1 file.
+- Not done / unverified:
+  - Deleted text sits in plain form in the state directory (created with mode 700).
+  - A changed file loses its history entirely; there is no attempt to match partially.
+  - The 62-bit hash plus size is treated as identity; a deliberate collision is possible
+    in principle and would apply a wrong history (undo would then garble the text).
+  - Folds, bookmarks and the selection are not kept. Paths longer than the file-name
+    limit get no history (the write fails and is logged).
+  - Hashing reads the whole file once more at load and save; not measured on big files
+    below the large-file limit.
+- Verified: `check.sh` CHECK OK (32 files, 675 tests, smoke with the restart scenario).

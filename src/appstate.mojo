@@ -30,6 +30,7 @@ from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
 from lsp import LspClient
 from grep import FileSearch
+from filestate import *
 from toml import toml_set, toml_quote, toml_bool
 
 comptime M_NORMAL = 0
@@ -159,6 +160,8 @@ struct App(Movable):
     var sig: SignalFd
     var recovered: Int
     var recovery_dir: String   # where swap files live
+    var history_dir: String    # where undo histories and cursor positions are kept ('' = nowhere)
+    var persistent_undo: Bool  # the user's setting
     var swap_enabled: Bool     # off until the IDE really runs (tests opt in)
     var swap_due: Int          # time (ns) of the next swap write; 0 = nothing pending
     var pending_swaps: List[String]
@@ -258,6 +261,8 @@ struct App(Movable):
         self.sig = SignalFd()
         self.recovered = 0
         self.recovery_dir = state_dir() + "/swap"
+        self.history_dir = ""
+        self.persistent_undo = True
         self.swap_enabled = False
         self.swap_due = 0
         self.pending_swaps = List[String]()
@@ -375,6 +380,7 @@ struct App(Movable):
         self.show_ws = s.show_whitespace
         self.soft_wrap = s.soft_wrap
         self.auto_pairs = s.auto_pairs
+        self.persistent_undo = s.persistent_undo
         self.trim_trailing = s.trim_trailing
         self.rulers = s.rulers.copy()
         for i in range(len(self.wins)):
