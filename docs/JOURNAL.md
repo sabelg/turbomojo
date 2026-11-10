@@ -814,3 +814,43 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - The Find dialog covers the bottom 12 to 14 rows; on a very short terminal little of
     the text stays visible.
 - Verified: `check.sh` CHECK OK (24 files, 517 tests).
+
+## 2026-11-10 · P1-09 find in files · done
+
+- Chose the built-in walker over `rg --json`: no external tool, and the same options
+  and regex syntax as the Find dialog. `rg` is not used at all.
+- New `src/grep.mojo`: `FileSearch` walks the folder with `std.os.listdir` (files of a
+  folder in name order, then its subfolders) and searches each file line by line with
+  `Search.caps_in`. `step(budget_ms)` does a slice of the work, so the event loop calls
+  it on every pass (8 ms) and the UI stays live. Skips hidden names, `node_modules`,
+  `__pycache__`, simple `.gitignore` entries of the root, links to folders, binary files
+  and files over 5 MB; stops at 5,000 hits; one hit per matching line.
+- App: Search > Find in files (Shift-F3, `search.findInFiles`), dialog with the folder,
+  the text and the three options; results stream into the Message window as
+  `path:line:col: text` (refreshed every 150 ms while running) with a summary line.
+  Hits reuse the compiler-message list, so Enter, Alt-F8 and Alt-F7 jump; the opened
+  file gets the match selected and all matches highlighted, and Ctrl-L continues there.
+  Ctrl-F2 cancels; starting a build cancels a running search.
+- Bug found and fixed on the way (`util.decode_list`): a byte that looked like the start
+  of a multi-byte sequence swallowed the following bytes even when they were not
+  continuation bytes, so a Latin-1 file lost up to three characters after every accented
+  letter, on screen and when saved. Each bad byte now becomes one U+FFFD and the text
+  after it is kept. This affected opening non-UTF-8 files since the first version.
+- Tests: `tests/test_grep.mojo` (15 tests) on a generated folder (CRLF, no final newline,
+  invalid UTF-8, hidden, ignored, binary, large, link loop, file link): order, columns,
+  options, regex, slicing and cancel, hit limit, and the app flow (dialog, streaming,
+  final list, Enter on a hit, Ctrl-L, Alt-F8, bad pattern, cancel, Esc). One new test
+  in `test_util` for the decoder. Wrong expectations of mine: a dangling link in the
+  test folder and a miscount of expected hits (9 instead of 8).
+- Tried by hand in tmux on this repository: "swap_tick" gave 21 lines in 3 files and
+  Enter opened `src/app_swap.mojo` at line 47. Earlier trial run: 91 files in 19 ms.
+- Not done / unverified:
+  - Speed on a large repository was not measured (expect roughly 1.5 us per line).
+  - `.gitignore` support is partial (see README); nested `.gitignore` files are ignored.
+  - The folder is always the IDE's working directory; no include/exclude globs, no
+    replace in files.
+  - A single file close to 5 MB is searched in one slice, which can stall the UI for a
+    moment.
+  - A Latin-1 file is still shown with U+FFFD marks and saved that way: there is no
+    encoding detection or conversion.
+- Verified: `check.sh` CHECK OK (25 files, 533 tests).

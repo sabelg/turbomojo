@@ -51,6 +51,7 @@ comptime CM_PREVERR = 73
 comptime CM_COMPILER = 74
 comptime CM_CANCEL = 75
 comptime CM_LSP = 76
+comptime CM_FINDFILES = 77
 comptime CM_LINENUM = 80
 comptime CM_AUTOINDENT = 81
 comptime CM_HLLINE = 82
@@ -334,6 +335,7 @@ def build_registry() -> Registry:
     r.cmd(CM_FIND, "search.find", "~F~ind...", "Search for text", [ctrl(102)])
     r.cmd(CM_REPLACE, "search.replace", "~R~eplace...", "Search for text and replace it", [ctrl(114)])
     r.cmd(CM_AGAIN, "search.again", "~S~earch again", "Repeat the last Find or Replace", [ctrl(108)])
+    r.cmd(CM_FINDFILES, "search.findInFiles", "Find in f~i~les...", "Search every file of the project folder", [fkey(3) | MOD_SHIFT])
     r.cmd(CM_GOTO, "search.gotoLine", "~G~o to line number...", "Move the cursor to a line number", [ctrl(103)])
     r.cmd(CM_SYMBOL, "search.gotoSymbol", "Go to s~y~mbol...", "Jump to a def / struct / trait in this file", [ctrl(116)])
     r.cmd(CM_MATCH, "search.matchBracket", "~M~atch bracket", "Jump to the matching bracket", [ctrl(93)])
@@ -413,6 +415,7 @@ def build_registry() -> Registry:
     r.item(CM_FIND)
     r.item(CM_REPLACE)
     r.item(CM_AGAIN)
+    r.item(CM_FINDFILES)
     r.sep()
     r.item(CM_GOTO)
     r.item(CM_SYMBOL)

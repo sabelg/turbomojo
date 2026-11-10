@@ -137,6 +137,18 @@ __extension App:
                     self.remove_window(i)
                     if next == NEXT_QUIT:
                         self.quit()
+        elif kind == D_FINDFILES and b == 0:
+            self.find_text = self.dlg.fields[0].text.copy()
+            self.find_case = self.dlg.check_vals[0]
+            self.find_word = self.dlg.check_vals[1]
+            self.find_regex = self.dlg.check_vals[2]
+            var s = self.current_search()
+            if len(s.pat) == 0:
+                return
+            if not s.ok:
+                self.info("Find in Files", "Pattern error: " + s.error)
+                return
+            self.start_file_search(s)
         elif kind == D_GOTO and b == 0:
             var ai = self.active_editor()
             var t = self.dlg.field_text(0)
@@ -238,6 +250,27 @@ __extension App:
         self.wins[ai].scope_on = False
         self.show(d^)
         self.find_preview()
+
+    def open_find_files(mut self):
+        var seed = to_str(self.find_text)
+        var ai = self.active_editor()
+        if ai >= 0:
+            var sel = self.wins[ai].selected_text()
+            if len(sel) > 0 and not (10 in sel):
+                seed = to_str(sel)
+        var d = Dialog(D_FINDFILES, "Find in Files", 64, 12)
+        d.lines.append("Folder: " + self.cwd)
+        d.fields.append(Field("~T~ext to find", seed))
+        d.buttons.append("~S~earch")
+        d.buttons.append("~C~ancel")
+        d.checks.append("Case sens~i~tive")
+        d.check_vals.append(self.find_case)
+        d.checks.append("~W~hole words")
+        d.check_vals.append(self.find_word)
+        d.checks.append("Regular e~x~pression")
+        d.check_vals.append(self.find_regex)
+        d.check_cols = 2
+        self.show(d^)
 
     def find_window(self) -> Int:
         """The editor the open Find dialog works on (-1 if it is gone)."""
@@ -405,7 +438,7 @@ __extension App:
         if k == KEY_ESC:
             self.dismiss_dialog()
             return
-        if k & MOD_ALT != 0 and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE):
+        if k & MOD_ALT != 0 and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE or self.dlg.kind == D_FINDFILES):
             # Alt+letter reaches every control, also while typing in a field
             var hk = lower(k & KEY_MASK)
             for i in range(len(self.dlg.fields)):

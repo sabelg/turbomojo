@@ -3,8 +3,14 @@ from std.ffi import external_call
 from std.collections import List
 
 
+def is_cont(b: List[UInt8], i: Int) -> Bool:
+    """Is byte i a UTF-8 continuation byte (10xxxxxx)?"""
+    return i < len(b) and (Int(b[i]) & 0xC0) == 0x80
+
+
 def decode_list(b: List[UInt8]) -> List[Int]:
-    """Decode UTF-8 bytes into codepoints (invalid bytes become U+FFFD)."""
+    """Decode UTF-8 bytes into codepoints. A byte that does not start a complete sequence
+    becomes U+FFFD by itself, so the valid text after it is kept."""
     var out = List[Int]()
     var n = len(b)
     var i = 0
@@ -13,7 +19,7 @@ def decode_list(b: List[UInt8]) -> List[Int]:
         if c < 0x80:
             out.append(c)
             i += 1
-        elif c >= 0xF0 and c < 0xF8 and i + 3 < n:
+        elif c >= 0xF0 and c < 0xF8 and is_cont(b, i + 1) and is_cont(b, i + 2) and is_cont(b, i + 3):
             out.append(
                 ((c & 0x07) << 18)
                 | ((Int(b[i + 1]) & 0x3F) << 12)
@@ -21,14 +27,14 @@ def decode_list(b: List[UInt8]) -> List[Int]:
                 | (Int(b[i + 3]) & 0x3F)
             )
             i += 4
-        elif c >= 0xE0 and c < 0xF0 and i + 2 < n:
+        elif c >= 0xE0 and c < 0xF0 and is_cont(b, i + 1) and is_cont(b, i + 2):
             out.append(
                 ((c & 0x0F) << 12)
                 | ((Int(b[i + 1]) & 0x3F) << 6)
                 | (Int(b[i + 2]) & 0x3F)
             )
             i += 3
-        elif c >= 0xC0 and c < 0xE0 and i + 1 < n:
+        elif c >= 0xC0 and c < 0xE0 and is_cont(b, i + 1):
             out.append(((c & 0x1F) << 6) | (Int(b[i + 1]) & 0x3F))
             i += 2
         else:

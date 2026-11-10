@@ -142,6 +142,8 @@ __extension App:
             self.start_complete()
         elif cmd == CM_FIND or cmd == CM_REPLACE:
             self.open_find(cmd == CM_REPLACE)
+        elif cmd == CM_FINDFILES:
+            self.open_find_files()
         elif cmd == CM_AGAIN:
             self.find_again()
         elif cmd == CM_GOTO:

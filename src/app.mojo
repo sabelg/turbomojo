@@ -136,6 +136,7 @@ __extension App:
                     self.info("Error", String(err))
             self.lsp_tick(now_ns())
             self.swap_tick(now_ns())
+            self.fsearch_tick(now_ns())
             try:
                 self.watch_tick(now_ns(), self.watch.drain())
             except err:

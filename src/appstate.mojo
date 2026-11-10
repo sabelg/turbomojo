@@ -27,6 +27,7 @@ from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
 from lsp import LspClient
+from grep import FileSearch
 from toml import toml_set, toml_quote, toml_bool
 
 comptime M_NORMAL = 0
@@ -38,6 +39,8 @@ comptime VERSION = "1.0"
 
 comptime COUNT_LINE_LIMIT = 50000     # matches are counted in at most this many lines
 comptime PREVIEW_LINE_LIMIT = 50000   # no search-as-you-type in longer texts
+comptime FSEARCH_SLICE_MS = 8          # work per loop pass while searching files
+comptime FSEARCH_REDRAW_MS = 150       # how often new hits are shown while it runs
 comptime STATUS_MS = 4000        # how long a status-line message stays
 comptime RESIZE_POLL_MS = 250    # until SIGWINCH handling lands (P0-11)
 comptime SPINNER_MS = 100
@@ -149,6 +152,10 @@ struct App(Movable):
     var tool_env: String       # environment prefix for Mojo tools ('' if none needed)
     var tool_env_known: Bool
     var lsp: LspClient
+    var fsearch: FileSearch    # Find in files, advanced a little on every loop pass
+    var fsearch_shown: Int     # how many hits the Message window shows
+    var fsearch_draw_ns: Int   # when it was last refreshed
+    var errs_from_search: Bool # the Message window lists search hits, not compiler messages
     var lsp_path: String       # file whose diagnostics are shown ('' = none)
     var lsp_uri: String
     var lsp_sent_ns: Int       # when the last change went to the server (0 = answered)
@@ -231,6 +238,10 @@ struct App(Movable):
         self.tool_env = ""
         self.tool_env_known = False
         self.lsp = LspClient()
+        self.fsearch = FileSearch()
+        self.fsearch_shown = -1
+        self.fsearch_draw_ns = 0
+        self.errs_from_search = False
         self.lsp_path = ""
         self.lsp_uri = ""
         self.lsp_sent_ns = 0
@@ -293,6 +304,8 @@ struct App(Movable):
         var t = 3600000 if self.sig.active() else RESIZE_POLL_MS
         if self.job.active:
             t = min(t, SPINNER_MS)
+        if self.fsearch.active:
+            t = 1                   # keep searching; input is still handled between steps
         if input_pending:
             t = min(t, ESC_TIMEOUT_MS)
         if self.status_until > now:

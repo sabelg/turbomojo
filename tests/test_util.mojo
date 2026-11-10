@@ -195,5 +195,20 @@ def test_base64_rfc4648_vectors() raises:
     assert_equal(base64(str_bytes("foobar")), "Zm9vYmFy")
 
 
+
+def test_decode_keeps_text_after_a_bad_byte() raises:
+    # a Latin-1 "é" (0xE9) looks like the start of a three-byte sequence; the two
+    # characters after it must not be swallowed
+    var b: List[UInt8] = [99, 97, 102, 0xE9, 32, 110, 10]
+    var want: List[Int] = [99, 97, 102, 0xFFFD, 32, 110, 10]
+    assert_equal(to_str(decode_list(b)), to_str(want))
+    var b2: List[UInt8] = [0xC3, 65, 0xF0, 0x9F, 66, 0xE2, 0x82]
+    var want2: List[Int] = [0xFFFD, 65, 0xFFFD, 0xFFFD, 66, 0xFFFD, 0xFFFD]
+    assert_equal(to_str(decode_list(b2)), to_str(want2))
+    var good: List[UInt8] = [0xC3, 0xA9, 0xE6, 0x97, 0xA5, 0xF0, 0x9F, 0x94, 0xA5]
+    var want3: List[Int] = [0xE9, 0x65E5, 0x1F525]
+    assert_equal(to_str(decode_list(good)), to_str(want3))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

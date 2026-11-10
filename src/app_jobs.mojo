@@ -87,6 +87,7 @@ __extension App:
             lines.append(strip_ansi(cur))
         self.errs.clear()
         self.err_idx = -1
+        self.errs_from_search = False
         var errors = 0
         var warnings = 0
         var row = 1
@@ -119,6 +120,7 @@ __extension App:
     # -------------------------------------------------- background jobs
     def start_job(mut self, kind: Int, cmd: String, path: String, exe: String) -> Bool:
         """Start `cmd` through popen with a non-blocking pipe; the main loop polls it."""
+        self.fsearch.cancel()           # the Message window is about to show this job
         var c = "echo __PID__$$ && " + cmd
         var fp = popen_read(c)
         if fp == 0:
@@ -153,7 +155,86 @@ __extension App:
             return True
         return False
 
+    # -------------------------------------------------- find in files
+    def start_file_search(mut self, s: Search):
+        """Search the project folder in the background; hits go to the Message window."""
+        if self.job_busy():
+            return
+        self.fsearch.start(self.cwd, s)
+        self.fsearch_shown = -1
+        self.fsearch_draw_ns = 0
+        self.show_search_results()
+
+    def search_title(self) -> String:
+        var what = "/" + to_str(self.fsearch.s.pat) + "/" if self.fsearch.s.use_regex else "\"" + to_str(self.fsearch.s.pat) + "\""
+        return what + " in " + self.fsearch.root
+
+    def show_search_results(mut self):
+        """Put the hits found so far into the Message window, one per line as
+        path:line:column: text, and make each of them a place Enter jumps to."""
+        var mi = self.ensure_msg()
+        var keep_cr = self.wins[mi].cr
+        var keep_top = self.wins[mi].top
+        var first = self.fsearch_shown < 0
+        var running = self.fsearch.active
+        var text = decode(("Searching for " if running else "Search for ") + self.search_title() + (" ..." if running else ""))
+        text.append(10)
+        self.errs.clear()
+        self.errs_from_search = True
+        var prefix = self.fsearch.root + "/"
+        var row = 1
+        for i in range(len(self.fsearch.hits)):
+            var shown = self.fsearch.hits[i].path
+            if shown.startswith(prefix):
+                shown = slice_str(decode(shown), cp_len(prefix), cp_len(shown))
+            var line = shown + ":" + String(self.fsearch.hits[i].row) + ":" + String(self.fsearch.hits[i].col) + ": " + self.fsearch.hits[i].text
+            for c in decode(line):
+                text.append(c)
+            text.append(10)
+            self.errs.append(ErrLoc(self.fsearch.hits[i].path, self.fsearch.hits[i].row, self.fsearch.hits[i].col, row))
+            row += 1
+        for c in decode(self.fsearch.summary() + (" so far" if running else "")):
+            text.append(c)
+        self.wins[mi].buf.load(text)
+        self.fsearch_shown = len(self.fsearch.hits)
+        if first:
+            self.err_idx = -1
+            self.wins[mi].cr = 0
+            self.wins[mi].top = 0
+        else:
+            self.wins[mi].cr = keep_cr
+            self.wins[mi].top = keep_top
+            self.wins[mi].clamp()
+
+    def fsearch_tick(mut self, now: Int):
+        """One slice of the running file search; called on every pass of the event loop."""
+        if not self.fsearch.active:
+            return
+        self.fsearch.step(FSEARCH_SLICE_MS)
+        if self.fsearch.active:
+            if len(self.fsearch.hits) != self.fsearch_shown and now - self.fsearch_draw_ns > FSEARCH_REDRAW_MS * 1000000:
+                self.fsearch_draw_ns = now
+                self.show_search_results()
+            return
+        self.finish_file_search()
+
+    def finish_file_search(mut self):
+        self.show_search_results()
+        var mi = self.msg_index()
+        if len(self.fsearch.hits) > 0 and mi >= 0:
+            # put the cursor on the first hit, ready for Enter
+            if self.wins[mi].cr == 0:
+                self.wins[mi].cr = 1
+            self.wins[mi].follow = True
+            if self.mode == M_NORMAL:
+                self.focus(mi)
+        self.say(self.fsearch.summary())
+
     def cancel_job(mut self):
+        if self.fsearch.active:
+            self.fsearch.cancel()
+            self.finish_file_search()
+            return
         if not self.job.active:
             self.say("Nothing to cancel")
             return
@@ -296,6 +377,11 @@ __extension App:
             self.open_path(e.path)
             var t = self.top()
             self.wins[t].goto(e.row - 1, max(0, e.col - 1))
+            if self.errs_from_search and self.fsearch.s.ok:
+                # show the match itself, and the other matches in this file
+                self.wins[t].set_highlight(self.fsearch.s)
+                _ = self.wins[t].search_from(self.fsearch.s, e.row - 1, max(0, e.col - 1))
+                self.find_text = self.fsearch.s.pat.copy()      # Ctrl+L continues in this file
             mi = self.msg_index()
             if mi >= 0 and e.msg_line < self.wins[mi].buf.count():
                 self.say(to_str(self.wins[mi].buf.line(e.msg_line)))
