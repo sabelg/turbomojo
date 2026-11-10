@@ -8,7 +8,7 @@ from std.collections import List
 from screen import Screen, CONT
 from palette import Palette, theme
 from highlight import Highlighter
-from menu import build_menus, draw_menubar, draw_dropdown
+from menu import Menu, build_menus, draw_menubar, draw_dropdown, dropdown_rows, dropdown_top
 from commands import build_registry, CM_LINENUM
 from dialog import Dialog, Field, D_FIND, D_INFO
 from window import Window, WK_EDITOR, WK_MESSAGE
@@ -405,6 +405,37 @@ def test_multi_line_problem_range() raises:
     assert_equal(w.buf.mark_severity(1), 2)
     assert_equal(w.buf.mark_text(1), "")                # the message belongs to the first line
     assert_equal(w.buf.mark_text(0), "warning: the whole call")
+
+
+def test_a_menu_taller_than_the_screen_scrolls() raises:
+    var m = Menu("~T~all")
+    m.x = 2
+    for k in range(30):
+        m.add("item " + String(k), "", 1000 + k, "")
+    var p = theme(0)
+    # 12 rows: menu bar, 8 items in a box, status line and one row to spare
+    assert_equal(dropdown_rows(12, m), 8)
+    assert_equal(dropdown_top(12, m, 0), 0)
+    assert_equal(dropdown_top(12, m, 3), 0)
+    assert_equal(dropdown_top(12, m, 10), 6)             # the selected one in the middle
+    assert_equal(dropdown_top(12, m, 29), 22)
+    assert_equal(dropdown_top(40, m, 29), 0)             # it fits: no scrolling
+    var s = Screen(40, 12)
+    draw_dropdown(s, p, m, 0, List[Int]())
+    var t = to_str(s.to_text())
+    assert_true(t.find("item 0") > 0 and t.find("item 7") > 0)
+    assert_true(t.find("item 8") < 0)
+    assert_true(t.find("▼") > 0 and t.find("▲") < 0)
+    assert_true(to_str(s.row_text(10)).find("┘") > 0, "the box ends above the status line")
+    draw_dropdown(s, p, m, 29, List[Int]())
+    t = to_str(s.to_text())
+    assert_true(t.find("item 29") > 0 and t.find("item 22") > 0)
+    assert_true(t.find("item 21") < 0)
+    assert_true(t.find("▲") > 0 and t.find("▼") < 0)
+    draw_dropdown(s, p, m, 12, List[Int]())
+    t = to_str(s.to_text())
+    assert_true(t.find("▲") > 0 and t.find("▼") > 0)
+    assert_true(t.find("item 12") > 0)
 
 
 def main() raises:

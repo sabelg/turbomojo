@@ -1885,6 +1885,12 @@ general timeout. The Options menu no longer fits a 20-row screen.
   - The layout is not saved (sessions are P3-07).
   - Alt-\, Alt-|, Alt-{, Alt-}, Alt-F6, Alt-PgUp/PgDn as sent by real terminals: only
     Alt-\ and Alt-| were tried (in tmux).
-  - The Window menu now has 22 rows with its separators: on a 24-row terminal it
-    reaches the last desktop row; not looked at.
-- Verified: `check.sh` CHECK OK (38 files, 806 tests).
+- Follow-up in the same task: with the nine new items the Window menu is 24 rows high
+  and no longer fitted a 24-row terminal (I counted after committing). Drop-down menus
+  now scroll when they are taller than the screen: `dropdown_rows` / `dropdown_top` in
+  `src/menu.mojo` (the items around the selected one are shown, ▲ / ▼ in the border),
+  the mouse maps through the same functions. Test
+  `test_a_menu_taller_than_the_screen_scrolls`; the 20-row Options golden was
+  regenerated (a closed box with ▼ instead of a cut-off one). This also settles the
+  Options-menu note of P2-11. Not looked at in a terminal.
+- Verified: `check.sh` CHECK OK (38 files, 807 tests).

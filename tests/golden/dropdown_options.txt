@@ -16,5 +16,5 @@
                               │ Keys: Emacs              │
                               ├──────────────────────────┤
                               │ Theme: Turbo Classic     │
-                              │ Theme: Midnight Neon     │
-                              │ Theme: Amber CRT         │
+                              └────────────────────────▼─┘
+

@@ -151,8 +151,8 @@ __extension App:
             var m = self.menus[self.menu_idx].copy()
             var mx = dropdown_rect_x(self.scr.w, m)
             var mw = m.width()
-            if x > mx and x < mx + mw - 1 and y >= 2 and y < 2 + len(m.items):
-                var it = y - 2
+            if x > mx and x < mx + mw - 1 and y >= 2 and y < 2 + dropdown_rows(self.scr.h, m):
+                var it = y - 2 + dropdown_top(self.scr.h, m, self.menu_item)
                 if m.items[it].cmd != CM_NONE:
                     self.mode = M_NORMAL
                     self.macro_note_cmd(m.items[it].cmd)

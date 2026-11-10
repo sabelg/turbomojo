@@ -76,15 +76,35 @@ def draw_menubar(mut scr: Screen, pal: Palette, menus: List[Menu], open_idx: Int
             _ = scr.text(cx, 0, clock, pal.menu_fg, pal.menu_bg)
 
 
+def dropdown_rows(scr_h: Int, m: Menu) -> Int:
+    """How many items of a menu fit between the menu bar and the status line."""
+    return max(1, min(len(m.items), scr_h - 4))
+
+
+def dropdown_top(scr_h: Int, m: Menu, sel: Int) -> Int:
+    """The first item shown: 0 unless the menu is taller than the screen - then the
+    items around the selected one are shown."""
+    var rows = dropdown_rows(scr_h, m)
+    if len(m.items) <= rows:
+        return 0
+    return max(0, min(sel - rows // 2, len(m.items) - rows))
+
+
 def draw_dropdown(mut scr: Screen, pal: Palette, m: Menu, sel: Int, checks: List[Int]):
     var w = m.width()
-    var h = len(m.items) + 2
+    var rows = dropdown_rows(scr.h, m)
+    var top = dropdown_top(scr.h, m, sel)
+    var h = rows + 2
     var x = max(0, min(m.x - 1, scr.w - w - 2))
     var y = 1
     scr.fill(x, y, w, h, 32, pal.menu_fg, pal.menu_bg)
     scr.frame(x, y, w, h, False, pal.menu_fg, pal.menu_bg)
-    for i in range(len(m.items)):
-        var yy = y + 1 + i
+    if top > 0:
+        scr.put(x + w - 3, y, 0x25B2, pal.menu_fg, pal.menu_bg)             # more above
+    if top + rows < len(m.items):
+        scr.put(x + w - 3, y + h - 1, 0x25BC, pal.menu_fg, pal.menu_bg)     # more below
+    for i in range(top, top + rows):
+        var yy = y + 1 + i - top
         if m.items[i].label == "-":
             scr.put(x, yy, 0x251C, pal.menu_fg, pal.menu_bg)
             for xx in range(x + 1, x + w - 1):
