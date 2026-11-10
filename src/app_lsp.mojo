@@ -1,6 +1,6 @@
 """Language server integration in the IDE (first slice: live diagnostics for one file)."""
 from std.collections import List
-from window import Window, WK_EDITOR, WK_MESSAGE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -459,6 +459,8 @@ __extension App:
                 self.hover_arrived(m)
             elif m.id == self.sig_req_id:
                 self.sig_arrived(m)
+            elif m.id == self.outline_req_id:
+                self.outline_arrived(m)
             elif m.id == self.sem_req_id:
                 self.semantic_arrived(m, now)
             elif m.id == self.hint_req_id:

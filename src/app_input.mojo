@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -34,6 +34,7 @@ from app_menus import *
 from app_exec import *
 from app_pickers import *
 from app_nav import *
+from app_outline import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -137,8 +138,8 @@ __extension App:
         var t = self.top()
         if t < 0:
             return
-        if self.wins[t].kind == WK_MESSAGE:
-            self.message_key(k)
+        if self.wins[t].kind != WK_EDITOR:
+            self.message_key(k)             # the Message and Outline windows: lists
             return
         self.editor_key(k)
 
@@ -157,6 +158,9 @@ __extension App:
             self.wins[t].cr = 0
         elif k == KEY_END or k == (KEY_END | MOD_CTRL):
             self.wins[t].cr = n - 1
+        elif (k == KEY_ENTER or k == 32) and self.wins[t].kind == WK_OUTLINE:
+            self.outline_go(self.wins[t].cr)
+            return
         elif k == KEY_ENTER or k == 32:
             var row = self.wins[t].cr
             var best = -1

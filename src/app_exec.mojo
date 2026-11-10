@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -33,6 +33,7 @@ from app_dialogs import *
 from app_menus import *
 from app_pickers import *
 from app_nav import *
+from app_outline import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -54,7 +55,7 @@ __extension App:
         if cmd == CM_INSERT_MODE:
             self.insert_mode = not self.insert_mode
             return
-        if self.wins[t].kind == WK_MESSAGE:
+        if self.wins[t].kind != WK_EDITOR:
             if cmd == CM_CUR_UP:
                 self.message_key(KEY_UP)
             elif cmd == CM_CUR_DOWN:
@@ -484,6 +485,8 @@ __extension App:
         elif cmd == CM_MESSAGE:
             var mi = self.ensure_msg()
             self.focus(mi)
+        elif cmd == CM_OUTLINE:
+            self.outline_toggle()
         elif cmd == CM_WINLIST:
             var d = Dialog(D_WINLIST, "Window List", 56, min(18, self.desk_h()))
             var items = List[String]()

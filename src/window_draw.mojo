@@ -17,7 +17,7 @@ __extension Window:
     def draw(
         self, mut scr: Screen, pal: Palette, hl: Highlighter, active: Bool, hl_line: Bool, insert_mode: Bool, show_ws: Bool
     ):
-        var is_msg = self.kind == WK_MESSAGE
+        var is_msg = self.kind != WK_EDITOR       # the Message and Outline windows are lists
         var plain = is_msg or self.buf.large      # no syntax colours
         var bg = pal.msg_bg if is_msg else pal.ed_bg
         var fg = pal.msg_fg if is_msg else pal.ed_fg
@@ -84,7 +84,7 @@ __extension Window:
             var rowbg = bg
             var rowfg = fg
             if is_msg:
-                var lt = to_str(ln)
+                var lt = to_str(ln) if self.kind == WK_MESSAGE else String("")
                 if str_contains(lt, "error:"):
                     rowfg = pal.msg_err
                 elif str_contains(lt, "warning:"):

@@ -97,6 +97,7 @@ comptime CM_RENAME = 154
 comptime CM_ACTIONS = 155
 comptime CM_SEMANTIC = 156
 comptime CM_HINTS = 157
+comptime CM_OUTLINE = 158
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -644,6 +645,7 @@ def build_registry() -> Registry:
     r.cmd(CM_PREVWIN, "window.previous", "~P~revious", "Make the previous window active", [fkey(6) | MOD_SHIFT])
     r.cmd(CM_CLOSEALL, "window.closeAll", "Clos~e~ all", "Close all windows")
     r.cmd(CM_MESSAGE, "window.message", "~M~essage", "Open the compiler message window")
+    r.cmd(CM_OUTLINE, "window.outline", "~O~utline", "Show or hide the outline of the file: its functions, structs and traits", [fkey(12) | MOD_CTRL])
     r.cmd(CM_WINLIST, "window.list", "~L~ist...", "Show a list of open windows", [alt(48)])
     # ---- Help / system
     r.cmd(CM_HELP, "help.keyboard", "~K~eyboard reference", "Show the keyboard reference", [fkey(1)])
@@ -774,6 +776,7 @@ def build_registry() -> Registry:
     r.item(CM_CLOSEALL)
     r.sep()
     r.item(CM_MESSAGE)
+    r.item(CM_OUTLINE)
     r.item(CM_WINLIST)
 
     r.menu("~H~elp")

@@ -487,6 +487,40 @@ def main():
                         out_hints.append({"position": {"line": k, "character": u16(l[:comma + 2])}, "label": "name:", "kind": 2})
             send({"jsonrpc": "2.0", "id": mid, "result": out_hints if out_hints else None})
             continue
+        if method == "textDocument/documentSymbol":
+            import re
+            uri = params["textDocument"]["uri"]
+            text = DOCS.get(uri, "")
+            main.symbols_asked = getattr(main, "symbols_asked", 0) + 1
+            u16 = lambda s: len(s.encode("utf-16-le")) // 2
+            tree = []
+            flat = []
+            owner = None
+            for k, l in enumerate(text.split("\n")):
+                mm = re.match(r"(\s*)(?:\"[^\"]*\"; )?(struct|def|var|trait) ([A-Za-z_0-9]+)", l)
+                if not mm:
+                    continue
+                inner = len(mm.group(1)) > 0
+                kind = {"struct": 23, "trait": 11, "def": 6 if inner else 12, "var": 8 if inner else 13}[mm.group(2)]
+                col = u16(l[:mm.start(3)])
+                rng = {"start": {"line": k, "character": col}, "end": {"line": k, "character": col + len(mm.group(3))}}
+                whole = {"start": {"line": k, "character": 0}, "end": {"line": k, "character": u16(l)}}
+                node = {"name": mm.group(3), "kind": kind, "range": whole, "selectionRange": rng, "children": []}
+                info = {"name": mm.group(3), "kind": kind, "location": {"uri": uri, "range": rng}}
+                if inner and owner is not None:
+                    owner["children"].append(node)
+                    info["containerName"] = owner["name"]
+                else:
+                    tree.append(node)
+                    owner = node
+                flat.append(info)
+            if "NOSYMBOLS" in text:
+                send({"jsonrpc": "2.0", "id": mid, "result": []})
+            elif "FLATSYMBOLS" in text:
+                send({"jsonrpc": "2.0", "id": mid, "result": list(reversed(flat))})
+            else:
+                send({"jsonrpc": "2.0", "id": mid, "result": tree})
+            continue
         if method == "textDocument/signatureHelp":
             text = DOCS.get(params["textDocument"]["uri"], "")
             main.sigs = getattr(main, "sigs", 0) + 1
@@ -554,7 +588,7 @@ def main():
             continue
         if method == "doc_state":        # what this server holds, for the tests
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "renames": getattr(main, "renames", []), "sem_asked": getattr(main, "sem_asked", 0), "hints_asked": getattr(main, "hints_asked", 0), "actions_asked": getattr(main, "actions_asked", []),
+                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "renames": getattr(main, "renames", []), "symbols_asked": getattr(main, "symbols_asked", 0), "sem_asked": getattr(main, "sem_asked", 0), "hints_asked": getattr(main, "hints_asked", 0), "actions_asked": getattr(main, "actions_asked", []),
                 "executed": getattr(main, "executed", []), "client_answers": getattr(main, "client_answers", []),
                 "resolved_actions": getattr(main, "resolved_actions", 0), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
             continue

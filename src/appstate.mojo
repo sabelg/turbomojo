@@ -14,7 +14,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -28,6 +28,7 @@ from signals import SignalFd, send_signal, own_pid
 from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
+from outline import OutlineItem
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
 from filestate import *
@@ -235,6 +236,14 @@ struct App(Movable):
     var act_retries: Int
     var act_retry_due: Int
     var act_command_due: Bool        # the chosen action's command runs once its edit is applied
+    var outline_items: List[OutlineItem]     # what the Outline window lists
+    var outline_key: String          # the file it was made for (path, or title if unnamed)
+    var outline_version: Int         # ... and the version of its text
+    var outline_from_server: Bool
+    var outline_asked_key: String    # what the server was last asked about
+    var outline_asked_version: Int
+    var outline_req_id: Int
+    var outline_req_ns: Int
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -430,6 +439,14 @@ struct App(Movable):
         self.act_retries = 0
         self.act_retry_due = 0
         self.act_command_due = False
+        self.outline_items = List[OutlineItem]()
+        self.outline_key = ""
+        self.outline_version = -1
+        self.outline_from_server = False
+        self.outline_asked_key = ""
+        self.outline_asked_version = -1
+        self.outline_req_id = -1
+        self.outline_req_ns = 0
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -720,8 +737,17 @@ struct App(Movable):
         win.wrap = self.soft_wrap
         win.auto_pairs = self.auto_pairs
         win.rulers = self.rulers.copy()
+        var oi = self.outline_index()
+        if oi >= 0 and win.x + win.w > self.wins[oi].x and self.wins[oi].x - win.x >= 20:
+            win.w = self.wins[oi].x - win.x         # beside the outline, not over it
         self.wins.append(win^)
         return len(self.wins) - 1
+
+    def outline_index(self) -> Int:
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_OUTLINE:
+                return i
+        return -1
 
     def ensure_msg(mut self) -> Int:
         var mi = self.msg_index()

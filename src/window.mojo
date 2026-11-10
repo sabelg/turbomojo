@@ -16,6 +16,7 @@ comptime WK_EDITOR = 0
 comptime LEX_BUDGET = 4000     # lines re-scanned after an edit before giving up on rejoining
 comptime LEX_BLOCK = 20000     # lines scanned per block when extending the cache
 comptime WK_MESSAGE = 1
+comptime WK_OUTLINE = 2      # the outline of the file being edited: a list, like the Message window
 
 comptime ACT_NONE = 0
 comptime ACT_TYPE = 1

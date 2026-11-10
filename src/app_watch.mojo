@@ -1,6 +1,6 @@
 """Reacting to files that were changed by another program while open in the IDE."""
 from std.collections import List
-from window import Window, WK_EDITOR, WK_MESSAGE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE
 from window_search import *
 from window_multi import *
 from window_lines import *

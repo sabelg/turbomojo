@@ -1698,3 +1698,43 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
     cut on a 20-row screen (the golden shows that); menus do not scroll.
   - Not tried by hand in tmux.
 - Verified: `check.sh` CHECK OK (33 files, 768 tests).
+
+## 2026-11-10 · P2-12 Outline panel: documentSymbol, scanner fallback · done
+
+- New `src/outline.mojo`: `OutlineItem`; `scan_outline` (def / fn / struct / trait and
+  top-level comptime / alias; nesting by indentation; methods told from functions;
+  docstrings and comments skipped); `parse_symbols` (DocumentSymbol trees, flat
+  SymbolInformation lists put in file order, nameless or placeless items dropped);
+  `outline_line`, `outline_tag`, `outline_current`.
+- `src/lsp.mojo`: `request_symbols` - sent whether or not the server advertises the
+  feature (the Mojo server answers without listing it); client capability
+  `hierarchicalDocumentSymbolSupport`.
+- New window kind `WK_OUTLINE` (a list window like Message: same keys, mouse and
+  drawing) and new `src/app_outline.mojo`: `outline_toggle` (window at the right edge;
+  editors make room and get it back; new editors open beside it), `outline_tick`
+  (run from the event loop: scan at once when the file in front or its text changes,
+  server answer when it comes and it is not empty; marks the symbol the cursor is in),
+  `outline_arrived`, `outline_go` (Enter: focus the editor, record a jump, go to the
+  name).
+- Command: Window > Outline (Ctrl-F12).
+- Tests: new `tests/test_outline.mojo` (9): scanner nesting and kinds; comments,
+  docstrings and look-alikes; server answers as tree and flat list; lines and current
+  item; the window without a server (geometry, marking, typing, Enter + Back, read-only,
+  closing); following the window in front, new and empty files; fake server (richer
+  list, UTF-16 column, re-ask after an edit, scan again after the server stops); empty
+  answer keeps the scan, flat answer; the real mojo-lsp-server.
+- Real mojo-lsp-server 1.2: answers documentSymbol with a tree; for the test file the
+  window shows "Point / x / norm / twice / main" from the server.
+- Mistakes on the way: a nested function inside a method was first called a method;
+  two failures were my tests (a line no scanner could match; a wait helper that
+  returned before the server was ready, which had let one test pass without testing).
+- Not done / unverified:
+  - Not looked at by hand in tmux - layout and colours are only checked through the
+    screen buffer in tests. Ctrl-F12 as sent by real terminals is untested.
+  - Closing the Outline window with Close (Alt-F3) instead of the command leaves the
+    editors narrow; Zoom covers it; Tile/Cascade treat it like any window.
+  - No tree-sitter source (P1-20 is blocked); no folding of outline branches, no
+    filter-as-you-type; the Go to Symbol dialog (Ctrl-T) still uses its own scan.
+  - The scanner does not know multi-line strings that are not triple-quoted docstrings
+    starting a line, nor `def` inside brackets continued over lines.
+- Verified: `check.sh` CHECK OK (34 files, 777 tests).

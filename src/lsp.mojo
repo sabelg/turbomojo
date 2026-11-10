@@ -1013,6 +1013,10 @@ struct LspClient(Copyable, Movable):
         w.str("plaintext")
         w.end_arr()
         w.end_obj()
+        w.key("documentSymbol")
+        w.begin_obj()
+        w.kv_bool("hierarchicalDocumentSymbolSupport", True)
+        w.end_obj()
         w.key("semanticTokens")
         w.begin_obj()
         w.key("requests")
@@ -1334,6 +1338,13 @@ struct LspClient(Copyable, Movable):
         var out = self.asked_edits.copy()
         self.asked_edits.clear()
         return out^
+
+    def request_symbols(mut self, uri: String, now: Int) -> Int:
+        """Ask for the symbols of a document. Asked whether or not the server lists the
+        feature: mojo-lsp-server answers without advertising it."""
+        if self.state != LSP_READY or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/documentSymbol", "{\"textDocument\":{\"uri\":" + json_quote(uri) + "}}", now)
 
     def request_semantic(mut self, uri: String, now: Int) -> Int:
         """Ask for the semantic tokens of a whole document. -1 if that cannot be asked."""
