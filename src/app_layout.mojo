@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -38,6 +38,7 @@ from app_pickers import *
 from app_nav import *
 from app_outline import *
 from layout import *
+from app_explorer import *
 from outline import *
 from symindex import *
 from docs import *
@@ -86,7 +87,11 @@ __extension App:
         var oi = self.outline_index()
         if oi >= 0 and self.wins[oi].x >= 20:
             w = self.wins[oi].x
-        self.lay.place(0, 1, w, h)
+        var x0 = 0
+        var xi = self.explorer_index()
+        if xi >= 0 and w - self.wins[xi].w >= 20:
+            x0 = self.wins[xi].w
+        self.lay.place(x0, 1, w - x0, h)
         var zoomed = te >= 0 and self.wins[te].zoomed
         for g in self.lay.groups():
             var show = self.lay.shown(g)
@@ -97,9 +102,9 @@ __extension App:
                 if zoomed:
                     self.wins[i].hidden = i != te
                     if i == te:
-                        self.wins[i].x = 0
+                        self.wins[i].x = x0
                         self.wins[i].y = 1
-                        self.wins[i].w = w
+                        self.wins[i].w = w - x0
                         self.wins[i].h = h
                     continue
                 self.wins[i].hidden = id != show
@@ -292,7 +297,14 @@ __extension App:
                 self.panel_show((self.msg_page + (1 if cmd == CM_NEXT_TAB else PG_COUNT - 1)) % PG_COUNT)
             return
         var grow = cmd == CM_PANE_GROW
-        if self.wins[t].kind == WK_MESSAGE:
+        if self.wins[t].kind == WK_EXPLORER:
+            var w = self.wins[t].w + (4 if grow else -4)
+            w = max(16, min(w, self.scr.w - 24))
+            if w == self.wins[t].w:
+                self.say("The panel cannot be made " + ("wider" if grow else "narrower"))
+                return
+            self.wins[t].w = w
+        elif self.wins[t].kind == WK_MESSAGE:
             var h = self.wins[t].h + (2 if grow else -2)
             h = max(4, min(h, self.desk_h() - 6))
             if h == self.wins[t].h:

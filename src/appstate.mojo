@@ -14,7 +14,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -32,6 +32,7 @@ from outline import OutlineItem
 from symindex import SymbolIndex, IndexedSymbol
 from docs import DocEntry
 from layout import Layout
+from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
 from filestate import *
@@ -274,6 +275,11 @@ struct App(Movable):
     var pg_cr: List[Int]             # ... and the marked line
     var pg_search: List[Bool]
     var panel_pinned: Bool           # the user (or a build, a search) chose the page: problems update behind it
+    var ex: ExplorerTree             # what the file explorer shows
+    var ex_checked_ns: Int           # when the folders were last read again
+    var ex_op: Int                   # the operation the open explorer dialog is for (EXOP_*)
+    var ex_target: String            # ... and the file or folder it is about
+    var trash_dir: String            # where deleted files go
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -507,6 +513,11 @@ struct App(Movable):
             self.pg_cr.append(0)
             self.pg_search.append(False)
         self.panel_pinned = False
+        self.ex = ExplorerTree()
+        self.ex_checked_ns = 0
+        self.ex_op = 0
+        self.ex_target = ""
+        self.trash_dir = default_trash_dir()
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -817,11 +828,21 @@ struct App(Movable):
         win.auto_pairs = self.auto_pairs
         win.word_hl = self.word_hl
         win.rulers = self.rulers.copy()
+        var xi = self.explorer_index()
+        if xi >= 0 and win.x < self.wins[xi].w and win.x + win.w - self.wins[xi].w >= 20:
+            win.w -= self.wins[xi].w - win.x        # beside the explorer, not over it
+            win.x = self.wins[xi].w
         var oi = self.outline_index()
         if oi >= 0 and win.x + win.w > self.wins[oi].x and self.wins[oi].x - win.x >= 20:
             win.w = self.wins[oi].x - win.x         # beside the outline, not over it
         self.wins.append(win^)
         return len(self.wins) - 1
+
+    def explorer_index(self) -> Int:
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EXPLORER:
+                return i
+        return -1
 
     def outline_index(self) -> Int:
         for i in range(len(self.wins)):

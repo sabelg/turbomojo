@@ -1,6 +1,6 @@
 """Swap files in the running IDE: periodic writing, clean-up and recovery at startup."""
 from std.collections import List
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER
 from window_search import *
 from window_multi import *
 from window_lines import *

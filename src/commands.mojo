@@ -111,6 +111,7 @@ comptime CM_PANE_GROW = 168
 comptime CM_PANE_SHRINK = 169
 comptime CM_PROBLEMS = 170
 comptime CM_SEARCHRES = 171
+comptime CM_EXPLORER = 172
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -670,6 +671,7 @@ def build_registry() -> Registry:
     r.cmd(CM_MOVE_TAB, "window.moveTab", "Mo~v~e to next pane", "Move this file to the next pane")
     r.cmd(CM_PANE_GROW, "window.growPane", "Gro~w~ pane", "Make this pane larger", [alt(125)])
     r.cmd(CM_PANE_SHRINK, "window.shrinkPane", "~S~hrink pane", "Make this pane smaller", [alt(123)])
+    r.cmd(CM_EXPLORER, "window.explorer", "~F~ile explorer", "Show the project's files as a tree at the left edge (again: close it)", [ctrl(101)])
     r.cmd(CM_OUTLINE, "window.outline", "~O~utline", "Show or hide the outline of the file: its functions, structs and traits", [fkey(12) | MOD_CTRL])
     r.cmd(CM_WINLIST, "window.list", "~L~ist...", "Show a list of open windows", [alt(48)])
     # ---- Help / system
@@ -816,6 +818,7 @@ def build_registry() -> Registry:
     r.item(CM_PANE_GROW)
     r.item(CM_PANE_SHRINK)
     r.sep()
+    r.item(CM_EXPLORER)
     r.item(CM_OUTLINE)
     r.item(CM_WINLIST)
 

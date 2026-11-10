@@ -1932,3 +1932,45 @@ general timeout. The Options menu no longer fits a 20-row screen.
   - Not looked at in tmux: the tabs' colours and the look at narrow widths (below 40
     columns the plain title stays).
 - Verified: `check.sh` CHECK OK (39 files, 812 tests).
+
+## 2026-11-10 · P3-03 File explorer; the left dock · done
+
+- New `src/explorer.mojo`: `ExplorerTree` - the rows that are visible, made by listing
+  the root and the folders that are open (nothing else is read); folders first, by
+  name; the file search's ignore rules (`.gitignore` of the root, dot files) unless
+  `show_all`; `.git` never; links to folders shown but not followed; `toggle`,
+  `reveal`, `parent_row`, `folder_for`, 5 000 rows at most. File operations that
+  return '' or the reason: `make_file`, `make_folder`, `move_path` (never over
+  something that exists, never into itself), `trash_path` (freedesktop layout:
+  `Trash/files` + `Trash/info/*.trashinfo`, a free name if one is taken, nothing ever
+  removed outright), `default_trash_dir`.
+- New window kind `WK_EXPLORER` and `src/app_explorer.mojo`: the left dock.
+  `explorer_toggle` (Ctrl-E; editors make room and get it back; new editors open
+  beside it; the tiled layout's panes begin where it ends), `explorer_tick` (folders
+  read again every 2 s; marks the file being edited), `explorer_key` (Enter, Right,
+  Left, N, F, R, M, Del, ".", U, Esc), dialogs for the name and the delete question
+  (Enter = Cancel there), `explorer_moved` (open windows take the new path and title).
+  Moving is limited to folders inside the project.
+- This is the left dock that P3-02 left open; Grow / Shrink pane resize it.
+- Tests: `tests/test_explorer.mojo` (10): the tree (lazy listing, order, ignore rules,
+  changes on disk, reveal); creating and moving incl. refusals and odd names; the trash
+  (content, record, same name twice, folders, refusals); the window (place, room for
+  editors, marking, closing); keys; create / rename / move with open windows
+  following; delete with question; refresh, and sharing the screen with the tiled
+  layout and the bottom panel. All passed on the first run.
+- Looked at in tmux: Ctrl-E shows the tree at the left with the folder of the open
+  file opened, the editor beside it, the key hints in the status line.
+- The gate now takes a little over ten minutes (40 test files, each compiled); my
+  600 s wait ran out once and I had to read the result afterwards.
+- Not done / unverified:
+  - No git status colours (the roadmap's table mentions them; git comes in a later
+    phase). No icons, no multi-selection, no drag and drop, no copy.
+  - Only the root's `.gitignore` is read (as in Find in Files), not nested ones or
+    negations.
+  - The trash was written and read back by the tests, but restoring through a real
+    desktop's trash was not tried. On macOS the folder would be ~/.Trash; not handled.
+  - A window whose file was renamed keeps its undo history but its swap file and
+    saved-history entry still carry the old name.
+  - Ctrl-E is taken by the Turbo and Emacs keymaps for cursor movement; there the
+    explorer is reached through the menu.
+- Verified: `check.sh` CHECK OK (40 files, 822 tests).

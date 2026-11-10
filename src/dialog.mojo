@@ -29,6 +29,8 @@ comptime D_RENAME = 21
 comptime D_RENAME_APPLY = 22
 comptime D_ACTIONS = 23
 comptime D_WSYMBOL = 24
+comptime D_EX_NAME = 25
+comptime D_EX_DELETE = 26
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

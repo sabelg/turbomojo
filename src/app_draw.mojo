@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -37,6 +37,7 @@ from app_pickers import *
 from app_nav import *
 from app_outline import *
 from app_layout import *
+from app_explorer import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -173,6 +174,10 @@ __extension App:
             var t = self.top()
             items.append("~F1~ Help")
             cmds.append(CM_HELP)
+            if t >= 0 and self.wins[t].kind == WK_EXPLORER:
+                for h in ["~Enter~ Open", "~N~ New file", "~F~ Folder", "~R~ Rename", "~M~ Move", "~Del~ Trash"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_OUTLINE:
                 items.append("~Enter~ Go to symbol")
                 cmds.append(CM_NONE)

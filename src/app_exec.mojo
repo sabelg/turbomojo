@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -35,6 +35,7 @@ from app_pickers import *
 from app_nav import *
 from app_outline import *
 from app_layout import *
+from app_explorer import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -495,6 +496,8 @@ __extension App:
         elif cmd == CM_MESSAGE or cmd == CM_SEARCHRES or cmd == CM_PROBLEMS:
             self.panel_show(PG_MESSAGE if cmd == CM_MESSAGE else (PG_SEARCH if cmd == CM_SEARCHRES else PG_PROBLEMS))
             self.focus(self.msg_index())
+        elif cmd == CM_EXPLORER:
+            self.explorer_toggle()
         elif cmd == CM_OUTLINE:
             self.outline_toggle()
         elif cmd == CM_WINLIST:
