@@ -56,6 +56,12 @@ comptime CM_WRAP = 78
 comptime CM_FOLD = 113
 comptime CM_FOLDALL = 114
 comptime CM_UNFOLDALL = 115
+comptime CM_LINEUP = 116
+comptime CM_LINEDOWN = 117
+comptime CM_JOIN = 118
+comptime CM_SORT = 119
+comptime CM_UPPER = 120
+comptime CM_LOWER = 121
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
 comptime CM_CURBELOW = 112
@@ -342,6 +348,12 @@ def build_registry() -> Registry:
     r.cmd(CM_FOLD, "edit.toggleFold", "~F~old or unfold", "Hide or show the indented block at the cursor", [alt(45)])
     r.cmd(CM_FOLDALL, "edit.foldAll", "F~o~ld all", "Hide every indented block")
     r.cmd(CM_UNFOLDALL, "edit.unfoldAll", "E~x~pand all", "Show all folded blocks", [alt(61)])
+    r.cmd(CM_LINEUP, "text.moveLineUp", "Move line ~u~p", "Move the current line or the selected lines up", [KEY_UP | MOD_ALT])
+    r.cmd(CM_LINEDOWN, "text.moveLineDown", "Move line ~d~own", "Move the current line or the selected lines down", [KEY_DOWN | MOD_ALT])
+    r.cmd(CM_JOIN, "text.joinLines", "~J~oin lines", "Join the next line (or the selected lines) onto this one", [alt(106)])
+    r.cmd(CM_SORT, "text.sortLines", "~S~ort lines", "Sort the selected lines (or all lines) in ascending order")
+    r.cmd(CM_UPPER, "text.upperCase", "U~p~per case", "Make the selection or the word at the cursor upper case", [alt(117)])
+    r.cmd(CM_LOWER, "text.lowerCase", "~L~ower case", "Make the selection or the word at the cursor lower case", [alt(108)])
     r.cmd(CM_DELLINE, "edit.deleteLine", "Delete l~i~ne", "Delete the current line", [ctrl(107)])
     r.cmd(CM_COMPLETE, "edit.complete", "Complete ~w~ord", "Complete the identifier under the cursor", [ctrl(32)])
     # ---- Search
@@ -432,6 +444,15 @@ def build_registry() -> Registry:
     r.item(CM_FOLD)
     r.item(CM_FOLDALL)
     r.item(CM_UNFOLDALL)
+
+    r.menu("~T~ext")
+    r.item(CM_LINEUP)
+    r.item(CM_LINEDOWN)
+    r.item(CM_JOIN)
+    r.item(CM_SORT)
+    r.sep()
+    r.item(CM_UPPER)
+    r.item(CM_LOWER)
 
     r.menu("~S~earch")
     r.item(CM_FIND)

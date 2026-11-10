@@ -161,7 +161,7 @@ def test_menubar_golden() raises:
     var p = theme(0)
     s.fill(0, 0, 80, 3, 32, 0, 0)
     draw_menubar(s, p, build_menus(build_registry()), 2, "12:34")
-    assert_true(row(s, 0).startswith("  ≡   File   Edit   Search   Run   Compile   Options   Window   Help"))
+    assert_true(row(s, 0).startswith("  ≡  File  Edit  Text  Search  Run  Compile  Options  Window  Help"), row(s, 0))
     assert_true(row(s, 0).endswith("12:34"))
     # the open menu (Edit, index 2) is highlighted, its neighbours are not
     var menus = build_menus(build_registry())
@@ -191,8 +191,8 @@ def test_dropdown_golden() raises:
     var menus = build_menus(build_registry())
     var checks = List[Int]()
     checks.append(CM_LINENUM)
-    draw_menubar(s, p, menus, 6, "")
-    draw_dropdown(s, p, menus[6], 0, checks)
+    draw_menubar(s, p, menus, 7, "")
+    draw_dropdown(s, p, menus[7], 0, checks)
     # the check mark sits before the checked item
     var found = False
     for y in range(16):

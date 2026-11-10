@@ -3,6 +3,7 @@ from std.collections import List
 from window import Window, WK_EDITOR, WK_MESSAGE
 from window_search import *
 from window_multi import *
+from window_lines import *
 from window_draw import *
 from dialog import *
 from util import *

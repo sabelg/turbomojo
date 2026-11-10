@@ -84,6 +84,8 @@ struct Window(Copyable, Movable):
     var hs_on: Bool
     var scope_on: Bool    # searching is limited to `scope` (Find in selection)
     var scope: Range
+    var auto_pairs: Bool  # typing an opening bracket or quote also inserts its partner
+    var rulers: List[Int] # columns after which a vertical guide is drawn
     var clustered: Bool   # the terminal draws a grapheme cluster as one glyph (mode 2027)
     var swap_file: String    # path of this buffer's swap file ('' if none written)
     var overwrite_ok: Bool   # the user chose to keep their version over a changed file
@@ -121,6 +123,8 @@ struct Window(Copyable, Movable):
         self.top_seg = 0
         self.wrap = False
         self.clustered = False
+        self.auto_pairs = False
+        self.rulers = List[Int]()
         self.extra = List[Cur]()
         self.box_on = False
         self.box_ar = 0

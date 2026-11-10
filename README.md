@@ -54,6 +54,9 @@ show_whitespace = false
 [editor]
 auto_indent = true
 soft_wrap = false           # continue long lines on the next screen row (Alt-Z)
+auto_pairs = true           # typing ( [ { " ' also inserts the closing one
+trim_trailing_whitespace = false   # on save (.editorconfig overrides)
+rulers = []                 # e.g. [80, 100]: vertical guides after these columns
 
 tab_width = 4               # display width of a tab character
 indent_size = 4             # spaces per indent level
@@ -86,6 +89,8 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Undo | Grouped undo/redo. Typing a word undoes as one step, and so does Replace-all or Format |
 | Soft wrap | Options ▸ Soft wrap (Alt-Z): long lines continue on the next screen row, broken after a blank where possible. Up/Down move by screen rows, the view scrolls inside a line taller than the window, and line numbers mark only the first row of each line |
 | Folding | Blocks are found by indentation. Alt-- (Edit ▸ Fold or unfold) hides or shows the block at the cursor, from its header or from any line inside it; clicking the ▾/▸ marker in the line-number gutter does the same. Fold all, and Expand all (Alt-=). A folded header shows how many lines it hides; moving the cursor skips them, and jumping into one (search, go to line, an error) opens it |
+| Text menu | Move line up/down (Alt-Up/Down, also for selected lines), Join lines (Alt-J), Sort lines, Upper/Lower case (Alt-U / Alt-L) for the selection or the word at the cursor |
+| Typing aids | Auto-closing pairs: `(`, `[`, `{` and quotes insert their partner, typing the closer steps over it, Backspace removes an empty pair, and with a selection the pair wraps it. Column rulers (`editor.rulers`). Trailing whitespace can be trimmed on save |
 | Multiple cursors | Alt-D selects the word under the cursor, then adds a cursor at each next occurrence; Ctrl-Alt-Up/Down (or Shift-Alt-Up/Down) add a cursor on the line above or below; Alt-click adds or removes one. Typing, Backspace, Delete, Enter, arrows, Home/End, selection, cut/copy/paste act at every cursor, and each step is one undo. Copy joins the selections line by line and a paste with one line per cursor deals them out. Esc returns to one cursor. **Column selection:** Ctrl-Shift-Alt-arrows or Alt-drag select a rectangle (by screen columns, so tabs and wide characters line up); typing replaces it on every line and copy/paste keeps the block shape |
 | Search | Find and Replace with **search as you type**: the first match is selected, every match is highlighted and the dialog shows "Match 3 of 17" while you type (Esc puts the cursor back). Options: case sensitive, whole words, **regular expressions** (no backtracking, so no pattern can hang the editor; `$1`, `${1}`, `$0`, `\n` in the replacement) and **in selection**. Replace steps through matches one at a time, Change all is one undo step. **Find in files** (Shift-F3) searches the project folder in the background with the same options and lists the hits in the Message window (Enter opens the file at the match, Alt-F8/Alt-F7 step through them, Ctrl-F2 cancels). Search again (Ctrl-L), Go to line, **Go to symbol** (fuzzy list of `def`/`struct`/`trait`/`comptime`) |
 | Command palette | Ctrl-P fuzzy-searches every menu command |
@@ -173,4 +178,5 @@ scripts/tui-test.sh stop
 - With several cursors, commands other than typing, deleting, moving and the clipboard (Tab indent, comment, duplicate line, PgUp/PgDn, Find...) first go back to one cursor. Undo also returns to one cursor. Alt-click needs a terminal that passes Alt with mouse clicks to the program.
 - With soft wrap, Home and End still go to the start and end of the whole line, continuation rows are not indented, and the Message window does not wrap.
 - Folds are not saved with the file or in recovery files, the fold markers need the line-number gutter, and deleting a folded header line deletes only that line (the block under it becomes visible).
+- Auto-closing pairs do not look at syntax: they also act inside strings and comments. Rulers are not drawn while soft wrap is on.
 - Ctrl-F9 Run hands the terminal to your program on purpose, the way Turbo's user screen did. Build and Format run in the background.

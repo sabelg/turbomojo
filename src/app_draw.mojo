@@ -15,6 +15,7 @@ from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
+from window_lines import *
 from window_draw import *
 from menu import *
 from commands import *
@@ -90,6 +91,9 @@ __extension App:
         for i in range(n):
             self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers)
             self.wins[i].clustered = self.scr.clustered
+            self.wins[i].auto_pairs = self.auto_pairs
+            if len(self.wins[i].rulers) != len(self.rulers):
+                self.wins[i].rulers = self.rulers.copy()
             if self.wins[i].follow:
                 self.wins[i].ensure_visible()
                 self.wins[i].follow = False

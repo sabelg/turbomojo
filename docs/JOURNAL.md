@@ -995,3 +995,45 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - No markers without the line-number gutter (the "⋯ N lines" hint still shows).
   - Indentation only: no folding of brackets, docstrings or comment runs.
 - Verified: `check.sh` CHECK OK (28 files, 601 tests).
+
+## 2026-11-10 · P1-14 typing aids and line operations · done
+
+- New `src/window_lines.mojo`: `move_lines`, `join_lines`, `sort_lines` (stable merge
+  sort by codepoint; the empty line after a final newline stays last), `change_case`
+  (selection or word at the cursor), and auto-closing pairs (`type_smart`,
+  `backspace_smart`). Each operation is one undo step.
+- Auto pairs: an opener inserts its partner at the end of a line or before a blank or a
+  closing character; quotes only when not directly after a word character or the same
+  quote (so `don't` and `"""` come out right); typing a closer that is already under the
+  cursor steps over it, for brackets only when the line is not missing one; Backspace
+  inside an empty pair removes both; an opener typed over a selection wraps it. Off in
+  overwrite mode. Works at every cursor. Setting `editor.auto_pairs` (default on).
+- Rulers: `editor.rulers = [80, 100]`, drawn as a different background where no other
+  colour (selection, current line, search mark) is in the cell; new palette entry
+  `ruler_bg`.
+- Trim on save: `editor.trim_trailing_whitespace` (default off); `.editorconfig` still
+  decides when it has a rule for the file.
+- New top-level menu Text (Alt-T) with the six commands; keys Alt-Up/Down, Alt-J,
+  Alt-U, Alt-L. The Edit menu was already as tall as a 25-row screen allows.
+- Menu bar change: with a ninth menu the titles no longer fitted. On an 80-column
+  screen the clock disappeared and at 70 columns Help was cut off (two existing tests
+  caught this). The gap between titles went from three blanks to two, as in Turbo's
+  own menu bar; the bar is now 67 columns wide (it was 68). Two golden files changed.
+- Behaviour change: typing `(`, `[`, `{`, `"` or `'` in the editor now inserts the
+  closing character too, by default.
+- Tests: `tests/test_lines.mojo` (24 tests) for every operation including undo,
+  selections, Unicode, 500 lines sorted, pairs (partner, step over, missing closer,
+  quotes, docstring quotes, backspace, wrap, off, overwrite, several cursors), rulers,
+  settings and their validation, commands and keys in the app, trim on save with and
+  without `.editorconfig`. All passed on the first run. Menu indexes in two older tests
+  were updated for the new menu.
+- Not done / unverified:
+  - Pairs ignore syntax (they also act inside strings and comments) and are not tracked:
+    "step over" is decided from the bracket balance of the line.
+  - Sort is by character code only (no case-insensitive or numeric order).
+  - Case conversion covers the same letters as the regex engine (ASCII, Latin-1, Greek,
+    Cyrillic); nothing that changes length such as "ß".
+  - Rulers are skipped with soft wrap on. Moving the last line down swaps it with the
+    empty line after the final newline.
+  - Alt-Up/Down and the other Alt keys were exercised through tests and tmux only.
+- Verified: `check.sh` CHECK OK (29 files, 625 tests).

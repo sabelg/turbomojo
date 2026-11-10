@@ -16,6 +16,7 @@ from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
+from window_lines import *
 from window_draw import *
 from menu import *
 from commands import *

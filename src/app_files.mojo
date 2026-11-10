@@ -15,6 +15,7 @@ from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
+from window_lines import *
 from window_draw import *
 from menu import *
 from commands import *
@@ -89,7 +90,8 @@ __extension App:
             self.wins[i].buf.crlf = ec.crlf
         if ec.has_final_newline:
             self.wins[i].buf.eol_at_eof = ec.final_newline
-        self.wins[i].buf.trim_on_save = ec.has_trim and ec.trim
+        # the user's setting, unless .editorconfig says something for this file
+        self.wins[i].buf.trim_on_save = ec.trim if ec.has_trim else self.trim_trailing
 
     def apply_editorconfig(mut self, i: Int):
         if self.wins[i].path.byte_length() > 0:

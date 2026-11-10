@@ -15,6 +15,7 @@ from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
+from window_lines import *
 from window_draw import *
 from menu import *
 from commands import *
@@ -140,6 +141,19 @@ __extension App:
         elif cmd == CM_CLEAR:
             if ai >= 0:
                 self.wins[ai].multi(OP_DELSEL, 0, False, False, List[Int]())
+        elif cmd == CM_LINEUP or cmd == CM_LINEDOWN:
+            if ai >= 0:
+                _ = self.wins[ai].move_lines(-1 if cmd == CM_LINEUP else 1)
+        elif cmd == CM_JOIN:
+            if ai >= 0 and not self.wins[ai].join_lines():
+                self.say("No line to join")
+        elif cmd == CM_SORT:
+            if ai >= 0:
+                var n = self.wins[ai].sort_lines()
+                self.say(String(n) + " lines sorted" if n > 0 else "Already in order")
+        elif cmd == CM_UPPER or cmd == CM_LOWER:
+            if ai >= 0:
+                _ = self.wins[ai].change_case(cmd == CM_UPPER)
         elif cmd == CM_FOLD:
             if ai >= 0 and not self.wins[ai].toggle_fold(self.wins[ai].cr):
                 self.say("Nothing to fold here")

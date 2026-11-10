@@ -17,6 +17,7 @@ from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
+from window_lines import *
 from search import Search, make_search
 from window_draw import *
 from menu import *
@@ -178,6 +179,9 @@ struct App(Movable):
     var fault: String          # fault injection for crash tests (TURBOMOJO_FAULT)
     var show_ws: Bool
     var soft_wrap: Bool
+    var auto_pairs: Bool
+    var trim_trailing: Bool
+    var rulers: List[Int]
 
     def __init__(out self):
         self.term = Terminal()
@@ -265,6 +269,9 @@ struct App(Movable):
         self.fault = env_or("TURBOMOJO_FAULT", "")
         self.show_ws = False
         self.soft_wrap = False
+        self.auto_pairs = True
+        self.trim_trailing = False
+        self.rulers = List[Int]()
 
     # =================================================================== utils
     def desk_h(self) -> Int:
@@ -347,6 +354,9 @@ struct App(Movable):
         self.show_clock = s.clock
         self.show_ws = s.show_whitespace
         self.soft_wrap = s.soft_wrap
+        self.auto_pairs = s.auto_pairs
+        self.trim_trailing = s.trim_trailing
+        self.rulers = s.rulers.copy()
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].wrap != self.soft_wrap:
                 self.wins[i].set_wrap(self.soft_wrap)
@@ -433,6 +443,8 @@ struct App(Movable):
         win.buf.tab_width = self.tab_width
         win.buf.indent_size = self.indent_size
         win.wrap = self.soft_wrap
+        win.auto_pairs = self.auto_pairs
+        win.rulers = self.rulers.copy()
         self.wins.append(win^)
         return len(self.wins) - 1
 

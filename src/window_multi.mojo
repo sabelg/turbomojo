@@ -13,6 +13,7 @@ from search import Search, make_search
 from util import is_ident
 from window import *
 from window_search import *
+from window_lines import *
 
 comptime OP_TYPE = 1
 comptime OP_BACK = 2
@@ -125,9 +126,15 @@ __extension Window:
     def do_op(mut self, op: Int, a: Int, flag: Bool, flag2: Bool, text: List[Int]):
         """One single-cursor operation on the main cursor."""
         if op == OP_TYPE:
-            self.type_char(a, flag)
+            if self.auto_pairs and flag:
+                self.type_smart(a)
+            else:
+                self.type_char(a, flag)
         elif op == OP_BACK:
-            self.backspace()
+            if self.auto_pairs:
+                self.backspace_smart()
+            else:
+                self.backspace()
         elif op == OP_DEL:
             self.delete_fwd()
         elif op == OP_NEWLINE:

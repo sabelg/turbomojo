@@ -9,6 +9,7 @@ from grapheme import cluster_end
 from window import *
 from window_search import *
 from window_multi import *
+from window_lines import *
 
 
 __extension Window:
@@ -185,6 +186,12 @@ __extension Window:
             # selection past end of line shows the newline
             if has_sel and sr.r1 <= r and r < sr.r2 and s1 == n and v >= off and v < lim:
                 scr.put(cx0 + v - off, yy, 32, pal.sel_fg, pal.sel_bg)
+            # column guides: only where nothing else colours the cell
+            if not is_msg and not self.wrap:
+                for rc in self.rulers:
+                    var rx = cx0 + rc - off
+                    if rc >= off and rc < lim and scr.bg_at(rx, yy) == rowbg:
+                        scr.set_bg(rx, yy, pal.ruler_bg)
             # a folded block: say how much is hidden behind its header
             var fi = self.buf.fold_index(r) if not is_msg else -1
             if fi >= 0 and s1 == n and fi < len(self.buf.fold_ends) and v + 2 >= off and v + 2 < lim:

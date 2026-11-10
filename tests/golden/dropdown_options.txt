@@ -1,4 +1,4 @@
-  ≡   File   Edit   Search   Run   Compile   Options   Windo
+  ≡  File  Edit  Text  Search  Run  Compile  Options  Window
                                 ┌────────────────────────┐
                                 │√Line numbers           │
                                 │ Auto indent            │

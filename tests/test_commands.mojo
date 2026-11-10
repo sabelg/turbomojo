@@ -169,13 +169,13 @@ def test_menu_labels_show_the_primary_key() raises:
 def test_generated_menus() raises:
     var r = build_registry()
     var menus = build_menus(r)
-    assert_equal(len(menus), 9)
+    assert_equal(len(menus), 10)
     assert_equal(plain(menus[1].title), "File")
     assert_equal(menus[1].items[0].label, "~N~ew")
     assert_equal(menus[1].items[0].key, "Ctrl-N")
     assert_equal(menus[1].items[0].cmd, CM_NEW)
     assert_equal(menus[1].items[5].label, "-")
-    assert_equal(plain(menus[8].title), "Help")
+    assert_equal(plain(menus[9].title), "Help")
     # menu x positions are increasing and leave room for " Title "
     for i in range(1, len(menus)):
         assert_true(menus[i].x > menus[i - 1].x)

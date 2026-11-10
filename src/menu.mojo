@@ -52,7 +52,9 @@ def build_menus(reg: Registry) -> List[Menu]:
     var x = 1
     for i in range(len(ms)):
         ms[i].x = x
-        x += cp_len(ms[i].title) - 2 + 2 + 1
+        # titles sit two blanks apart, as in Turbo's menu bar; with nine menus a wider gap
+        # would push Help off an 80-column screen's clock and off a 70-column screen
+        x += cp_len(ms[i].title) - 2 + 2
     return ms^
 
 
