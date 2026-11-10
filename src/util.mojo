@@ -436,6 +436,12 @@ def clock_hm() -> String:
     return s
 
 
+def secs_to_next_minute() -> Int:
+    """Seconds until the wall clock shows a new minute (1..60)."""
+    var t = external_call["time", Int](Int(0))
+    return 60 - (t % 60)
+
+
 def base64(data: List[UInt8]) -> String:
     var tbl = str_bytes("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/")
     var out = List[UInt8]()

@@ -5,7 +5,7 @@ from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
 from term import (
-    Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE, K_BASE, KEY_ESC, KEY_ENTER, KEY_TAB,
+    Terminal, wait_readable, ESC_TIMEOUT_MS, Event, EV_KEY, EV_MOUSE, EV_PASTE, K_BASE, KEY_ESC, KEY_ENTER, KEY_TAB,
     KEY_BACKSPACE, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_PGUP,
     KEY_PGDN, KEY_INSERT, KEY_DELETE, MOD_SHIFT, MOD_ALT, MOD_CTRL, KEY_MASK, fkey, ctrl, alt,
     MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN,
@@ -28,6 +28,14 @@ comptime M_DIALOG = 2
 comptime M_COMPLETE = 3
 
 comptime VERSION = "1.0"
+
+comptime STATUS_MS = 4000        # how long a status-line message stays
+comptime RESIZE_POLL_MS = 250    # until SIGWINCH handling lands (P0-11)
+comptime SPINNER_MS = 100
+
+
+def now_ns() -> Int:
+    return Int(perf_counter_ns())
 
 
 comptime JOB_BUILD = 1
@@ -98,7 +106,7 @@ struct App(Movable):
     var errs: List[ErrLoc]
     var err_idx: Int
     var status: String
-    var status_ttl: Int
+    var status_until: Int
     var drag: Int
     var drag_dx: Int
     var drag_dy: Int
@@ -112,7 +120,6 @@ struct App(Movable):
     var st_cmd: List[Int]
     var last_click_item: Int
     var job: Job
-    var tick: Int
     var show_ws: Bool
 
     def __init__(out self):
@@ -144,7 +151,7 @@ struct App(Movable):
         self.errs = List[ErrLoc]()
         self.err_idx = -1
         self.status = ""
-        self.status_ttl = 0
+        self.status_until = 0
         self.drag = 0
         self.drag_dx = 0
         self.drag_dy = 0
@@ -158,7 +165,6 @@ struct App(Movable):
         self.st_cmd = List[Int]()
         self.last_click_item = -1
         self.job = Job()
-        self.tick = 0
         self.show_ws = False
 
     # =================================================================== utils
@@ -195,9 +201,22 @@ struct App(Movable):
         var w = self.wins.pop(i)
         self.wins.append(w^)
 
+    def next_timeout_ms(self, now: Int, input_pending: Bool, secs_to_minute: Int) -> Int:
+        """How long the event loop may sleep before something on screen must change."""
+        var t = RESIZE_POLL_MS
+        if self.job.active:
+            t = min(t, SPINNER_MS)
+        if input_pending:
+            t = min(t, ESC_TIMEOUT_MS)
+        if self.status_until > now:
+            t = min(t, (self.status_until - now) // 1000000 + 1)
+        if self.show_clock:
+            t = min(t, secs_to_minute * 1000 + 50)
+        return max(1, t)
+
     def say(mut self, msg: String):
         self.status = msg
-        self.status_ttl = 40
+        self.status_until = now_ns() + STATUS_MS * 1000000
 
     def free_number(self) -> Int:
         for n in range(1, 10):

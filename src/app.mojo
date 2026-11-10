@@ -44,6 +44,12 @@ __extension App:
             self.draw()
             self.scr.render(self.term.out)
             self.term.flush()
+            # sleep until input, compiler output or the next timer
+            var fds = List[Int]()
+            fds.append(0)
+            if self.job.active:
+                fds.append(self.job.fd)
+            _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             var evs = self.term.poll()
             for k in range(len(evs)):
                 try:
@@ -55,9 +61,6 @@ __extension App:
                 self.poll_job()
             except err:
                 self.info("Error", String(err))
-            self.tick += 1
-            if self.status_ttl > 0:
-                self.status_ttl -= 1
         if self.job.active:
             self.cancel_job()
             _ = external_call["pclose", Int32](self.job.fp)

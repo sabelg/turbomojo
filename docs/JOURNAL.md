@@ -167,3 +167,27 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
 - README source layout and testing sections updated.
 - Verified: `check.sh` CHECK OK (8 files, 194 tests, smoke test) after each of the two
   splits.
+
+## 2026-11-10 · P0-10 poll()-based event loop · done
+
+- `term.wait_readable(fds, timeout_ms)` sleeps in `poll(2)` on stdin and, while a build or
+  format runs, on the compiler's pipe. Terminal reads are now non-blocking (VTIME 0).
+- Timers are time-based instead of counted loop ticks: status messages carry a deadline
+  (`status_until`), the spinner frame comes from the clock, and
+  `App.next_timeout_ms()` picks the shortest of: spinner (100 ms, only while a job runs),
+  pending-escape timeout (25 ms, only while an incomplete sequence is buffered), status
+  expiry, the next minute boundary (clock), and a 250 ms resize check that P0-11 will
+  replace with SIGWINCH.
+- A lone Esc is now resolved after 25 ms without further bytes (was up to 100 ms), judged
+  by elapsed time since the last input so a compiler-output wake-up cannot cut an escape
+  sequence short.
+- `wait_byte()` (user screen) blocks in `poll()` instead of spinning.
+- Added `tests/test_loop.mojo` (14 tests): `wait_readable` against real pipes (timeout
+  duration, immediate return, which fd is ready, wake on writer close, zero timeout), the
+  timer selection rules, `say()` deadlines, minute-boundary wake, pending-escape state.
+- Measured with the new `scripts/idle-cpu.sh` (10 s idle in tmux): before 50 ms CPU and
+  ~10 wakeups/s; after 20 ms CPU and 4 wakeups/s.
+- Verified: `check.sh` CHECK OK (9 files, 208 tests, smoke test). Checked live through
+  tmux: Esc closes a menu within 150 ms, F9 builds in the background and shows the result
+  box, Alt-F5 user screen returns on a key, cursor keys work.
+- Not measured: keystroke-to-screen latency (needs instrumentation; planned in P9-02).

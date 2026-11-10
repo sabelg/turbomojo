@@ -48,7 +48,7 @@ __extension App:
             self.st_cmd.append(cmds[i])
             x += 2
         var right = String("")
-        if self.status_ttl > 0:
+        if self.status_until > now_ns():
             right = self.status
         else:
             var ti = self.top_editor()
@@ -58,7 +58,7 @@ __extension App:
         if self.job.active:
             var sp = decode(SPINNER)
             var b = List[UInt8]()
-            encode_cp(sp[self.tick % len(sp)], b)
+            encode_cp(sp[(now_ns() // (SPINNER_MS * 1000000)) % len(sp)], b)
             var what = "Building " if self.job.kind == JOB_BUILD else "Formatting "
             var e = self.job_elapsed()
             right = bytes_to_str(b) + " " + what + basename(self.job.path) + " " + String(Int(e)) + "." + String(Int(e * 10) % 10) + "s  ^F2 cancel  " + right

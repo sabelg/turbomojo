@@ -16,7 +16,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P0-07 Mouse handling tests through the app with synthetic events: click to place cursor, drag select, wheel scroll, title-bar move, corner resize, close box, menu clicks, dialog clicks. Fix whatever fails
 - [x] P0-08 Command registry: one table of commands (id, title, default keys, hint); menus, palette, shortcuts and help generated from it
 - [x] P0-09 Split `app.mojo` into modules (commands, files, jobs, dialogs-flow, mouse, draw); no source file over ~700 lines
-- [ ] P0-10 `poll()`-based event loop over stdin and child pipes with timers, replacing VTIME polling; idle wakeups only for the clock/spinner
+- [x] P0-10 `poll()`-based event loop over stdin and child pipes with timers, replacing VTIME polling; idle wakeups only for the clock/spinner
 - [ ] P0-11 Signals through a self-pipe: SIGWINCH resize, SIGTERM/SIGHUP save-and-exit, SIGTSTP/SIGCONT suspend and restore
 - [ ] P0-12 Crash safety: terminal always restored on error paths; crash log under `~/.local/state/turbomojo/`
 - [ ] P0-13 Terminal capability probe (`Caps`): kitty keyboard, modes 2026/2027/2031/2048 via DECRQM, truecolor detection with 256/16-colour fallback rendering

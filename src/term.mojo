@@ -1,6 +1,7 @@
 """Raw terminal I/O: termios, window size, key + SGR mouse + bracketed paste parsing."""
 from std.ffi import external_call
 from std.collections import List
+from std.time import perf_counter_ns
 from util import decode_list, append_str
 
 comptime K_BASE = 0x110000
@@ -63,6 +64,32 @@ def key_event(k: Int) -> Event:
     return Event(EV_KEY, k, 0, 0, 0, False, False, List[Int]())
 
 
+comptime ESC_TIMEOUT_MS = 25
+
+
+def wait_readable(fds: List[Int], timeout_ms: Int) -> Int:
+    """Sleep in poll() until one of `fds` is readable or the timeout passes.
+
+    timeout_ms < 0 waits forever. Returns a bit mask: bit i is set when fds[i] is readable
+    (or closed/in error, so the caller's read will notice). 0 means the timeout expired."""
+    # struct pollfd { int fd; short events; short revents; } -> two Int32 per entry
+    var n = len(fds)
+    var pf = List[Int32](length=2 * n, fill=0)
+    for i in range(n):
+        pf[2 * i] = Int32(fds[i])
+        pf[2 * i + 1] = Int32(1)  # events = POLLIN, revents = 0
+    var t = timeout_ms if timeout_ms < 0 else max(0, timeout_ms)
+    var r = external_call["poll", Int32](pf.unsafe_ptr(), UInt64(n), Int32(t))
+    var mask = 0
+    if Int(r) <= 0:
+        return mask
+    for i in range(n):
+        var revents = (Int(pf[2 * i + 1]) >> 16) & 0xFFFF
+        if revents != 0:
+            mask |= 1 << i
+    return mask
+
+
 def get_u32(b: List[UInt8], off: Int) -> Int:
     return Int(b[off]) | (Int(b[off + 1]) << 8) | (Int(b[off + 2]) << 16) | (Int(b[off + 3]) << 24)
 
@@ -81,6 +108,7 @@ struct Terminal(Movable):
     var out: List[UInt8]
     var in_paste: Bool
     var paste: List[UInt8]
+    var last_input_ns: Int
 
     def __init__(out self):
         self.saved = List[UInt8](length=128, fill=0)
@@ -89,6 +117,7 @@ struct Terminal(Movable):
         self.out = List[UInt8]()
         self.in_paste = False
         self.paste = List[UInt8]()
+        self.last_input_ns = 0
 
     # ------------------------------------------------------------- modes
     def raw(mut self):
@@ -104,7 +133,7 @@ struct Terminal(Movable):
         # lflag: ECHO | ICANON | IEXTEN | ISIG
         set_u32(t, 12, get_u32(t, 12) & ~(0x8 | 0x2 | 0x8000 | 0x1))
         t[17 + 6] = 0  # VMIN
-        t[17 + 5] = 1  # VTIME (1/10 s) -> periodic wakeups for the clock
+        t[17 + 5] = 0  # VTIME: reads never block; the event loop waits in poll()
         _ = external_call["tcsetattr", Int32](Int32(0), Int32(2), t.unsafe_ptr())
 
     def cooked(mut self):
@@ -147,20 +176,34 @@ struct Terminal(Movable):
     def wait_byte(mut self):
         """Block until any input byte arrives (used by the user screen)."""
         var tmp = List[UInt8](length=64, fill=0)
+        var fds = List[Int]()
+        fds.append(0)
         while True:
+            _ = wait_readable(fds, -1)
             var n = external_call["read", Int](Int(0), tmp.unsafe_ptr(), Int(64))
             if n > 0:
                 return
 
     # ------------------------------------------------------------- input
+    def pending(self) -> Bool:
+        """True while an incomplete sequence (e.g. a lone ESC) waits for more bytes."""
+        return len(self.inbuf) > 0
+
     def poll(mut self) -> List[Event]:
-        """Read whatever the terminal sent (waits up to VTIME) and parse it."""
+        """Read whatever the terminal has sent (never blocks) and parse it.
+
+        An incomplete sequence is only resolved once ESC_TIMEOUT_MS has passed without
+        new bytes, so a sequence split across reads is not mistaken for a lone Esc."""
         var tmp = List[UInt8](length=4096, fill=0)
         var n = external_call["read", Int](Int(0), tmp.unsafe_ptr(), Int(4096))
         var data = List[UInt8]()
         for i in range(n):
             data.append(tmp[i])
-        return self.feed(data, n <= 0)
+        var now = Int(perf_counter_ns())
+        if n > 0:
+            self.last_input_ns = now
+        var stale = n <= 0 and now - self.last_input_ns >= ESC_TIMEOUT_MS * 1000000
+        return self.feed(data, stale)
 
     def feed(mut self, data: List[UInt8], stale: Bool) -> List[Event]:
         """Parse input bytes into events. Needs no terminal, so tests can drive it.
