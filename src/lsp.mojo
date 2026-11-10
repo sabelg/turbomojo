@@ -952,6 +952,13 @@ struct LspClient(Copyable, Movable):
             return -1
         return self.conn.request("textDocument/definition", self.position_params(uri, line, character) + "}", now)
 
+    def request_references(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
+        """Ask for every use of the symbol at a position, its declaration included.
+        -1 if the server cannot be asked now."""
+        if self.state != LSP_READY or not self.table.references or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/references", self.position_params(uri, line, character) + ",\"context\":{\"includeDeclaration\":true}}", now)
+
     def request_signature(mut self, uri: String, line: Int, character: Int, trigger: String, again: Bool, now: Int) -> Int:
         """Ask which call the position is inside and which parameter is being typed.
         `trigger` is the character just typed ('' if none); `again` says a signature is

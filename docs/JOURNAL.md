@@ -1547,3 +1547,29 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   - Declaration / type definition / implementation requests are not offered (the Mojo
     server does not advertise them).
 - Verified: `check.sh` CHECK OK (33 files, 741 tests).
+
+## 2026-11-10 · P2-08 Find references · done
+
+- `src/lsp.mojo`: `request_references` (includeDeclaration true); the answer is read by
+  `parse_locations` from P2-07.
+- `src/app_nav.mojo`: `references_command/_request/_arrived` (retry on "outdated
+  request"; dropped if the cursor moved). Places are sorted - the file being edited
+  first, other files by name, then by position - and listed by `show_places` under
+  "References to <name>" with a summary "N places in M files". The cursor stays in the
+  editor; the list is marked at the use the cursor is on, so Next / Previous message
+  continue from there (each step is a jump, so Back returns). `show_places` now reads
+  each file that is not open once (`file_lines`) instead of once per place.
+- Command: Find references (Shift-F12) in the Search menu.
+- Tests (4 new in `tests/test_lsp.mojo`, 66 there): the list for one file (server order
+  reversed, a column after a non-BMP character, includeDeclaration sent, stepping and
+  going back); a second file that is not open (read from disk, not opened, leading
+  blanks dropped); nothing found / null / retry / cursor moved / no feature / no server;
+  and the real mojo-lsp-server (definition and both calls of `twice` listed).
+  All passed on the first run; the P2-07 expectation "2 places" became
+  "2 places in 1 file".
+- Not done / unverified:
+  - Not tried by hand in tmux; Shift-F12 as sent by real terminals is untested.
+  - The uses are not highlighted in the editor (word highlights are P2-13).
+  - The list is a snapshot: it is not updated when the files are edited afterwards.
+  - Very long lists are not capped or measured (one Message line per place).
+- Verified: `check.sh` CHECK OK (33 files, 745 tests).

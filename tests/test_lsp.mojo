@@ -14,8 +14,8 @@ from app import *
 from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER
 from markdown import md_plain
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
-from term import fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN, KEY_LEFT, KEY_HOME
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_REFERENCES, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
+from term import MOD_SHIFT, fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN, KEY_LEFT, KEY_HOME
 from signals import own_pid
 from util import cp_len, decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
 from config import load_settings, read_text
@@ -1554,7 +1554,7 @@ def test_definition_in_another_file_and_several_definitions() raises:
     assert_equal(to_str(app.wins[mi].buf.line(0)), "Definitions")
     assert_equal(to_str(app.wins[mi].buf.line(1)), "a.mojo:3:10: \"\U0001F600\"; def multi(): pass")
     assert_equal(to_str(app.wins[mi].buf.line(2)), "a.mojo:5:9: def multi(a): pass")
-    assert_equal(to_str(app.wins[mi].buf.line(3)), "2 places")
+    assert_equal(to_str(app.wins[mi].buf.line(3)), "2 places in 1 file")
     app.exec(CM_NEXTERR)
     assert_equal(at(app), "a.mojo:4:8")
     # each of these steps can be undone with Back
@@ -1681,6 +1681,116 @@ def test_jump_list_rules() raises:
     app.exec(CM_NEW)
     app.jump_mark()
     assert_equal(len(app.jumps), 100)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+# -------------------------------------------------------- find references
+def wait_ref(mut app: App):
+    var t0 = now()
+    while (app.ref_req_id >= 0 or app.ref_retry_due > 0) and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+
+
+def msg_lines(app: App) -> String:
+    """The Message window's text, lines joined with " | "."""
+    var mi = app.msg_index()
+    if mi < 0:
+        return "(no Message window)"
+    var s = String("")
+    for r in range(app.wins[mi].buf.count()):
+        if r > 0:
+            s += " | "
+        s += to_str(app.wins[mi].buf.line(r))
+    return s
+
+
+def test_find_references_lists_every_use() raises:
+    var dir = scratch("ref1")
+    var app = comp_app(dir, "def helper():\n    pass\nx = helper()\n\"\U0001F600\"; helper()\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    assert_equal(build_registry().find_key(fkey(12) | MOD_SHIFT), CM_REFERENCES)
+    app.wins[i].goto(2, 6)
+    app.handle(key_event(fkey(12) | MOD_SHIFT))
+    assert_equal(app.status, "Asking the language server...")
+    wait_ref(app)
+    # in the order of the file although the server sent them backwards; columns count characters
+    assert_equal(msg_lines(app), "References to helper | a.mojo:1:5: def helper(): | a.mojo:3:5: x = helper() | a.mojo:4:6: \"\U0001F600\"; helper() | 3 places in 1 file")
+    assert_true(app.status.find("3 places in 1 file - ") == 0, app.status)
+    assert_equal(at(app), "a.mojo:2:6")                  # the cursor stays; the editor keeps the keyboard
+    # the list is marked at the use the cursor is on, and Next message goes on from there
+    assert_equal(app.wins[app.msg_index()].cr, 2)
+    app.exec(CM_NEXTERR)
+    assert_equal(at(app), "a.mojo:3:5")
+    app.exec(CM_NEXTERR)
+    assert_equal(at(app), "a.mojo:0:4")                  # round to the first
+    app.exec(CM_PREVERR)
+    assert_equal(at(app), "a.mojo:3:5")
+    # each step can be taken back
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:0:4")
+    app.exec(CM_BACK)
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:2:6")
+    # the declaration was asked for
+    var st = server_state(app)
+    assert_true(st.bool(st.get(st.at(st.get(0, "ref_contexts"), 0), "includeDeclaration")))
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_references_across_files() raises:
+    var dir = scratch("ref2")
+    with open(dir + "/other.mojo", "w") as f:
+        f.write("# other\n    shared(1)\n\nz = shared(shared(2))\n")
+    var app = comp_app(dir, "pass\ndef shared(n): pass\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(1, 10)                              # right after the name
+    app.exec(CM_REFERENCES)
+    wait_ref(app)
+    # this file first, then the other one (read from disk, not opened); leading blanks dropped
+    assert_equal(msg_lines(app), "References to shared | a.mojo:2:5: def shared(n): pass | other.mojo:2:5: shared(1) | other.mojo:4:5: z = shared(shared(2)) | other.mojo:4:12: z = shared(shared(2)) | 4 places in 2 files")
+    assert_equal(app.find_editor(dir + "/other.mojo"), -1)
+    app.exec(CM_NEXTERR)
+    assert_equal(at(app), "other.mojo:1:4")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:1:10")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_references_none_retries_and_moved_cursor() raises:
+    var dir = scratch("ref3")
+    var app = comp_app(dir, "# REFBUSY\nvalue = 1\nprint(value)\nnowhere\n   \n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(2, 8)
+    app.exec(CM_REFERENCES)
+    wait_ref(app)                                       # two refusals, then the answer
+    assert_true(msg_lines(app).find("References to value | a.mojo:2:1: value = 1 | a.mojo:3:7: print(value) | 2 places in 1 file") == 0, msg_lines(app))
+    var listed = msg_lines(app)
+    app.wins[i].goto(3, 2)
+    app.exec(CM_REFERENCES)
+    wait_ref(app)
+    assert_equal(app.status, "No references found for this place")
+    app.wins[i].goto(4, 1)
+    app.exec(CM_REFERENCES)
+    wait_ref(app)
+    assert_equal(app.status, "No references found for this place")
+    assert_equal(msg_lines(app), listed)                 # the earlier list is still there
+    # the cursor moved before the answer came: the answer is dropped
+    app.wins[i].goto(3, 2)
+    app.say("")
+    app.wins[i].goto(2, 8)
+    app.exec(CM_REFERENCES)
+    app.wins[i].goto(0, 0)
+    run_ticks(app, 400, False)
+    assert_equal(app.status, "Asking the language server...")
+    assert_equal(app.ref_req_id, -1)
+    app.lsp.table.references = False
+    app.exec(CM_REFERENCES)
+    assert_equal(app.status, "This language server does not find references")
+    app.lsp_stop()
+    app.exec(CM_REFERENCES)
+    assert_true(app.status.find("Start the language server first") == 0, app.status)
     _ = run_system("rm -rf '" + dir + "'")
 
 
@@ -2135,6 +2245,36 @@ def test_real_server_goes_to_a_definition() raises:
     assert_equal(at(app), "t.mojo:0:4")
     app.exec(CM_BACK)
     assert_equal(at(app), "t.mojo:4:12")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_real_server_finds_references() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realref")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'def twice(n: Int) -> Int:\\n    return n * 2\\n\\ndef main():\\n    print(twice(4))\\n    print(twice(5))\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var t0 = now()
+    while app.lsp.state != LSP_READY and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    run_ticks(app, 2000, False)
+    var i = app.find_editor(path)
+    app.wins[i].goto(4, 12)                              # on "twice" in the first call
+    app.exec(CM_REFERENCES)
+    t0 = now()
+    while (app.ref_req_id >= 0 or app.ref_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    print("      real server references: " + msg_lines(app))
+    assert_true(msg_lines(app).find("References to twice | ") == 0, app.status)
+    assert_true(msg_lines(app).find("t.mojo:5:11: print(twice(4))") > 0)
+    assert_true(msg_lines(app).find("t.mojo:6:11: print(twice(5))") > 0)
     app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 

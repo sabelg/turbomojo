@@ -283,6 +283,8 @@ __extension App:
             self.sig_command()
         elif cmd == CM_DEFINITION:
             self.definition_command()
+        elif cmd == CM_REFERENCES:
+            self.references_command()
         elif cmd == CM_BACK:
             self.jump_back()
         elif cmd == CM_FORWARD:

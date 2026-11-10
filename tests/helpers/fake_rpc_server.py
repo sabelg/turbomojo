@@ -95,7 +95,7 @@ def main():
                 # FAKE_SYNC=2: incremental sync with save notifications
                 "capabilities": {"textDocumentSync": ({"openClose": True, "change": 2, "save": True}
                                                       if os.environ.get("FAKE_SYNC") == "2" else 1),
-                                 "hoverProvider": True, "foldingRangeProvider": False, "definitionProvider": True,
+                                 "hoverProvider": True, "foldingRangeProvider": False, "definitionProvider": True, "referencesProvider": True,
                                  "signatureHelpProvider": {"triggerCharacters": ["(", ","]},
                                  "completionProvider": {"triggerCharacters": [".", "("], "resolveProvider": True},
                                  "renameProvider": {"prepareProvider": True}},
@@ -245,6 +245,44 @@ def main():
             else:
                 send({"jsonrpc": "2.0", "id": mid, "result": places})
             continue
+        if method == "textDocument/references":
+            import re
+            uri = params["textDocument"]["uri"]
+            text = DOCS.get(uri, "")
+            main.refs = getattr(main, "refs", 0) + 1
+            main.ref_contexts = getattr(main, "ref_contexts", []) + [params.get("context")]
+            lines = text.split("\n")
+            ln = params["position"]["line"]
+            line = lines[ln] if ln < len(lines) else ""
+            at = utf16_index(line, params["position"]["character"])
+            a = at
+            while a > 0 and (line[a - 1].isalnum() or line[a - 1] == "_"):
+                a -= 1
+            b = at
+            while b < len(line) and (line[b].isalnum() or line[b] == "_"):
+                b += 1
+            word = line[a:b]
+            sources = [(uri, text)]
+            if word == "shared":
+                # also used in a file the editor has not opened
+                other = uri.rsplit("/", 1)[0] + "/other.mojo"
+                with open(other[len("file://"):], encoding="utf-8") as fh:
+                    sources.append((other, fh.read()))
+            places = []
+            for u, t in sources:
+                for k, l in enumerate(t.split("\n")):
+                    for mm in re.finditer(r"\b%s\b" % re.escape(word), l) if word else []:
+                        col = len(l[:mm.start()].encode("utf-16-le")) // 2
+                        places.append({"uri": u, "range": {"start": {"line": k, "character": col},
+                                                             "end": {"line": k, "character": col + len(word)}}})
+            places.reverse()                 # servers promise no order
+            if "REFBUSY" in text and main.refs < 3:
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32801, "message": "outdated request"}})
+            elif word == "nowhere" or not word:
+                send({"jsonrpc": "2.0", "id": mid, "result": None if not word else []})
+            else:
+                send({"jsonrpc": "2.0", "id": mid, "result": places})
+            continue
         if method == "textDocument/signatureHelp":
             text = DOCS.get(params["textDocument"]["uri"], "")
             main.sigs = getattr(main, "sigs", 0) + 1
@@ -312,7 +350,7 @@ def main():
             continue
         if method == "doc_state":        # what this server holds, for the tests
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
+                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
             continue
         if method == "closed_docs":
             send({"jsonrpc": "2.0", "id": mid, "result": getattr(main, "closed", [])})

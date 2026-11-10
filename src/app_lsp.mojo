@@ -295,6 +295,11 @@ __extension App:
             var di = self.active_editor()
             if not self.definition_still_wanted() or not self.definition_request(di):
                 self.def_req_id = -1
+        if self.ref_retry_due > 0 and now >= self.ref_retry_due:
+            self.ref_retry_due = 0
+            var ri = self.active_editor()
+            if not self.references_still_wanted() or not self.references_request(ri):
+                self.ref_req_id = -1
         if self.sig_retry_due > 0 and now >= self.sig_retry_due:
             self.sig_retry_due = 0
             var si = self.active_editor()
@@ -309,6 +314,8 @@ __extension App:
                 self.hover_arrived(m)
             elif m.id == self.sig_req_id:
                 self.sig_arrived(m)
+            elif m.id == self.ref_req_id:
+                self.references_arrived(m)
             elif m.id == self.def_req_id:
                 try:
                     self.definition_arrived(m)

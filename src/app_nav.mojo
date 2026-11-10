@@ -43,6 +43,28 @@ from app_draw import *
 comptime JUMPS_MAX = 100
 
 
+def is_word_cp(c: Int) -> Bool:
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 or c >= 128
+
+
+def count_of(n: Int, what: String) -> String:
+    return String(n) + " " + what + ("" if n == 1 else "s")
+
+
+def place_before(a: LspLocation, b: LspLocation, first_path: String) -> Bool:
+    """Order of places in a list: `first_path` before other files, files by name, then
+    by position."""
+    if a.path != b.path:
+        if a.path == first_path:
+            return True
+        if b.path == first_path:
+            return False
+        return a.path < b.path
+    if a.row != b.row:
+        return a.row < b.row
+    return a.col16 < b.col16
+
+
 __extension App:
     # ============================================================== jump list
     def here(self) -> JumpLoc:
@@ -142,6 +164,21 @@ __extension App:
             return cur^
         return List[Int]()
 
+    def file_lines(self, path: String) -> List[List[Int]]:
+        """Every line of a file on disk (empty if it cannot be read)."""
+        var lines = List[List[Int]]()
+        if not path_exists(path):
+            return lines^
+        var cur = List[Int]()
+        for c in decode_list(read_file(path)):
+            if c == 10:
+                lines.append(cur^)
+                cur = List[Int]()
+            elif c != 13:
+                cur.append(c)
+        lines.append(cur^)
+        return lines^
+
     def show_places(mut self, title: String, locs: List[LspLocation]):
         """List places in the Message window, one per line as path:line:column: text;
         Enter there, Next message and Previous message go to them."""
@@ -153,8 +190,23 @@ __extension App:
         self.err_idx = -1
         var prefix = self.cwd + "/"
         var row = 1
+        var files = 0
+        var last_path = String("")
+        var disk_path = String("")          # the file read last, so each is read once
+        var disk = List[List[Int]]()
         for l in locs:
-            var line = self.place_line(l.path, l.row)
+            if l.path != last_path:
+                files += 1
+                last_path = l.path
+            var line = List[Int]()
+            if self.find_editor(l.path) >= 0:
+                line = self.place_line(l.path, l.row)
+            else:
+                if l.path != disk_path:
+                    disk = self.file_lines(l.path)
+                    disk_path = l.path
+                if l.row < len(disk):
+                    line = disk[l.row].copy()
             var col = utf16_to_col(line, l.col16)
             var shown = l.path
             if shown.startswith(prefix):
@@ -169,11 +221,104 @@ __extension App:
             text.append(10)
             self.errs.append(ErrLoc(l.path, l.row + 1, col + 1, row))
             row += 1
-        for c in decode(String(len(locs)) + " places"):
+        for c in decode(count_of(len(locs), "place") + " in " + count_of(files, "file")):
             text.append(c)
         self.wins[mi].buf.load(text)
         self.wins[mi].cr = 0
         self.wins[mi].top = 0
+
+    # ======================================================= find references
+    def word_under(self, ai: Int) -> String:
+        """The identifier the cursor is on or right after ('' if none)."""
+        var line = self.wins[ai].buf.line(self.wins[ai].cr)
+        var a = min(self.wins[ai].cc, len(line))
+        var b = a
+        while a > 0 and is_word_cp(line[a - 1]):
+            a -= 1
+        while b < len(line) and is_word_cp(line[b]):
+            b += 1
+        var cps = List[Int]()
+        for q in range(a, b):
+            cps.append(line[q])
+        return to_str(cps)
+
+    def references_command(mut self):
+        """Search > Find references: ask the language server for every use of the
+        symbol at the cursor; they are listed in the Message window."""
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        self.ref_retries = 0
+        if not self.references_request(ai):
+            if self.lsp.state == LSP_READY and not self.lsp.table.references:
+                self.say("This language server does not find references")
+            else:
+                self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
+            return
+        self.say("Asking the language server...")
+
+    def references_request(mut self, ai: Int) -> Bool:
+        var path = self.wins[ai].path
+        if path.byte_length() == 0 or self.lsp.state != LSP_READY or not self.lsp.table.references:
+            return False
+        var uri = path_to_uri(path)
+        if self.lsp.find_doc(uri) < 0:
+            return False
+        var now = now_ns()
+        self.lsp_send_changes(ai, now, False)
+        var id = self.lsp.request_references(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
+        if id < 0:
+            return False
+        self.ref_req_id = id
+        self.ref_req_path = path
+        self.ref_req_row = self.wins[ai].cr
+        self.ref_req_col = self.wins[ai].cc
+        self.ref_retry_due = 0
+        return True
+
+    def references_still_wanted(self) -> Bool:
+        var ai = self.active_editor()
+        return ai >= 0 and self.mode == M_NORMAL and self.wins[ai].path == self.ref_req_path and self.wins[ai].cr == self.ref_req_row and self.wins[ai].cc == self.ref_req_col
+
+    def references_arrived(mut self, m: RpcMessage):
+        self.ref_req_id = -1
+        if not self.references_still_wanted():
+            return
+        if m.kind == RPC_ERROR:
+            if retry_later(m) and self.ref_retries < COMP_MAX_RETRIES:
+                self.ref_retries += 1
+                self.ref_retry_due = now_ns() + COMP_RETRY_MS * 1000000
+                return
+            self.say("Language server: " + m.error_message())
+            return
+        var locs = parse_locations(m.doc, m.result())
+        if len(locs) == 0:
+            self.say("No references found for this place")
+            return
+        # by file (the file being edited first), then by position
+        var here = self.ref_req_path
+        var n = len(locs)
+        for a in range(1, n):
+            var b = a
+            while b > 0 and place_before(locs[b], locs[b - 1], here):
+                var tmp = locs[b].copy()
+                locs[b] = locs[b - 1].copy()
+                locs[b - 1] = tmp^
+                b -= 1
+        var ai = self.active_editor()
+        var word = self.word_under(ai)
+        self.show_places("References to " + word if word.byte_length() > 0 else String("References"), locs)
+        # Next message continues from the use the cursor is on
+        var cc16 = self.wins[ai].buf.utf16_col(self.ref_req_row, self.ref_req_col)
+        for k in range(n):
+            if locs[k].path == here and locs[k].row == self.ref_req_row and locs[k].col16 <= cc16:
+                self.err_idx = k
+        var mi = self.msg_index()
+        if mi >= 0 and self.err_idx >= 0:
+            self.wins[mi].cr = self.err_idx + 1
+            self.wins[mi].follow = True
+        var summary = to_str(self.wins[mi].buf.line(n + 1)) if mi >= 0 else String("")
+        self.say(summary + " - " + self.reg.key_label(CM_NEXTERR) + " / " + self.reg.key_label(CM_PREVERR) + " step through them")
 
     # ====================================================== go to definition
     def definition_command(mut self):
