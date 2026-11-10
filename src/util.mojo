@@ -116,7 +116,7 @@ def char_width(cp: Int) -> Int:
             return 0
         return 1
     # zero width: ZW space/joiners, variation selectors, combining blocks
-    if (cp >= 0x200B and cp <= 0x200F) or (cp >= 0xFE00 and cp <= 0xFE0F) or (cp >= 0x1AB0 and cp <= 0x1AFF) or (cp >= 0x1DC0 and cp <= 0x1DFF) or (cp >= 0x20D0 and cp <= 0x20FF) or (cp >= 0xFE20 and cp <= 0xFE2F) or (cp >= 0xE0100 and cp <= 0xE01EF):
+    if (cp >= 0x200B and cp <= 0x200F) or (cp >= 0xFE00 and cp <= 0xFE0F) or (cp >= 0x1AB0 and cp <= 0x1AFF) or (cp >= 0x1DC0 and cp <= 0x1DFF) or (cp >= 0x20D0 and cp <= 0x20FF) or (cp >= 0xFE20 and cp <= 0xFE2F) or (cp >= 0xE0000 and cp <= 0xE01EF):
         return 0
     if (cp >= 0x4E00 and cp <= 0x9FFF) or (cp >= 0xAC00 and cp <= 0xD7A3) or (cp >= 0x3041 and cp <= 0x33FF) or (cp >= 0x1F600 and cp <= 0x1F64F):
         return 2

@@ -88,6 +88,7 @@ __extension App:
         var n = len(self.wins)
         for i in range(n):
             self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers)
+            self.wins[i].clustered = self.scr.clustered
             if self.wins[i].follow:
                 self.wins[i].ensure_visible()
                 self.wins[i].follow = False

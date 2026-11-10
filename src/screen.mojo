@@ -3,7 +3,9 @@ from std.collections import List
 from util import decode, encode_cp, append_str, append_int, char_width
 from caps import COLOR_16, COLOR_256, COLOR_TRUE, rgb_to_256, rgb_to_16, sgr_16
 
-comptime CONT = -5  # right half of a double-width character
+comptime CONT = -5  # a further cell of a character wider than one cell
+comptime XBASE = 0x1000000  # cmb values from here on are indexes into Screen.xseq
+comptime XSEQ_MAX = 2048
 
 
 struct Screen(Movable):
@@ -17,6 +19,8 @@ struct Screen(Movable):
     var pbg: List[Int]
     var cmb: List[Int]
     var pcmb: List[Int]
+    var xseq: List[List[Int]]   # pool of multi-codepoint cell extras (see intern)
+    var clustered: Bool         # terminal draws grapheme clusters as one glyph (mode 2027)
     var force: Bool
     var cx: Int
     var cy: Int
@@ -40,6 +44,8 @@ struct Screen(Movable):
         self.pbg = List[Int]()
         self.cmb = List[Int]()
         self.pcmb = List[Int]()
+        self.xseq = List[List[Int]]()
+        self.clustered = False
         self.force = True
         self.cx = 0
         self.cy = 0
@@ -80,18 +86,74 @@ struct Screen(Movable):
         self.cx1 = min(self.w, x + w)
         self.cy1 = min(self.h, y + h)
 
-    def set_cell(mut self, x: Int, y: Int, c: Int, fg: Int, bg: Int):
-        """Raw cell store that keeps double-width pairs consistent."""
+    def intern(mut self, seq: List[Int]) -> Int:
+        """Value for `cmb` describing the extra codepoints of a cell: 0 for none, the
+        codepoint itself for one, otherwise XBASE + index into the sequence pool. Equal
+        sequences get equal values, so frames can be compared cell by cell."""
+        var n = len(seq)
+        if n == 0:
+            return 0
+        if n == 1:
+            return seq[0]
+        for i in range(len(self.xseq)):
+            if len(self.xseq[i]) == n:
+                var same = True
+                for j in range(n):
+                    if self.xseq[i][j] != seq[j]:
+                        same = False
+                        break
+                if same:
+                    return XBASE + i
+        self.xseq.append(seq.copy())
+        return XBASE + len(self.xseq) - 1
+
+    def extras(self, k: Int) -> List[Int]:
+        """The codepoints that follow the first one in cell k (accents, joiners, ...)."""
+        var out = List[Int]()
+        var m = self.cmb[k]
+        if m == 0:
+            return out^
+        if m < XBASE:
+            out.append(m)
+            return out^
+        return self.xseq[m - XBASE].copy()
+
+    def head_of(self, k: Int) -> Int:
+        """Index of the cell that holds the character covering cell k."""
+        var row0 = (k // self.w) * self.w
+        var h = k
+        while h > row0 and self.ch[h] == CONT:
+            h -= 1
+        return h
+
+    def break_run(mut self, k: Int):
+        """If cell k is part of a character wider than one cell, blank all of it."""
+        var h = self.head_of(k)
+        var row_end = (k // self.w + 1) * self.w
+        var e = h + 1
+        while e < row_end and self.ch[e] == CONT:
+            e += 1
+        if e - h < 2 and self.ch[h] != CONT:
+            return
+        for j in range(h, e):
+            self.ch[j] = 32
+            self.cmb[j] = 0
+
+    def place(mut self, x: Int, y: Int, c: Int, xid: Int, w: Int, fg: Int, bg: Int):
+        """Raw store of a character `w` cells wide; keeps multi-cell characters whole."""
         var k = y * self.w + x
-        if self.ch[k] == CONT and x > 0:
-            self.ch[k - 1] = 32
-            self.cmb[k - 1] = 0
-        if x + 1 < self.w and self.ch[k + 1] == CONT and c != CONT:
-            self.ch[k + 1] = 32
-        self.ch[k] = c
-        self.cmb[k] = 0
-        self.fg[k] = fg
-        self.bg[k] = bg
+        var n = max(1, min(w, self.w - x))
+        for j in range(n):
+            self.break_run(k + j)
+        for j in range(n):
+            self.ch[k + j] = CONT if j > 0 else c
+            self.cmb[k + j] = 0
+            self.fg[k + j] = fg
+            self.bg[k + j] = bg
+        self.cmb[k] = xid
+
+    def set_cell(mut self, x: Int, y: Int, c: Int, fg: Int, bg: Int):
+        self.place(x, y, c, 0, 1, fg, bg)
 
     def put(mut self, x: Int, y: Int, c: Int, fg: Int, bg: Int):
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
@@ -104,24 +166,45 @@ struct Screen(Movable):
         var w = char_width(ch)
         if w == 0:
             # lone combining mark: show it on a dotted circle
-            self.set_cell(x, y, 0x25CC, fg, bg)
-            self.cmb[y * self.w + x] = ch
+            self.place(x, y, 0x25CC, ch, 1, fg, bg)
             return
         if w == 2 and x + 1 >= self.cx1:
             ch = 0x2026
             w = 1
-        self.set_cell(x, y, ch, fg, bg)
-        if w == 2:
-            self.set_cell(x + 1, y, CONT, fg, bg)
+        self.place(x, y, ch, 0, w, fg, bg)
+
+    def put_cluster(mut self, x: Int, y: Int, cps: List[Int], s: Int, e: Int, w: Int, fg: Int, bg: Int):
+        """Draw the grapheme cluster cps[s:e] as one character `w` cells wide. The whole
+        cluster is kept in the first cell and sent to the terminal in one piece."""
+        if e - s == 1:
+            self.put(x, y, cps[s], fg, bg)
+            return
+        if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1 or s >= e:
+            return
+        var rest = List[Int]()
+        if w == 0:
+            for i in range(s, e):
+                rest.append(cps[i])
+            self.place(x, y, 0x25CC, self.intern(rest), 1, fg, bg)
+            return
+        if x + w > self.cx1:
+            # does not fit before the clip edge
+            for j in range(x, self.cx1):
+                self.place(j, y, 0x2026 if j == x else 32, 0, 1, fg, bg)
+            return
+        for i in range(s + 1, e):
+            rest.append(cps[i])
+        self.place(x, y, cps[s], self.intern(rest), w, fg, bg)
 
     def combine(mut self, x: Int, y: Int, mark: Int):
-        """Attach a combining mark to the character drawn at (x, y)."""
+        """Attach one more codepoint (combining mark, joiner, selector) to the character
+        drawn at (x, y)."""
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
             return
-        var k = y * self.w + x
-        if self.ch[k] == CONT and x > 0:
-            k -= 1
-        self.cmb[k] = mark
+        var k = self.head_of(y * self.w + x)
+        var seq = self.extras(k)
+        seq.append(mark)
+        self.cmb[k] = self.intern(seq)
 
     def draw_cp(mut self, x: Int, y: Int, c: Int, fg: Int, bg: Int) -> Int:
         """Draw one codepoint; returns the x after it (handles wide + combining)."""
@@ -209,8 +292,8 @@ struct Screen(Movable):
             if c == CONT:
                 continue
             out.append(c if c >= 32 else 32)
-            if self.cmb[k] != 0:
-                out.append(self.cmb[k])
+            for m in self.extras(k):
+                out.append(m)
         while len(out) > 0 and out[len(out) - 1] == 32:
             _ = out.pop()
         return out^
@@ -287,17 +370,31 @@ struct Screen(Movable):
                 if c < 32:
                     c = 32
                 encode_cp(c, out)
-                if self.cmb[k] != 0:
-                    encode_cp(self.cmb[k], out)
-                px = x + char_width(c)
-                if x + 1 < self.w and self.ch[k + 1] == CONT:
-                    px = x + 2
+                var m = self.cmb[k]
+                if m != 0 and m < XBASE:
+                    encode_cp(m, out)
+                elif m != 0:
+                    for q in self.xseq[m - XBASE]:
+                        encode_cp(q, out)
+                var run = 1
+                while x + run < self.w and self.ch[k + run] == CONT:
+                    run += 1
+                # after a long cluster do not trust where the terminal left its cursor
+                px = x + run if m < XBASE else -1
                 py = y
                 self.pcmb[k] = self.cmb[k]
                 self.pch[k] = self.ch[k]
                 self.pfg[k] = f
                 self.pbg[k] = b
         self.force = False
+        if len(self.xseq) > XSEQ_MAX:
+            # the pool only grows; start over and repaint everything next frame
+            self.xseq.clear()
+            for k in range(len(self.cmb)):
+                if self.cmb[k] >= XBASE:
+                    self.cmb[k] = 0
+                    self.pcmb[k] = 0
+            self.force = True
         if self.cvis:
             append_str(out, "\x1b[")
             append_int(out, self.cy + 1)

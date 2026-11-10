@@ -5,6 +5,7 @@ from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
+from grapheme import cluster_end
 from window import *
 from window_search import *
 
@@ -90,11 +91,18 @@ __extension Window:
             var v = 0
             var lastx = -1
             var lim = self.left + cls
+            var nextc = 0
             for c in range(n):
                 if v >= lim:
                     break
+                if c < nextc:
+                    continue       # drawn as part of the cluster that began earlier
                 var ch = ln[c]
-                var a = self.adv(ch, v)
+                var ce = c + 1
+                if self.clustered:
+                    ce = cluster_end(ln, c)
+                    nextc = ce
+                var a = self.span(ln, c, ce, v)
                 if a == 0:
                     if lastx >= 0:
                         scr.combine(lastx, yy, ch)
@@ -120,6 +128,9 @@ __extension Window:
                         scr.put(cx0 + k - self.left, yy, 32, cfg, cbg)
                     if ch == 9 and show_ws:
                         scr.put(max(sx, cx0), yy, 0x2192, pal.gutter_fg, cbg)
+                    lastx = -1
+                elif ce - c > 1:
+                    scr.put_cluster(sx, yy, ln, c, ce, a, cfg, cbg)
                     lastx = -1
                 else:
                     scr.put(sx, yy, ch, cfg, cbg)

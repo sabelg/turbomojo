@@ -89,6 +89,9 @@ __extension App:
         var caps = self.term.probe(CAPS_TIMEOUT_MS)
         self.scr.color_mode = caps.color
         self.scr.sync = caps.sync_output
+        if caps.grapheme:
+            self.term.set_grapheme(True)
+            self.scr.clustered = True
         _ = self.sig.open()
         var early = self.term.take_early()
         while self.running:

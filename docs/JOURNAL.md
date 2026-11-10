@@ -653,3 +653,37 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
 - Not done: the backlog line also mentions caching each line's visual width. Nothing
   needs it yet (the horizontal scrollbar only looks at visible rows), so it was left out.
 - Verified: `check.sh` CHECK OK (21 files, 434 tests).
+
+## 2026-11-10 · P1-04 grapheme clusters · done
+
+- New `src/grapheme.mojo`: extended grapheme cluster boundaries after UAX #29: control
+  characters alone (GB4), Hangul syllables (GB6-8), Extend and ZWJ (GB9), spacing marks
+  (GB9a), emoji ZWJ sequences (GB11), regional indicator pairs (GB12/13).
+  `cluster_end`, `cluster_start`, `snap_to_cluster`, `cluster_count`, `cluster_width`
+  (two models: per-codepoint sum for ordinary terminals, one glyph for terminals with
+  mode 2027), `ends_with_plain_mark`.
+- Editor: Left/Right, Shift+arrows, Delete, vertical moves and mouse clicks work on
+  clusters (`Window.vcol`, `col_at_vcol`, `move_left/right`, `delete_fwd`). Backspace
+  removes only the last accent of an accented letter, otherwise the whole cluster.
+- Screen: a cell keeps all extra codepoints of its cluster (`intern`/`extras`, a pool of
+  sequences so frames still compare cell by cell), characters can span more than two
+  cells, and overwriting any part blanks the whole character (`place`, `break_run`,
+  `put_cluster`). Stacked accents are no longer dropped.
+- Terminal: when the capability probe reports mode 2027, it is switched on (and off on
+  exit) and windows draw a cluster as one glyph of the clustered width.
+- `char_width`: tag characters (U+E0000..E007F) now take no column.
+- `tests/test_grapheme.mojo` (24 tests): boundaries for accents, flags (even and odd
+  counts), ZWJ families, skin tones, VS16, keycaps, tag flags, Hangul, Devanagari and
+  Thai marks, tab; widths in both models; cursor, selection, Delete, Backspace, undo,
+  columns and vertical moves in a window; screen cells, redraw diffing, clipping and
+  window drawing. All passed on the first run; expectations were written from the UAX
+  rules, with one bug found while writing them (two ZWJ in a row joined two emoji).
+- Not done / unverified:
+  - The class tables are hand-picked ranges, not generated from the Unicode data files;
+    the official GraphemeBreakTest.txt was not run. GB9b (Prepend) and GB9c (Indic
+    conjuncts) are not implemented.
+  - Mode 2027 was never exercised on a real terminal (tmux does not report it), so the
+    clustered path is covered by unit tests only.
+  - Dialog input fields, search matches and word movement still work per codepoint.
+  - The cluster pool is cleared after 2,048 distinct sequences with a full repaint.
+- Verified: `check.sh` CHECK OK (22 files, 458 tests).

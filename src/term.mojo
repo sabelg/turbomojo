@@ -121,6 +121,7 @@ struct Terminal(Movable):
     var early: List[Event]     # input that arrived while probing the terminal
     var crash_log: String      # set before enter() to enable the crash guard
     var crash_header: String
+    var grapheme_on: Bool
 
     def __init__(out self):
         self.saved = List[UInt8](length=128, fill=0)
@@ -135,6 +136,7 @@ struct Terminal(Movable):
         self.early = List[Event]()
         self.crash_log = ""
         self.crash_header = ""
+        self.grapheme_on = False
 
     # ------------------------------------------------------------- modes
     def raw(mut self):
@@ -166,9 +168,19 @@ struct Terminal(Movable):
             self.out,
             "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[?25l\x1b[H\x1b[2J",
         )
+        if self.grapheme_on:
+            append_str(self.out, "\x1b[?2027h")
         self.flush()
 
+    def set_grapheme(mut self, on: Bool):
+        """Turn the terminal's grapheme clustering (mode 2027) on or off. With it on the
+        terminal draws a whole cluster as one glyph of a predictable width."""
+        self.grapheme_on = on
+        append_str(self.out, "\x1b[?2027h" if on else "\x1b[?2027l")
+
     def leave(mut self):
+        if self.grapheme_on:
+            append_str(self.out, "\x1b[?2027l")
         append_str(
             self.out,
             "\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l",

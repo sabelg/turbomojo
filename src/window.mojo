@@ -9,6 +9,7 @@ from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT, line_state, scan_states
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
+from grapheme import cluster_end, cluster_start, cluster_width, ends_with_plain_mark
 
 comptime WK_EDITOR = 0
 comptime LEX_BUDGET = 4000     # lines re-scanned after an edit before giving up on rejoining
@@ -58,6 +59,7 @@ struct Window(Copyable, Movable):
     var last_act: Int
     var follow: Bool
     var gut: Int
+    var clustered: Bool   # the terminal draws a grapheme cluster as one glyph (mode 2027)
     var swap_file: String    # path of this buffer's swap file ('' if none written)
     var overwrite_ok: Bool   # the user chose to keep their version over a changed file
     var disk_sig: FileSig    # size/mtime of the file when it was last loaded or saved
@@ -91,6 +93,7 @@ struct Window(Copyable, Movable):
         self.last_act = ACT_NONE
         self.follow = True
         self.gut = 0
+        self.clustered = False
         self.swap_file = ""
         self.swap_version = -1
         self.disk_sig = FileSig()
@@ -123,32 +126,42 @@ struct Window(Copyable, Movable):
             return self.buf.tab_width - v % self.buf.tab_width
         return char_width(ch)
 
+    def span(self, ln: List[Int], i: Int, e: Int, v: Int) -> Int:
+        """Display columns taken by the grapheme cluster ln[i:e] starting at column v."""
+        if e - i == 1:
+            return self.adv(ln[i], v)
+        return cluster_width(ln, i, e, self.clustered)
+
     def vcol(self, r: Int, c: Int) -> Int:
         """Visual (screen) column of character index c on row r."""
         var v = 0
         var ln = self.buf.line(r)
         var n = min(c, len(ln))
-        for i in range(n):
-            v += self.adv(ln[i], v)
+        var i = 0
+        while i < n:
+            var e = cluster_end(ln, i)
+            if e > n:
+                break          # c is inside a cluster: it shares the cluster's column
+            v += self.span(ln, i, e, v)
+            i = e
         return v
 
     def col_at_vcol(self, r: Int, target: Int) -> Int:
-        """Character index whose cell covers visual column `target`."""
+        """Character index of the grapheme cluster that covers visual column `target`."""
         var v = 0
         var ln = self.buf.line(r)
         var n = len(ln)
         var i = 0
         while i < n:
-            var a = self.adv(ln[i], v)
+            var e = cluster_end(ln, i)
+            var a = self.span(ln, i, e, v)
             if a > 0 and v + a > target:
                 # closer to the right edge of a tab/wide char -> place after it
                 if target - v >= (a + 1) // 2 and a > 1:
-                    i += 1
-                    while i < n and char_width(ln[i]) == 0:
-                        i += 1
+                    return e
                 return i
             v += a
-            i += 1
+            i = e
         return n
 
     def sync_want(mut self):
@@ -340,9 +353,7 @@ struct Window(Copyable, Movable):
                     c -= 1
                 self.cc = c
             else:
-                self.cc -= 1
-                while self.cc > 0 and char_width(self.buf.at(self.cr, self.cc)) == 0:
-                    self.cc -= 1
+                self.cc = cluster_start(self.buf.line(self.cr), self.cc)
         elif self.cr > 0:
             self.cr -= 1
             self.cc = self.buf.llen(self.cr)
@@ -367,9 +378,7 @@ struct Window(Copyable, Movable):
                     c += 1
                 self.cc = c
             else:
-                self.cc += 1
-                while self.cc < n and char_width(self.buf.at(self.cr, self.cc)) == 0:
-                    self.cc += 1
+                self.cc = cluster_end(self.buf.line(self.cr), self.cc)
         elif self.cr + 1 < self.buf.count():
             self.cr += 1
             self.cc = 0
@@ -484,6 +493,12 @@ struct Window(Copyable, Movable):
                     break
             if all_spaces:
                 n = self.cc - ((self.cc - 1) // self.buf.indent_size) * self.buf.indent_size
+            else:
+                # a whole cluster (emoji sequence, flag, syllable) goes at once; a letter
+                # with accents loses only its last accent
+                var cs = cluster_start(ln, self.cc)
+                if not ends_with_plain_mark(ln, cs, min(self.cc, len(ln))):
+                    n = max(1, self.cc - cs)
             _ = self.buf.delete(self.cr, self.cc - n, self.cr, self.cc, self.cr, self.cc, g)
             self.cc -= n
         elif self.cr > 0:
@@ -500,7 +515,8 @@ struct Window(Copyable, Movable):
             self.follow = True
             return
         if self.cc < self.buf.llen(self.cr):
-            _ = self.buf.delete(self.cr, self.cc, self.cr, self.cc + 1, self.cr, self.cc, g)
+            var ce = cluster_end(self.buf.line(self.cr), self.cc)
+            _ = self.buf.delete(self.cr, self.cc, self.cr, ce, self.cr, self.cc, g)
         elif self.cr + 1 < self.buf.count():
             _ = self.buf.delete(self.cr, self.cc, self.cr + 1, 0, self.cr, self.cc, g)
         self.follow = True
