@@ -4,6 +4,7 @@ Search and bracket matching are in window_search.mojo, drawing in window_draw.mo
 (both extend Window; import them with `from ... import *`)."""
 from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
+from watch import FileSig
 from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT
@@ -56,6 +57,8 @@ struct Window(Copyable, Movable):
     var follow: Bool
     var gut: Int
     var swap_file: String    # path of this buffer's swap file ('' if none written)
+    var overwrite_ok: Bool   # the user chose to keep their version over a changed file
+    var disk_sig: FileSig    # size/mtime of the file when it was last loaded or saved
     var swap_version: Int    # buffer version the swap file holds (-1 if none)
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
@@ -88,6 +91,8 @@ struct Window(Copyable, Movable):
         self.gut = 0
         self.swap_file = ""
         self.swap_version = -1
+        self.disk_sig = FileSig()
+        self.overwrite_ok = False
 
     # ------------------------------------------------------------ geometry
     def contains(self, px: Int, py: Int) -> Bool:

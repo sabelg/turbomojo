@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_watch import *
+from watch import *
 from app_swap import *
 from swap import *
 from app_files import *
@@ -335,6 +337,7 @@ __extension App:
         self.wins[i].cc = cc
         self.wins[i].clamp()
         self.wins[i].buf.modified = False
+        self.note_disk_state(i)
         self.say("Formatted " + basename(path))
 
     def run_program(mut self, test: Bool) raises:

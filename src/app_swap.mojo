@@ -7,8 +7,12 @@ from dialog import *
 from util import *
 from swap import *
 from appstate import *
+from app_watch import *
+from watch import *
 from app_files import *
 from app_dialogs import *
+from app_watch import *
+from watch import *
 
 
 __extension App:
@@ -135,6 +139,7 @@ __extension App:
                 i = self.new_editor(info.title if info.title.byte_length() > 0 else basename(info.path), info.path)
             self.wins[i].buf.load(decode_list(info.content))
             self.apply_editorconfig(i)
+            self.note_disk_state(i)
             self.wins[i].buf.modified = True
             self.wins[i].cr = 0
             self.wins[i].cc = 0

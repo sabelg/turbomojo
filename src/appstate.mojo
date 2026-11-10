@@ -24,6 +24,7 @@ from util import *
 from signals import SignalFd, send_signal, own_pid
 from config import *
 from editorconfig import EcProps, ec_for_file
+from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
 from toml import toml_set, toml_quote, toml_bool
 
 comptime M_NORMAL = 0
@@ -131,6 +132,10 @@ struct App(Movable):
     var swap_enabled: Bool     # off until the IDE really runs (tests opt in)
     var swap_due: Int          # time (ns) of the next swap write; 0 = nothing pending
     var pending_swaps: List[String]
+    var watch: Watcher         # inotify on the directories of open files
+    var watch_enabled: Bool    # periodic checking when inotify is unavailable (set by run())
+    var watch_due: Int
+    var watch_recheck: Bool    # a change was seen while a dialog was open: ask afterwards
     var tab_width: Int         # defaults for new buffers (user config)
     var indent_size: Int
     var config_path: String    # user config file; empty until load_config() (tests stay hermetic)
@@ -188,6 +193,10 @@ struct App(Movable):
         self.swap_enabled = False
         self.swap_due = 0
         self.pending_swaps = List[String]()
+        self.watch = Watcher()
+        self.watch_enabled = False
+        self.watch_due = 0
+        self.watch_recheck = False
         self.log_path = ""
         self.config_path = ""
         self.tab_width = 4
@@ -243,6 +252,8 @@ struct App(Movable):
             t = min(t, (self.status_until - now) // 1000000 + 1)
         if self.swap_due > now:
             t = min(t, (self.swap_due - now) // 1000000 + 1)
+        if self.watch_enabled and not self.watch.active():
+            t = min(t, max(1, (self.watch_due - now) // 1000000 + 1))
         if self.show_clock:
             t = min(t, secs_to_minute * 1000 + 50)
         return max(1, t)

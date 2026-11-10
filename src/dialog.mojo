@@ -23,6 +23,7 @@ comptime D_RESULT = 15
 comptime D_BUSY = 16
 comptime D_COMPILER = 17
 comptime D_RECOVER = 18
+comptime D_CHANGED = 19
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

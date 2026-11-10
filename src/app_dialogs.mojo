@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_watch import *
+from watch import *
 from app_swap import *
 from swap import *
 from app_files import *
@@ -110,6 +112,7 @@ __extension App:
             self.wins[i].path = p
             self.wins[i].title = basename(p)
             self.apply_editorconfig(i)      # the new name may fall under other rules
+            self.note_disk_state(i)         # Save As replaces whatever has that name
             var next = self.dlg.next
             if self.save_window(i, NEXT_NONE):
                 if next == NEXT_CLOSE:
@@ -184,6 +187,19 @@ __extension App:
                 self.discard_swaps()
             else:
                 self.pending_swaps.clear()      # "Later": ask again next time
+        elif kind == D_CHANGED:
+            var i = self.dlg.payload
+            if i >= 0 and i < len(self.wins):
+                if b == 0:
+                    self.reload_from_disk(i)
+                    self.say("Reloaded " + self.wins[i].title + " from disk")
+                else:
+                    # keep the editor's version: remember the new disk state so the
+                    # question is not repeated, and let the next save overwrite the file
+                    self.wins[i].disk_sig = file_sig(self.wins[i].path)
+                    self.wins[i].overwrite_ok = True
+                    self.wins[i].buf.modified = True
+            self.watch_recheck = True           # other files may be waiting
         elif kind == D_COMPILER and b == 0:
             var c = self.dlg.field_text(0)
             if c.byte_length() > 0:

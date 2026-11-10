@@ -378,3 +378,31 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   it); whole buffers are rewritten each time, which will need a size cap for very large
   files (P1-05).
 - Verified: `check.sh` CHECK OK (15 files, 322 tests, smoke incl. crash and kill -9).
+
+## 2026-11-10 · P0-16 external change detection · done
+
+- New `src/watch.mojo`: `file_sig()` (size + mtime via `statx`, same layout on every Linux
+  architecture) and `Watcher` (inotify on the directories of open files; directories
+  rather than files, so tools that save by rename are seen). `src/app_watch.mojo` extends
+  App.
+- The watcher's descriptor is in the event loop's poll set and only wakes the loop; what
+  changed is decided by comparing each open file's signature with the one recorded at load
+  or save. Without inotify the same check runs every 2 s.
+- Behaviour: an unmodified buffer whose file changed is reloaded as one undo step with the
+  cursor line kept, and a status message says so; identical bytes (a `touch`) change
+  nothing; a deleted file leaves the buffer marked unsaved; a buffer with unsaved changes
+  gets a dialog (Reload from disk / Keep my version, Keep is the default). While another
+  dialog or menu is open the question waits. Saving a file that changed unnoticed asks
+  first instead of overwriting. Our own saves, Save As and the formatter record the new
+  disk state so they are not mistaken for outside changes.
+- `tests/test_watch.mojo` (17 tests): signatures, inotify wake-ups for create/rename/delete
+  and early registration, silent reload + undo, touch, both dialog answers, deferral behind
+  another dialog, deletion, own save, save-asks, atomic replace, untitled buffers, fallback
+  scheduling. All passed on the first run.
+- Verified live in tmux: an outside write reloaded the clean buffer within 0.5 s; with
+  unsaved text the dialog appeared and Keep kept the text. Idle cost unchanged: 0 ms CPU,
+  1 wakeup in 10 s. `check.sh` CHECK OK (16 files, 339 tests).
+- Limits: Esc on the question leaves it undecided (asked again on save); inotify is
+  Linux-only (macOS port: kqueue or polling, P9-03); network file systems that do not
+  deliver inotify events are not covered by the 2 s fallback, which only runs when inotify
+  is unavailable altogether.

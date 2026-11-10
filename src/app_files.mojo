@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_watch import *
+from watch import *
 from app_swap import *
 from swap import *
 from app_dialogs import *
@@ -68,6 +70,7 @@ __extension App:
         else:
             self.say("New file: " + p)
         self.apply_editorconfig(i)
+        self.note_disk_state(i)
 
     def apply_buffer_settings(mut self, i: Int, ec: EcProps):
         """Give a buffer its indentation and line-ending rules: user defaults first, then
@@ -92,12 +95,18 @@ __extension App:
         if self.wins[i].path.byte_length() == 0:
             self.saveas_dialog(i, next)
             return False
+        if self.disk_changed(i) and file_sig(self.wins[i].path).exists and not self.wins[i].overwrite_ok:
+            # the file changed behind our back and nobody has decided yet: ask first
+            self.ask_changed(i)
+            return False
+        self.wins[i].overwrite_ok = False
         if self.wins[i].buf.trim_on_save:
             _ = self.wins[i].trim_trailing_whitespace()
         var b = self.wins[i].buf.to_bytes()
         with open(self.wins[i].path, "w") as f:
             f.write(bytes_to_str(b))
         self.wins[i].buf.modified = False
+        self.note_disk_state(i)
         self.drop_swap(i)
         self.say("Saved " + self.wins[i].path)
         return True

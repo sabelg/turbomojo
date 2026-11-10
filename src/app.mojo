@@ -21,6 +21,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_watch import *
+from watch import *
 from app_swap import *
 from swap import *
 from app_files import *
@@ -79,6 +81,8 @@ __extension App:
             self.log_error("config: " + w)
         self.term.crash_header = "TurboMojo " + VERSION + "  pid " + String(own_pid()) + "  started " + timestamp()
         self.swap_enabled = True
+        self.watch_enabled = True
+        _ = self.watch.open()
         self.term.enter()
         var caps = self.term.probe(CAPS_TIMEOUT_MS)
         self.scr.color_mode = caps.color
@@ -102,6 +106,8 @@ __extension App:
                 fds.append(self.job.fd)
             if self.sig.active():
                 fds.append(self.sig.fd)
+            if self.watch.active():
+                fds.append(self.watch.fd)
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -123,6 +129,10 @@ __extension App:
                     self.info("Error", String(err))
             self.swap_tick(now_ns())
             try:
+                self.watch_tick(now_ns(), self.watch.drain())
+            except err:
+                self.log_error(String(err))
+            try:
                 self.poll_job()
             except err:
                 self.log_error(String(err))
@@ -131,6 +141,7 @@ __extension App:
             self.cancel_job()
             _ = external_call["pclose", Int32](self.job.fp)
         self.sig.close()
+        self.watch.close()
         self.term.leave()
         if self.recovered > 0:
             print("TurboMojo: kept", self.recovered, "unsaved buffer(s); they will be offered when you start it again.")
