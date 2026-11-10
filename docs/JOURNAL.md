@@ -1431,3 +1431,45 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   - The documentation panel shows Markdown source (P2-05 renders Markdown).
   - Not tried by hand in tmux; the real-server test drives the same code path.
 - Verified: `check.sh` CHECK OK (32 files, 712 tests).
+
+## 2026-11-10 · P2-05 hover with Markdown rendering · done
+
+- New `src/markdown.mojo`: `md_render(text, width, highlighter)` turns Markdown into
+  lines of codepoints with a style per character. Blocks: headings (an empty "###" is
+  skipped), paragraphs joined and wrapped by display columns, fenced code blocks (not
+  wrapped; Mojo/Python/unnamed blocks get the editor's syntax classes, with docstring
+  state carried across lines), bullet and numbered lists with hanging indent and
+  continuation lines, block quotes, horizontal rules. Inline: bold, italic, code,
+  links (text shown, address dropped), autolinks, backslash escapes of punctuation, six
+  HTML entities. Unclosed markers stay as typed. `*` and `_` inside a word or number do
+  not start emphasis (`a*b*c`, `snake_case`), which differs from CommonMark on purpose.
+  Blank lines: between blocks of different kinds, between paragraphs, where the source
+  has one, never next to a rule.
+- Client: `request_hover`, `hover_markdown` (markup content, plain string, the older
+  `{language, value}` form and arrays of them), `retry_later` shared with completion.
+- App: Search > Describe symbol (`search.describeSymbol`, Alt-I). The answer opens a
+  window under the cursor line (above if there is no room), at most 72 columns and 14
+  lines, scrollable with the arrow and page keys and the wheel; Esc/Enter close it, any
+  other key closes it and is handled normally, a click closes it. "Not now" answers are
+  retried like completion; an answer for a place the cursor has left is dropped.
+  `App.draw_md` draws styled lines: code blocks on the editor background with syntax
+  colours, links underlined; new palette entries `doc_*`.
+- The completion documentation panel now uses the same renderer (signature as a code
+  block, documentation as Markdown) instead of showing Markdown source.
+- Tests: `tests/test_markdown.mojo` (12 tests: inline, unclosed markers, escapes and
+  links, wrapping incl. wide characters, headings and rules, lists, quotes, code blocks
+  and their colours, the shape the Mojo server sends, "never wider than asked" over
+  several inputs and widths); 5 in `tests/test_lsp.mojo`: hover result forms, the
+  rendered window with colours and underline and both ways of closing, older forms /
+  long text scrolling / nothing found, retry and cursor moved / no server, and the real
+  server on a function with a docstring ("(function) def twice(n: Int) -> Int", rule,
+  "Returns n times two."). Six renderer details were wrong on the first run (intraword
+  `*`, escaping `_`, an off-by-one at an exact fit, blank-line rules); all fixed in the
+  code except two expectations I corrected (minimum width 8).
+- Tried by hand in tmux with the real server: Alt-I on a call shows the window.
+- Not done / unverified:
+  - No hover on mouse rest (the mouse is tracked only while a button is down).
+  - Tables, images, HTML, nested block quotes, numbered sub-lists and reference-style
+    links are shown as plain text. Italic is a colour, not an italic face.
+  - The hover range the server returns is ignored (the symbol is not highlighted).
+- Verified: `check.sh` CHECK OK (33 files, 729 tests).

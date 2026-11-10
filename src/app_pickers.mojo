@@ -24,6 +24,7 @@ from util import *
 from appstate import *
 from app_lsp import *
 from lsp import *
+from markdown import *
 from app_watch import *
 from watch import *
 from app_swap import *
@@ -318,10 +319,8 @@ __extension App:
         self.comp_waiting = False
         var ai = self.active_editor()
         if m.kind == RPC_ERROR:
-            # "not now" answers (the server is re-reading the file after an edit, or the
-            # request was overtaken) are followed by another try a moment later
-            var code = m.error_code()
-            var again = code == -32801 or code == -32802 or code == -32800 or m.error_message().find("outdated") >= 0
+            # "not now" answers are followed by another try a moment later
+            var again = retry_later(m)
             if again and self.comp_retries < COMP_MAX_RETRIES and (waiting or self.mode == M_COMPLETE):
                 self.comp_retries += 1
                 self.comp_retry_due = now_ns() + COMP_RETRY_MS * 1000000
@@ -447,6 +446,94 @@ __extension App:
         self.comp_retries = 0
         if self.lsp_request_completion(ai, self.wins[ai].cc, s):
             self.comp_waiting = True
+
+    # ================================================================== hover
+    def hover_command(mut self):
+        """Search > Describe symbol: ask the language server about the symbol at the
+        cursor; the answer opens in a small window (hover_arrived)."""
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        self.wins[ai].collapse()
+        self.hover_retries = 0
+        if not self.hover_request(ai):
+            if self.lsp.state == LSP_READY and not self.lsp.table.hover:
+                self.say("This language server does not describe symbols")
+            else:
+                self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
+            return
+        self.say("Asking the language server...")
+
+    def hover_request(mut self, ai: Int) -> Bool:
+        var path = self.wins[ai].path
+        if path.byte_length() == 0 or self.lsp.state != LSP_READY or not self.lsp.table.hover:
+            return False
+        var uri = path_to_uri(path)
+        if self.lsp.find_doc(uri) < 0:
+            return False
+        var now = now_ns()
+        self.lsp_send_changes(ai, now, False)
+        var id = self.lsp.request_hover(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
+        if id < 0:
+            return False
+        self.hover_req_id = id
+        self.hover_req_path = path
+        self.hover_req_row = self.wins[ai].cr
+        self.hover_req_col = self.wins[ai].cc
+        self.hover_retry_due = 0
+        return True
+
+    def hover_still_wanted(self) -> Bool:
+        """The cursor has not moved since the question was asked."""
+        var ai = self.active_editor()
+        return ai >= 0 and self.mode == M_NORMAL and self.wins[ai].path == self.hover_req_path and self.wins[ai].cr == self.hover_req_row and self.wins[ai].cc == self.hover_req_col
+
+    def hover_arrived(mut self, m: RpcMessage):
+        self.hover_req_id = -1
+        if not self.hover_still_wanted():
+            return
+        if m.kind == RPC_ERROR:
+            if retry_later(m) and self.hover_retries < COMP_MAX_RETRIES:
+                self.hover_retries += 1
+                self.hover_retry_due = now_ns() + COMP_RETRY_MS * 1000000
+                return
+            self.say("Language server: " + m.error_message())
+            return
+        var text = hover_markdown(m.doc, m.result())
+        if text.byte_length() == 0:
+            self.say("Nothing is known about this place")
+            return
+        self.hover_lines = md_render(text, max(20, min(72, self.scr.w - 6)), self.hl)
+        if len(self.hover_lines) == 0:
+            self.say("Nothing is known about this place")
+            return
+        self.hover_scroll = 0
+        self.mode = M_HOVER
+        self.say("")
+
+    def hover_page(self) -> Int:
+        """Lines of the hover window that fit on the screen."""
+        return max(3, min(14, self.scr.h - 6))
+
+    def hover_key(mut self, k: Int) -> Bool:
+        """Keys while a hover window is open. True if the key was used up; any other key
+        closes the window and then does what it normally does."""
+        var page = self.hover_page()
+        var most = max(0, len(self.hover_lines) - page)
+        if k == KEY_UP:
+            self.hover_scroll = max(0, self.hover_scroll - 1)
+            return True
+        if k == KEY_DOWN:
+            self.hover_scroll = min(most, self.hover_scroll + 1)
+            return True
+        if k == KEY_PGUP:
+            self.hover_scroll = max(0, self.hover_scroll - page)
+            return True
+        if k == KEY_PGDN:
+            self.hover_scroll = min(most, self.hover_scroll + page)
+            return True
+        self.mode = M_NORMAL
+        return k == KEY_ESC or k == KEY_ENTER
 
     def complete_key(mut self, k: Int) -> Bool:
         var ai = self.active_editor()

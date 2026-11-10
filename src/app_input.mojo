@@ -87,6 +87,9 @@ __extension App:
         if self.mode == M_COMPLETE:
             if self.complete_key(k):
                 return
+        if self.mode == M_HOVER:
+            if self.hover_key(k):
+                return
         if self.chord != 0:
             # the second key of a sequence such as Ctrl-K S
             var first = self.chord

@@ -24,6 +24,7 @@ from util import *
 from appstate import *
 from app_lsp import *
 from lsp import *
+from markdown import *
 from app_watch import *
 from watch import *
 from app_swap import *
@@ -143,6 +144,11 @@ __extension App:
             cmds.append(CM_NONE)
             items.append("~Esc~ Cancel")
             cmds.append(CM_NONE)
+        elif self.mode == M_HOVER:
+            items.append("~↑↓~ Scroll")
+            cmds.append(CM_NONE)
+            items.append("~Esc~ Close")
+            cmds.append(CM_NONE)
         elif self.mode == M_COMPLETE:
             items.append("~Enter~ Insert")
             cmds.append(CM_NONE)
@@ -178,7 +184,7 @@ __extension App:
         # cursor
         self.scr.cvis = False
         var t = self.top()
-        if (self.mode == M_NORMAL or self.mode == M_COMPLETE) and t >= 0 and self.wins[t].kind == WK_EDITOR:
+        if (self.mode == M_NORMAL or self.mode == M_COMPLETE or self.mode == M_HOVER) and t >= 0 and self.wins[t].kind == WK_EDITOR:
             var cell = self.wins[t].cursor_cell()
             var cx = cell.c
             var cy = cell.r
@@ -189,6 +195,8 @@ __extension App:
                 self.scr.cblock = not self.insert_mode
             if self.mode == M_COMPLETE:
                 self.draw_completion(cx, cy)
+            if self.mode == M_HOVER:
+                self.draw_hover(cx, cy)
         if self.mode == M_DIALOG:
             var c = self.dlg.draw(self.scr, p)
             if c[0] >= 0:
@@ -263,14 +271,79 @@ __extension App:
             px = x - pw - 1
         if pw < 20:
             return
-        var lines = wrap_plain(info, pw - 2)
+        # the signature as code, the documentation as the Markdown it usually is
+        var source = String("")
+        if self.comp_detail[k].byte_length() > 0:
+            source = "```mojo\n" + self.comp_detail[k] + "\n```\n"
+        source += self.comp_doc[k]
+        var lines = md_render(source, pw - 2, self.hl)
         var ph = min(len(lines), 10)
         var py = y
         if py + ph > self.scr.h - 1:
             py = max(1, self.scr.h - 1 - ph)
-        self.scr.fill(px, py, pw, ph, 32, p.list_fg, p.list_bg)
-        self.scr.clip(px, py, pw, ph)
-        for r in range(ph):
-            _ = self.scr.text(px + 1, py + r, lines[r], p.list_fg, p.list_bg)
-        self.scr.no_clip()
+        self.draw_md(px, py, pw, ph, lines, 0)
         self.scr.shadow(px, py, pw, ph, p.shadow_fg, p.shadow_bg)
+
+    def draw_md(mut self, x: Int, y: Int, w: Int, h: Int, lines: List[MdLine], first: Int):
+        """Rendered Markdown in a box: lines `first`.. of `lines`, one column of margin
+        on each side. Code block lines are shown on the editor's background with its
+        syntax colours; links are underlined."""
+        var p = self.pal.copy()
+        self.scr.fill(x, y, w, h, 32, p.doc_fg, p.doc_bg)
+        self.scr.clip(x, y, w, h)
+        for r in range(h):
+            var k = first + r
+            if k >= len(lines):
+                break
+            var block = len(lines[k].st) > 0 and lines[k].st[0] >= MD_BLOCK
+            if block:
+                self.scr.fill(x + 1, y + r, w - 2, 1, 32, p.ed_fg, p.ed_bg)
+            var xx = x + 1
+            for q in range(len(lines[k].cps)):
+                if xx >= x + w - 1:
+                    break
+                var st = lines[k].st[q]
+                var fg = p.doc_fg
+                var bg = p.doc_bg
+                if st >= MD_BLOCK:
+                    fg = p.syn[st - MD_BLOCK]
+                    bg = p.ed_bg
+                elif st == MD_BOLD or st == MD_HEAD:
+                    fg = p.doc_bold
+                elif st == MD_CODE:
+                    fg = p.doc_code
+                elif st == MD_ITALIC or st == MD_DIM:
+                    fg = p.doc_dim
+                var at = xx
+                xx = self.scr.draw_cp(xx, y + r, lines[k].cps[q], fg, bg)
+                if st == MD_LINK and xx > at:
+                    self.scr.underline(at, y + r, False, p.doc_fg)
+        self.scr.no_clip()
+
+    def draw_hover(mut self, cx: Int, cy: Int):
+        """The hover window: below the cursor line if there is room, else above."""
+        var p = self.pal.copy()
+        var n = len(self.hover_lines)
+        if n == 0:
+            return
+        var w = 12
+        for l in self.hover_lines:
+            var cols = 0
+            for c in l.cps:
+                cols += char_width(c)
+            w = max(w, cols + 2)
+        w = min(w, self.scr.w - 4)
+        var h = min(n, self.hover_page())
+        var x = max(1, min(cx - 1, self.scr.w - w - 2))
+        var y = cy + 1
+        if y + h > self.scr.h - 1:
+            y = max(1, cy - h)
+        self.hover_scroll = max(0, min(self.hover_scroll, n - h))
+        var shown = self.hover_lines.copy()
+        self.draw_md(x, y, w, h, shown, self.hover_scroll)
+        if self.hover_scroll + h < n:
+            # there is more below
+            self.scr.put(x + w - 2, y + h - 1, 0x25BC, p.doc_bold, p.doc_bg)
+        if self.hover_scroll > 0:
+            self.scr.put(x + w - 2, y, 0x25B2, p.doc_bold, p.doc_bg)
+        self.scr.shadow(x, y, w, h, p.shadow_fg, p.shadow_bg)

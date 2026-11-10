@@ -170,6 +170,36 @@ def main():
                          {"label": "Zebra", "kind": 7, "filterText": "prZ", "textEdit": {"newText": "zebra.Zebra"}, "sortText": "e"}]
                 send({"jsonrpc": "2.0", "id": mid, "result": {"isIncomplete": False, "items": items}})
             continue
+        if method == "textDocument/hover":
+            text = DOCS.get(params["textDocument"]["uri"], "")
+            main.hovers = getattr(main, "hovers", 0) + 1
+            lines = text.split("\n")
+            ln = params["position"]["line"]
+            line = lines[ln] if ln < len(lines) else ""
+            at = utf16_index(line, params["position"]["character"])
+            a = at
+            while a > 0 and (line[a - 1].isalnum() or line[a - 1] == "_"):
+                a -= 1
+            b = at
+            while b < len(line) and (line[b].isalnum() or line[b] == "_"):
+                b += 1
+            word = line[a:b]
+            if "HOVERBUSY" in text and main.hovers < 3:
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32801, "message": "outdated request"}})
+            elif not word:
+                send({"jsonrpc": "2.0", "id": mid, "result": None})
+            elif word == "old":
+                # the older MarkedString forms, as an array
+                send({"jsonrpc": "2.0", "id": mid, "result": {"contents": [
+                    {"language": "mojo", "value": "def old(x: Int) -> Int"}, "Plain *words* after the code."]}})
+            elif word == "long":
+                body = "\n".join("- line %d of a long description" % i for i in range(40))
+                send({"jsonrpc": "2.0", "id": mid, "result": {"contents": {"kind": "markdown", "value": "# long\n" + body}}})
+            else:
+                send({"jsonrpc": "2.0", "id": mid, "result": {"contents": {"kind": "markdown", "value":
+                    "### function `%s`\n\n---\nDoes **important** things with [care](https://example.org).\n\n```mojo\ndef %s(n: Int) -> String\n```" % (word, word)},
+                    "range": {"start": {"line": ln, "character": a}, "end": {"line": ln, "character": b}}}})
+            continue
         if method == "completionItem/resolve":
             item = dict(params)
             item["documentation"] = "Details for %s, fetched on request." % params.get("label")

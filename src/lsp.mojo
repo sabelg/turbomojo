@@ -426,6 +426,44 @@ def parse_completion(doc: Json, node: Int) -> CompletionList:
     return out^
 
 
+def marked_text(doc: Json, node: Int) -> String:
+    """One piece of hover content as Markdown: a string, {kind, value}, or the older
+    {language, value} which is a code block."""
+    if node < 0 or doc.is_null(node):
+        return ""
+    var v = doc.get(node, "value")
+    if v < 0:
+        return doc.str(node)
+    var lang = doc.get(node, "language")
+    if lang >= 0:
+        return "```" + doc.str(lang) + "\n" + doc.str(v) + "\n```"
+    return doc.str(v)
+
+
+def hover_markdown(doc: Json, result: Int) -> String:
+    """The text of a hover result as Markdown ('' if the server had nothing)."""
+    if result < 0 or doc.is_null(result):
+        return ""
+    var c = doc.get(result, "contents")
+    if c < 0 or doc.is_null(c):
+        return ""
+    if doc.kind(c) == 4:              # J_ARRAY: several pieces
+        var out = String("")
+        for piece in doc.children(c):
+            var t = marked_text(doc, piece)
+            if t.byte_length() > 0:
+                out += ("\n\n" if out.byte_length() > 0 else "") + t
+        return out
+    return marked_text(doc, c)
+
+
+def retry_later(m: RpcMessage) -> Bool:
+    """Is this error a "not now" answer (the server is re-reading the file after an
+    edit, or the request was overtaken) rather than a failure?"""
+    var code = m.error_code()
+    return code == -32801 or code == -32802 or code == -32800 or m.error_message().find("outdated") >= 0
+
+
 def kind_tag(kind: Int) -> String:
     """A three-letter tag for a completion item kind (LSP numbers)."""
     if kind == 2 or kind == 3 or kind == 4:
@@ -542,6 +580,14 @@ struct LspClient(Copyable, Movable):
         w.key("synchronization")
         w.begin_obj()
         w.kv_bool("didSave", True)
+        w.end_obj()
+        w.key("hover")
+        w.begin_obj()
+        w.key("contentFormat")
+        w.begin_arr()
+        w.str("markdown")
+        w.str("plaintext")
+        w.end_arr()
         w.end_obj()
         w.key("completion")
         w.begin_obj()
@@ -726,6 +772,13 @@ struct LspClient(Copyable, Movable):
         else:
             p += ",\"context\":{\"triggerKind\":1}}"
         return self.conn.request("textDocument/completion", p, now)
+
+    def request_hover(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
+        """Ask what the server knows about the symbol at a position. -1 if it cannot be
+        asked now."""
+        if self.state != LSP_READY or not self.table.hover or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/hover", self.position_params(uri, line, character) + "}", now)
 
     def request_resolve(mut self, raw_item: String, now: Int) -> Int:
         """Ask for the missing details (documentation) of a completion item."""

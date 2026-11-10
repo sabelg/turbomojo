@@ -87,6 +87,7 @@ comptime CM_KILL_LINE = 144
 comptime CM_SCROLL_UP = 145
 comptime CM_SCROLL_DOWN = 146
 comptime CM_INSERT_MODE = 147
+comptime CM_HOVER = 148
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -586,6 +587,7 @@ def build_registry() -> Registry:
     r.cmd(CM_FINDFILES, "search.findInFiles", "Find in f~i~les...", "Search every file of the project folder", [fkey(3) | MOD_SHIFT])
     r.cmd(CM_GOTO, "search.gotoLine", "~G~o to line number...", "Move the cursor to a line number", [ctrl(103)])
     r.cmd(CM_SYMBOL, "search.gotoSymbol", "Go to s~y~mbol...", "Jump to a def / struct / trait in this file", [ctrl(116)])
+    r.cmd(CM_HOVER, "search.describeSymbol", "~D~escribe symbol", "Show what the language server knows about the symbol at the cursor", [alt(105)])
     r.cmd(CM_MATCH, "search.matchBracket", "~M~atch bracket", "Jump to the matching bracket", [ctrl(93)])
     r.cmd(CM_PALETTE, "view.commandPalette", "~C~ommand palette...", "Fuzzy-search every IDE command", [ctrl(112)])
     # ---- Run
@@ -695,6 +697,7 @@ def build_registry() -> Registry:
     r.item(CM_GOTO)
     r.item(CM_SYMBOL)
     r.item(CM_MATCH)
+    r.item(CM_HOVER)
     r.sep()
     r.item(CM_PREVERR)
     r.item(CM_NEXTERR)

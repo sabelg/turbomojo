@@ -31,12 +31,14 @@ from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
 from lsp import LspClient, CompletionItem
 from grep import FileSearch
 from filestate import *
+from markdown import MdLine
 from toml import toml_set, toml_quote, toml_bool
 
 comptime M_NORMAL = 0
 comptime M_MENU = 1
 comptime M_DIALOG = 2
 comptime M_COMPLETE = 3
+comptime M_HOVER = 4                    # a hover window is open over the editor
 
 comptime VERSION = "1.0"
 
@@ -179,6 +181,14 @@ struct App(Movable):
     var comp_retry_due: Int          # when to ask again (0 = no retry pending)
     var comp_waiting: Bool           # nothing to show yet: the popup opens when the answer comes
     var comp_resolve_id: Int
+    var hover_lines: List[MdLine]    # the open hover window's text
+    var hover_scroll: Int
+    var hover_req_id: Int
+    var hover_req_path: String
+    var hover_req_row: Int
+    var hover_req_col: Int
+    var hover_retries: Int
+    var hover_retry_due: Int
     var comp_resolve_label: String
     var st_x0: List[Int]
     var st_x1: List[Int]
@@ -307,6 +317,14 @@ struct App(Movable):
         self.comp_retry_due = 0
         self.comp_waiting = False
         self.comp_resolve_id = -1
+        self.hover_lines = List[MdLine]()
+        self.hover_scroll = 0
+        self.hover_req_id = -1
+        self.hover_req_path = ""
+        self.hover_req_row = -1
+        self.hover_req_col = -1
+        self.hover_retries = 0
+        self.hover_retry_due = 0
         self.comp_resolve_label = ""
         self.st_x0 = List[Int]()
         self.st_x1 = List[Int]()
@@ -411,6 +429,8 @@ struct App(Movable):
             t = min(t, max(1, (self.lsp_restart_due - now) // 1000000 + 1))
         if self.comp_retry_due > 0:
             t = min(t, max(1, (self.comp_retry_due - now) // 1000000 + 1))
+        if self.hover_retry_due > 0:
+            t = min(t, max(1, (self.hover_retry_due - now) // 1000000 + 1))
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.watch_enabled and not self.watch.active():

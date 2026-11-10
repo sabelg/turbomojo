@@ -50,6 +50,11 @@ struct Palette(Copyable, Movable):
     var bracket_bg: Int
     var match_fg: Int       # other matches of the current search
     var match_bg: Int
+    var doc_fg: Int         # hover windows and documentation panels
+    var doc_bg: Int
+    var doc_bold: Int
+    var doc_code: Int
+    var doc_dim: Int
     var diag_err: Int       # problem underlines and line numbers
     var diag_warn: Int
     var diag_note: Int
@@ -116,6 +121,11 @@ struct Palette(Copyable, Movable):
         self.match_bg = BROWN
         self.ruler_bg = 0x000080
         self.diag_err = LRED
+        self.doc_fg = BLACK
+        self.doc_bg = CYAN
+        self.doc_bold = WHITE
+        self.doc_code = 0x000080
+        self.doc_dim = 0x005555
         self.diag_warn = YELLOW
         self.diag_note = LCYAN
         self.icon_fg = LGREEN
@@ -185,6 +195,11 @@ def theme(n: Int) -> Palette:
         p.match_bg = 0x5A4A1E
         p.ruler_bg = 0x24283B
         p.diag_err = 0xF7768E
+        p.doc_fg = 0xC0CAF5
+        p.doc_bg = 0x24283B
+        p.doc_bold = 0xFFFFFF
+        p.doc_code = 0x9ECE6A
+        p.doc_dim = 0x565F89
         p.diag_warn = 0xE0AF68
         p.diag_note = 0x7DCFFF
         p.icon_fg = 0xF7768E
@@ -254,6 +269,11 @@ def theme(n: Int) -> Palette:
         p.match_bg = lo
         p.ruler_bg = 0x241800
         p.diag_err = 0xFF5533
+        p.doc_fg = md
+        p.doc_bg = 0x241800
+        p.doc_bold = hi
+        p.doc_code = 0xFFCC66
+        p.doc_dim = lo
         p.diag_warn = 0xFFDD66
         p.diag_note = hi
         p.icon_fg = hi

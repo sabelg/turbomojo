@@ -11,12 +11,13 @@ from rpc import *
 from json import json_parse
 from term import wait_readable
 from app import *
-from appstate import App, now_ns, M_NORMAL, M_COMPLETE
+from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER
+from markdown import md_plain
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, build_registry
-from term import fkey, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, build_registry
+from term import fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN
 from signals import own_pid
-from util import decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
+from util import cp_len, decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
 from config import load_settings, read_text
 
 comptime FAKE = "python3 tests/helpers/fake_rpc_server.py"
@@ -1057,11 +1058,145 @@ def test_popup_shows_kinds_details_and_documentation() raises:
     var top_rows = String("")
     for y in range(1, 12):
         top_rows += "\n" + to_str(app.scr.row_text(y))
-    assert_true(screen.find("Prints **s** and a line break.") > 0, "documentation panel:" + top_rows)
+    assert_true(screen.find("Prints s and a line break.") > 0, "documentation panel:" + top_rows)
+    assert_true(screen.find("**") < 0, "the markup itself is not shown")
     assert_true(screen.find("print_line(\"hi\")") > 0)
     assert_true(screen.find("```") < 0, "code fences are not shown")
     assert_true(screen.find("Returns nothing.") > 0)
     app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+# -------------------------------------------------------------------- hover
+def wait_hover(mut app: App):
+    var t0 = now()
+    while app.mode != M_HOVER and (app.hover_req_id >= 0 or app.hover_retry_due > 0) and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+
+
+def hover_text(app: App) -> String:
+    return md_plain(app.hover_lines)
+
+
+def test_hover_results_in_every_form() raises:
+    var md = json_parse("{\"contents\": {\"kind\": \"markdown\", \"value\": \"**x**\"}}")
+    assert_equal(hover_markdown(md, 0), "**x**")
+    var plain = json_parse("{\"contents\": \"just text\"}")
+    assert_equal(hover_markdown(plain, 0), "just text")
+    var marked = json_parse("{\"contents\": {\"language\": \"mojo\", \"value\": \"def f()\"}}")
+    assert_equal(hover_markdown(marked, 0), "```mojo\ndef f()\n```")
+    var arr = json_parse("{\"contents\": [{\"language\": \"mojo\", \"value\": \"x: Int\"}, \"note\", \"\"]}")
+    assert_equal(hover_markdown(arr, 0), "```mojo\nx: Int\n```\n\nnote")
+    assert_equal(hover_markdown(json_parse("null"), 0), "")
+    assert_equal(hover_markdown(json_parse("{}"), 0), "")
+    assert_equal(hover_markdown(json_parse("{\"contents\": []}"), 0), "")
+
+
+def test_describe_symbol_opens_a_rendered_window() raises:
+    var dir = scratch("hover1")
+    var app = comp_app(dir, "x = compute(1)\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    assert_equal(build_registry().find_key(alt(105)), CM_HOVER)
+    app.wins[i].goto(0, 6)
+    app.handle(key_event(alt(105)))                     # Alt-I
+    assert_equal(app.status, "Asking the language server...")
+    wait_hover(app)
+    assert_equal(app.mode, M_HOVER)
+    var t = hover_text(app)
+    assert_true(t.startswith("function compute\n"), t)       # the heading, without its marks
+    assert_true(t.find("Does important things with care.") > 0, t)      # markup is gone
+    assert_true(t.find("def compute(n: Int) -> String") > 0, t)
+    assert_true(t.find("**") < 0 and t.find("```") < 0 and t.find("###") < 0, t)
+    # drawn below the cursor, with the code in the editor's colours and the link underlined
+    app.draw()
+    var screen = to_str(app.scr.to_text())
+    assert_true(screen.find("function compute") > 0)
+    assert_true(screen.find("def compute(n: Int) -> String") > 0)
+    var cell = app.wins[i].cursor_cell()
+    var found_row = -1
+    for y in range(app.scr.h):
+        if to_str(app.scr.row_text(y)).find("Does important things") >= 0:
+            found_row = y
+    assert_true(found_row > cell.r, "the window is below the cursor line")
+    var row = to_str(app.scr.row_text(found_row))
+    var col = cp_len(String(row[byte=0:row.find("care")]))
+    assert_true(app.scr.ul_at(col, found_row) != 0, "the link text is underlined")
+    assert_equal(app.scr.fg_at(cp_len(String(row[byte=0:row.find("important")])), found_row), app.pal.doc_bold)
+    # Esc closes it and does nothing else
+    app.handle(key_event(KEY_ESC))
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(to_str(app.wins[i].buf.line(0)), "x = compute(1)")
+    # any other key closes it and is then typed as usual
+    app.handle(key_event(alt(105)))
+    wait_hover(app)
+    assert_equal(app.mode, M_HOVER)
+    app.handle(key_event(33))
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(to_str(app.wins[i].buf.line(0)), "x = co!mpute(1)")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_hover_older_forms_long_texts_and_nothing() raises:
+    var dir = scratch("hover2")
+    var app = comp_app(dir, "old\nlong\n   \n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(0, 1)
+    app.exec(CM_HOVER)
+    wait_hover(app)
+    assert_equal(hover_text(app), "def old(x: Int) -> Int\n\nPlain words after the code.")
+    app.handle(key_event(KEY_ESC))
+    # a long text scrolls
+    app.wins[i].goto(1, 1)
+    app.exec(CM_HOVER)
+    wait_hover(app)
+    assert_equal(len(app.hover_lines), 42)              # heading, blank, 40 items
+    app.draw()
+    assert_true(to_str(app.scr.to_text()).find("line 5 of a long") > 0)
+    assert_true(to_str(app.scr.to_text()).find("line 30 of a long") < 0)
+    app.handle(key_event(KEY_PGDN))
+    app.handle(key_event(KEY_PGDN))
+    app.handle(key_event(KEY_DOWN))
+    assert_equal(app.mode, M_HOVER)
+    app.draw()
+    assert_true(to_str(app.scr.to_text()).find("line 30 of a long") > 0)
+    for _ in range(10):
+        app.handle(key_event(KEY_PGDN))
+    app.draw()
+    assert_true(to_str(app.scr.to_text()).find("line 39 of a long") > 0)     # stops at the end
+    app.handle(key_event(KEY_UP))
+    assert_equal(app.mode, M_HOVER)
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.mode, M_NORMAL)
+    # nothing under the cursor
+    app.wins[i].goto(2, 1)
+    app.exec(CM_HOVER)
+    wait_hover(app)
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(app.status, "Nothing is known about this place")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_hover_retries_and_is_dropped_when_the_cursor_moves() raises:
+    var dir = scratch("hover3")
+    var app = comp_app(dir, "# HOVERBUSY\nname other\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(1, 2)
+    app.exec(CM_HOVER)
+    wait_hover(app)                                     # two refusals, then the answer
+    assert_equal(app.mode, M_HOVER)
+    assert_true(hover_text(app).find("function name") == 0, hover_text(app))
+    app.handle(key_event(KEY_ESC))
+    # moving away before the answer: no window pops up later
+    app.exec(CM_HOVER)
+    app.wins[i].goto(1, 7)
+    run_ticks(app, 600, False)
+    assert_equal(app.mode, M_NORMAL)
+    # without a server the command explains itself
+    app.lsp_stop()
+    app.exec(CM_HOVER)
+    assert_true(app.status.find("Start the language server first") == 0, app.status)
     _ = run_system("rm -rf '" + dir + "'")
 
 
@@ -1415,6 +1550,40 @@ def test_real_server_completes_members_after_a_dot() raises:
         if app.comp_items[k] == "append":
             has_append = True
     assert_true(has_append, "List has an append method")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_real_server_describes_a_symbol() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realhover")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'def twice(n: Int) -> Int:\\n    \"\"\"Returns n times two.\"\"\"\\n    return n * 2\\n\\ndef main():\\n    print(twice(4))\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var t0 = now()
+    while app.lsp.state != LSP_READY and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    run_ticks(app, 2000, False)
+    var i = app.find_editor(path)
+    app.wins[i].goto(5, 12)                              # on "twice" in the call
+    app.exec(CM_HOVER)
+    t0 = now()
+    while app.mode != M_HOVER and (app.hover_req_id >= 0 or app.hover_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    var t = md_plain(app.hover_lines)
+    var shown = String("")
+    for c in decode(t):
+        shown += " / " if c == 10 else to_str([c])
+    print("      real server hover: " + shown)
+    assert_equal(app.mode, M_HOVER)
+    assert_true(t.find("twice") >= 0, t)
+    assert_true(t.find("Returns n times two.") >= 0, t)
     app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 

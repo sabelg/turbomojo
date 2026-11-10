@@ -59,7 +59,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P2-02 Document sync: didOpen/didChange (incremental, UTF-16 positions from the rope)/didSave/didClose with debounce
 - [x] P2-03 Diagnostics: underlines (curly when supported), gutter marks, Problems window, next/previous problem
 - [x] P2-04 Completion popup from the server (kinds, detail, docs panel), merged with word completion
-- [ ] P2-05 Hover window with Markdown-to-cells rendering
+- [x] P2-05 Hover window with Markdown-to-cells rendering
 - [ ] P2-06 Signature help
 - [ ] P2-07 Go to definition; back/forward jump list
 - [ ] P2-08 Find references results window

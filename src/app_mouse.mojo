@@ -51,6 +51,9 @@ __extension App:
             if self.mode == M_COMPLETE:
                 self.comp_sel = max(0, min(len(self.comp_items) - 1, self.comp_sel + d))
                 return
+            if self.mode == M_HOVER:
+                self.hover_scroll = max(0, min(max(0, len(self.hover_lines) - self.hover_page()), self.hover_scroll + d))
+                return
             if self.mode != M_NORMAL:
                 return
             var i = self.window_at(x, y)
@@ -137,8 +140,8 @@ __extension App:
                     self.dlg.list_move(k - self.dlg.list_sel)
                     self.last_click_item = k
             return
-        # ---- completion popup: any click closes it
-        if self.mode == M_COMPLETE:
+        # ---- completion popup or hover window: any click closes it
+        if self.mode == M_COMPLETE or self.mode == M_HOVER:
             self.mode = M_NORMAL
         # ---- menu bar / dropdown
         if self.mode == M_MENU:

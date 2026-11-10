@@ -276,6 +276,8 @@ __extension App:
             if ai >= 0:
                 self.wins[ai].indent_lines(1 if cmd == CM_INDENT else -1)
                 self.wins[ai].follow = True
+        elif cmd == CM_HOVER:
+            self.hover_command()
         elif cmd == CM_MACRO_REC:
             self.macro_toggle_record()
         elif cmd == CM_MACRO_PLAY:
