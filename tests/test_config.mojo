@@ -324,5 +324,19 @@ def test_find_project_config_walks_up() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
+
+def test_large_file_limit_setting() raises:
+    assert_equal(load_settings("", "").large_file_mb, 50)
+    var s = load_settings("[editor]\nlarge_file_mb = 200\n", "")
+    assert_equal(s.large_file_mb, 200)
+    assert_equal(len(s.warnings), 0)
+    var bad = load_settings("[editor]\nlarge_file_mb = 0\n", "")
+    assert_equal(bad.large_file_mb, 50)
+    assert_equal(len(bad.warnings), 1)
+    var word = load_settings("[editor]\nlarge_file_mb = \"big\"\n", "")
+    assert_equal(word.large_file_mb, 50)
+    assert_equal(len(word.warnings), 1)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

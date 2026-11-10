@@ -17,6 +17,7 @@ Example:
     auto_indent = true
     tab_width = 4               # display width of a tab character
     indent_size = 4             # spaces per indent level (.editorconfig overrides both)
+    large_file_mb = 50          # files above this size open in large-file mode
 
     [tools]
     compiler = "mojo"
@@ -103,6 +104,7 @@ struct Settings(Copyable, Movable):
     var compiler: String
     var tab_width: Int
     var indent_size: Int
+    var large_file_mb: Int
     var key_commands: List[String]       # command names with custom bindings
     var key_names: List[List[String]]    # their key names, as written in the file
     var warnings: List[String]
@@ -118,6 +120,7 @@ struct Settings(Copyable, Movable):
         self.compiler = "mojo"
         self.tab_width = 4
         self.indent_size = 4
+        self.large_file_mb = 50
         self.key_commands = List[String]()
         self.key_names = List[List[String]]()
         self.warnings = List[String]()
@@ -164,6 +167,12 @@ struct Settings(Copyable, Movable):
                 self.compiler = doc.vals[ci].s
         self.tab_width = self.take_size(doc, "editor.tab_width", self.tab_width)
         self.indent_size = self.take_size(doc, "editor.indent_size", self.indent_size)
+        var li = doc.find("editor.large_file_mb")
+        if li >= 0:
+            if doc.vals[li].kind != T_INT or doc.vals[li].i < 1 or doc.vals[li].i > 100000:
+                self.warnings.append("editor.large_file_mb must be a number from 1 to 100000")
+            else:
+                self.large_file_mb = doc.vals[li].i
         for name in doc.keys_in("keys"):
             var ki = doc.find("keys." + name)
             if doc.vals[ki].kind != T_STR and doc.vals[ki].kind != T_LIST:
@@ -173,7 +182,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.tab_width", "editor.indent_size", "tools.compiler"]:
+        for k in ["ui.theme", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys."):

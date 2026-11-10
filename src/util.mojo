@@ -65,6 +65,41 @@ def encode_cp(cp: Int, mut out: List[UInt8]):
         out.append(UInt8(0x80 | (cp & 0x3F)))
 
 
+def read_file(path: String) -> List[UInt8]:
+    """Whole file as bytes (empty if it cannot be read). Reads into one buffer of the
+    file's size; files that report no size (pipes, /proc) are read in pieces."""
+    var out = List[UInt8]()
+    var p = String(path)
+    var mode = String("rb")
+    var fp = external_call["fopen", Int](p.as_c_string_span(), mode.as_c_string_span())
+    if fp == 0:
+        return out^
+    var size = 0
+    if Int(external_call["fseek", Int32](fp, Int(0), Int32(2))) == 0:
+        size = external_call["ftell", Int](fp)
+        _ = external_call["fseek", Int32](fp, Int(0), Int32(0))
+    if size > 0:
+        out = List[UInt8](length=size, fill=0)
+        var got = 0
+        while got < size:
+            var n = external_call["fread", Int](out.unsafe_ptr().unsafe_offset(got), Int(1), size - got, fp)
+            if n <= 0:
+                break
+            got += n
+        if got < size:
+            out.shrink(got)
+    # whatever is left: a file without a size, or one that grew meanwhile
+    var chunk = List[UInt8](length=65536, fill=0)
+    while True:
+        var n = external_call["fread", Int](chunk.unsafe_ptr(), Int(1), Int(65536), fp)
+        if n <= 0:
+            break
+        for i in range(n):
+            out.append(chunk[i])
+    _ = external_call["fclose", Int32](fp)
+    return out^
+
+
 def bytes_to_str(b: List[UInt8]) -> String:
     return String(unsafe_from_utf8=Span(b))
 

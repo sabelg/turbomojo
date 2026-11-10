@@ -56,6 +56,7 @@ auto_indent = true
 
 tab_width = 4               # display width of a tab character
 indent_size = 4             # spaces per indent level
+large_file_mb = 50          # files above this size open in large-file mode
 
 [tools]
 compiler = "mojo"           # the TURBOMOJO_COMPILER environment variable overrides this
@@ -91,6 +92,7 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Format | Alt-F9 runs `mojo format` in the background and reloads the file as one undo step. If you edit the buffer while it runs, the buffer is left alone |
 | Files | Tabs are kept as real tab characters (shown 4 columns wide; Options ▸ Show whitespace marks them). Tab-indented files are detected and the Tab key and auto-indent follow suit. CRLF line endings and a missing final newline are preserved; the status bar shows `LF`/`CRLF` and `Tabs`/`Spaces`, and both can be toggled in Options |
 | Unicode | Full UTF-8 with display widths: CJK and emoji take two columns and combining accents attach to their base letter, so cursor, selection, mouse clicks and the right border stay aligned. The cursor, Delete and selection work on grapheme clusters: an emoji sequence, a flag, a Hangul syllable or a letter with its accents is one step (Backspace removes a single accent first) |
+| Large files | A 1,000,000-line file opens in about 0.1 s. Files above 50 MB (`editor.large_file_mb`) open in large-file mode, shown in the window title: syntax colours, the periodic recovery snapshots and the language server are off for that file. Work is still saved to the recovery folder if the IDE crashes or is terminated |
 | Clipboard | Internal clipboard mirrored to the system clipboard via OSC 52. Bracketed paste is supported |
 | Themes | Turbo Classic (CGA), Midnight Neon, Amber CRT |
 | Robustness | **Unsaved work survives crashes:** every modified buffer is copied to a swap file 2 seconds after a change, and after a crash, `kill -9` or power loss the next start offers to recover it (Recover / Discard / Later). Being killed politely (`kill`, closing the terminal, logging out) keeps the buffers the same way and restores the terminal. Your own files are never written without a save. **Files changed by other programs** are noticed at once: an unmodified buffer reloads quietly (undoable), and if you have unsaved changes you are asked whether to reload or keep your version. Resizing is picked up instantly; `kill -TSTP` / `fg` suspends and resumes cleanly. If the IDE itself crashes, the terminal is restored and a stack trace goes to `~/.local/state/turbomojo/crash.log`. An idle IDE uses no CPU |
@@ -141,6 +143,9 @@ the nightly toolchain as an early warning for upcoming changes:
 ```bash
 pixi run canary
 ```
+
+`scripts/bench-open.sh` generates a 1,000,000-line file and a 60 MB file under `build/big/` and
+times how long the editor's loader takes to open them (it fails above 1 s for the first).
 
 `scripts/tui-test.sh` lets you script key presses by hand and capture the screen:
 

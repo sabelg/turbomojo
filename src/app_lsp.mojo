@@ -30,6 +30,9 @@ __extension App:
         if self.wins[i].path.byte_length() == 0:
             self.say("Save the file first: the language server needs its name")
             return
+        if self.wins[i].buf.large:
+            self.say("The language server is off in large-file mode")
+            return
         if self.lsp.active() and self.lsp_path == self.wins[i].path:
             self.lsp_stop()
             self.say("Language server stopped")

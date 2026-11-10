@@ -172,7 +172,7 @@ struct Window(Copyable, Movable):
         """Bring the per-line lexer state cache up to date: re-scan the lines touched by
         edits until the state rejoins what was cached, then extend the cache so that it
         covers rows 0..upto. Call before drawing."""
-        if self.kind != WK_EDITOR:
+        if self.kind != WK_EDITOR or self.buf.large:
             return
         var count = self.buf.count()
         if self.buf.ldirty_from >= 0:
@@ -218,7 +218,7 @@ struct Window(Copyable, Movable):
     def lex_state_at(self, row: Int) -> Int:
         """Lexer state at the start of `row`: from the cache when it covers the row,
         otherwise computed by scanning from the last cached line (slow path)."""
-        if self.kind != WK_EDITOR:
+        if self.kind != WK_EDITOR or self.buf.large:
             return 0
         var known = len(self.buf.lstate) - 1
         var clean = self.buf.ldirty_from < 0 or self.buf.ldirty_from >= row

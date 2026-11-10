@@ -150,6 +150,7 @@ struct App(Movable):
     var watch_recheck: Bool    # a change was seen while a dialog was open: ask afterwards
     var tab_width: Int         # defaults for new buffers (user config)
     var indent_size: Int
+    var large_file_bytes: Int  # files above this size open in large-file mode
     var config_path: String    # user config file; empty until load_config() (tests stay hermetic)
     var config_warnings: List[String]
     var log_path: String       # empty until run(): tests never write to the state dir
@@ -224,6 +225,7 @@ struct App(Movable):
         self.config_path = ""
         self.tab_width = 4
         self.indent_size = 4
+        self.large_file_bytes = 50 * 1024 * 1024
         self.config_warnings = List[String]()
         self.fault = env_or("TURBOMOJO_FAULT", "")
         self.show_ws = False
@@ -308,6 +310,7 @@ struct App(Movable):
         self.show_ws = s.show_whitespace
         self.tab_width = s.tab_width
         self.indent_size = s.indent_size
+        self.large_file_bytes = s.large_file_mb * 1024 * 1024
         # the environment variable still wins over the files for the compiler
         self.compiler = env_or("TURBOMOJO_COMPILER", s.compiler)
         self.config_warnings = s.warnings.copy()

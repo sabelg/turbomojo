@@ -36,7 +36,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P1-02 Port `TextBuffer` onto the rope behind the same API; undo/redo intact; all Phase 0 tests still pass
 - [x] P1-03 Line metadata cache (visual width, lexer end state); incremental highlighting that re-lexes only from the edited line until states converge
 - [x] P1-04 Grapheme cluster segmentation (UAX #29 extended clusters) with tests; cursor, delete and selection move by cluster; screen cells hold full clusters
-- [ ] P1-05 Large-file behaviour: open a generated 1M-line file under 1 s; large-file mode above 50 MB; benchmark script recorded in the journal
+- [x] P1-05 Large-file behaviour: open a generated 1M-line file under 1 s; large-file mode above 50 MB; benchmark script recorded in the journal
 - [x] P1-06 Configurable tab width per buffer (from config/.editorconfig) (done with P0-14b)
 - [ ] P1-07 Regex engine module (Thompson NFA: classes, groups, alternation, quantifiers, anchors, captures) with tests
 - [ ] P1-08 Search upgrade: regex/case/whole-word/in-selection options, highlight all matches, match count, replace with capture groups, incremental search as you type

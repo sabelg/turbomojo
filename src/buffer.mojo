@@ -5,7 +5,7 @@ The text itself lives in `Rope` (src/rope.mojo), so loading, editing and line lo
 fast on very large files. Line endings are normalised to "\n" in memory; `crlf` remembers
 that the file used CR LF and `to_bytes` writes it back that way."""
 from std.collections import List
-from util import encode_cp
+from util import encode_cp, decode_list
 from rope import Rope
 
 comptime UNDO_INSERT = 1
@@ -35,6 +35,7 @@ struct TextBuffer(Copyable, Movable):
     var undos: List[UndoRec]
     var redos: List[UndoRec]
     var modified: Bool
+    var large: Bool           # large-file mode: expensive features are off for this buffer
     var version: Int
     var crlf: Bool
     var use_tabs: Bool
@@ -54,6 +55,7 @@ struct TextBuffer(Copyable, Movable):
         self.undos = List[UndoRec]()
         self.redos = List[UndoRec]()
         self.modified = False
+        self.large = False
         self.version = 0
         self.crlf = False
         self.use_tabs = False
@@ -99,6 +101,80 @@ struct TextBuffer(Copyable, Movable):
         self.crlf = crlf_n > lf_n
         self.use_tabs = tabs > spaces
         self.rope.load_cps(clean)
+        self.after_load()
+
+    def load_bytes(mut self, bytes: List[UInt8]):
+        """load() straight from a file's bytes, without the detour through a list of
+        codepoints (8 bytes per character). Gives exactly the same result. Bytes that are
+        not valid UTF-8 take the slow path, where each bad byte becomes U+FFFD."""
+        var n = len(bytes)
+        var clean = List[UInt8](capacity=n)
+        var crlf_n = 0
+        var lf_n = 0
+        var tabs = 0
+        var spaces = 0
+        var at_line_start = True
+        var i = 0
+        while i < n:
+            var c = Int(bytes[i])
+            if c < 0x80:
+                if c == 13 and i + 1 < n and bytes[i + 1] == 10:
+                    crlf_n += 1
+                    i += 1
+                    continue            # dropped: the following "\n" ends the line
+                if c == 10:
+                    if not (i > 0 and bytes[i - 1] == 13):
+                        lf_n += 1
+                    at_line_start = True
+                elif at_line_start:
+                    if c == 9:
+                        tabs += 1
+                    elif c == 32:
+                        spaces += 1
+                    at_line_start = False
+                clean.append(bytes[i])
+                i += 1
+                continue
+            # a multi-byte character: check it is well formed
+            var size = 0
+            var lo = 0x80
+            var hi = 0xBF
+            if c >= 0xC2 and c <= 0xDF:
+                size = 2
+            elif c >= 0xE0 and c <= 0xEF:
+                size = 3
+                if c == 0xE0:
+                    lo = 0xA0           # no overlong forms
+                elif c == 0xED:
+                    hi = 0x9F           # no surrogates
+            elif c >= 0xF0 and c <= 0xF4:
+                size = 4
+                if c == 0xF0:
+                    lo = 0x90
+                elif c == 0xF4:
+                    hi = 0x8F           # nothing above U+10FFFF
+            var good = size > 0 and i + size <= n
+            if good:
+                var b1 = Int(bytes[i + 1])
+                good = b1 >= lo and b1 <= hi
+                for k in range(2, size):
+                    var bk = Int(bytes[i + k])
+                    if bk < 0x80 or bk > 0xBF:
+                        good = False
+            if not good:
+                self.load(decode_list(bytes))
+                return
+            for k in range(size):
+                clean.append(bytes[i + k])
+            at_line_start = False
+            i += size
+        self.eol_at_eof = len(clean) == 0 or clean[len(clean) - 1] == 10
+        self.crlf = crlf_n > lf_n
+        self.use_tabs = tabs > spaces
+        self.rope.load_bytes(clean)
+        self.after_load()
+
+    def after_load(mut self):
         self.lstate.clear()
         self.lstate.append(0)
         self.ldirty_from = -1

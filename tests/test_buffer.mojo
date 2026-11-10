@@ -2,7 +2,8 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
 from buffer import TextBuffer, Pos
-from util import decode, to_str, bytes_to_str
+from swap import write_bytes_atomic
+from util import decode, to_str, bytes_to_str, decode_list, read_file, str_bytes, env_or, run_system
 
 
 def text_of(b: TextBuffer) -> String:
@@ -313,6 +314,125 @@ def test_random_edits_match_reference_and_undo_redo_roundtrip() raises:
         i += 1
         assert_true(same(b.all_text(), snaps[i]), "redo produced wrong text")
     assert_equal(b.redo().r, -1)
+
+
+
+# ------------------------------------------------------- loading from bytes
+def same_as_codepoint_load(bytes: List[UInt8], what: String) raises:
+    """load_bytes must give exactly what the original codepoint loader gives."""
+    var a = TextBuffer()
+    a.load(decode_list(bytes))
+    var b = TextBuffer()
+    b.load_bytes(bytes)
+    assert_equal(to_str(b.all_text()), to_str(a.all_text()), what + ": text")
+    assert_equal(b.crlf, a.crlf, what + ": crlf")
+    assert_equal(b.use_tabs, a.use_tabs, what + ": tabs")
+    assert_equal(b.eol_at_eof, a.eol_at_eof, what + ": final newline")
+    assert_equal(b.count(), a.count(), what + ": lines")
+    assert_equal(bytes_to_str(b.to_bytes()), bytes_to_str(a.to_bytes()), what + ": saved bytes")
+    assert_false(b.modified)
+
+
+def test_load_bytes_plain_cases() raises:
+    same_as_codepoint_load(str_bytes(""), "empty")
+    same_as_codepoint_load(str_bytes("one"), "no final newline")
+    same_as_codepoint_load(str_bytes("one\ntwo\n"), "lf")
+    same_as_codepoint_load(str_bytes("one\r\ntwo\r\n"), "crlf")
+    same_as_codepoint_load(str_bytes("one\r\ntwo\nthree\n"), "mixed endings")
+    same_as_codepoint_load(str_bytes("a\rb\n"), "lone carriage return")
+    same_as_codepoint_load(str_bytes("\tx\n\ty\n  z\n"), "tabs")
+    same_as_codepoint_load(str_bytes("café 日本 🔥\n"), "multi-byte")
+    same_as_codepoint_load(str_bytes("\n\n\n"), "blank lines")
+
+
+def test_load_bytes_keeps_the_file_round_trip() raises:
+    var src = String("def f():\r\n\treturn \"é😀\"\r\n")
+    var b = TextBuffer()
+    b.load_bytes(str_bytes(src))
+    assert_true(b.crlf)
+    assert_true(b.use_tabs)
+    assert_equal(b.count(), 3)
+    assert_equal(to_str(b.line(1)), "\treturn \"é😀\"")
+    assert_equal(bytes_to_str(b.to_bytes()), src)
+
+
+def test_load_bytes_with_invalid_utf8() raises:
+    var cases = List[List[UInt8]]()
+    var c1: List[UInt8] = [97, 0xFF, 98, 10]                 # stray byte
+    var c2: List[UInt8] = [97, 0xE6, 0x97]                   # cut off at the end
+    var c3: List[UInt8] = [0xC0, 0x80, 10]                   # overlong
+    var c4: List[UInt8] = [0xED, 0xA0, 0x80, 10]             # surrogate
+    var c5: List[UInt8] = [0xF5, 0x80, 0x80, 0x80]           # beyond Unicode
+    var c6: List[UInt8] = [0x80, 0x80]                       # continuation bytes alone
+    var c7: List[UInt8] = [0xE6, 0x97, 0xA5, 0xC3, 10]       # good char, then a broken one
+    var c8: List[UInt8] = [0xF4, 0x90, 0x80, 0x80]           # above U+10FFFF
+    cases.append(c1.copy())
+    cases.append(c2.copy())
+    cases.append(c3.copy())
+    cases.append(c4.copy())
+    cases.append(c5.copy())
+    cases.append(c6.copy())
+    cases.append(c7.copy())
+    cases.append(c8.copy())
+    for i in range(len(cases)):
+        same_as_codepoint_load(cases[i], "invalid case " + String(i + 1))
+    # a bad byte is shown as U+FFFD and nothing around it is lost
+    var b = TextBuffer()
+    b.load_bytes(c1)
+    assert_equal(b.at(0, 0), 97)
+    assert_equal(b.at(0, 1), 0xFFFD)
+    assert_equal(b.at(0, 2), 98)
+
+
+def test_load_bytes_random_input() raises:
+    var r = Rng(77)
+    var pieces: List[String] = ["a", "xyz", " ", "\t", "\n", "\r\n", "\r", "é", "日", "🔥", "    ", "#"]
+    for round in range(200):
+        var bytes = List[UInt8]()
+        var n = r.next(60)
+        for _ in range(n):
+            if r.next(25) == 0:
+                bytes.append(UInt8(128 + r.next(128)))        # sometimes a broken byte
+            else:
+                for q in str_bytes(pieces[r.next(len(pieces))]):
+                    bytes.append(q)
+        same_as_codepoint_load(bytes, "round " + String(round))
+
+
+def test_load_bytes_resets_undo_and_lexer_cache() raises:
+    var b = TextBuffer()
+    b.load_bytes(str_bytes("one\n"))
+    _ = b.insert(0, 0, decode("x"), 0, 0, 0)
+    assert_true(b.modified)
+    b.load_bytes(str_bytes("two\nthree\n"))
+    assert_false(b.modified)
+    assert_equal(b.undo().r, -1)
+    assert_equal(len(b.lstate), 1)
+    assert_equal(to_str(b.line(0)), "two")
+
+
+def test_read_file_returns_exact_bytes() raises:
+    var dir = env_or("TMPDIR", "/tmp")
+    var path = dir + "/turbomojo-readfile-test.bin"
+    var data = List[UInt8]()
+    for i in range(200000):
+        data.append(UInt8((i * 7 + i // 256) % 256))          # includes NUL bytes
+    assert_true(write_bytes_atomic(path, data))
+    var got = read_file(path)
+    assert_equal(len(got), len(data))
+    var same = True
+    for i in range(len(data)):
+        if got[i] != data[i]:
+            same = False
+            break
+    assert_true(same, "bytes differ")
+    _ = run_system("rm -f '" + path + "'")
+    assert_equal(len(read_file(path)), 0)                     # missing file
+    _ = run_system(": > '" + path + "'")
+    assert_equal(len(read_file(path)), 0)                     # empty file
+    _ = run_system("rm -f '" + path + "'")
+    # a file that reports size 0 but has content
+    assert_true(len(read_file("/proc/self/status")) > 0)
 
 
 def main() raises:

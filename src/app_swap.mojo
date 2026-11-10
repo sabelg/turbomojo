@@ -58,6 +58,8 @@ __extension App:
                 if self.wins[i].swap_file.byte_length() > 0:
                     self.drop_swap(i)
                 continue
+            if self.wins[i].buf.large:
+                continue        # rewriting a huge snapshot every few seconds would stall typing
             if self.wins[i].swap_version != self.wins[i].buf.version:
                 pending = True
         if not pending:
@@ -70,7 +72,7 @@ __extension App:
             return
         self.swap_due = 0
         for i in range(len(self.wins)):
-            if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified and self.wins[i].swap_version != self.wins[i].buf.version:
+            if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified and not self.wins[i].buf.large and self.wins[i].swap_version != self.wins[i].buf.version:
                 if not self.write_swap(i):
                     self.log_error("could not write swap file for " + self.wins[i].title)
 
@@ -139,7 +141,7 @@ __extension App:
                     self.wins[i].title = info.title if info.title.byte_length() > 0 else basename(info.path)
             if i < 0:
                 i = self.new_editor(info.title if info.title.byte_length() > 0 else basename(info.path), info.path)
-            self.wins[i].buf.load(decode_list(info.content))
+            self.wins[i].buf.load_bytes(info.content)
             self.apply_editorconfig(i)
             self.note_disk_state(i)
             self.wins[i].buf.modified = True

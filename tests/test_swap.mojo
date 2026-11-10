@@ -359,5 +359,55 @@ def test_clean_exit_removes_own_swaps_but_not_others() raises:
     cleanup(app)
 
 
+
+# ------------------------------------------------------------ large-file mode
+def test_large_file_mode_turns_off_snapshots_but_not_emergency_save() raises:
+    var app = make("large")
+    var dir = scratch("large-src")
+    _ = run_system("mkdir -p '" + dir + "'")
+    var body = String("")
+    for i in range(100):
+        body += "line number " + String(i) + " of the big file\n"
+    with open(dir + "/big.txt", "w") as f:
+        f.write(body)
+    with open(dir + "/small.txt", "w") as f:
+        f.write("tiny\n")
+    app.large_file_bytes = 1000
+    app.open_path(dir + "/small.txt")
+    assert_false(app.wins[app.top()].buf.large)
+    app.open_path(dir + "/big.txt")
+    var i = app.top()
+    assert_true(app.wins[i].buf.large)
+    assert_true(app.status.find("large-file mode") >= 0, app.status)
+    assert_equal(app.wins[i].buf.count(), 101)
+    assert_equal(to_str(app.wins[i].buf.line(99)), "line number 99 of the big file")
+    typ(app, i, "edit")
+    var now = now_ns()
+    app.swap_tick(now)
+    app.swap_tick(now + 5 * SEC)
+    assert_equal(len(list_swap_files(app.recovery_dir)), 0)   # no periodic snapshot
+    assert_equal(app.swap_due, 0)                             # and no timer kept running
+    assert_equal(app.write_all_swaps(), 1)                    # a crash still saves the work
+    assert_equal(len(list_swap_files(app.recovery_dir)), 1)
+    _ = run_system("rm -rf '" + dir + "'")
+    cleanup(app)
+
+
+def test_file_at_the_limit_is_not_large() raises:
+    var app = make("limit")
+    var dir = scratch("limit-src")
+    _ = run_system("mkdir -p '" + dir + "'")
+    with open(dir + "/a.txt", "w") as f:
+        f.write("0123456789")
+    app.large_file_bytes = 10
+    app.open_path(dir + "/a.txt")
+    assert_false(app.wins[app.top()].buf.large)
+    app.large_file_bytes = 9
+    app.open_path(dir + "/a.txt")                             # already open: just focused
+    assert_false(app.wins[app.top()].buf.large)
+    _ = run_system("rm -rf '" + dir + "'")
+    cleanup(app)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

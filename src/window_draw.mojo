@@ -16,13 +16,14 @@ __extension Window:
         self, mut scr: Screen, pal: Palette, hl: Highlighter, active: Bool, hl_line: Bool, insert_mode: Bool, show_ws: Bool
     ):
         var is_msg = self.kind == WK_MESSAGE
+        var plain = is_msg or self.buf.large      # no syntax colours
         var bg = pal.msg_bg if is_msg else pal.ed_bg
         var fg = pal.msg_fg if is_msg else pal.ed_fg
         var ffg = (pal.msg_frame if is_msg else pal.frame_act) if active else pal.frame_inact
         scr.fill(self.x, self.y, self.w, self.h, 32, fg, bg)
         scr.frame(self.x, self.y, self.w, self.h, active, ffg, bg)
         # title
-        var t = " " + self.title + " "
+        var t = " " + self.title + (" (large file) " if self.buf.large else " ")
         var tl = cp_len(t)
         var tx = self.x + max(1, (self.w - tl) // 2)
         scr.clip(self.x + 1, self.y, self.w - 2, 1)
@@ -84,7 +85,7 @@ __extension Window:
                     s += " "
                 s += num + " "
                 _ = scr.text(self.x + 1, yy, s, pal.frame_act if r == self.cr and active else pal.gutter_fg, pal.gutter_bg)
-            if not is_msg:
+            if not plain:
                 st = hl.line(ln, st, classes)
             var n = len(ln)
             scr.clip(cx0, self.y + 1, cls, self.h - 2)
@@ -113,7 +114,7 @@ __extension Window:
                     continue
                 var cfg = rowfg
                 var cbg = rowbg
-                if not is_msg:
+                if not plain:
                     cfg = pal.syn[classes[c]]
                 if self.in_sel(r, c):
                     cfg = pal.sel_fg

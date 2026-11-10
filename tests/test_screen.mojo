@@ -265,5 +265,30 @@ def test_inactive_window_and_message_window_golden() raises:
     check_golden("two_windows", s)
 
 
+
+def test_large_file_mode_draws_without_syntax_colours() raises:
+    var p = theme(0)
+    var h = Highlighter()
+    var s = Screen(50, 5)
+    var w = Window(WK_EDITOR, "t.mojo", "", 0, 0, 50, 5, 1)
+    w.buf.load(decode("def f():\n    return 1\n"))
+    w.sync_lex(5)
+    w.draw(s, p, h, False, False, True, False)
+    var coloured = s.fg_at(1, 1)
+    assert_true(coloured != p.ed_fg, "keyword should be coloured normally")
+    assert_true(len(w.buf.lstate) > 1)
+    var s2 = Screen(50, 5)
+    var w2 = Window(WK_EDITOR, "t.mojo", "", 0, 0, 50, 5, 1)
+    w2.buf.load(decode("def f():\n    return 1\n"))
+    w2.buf.large = True
+    w2.sync_lex(5)
+    w2.draw(s2, p, h, False, False, True, False)
+    assert_equal(s2.fg_at(1, 1), p.ed_fg)
+    assert_equal(len(w2.buf.lstate), 1)                       # no lexer work at all
+    assert_equal(row(s2, 1), row(s, 1))                       # same text either way
+    assert_true(row(s2, 0).find(" t.mojo (large file) ") > 0, "the frame says why colours are missing")
+    assert_true(row(s, 0).find("large") < 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

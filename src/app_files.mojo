@@ -61,14 +61,17 @@ __extension App:
             self.focus(i)
             i = self.top()
         if path_exists(p):
-            var txt: String
-            with open(p, "r") as f:
-                txt = f.read()
-            self.wins[i].buf.load(decode(txt))
+            var bytes = read_file(p)
+            var big = len(bytes) > self.large_file_bytes
+            self.wins[i].buf.load_bytes(bytes)
+            self.wins[i].buf.large = big
             self.wins[i].cr = 0
             self.wins[i].cc = 0
             self.wins[i].top = 0
-            self.say("Loaded " + p)
+            if big:
+                self.say("Opened in large-file mode: syntax colours, recovery snapshots and language server are off")
+            else:
+                self.say("Loaded " + p)
         else:
             self.say("New file: " + p)
         self.apply_editorconfig(i)

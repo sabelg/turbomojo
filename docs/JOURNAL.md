@@ -687,3 +687,43 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - Dialog input fields, search matches and word movement still work per codepoint.
   - The cluster pool is cleared after 2,048 distinct sequences with a full repaint.
 - Verified: `check.sh` CHECK OK (22 files, 458 tests).
+
+## 2026-11-10 · P1-05 large files · done
+
+- `TextBuffer.load_bytes`: loads a file's bytes straight into the rope (line endings,
+  tab/space detection and UTF-8 validation in one pass). Invalid UTF-8 falls back to the
+  old codepoint loader, so the result is identical in every case. `util.read_file` reads
+  a file into one buffer of its size (pieces for files that report no size).
+  `App.open_path` and swap recovery use both.
+- Large-file mode: a file bigger than `editor.large_file_mb` (default 50, new setting)
+  gets `buf.large`. For such a buffer there are no syntax colours and no lexer cache, no
+  periodic swap snapshots, and F7 (language server) is refused. The window title shows
+  "(large file)" and the status line says so on open. `write_all_swaps` (crash and
+  terminate path) still saves large buffers.
+- `scripts/bench-open.sh` + `bench/open_bench.mojo` (aarch64, Mojo 1.2.0, warm cache):
+
+  | file | read | load | first draw | open total | jump to end + draw |
+  |---|---|---|---|---|---|
+  | 1,000,000 lines (21 MB), old loader | 36 ms | 375 ms | 0.2 ms | 412 ms | 55 ms |
+  | 1,000,000 lines (21 MB) | 7 ms | 107 ms | 0.2 ms | 114 ms | 55 ms |
+  | 60 MB, 968k lines | 20 ms | 320 ms | 0.3 ms | 340 ms | 136 ms |
+
+  The target (under 1 s for 1M lines) was already met by the old path; it is now 3.6x
+  faster. The 60 MB row is measured with highlighting on (the benchmark does not switch
+  to large-file mode), so in the IDE the jump to the end is cheaper than shown.
+- Tests (+10, 468 total): `load_bytes` against the codepoint loader for plain cases,
+  eight kinds of invalid UTF-8 and 200 random inputs; round trip of a CRLF/tab file;
+  reset of undo and lexer cache; `read_file` on binary data, missing, empty and /proc
+  files; the setting and its validation; large mode on open, at the limit, no snapshot
+  but emergency save; drawing without colours and the title marker. One failure was a
+  wrong expectation (title marker hidden by frame icons in a 30-column test window).
+- Checked by hand in tmux: the 60 MB file opens, Ctrl+End and typing at the end work,
+  and killing the session left a swap file that the next start offered to recover.
+- Not done / unverified:
+  - "Lazy loading" from the roadmap table is not implemented: the whole file is read
+    into memory (about its size, plus the rope's tables). Nothing was tried above 60 MB.
+  - Reloading a changed large file from disk still goes through codepoints (8 bytes per
+    character for a moment); saving a large file builds the whole byte array first.
+  - Opening happens on the UI thread: a multi-GB file would freeze the UI while loading.
+  - Timings are from one machine with a warm page cache; a cold disk will be slower.
+- Verified: `check.sh` CHECK OK (22 files, 468 tests); the nightly toolchain builds.
