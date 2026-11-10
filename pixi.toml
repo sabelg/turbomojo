@@ -1,12 +1,30 @@
 [workspace]
-channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+channels = ["conda-forge"]
 name = "turbo-mojo"
 platforms = ["linux-aarch64", "linux-64"]
 version = "0.1.0"
 
+# The default environment uses the stable Mojo release. The `nightly` environment is a
+# canary: `pixi run canary` runs the whole gate against the newest nightly toolchain so
+# that upcoming language or library changes are noticed early.
+[feature.stable]
+channels = ["https://conda.modular.com/max"]
+
+[feature.stable.dependencies]
+mojo = ">=1.2,<2"
+
+[feature.nightly]
+channels = ["https://conda.modular.com/max-nightly"]
+
+[feature.nightly.dependencies]
+mojo = ">=1.2.0.dev2026092905"
+
+[environments]
+default = ["stable"]
+nightly = ["nightly"]
+
 [tasks]
 build = "mkdir -p build && mojo build -I src src/main.mojo -o build/tmide"
 run = { cmd = "./build/tmide", depends-on = ["build"] }
-
-[dependencies]
-mojo = "==1.2.0.dev2026092905"
+check = "scripts/check.sh"
+canary = "TM_ENV=nightly scripts/check.sh"

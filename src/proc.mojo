@@ -89,7 +89,7 @@ struct Proc(Copyable, Movable):
         var buf = List[UInt8](length=65536, fill=0)
         var total = 0
         for _ in range(64):
-            var n = external_call["read", Int](self.out_fd, buf.unsafe_ptr(), Int(65536))
+            var n = external_call["read", Int](Int32(self.out_fd), buf.unsafe_ptr(), Int(65536))
             if n > 0:
                 for k in range(n):
                     self.inbox.append(buf[k])
@@ -144,7 +144,7 @@ struct Proc(Copyable, Movable):
         var off = 0
         var n = len(self.outbox)
         while off < n:
-            var w = external_call["write", Int](self.in_fd, self.outbox.unsafe_ptr().unsafe_offset(off), n - off)
+            var w = external_call["write", Int](Int32(self.in_fd), self.outbox.unsafe_ptr().unsafe_offset(off), n - off)
             if w > 0:
                 off += w
             else:

@@ -28,7 +28,7 @@ def read_file(path: String) raises -> String:
 
 def write_stderr(s: String):
     var b = str_bytes(s)
-    _ = external_call["write", Int](Int(2), b.unsafe_ptr(), len(b))
+    _ = external_call["write", Int](Int32(2), b.unsafe_ptr(), len(b))
 
 
 def test_each_fatal_signal_has_its_own_slot() raises:

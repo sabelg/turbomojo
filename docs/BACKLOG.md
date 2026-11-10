@@ -27,7 +27,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P0-17 JSON parser/writer module with tests (objects, arrays, strings with escapes and \u, numbers, bool, null)
 - [x] P0-18 JSON-RPC transport (`Content-Length` framing over a child's pipes, non-blocking, request table) with tests against a fake server script
 - [x] P0-19 Spike: start `mojo-lsp-server`, open the current file, show its diagnostics in the Message window; record measured latency in `docs/JOURNAL.md`
-- [ ] P0-20 Move `pixi.toml` to the stable Mojo 1.x channel if the code builds there; otherwise record what blocks it
+- [x] P0-20 Move `pixi.toml` to the stable Mojo 1.x channel if the code builds there; otherwise record what blocks it
 - [ ] P0-21 CI workflow file (`.github/workflows/ci.yml`) running `scripts/check.sh` on linux-64 and linux-aarch64 (not pushed; file only)
 
 ## Phase 1: Editor core (v1.2)

@@ -177,7 +177,7 @@ __extension App:
         var got = False
         var eof = False
         for _ in range(64):
-            var n = external_call["read", Int](Int(self.job.fd), buf.unsafe_ptr(), Int(16384))
+            var n = external_call["read", Int](Int32(self.job.fd), buf.unsafe_ptr(), Int(16384))
             if n > 0:
                 for k in range(n):
                     self.job.data.append(buf[k])

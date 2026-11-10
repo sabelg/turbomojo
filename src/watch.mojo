@@ -112,7 +112,7 @@ struct Watcher(Copyable, Movable):
         var buf = List[UInt8](length=4096, fill=0)
         var any = False
         while True:
-            var n = external_call["read", Int](self.fd, buf.unsafe_ptr(), Int(4096))
+            var n = external_call["read", Int](Int32(self.fd), buf.unsafe_ptr(), Int(4096))
             if n <= 0:
                 break
             any = True

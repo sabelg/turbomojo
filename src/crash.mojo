@@ -70,16 +70,16 @@ def crash_handler_c(sig: Int32):
     )
     if p[unsafe_offset=OFF_TUI_FLAG] == 1:
         var esc = "\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l"
-        _ = external_call["write", Int](Int(1), esc.unsafe_ptr(), esc.byte_length())
+        _ = external_call["write", Int](Int32(1), esc.unsafe_ptr(), esc.byte_length())
         _ = external_call["tcsetattr", Int32](Int32(0), Int32(0), p)
     var note = "\nTurboMojo crashed. The terminal has been restored; see the crash log:\n  "
-    _ = external_call["write", Int](Int(SAVED_STDERR_FD), note.unsafe_ptr(), note.byte_length())
+    _ = external_call["write", Int](Int32(SAVED_STDERR_FD), note.unsafe_ptr(), note.byte_length())
     var hlen = Int(p[unsafe_offset=OFF_HEADER_LEN]) * 256 + Int(p[unsafe_offset=OFF_HEADER_LEN + 1])
     # the header starts with the log path on its own line
-    _ = external_call["write", Int](Int(SAVED_STDERR_FD), p.unsafe_offset(OFF_HEADER), hlen)
+    _ = external_call["write", Int](Int32(SAVED_STDERR_FD), p.unsafe_offset(OFF_HEADER), hlen)
     var sep = "\n=== crash ===\n"
-    _ = external_call["write", Int](Int(CRASH_LOG_FD), sep.unsafe_ptr(), sep.byte_length())
-    _ = external_call["write", Int](Int(CRASH_LOG_FD), p.unsafe_offset(OFF_HEADER), hlen)
+    _ = external_call["write", Int](Int32(CRASH_LOG_FD), sep.unsafe_ptr(), sep.byte_length())
+    _ = external_call["write", Int](Int32(CRASH_LOG_FD), p.unsafe_offset(OFF_HEADER), hlen)
     # hand over to the runtime's handler: it prints the stack trace and ends the process
     var slot = crash_slot(Int(sig))
     if slot >= 0:

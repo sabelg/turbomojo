@@ -216,7 +216,7 @@ struct Terminal(Movable):
         var off = 0
         var n = len(self.out)
         while off < n:
-            var w = external_call["write", Int](Int(1), self.out.unsafe_ptr().unsafe_offset(off), n - off)
+            var w = external_call["write", Int](Int32(1), self.out.unsafe_ptr().unsafe_offset(off), n - off)
             if w <= 0:
                 break
             off += w
@@ -229,7 +229,7 @@ struct Terminal(Movable):
         fds.append(0)
         while True:
             _ = wait_readable(fds, -1)
-            var n = external_call["read", Int](Int(0), tmp.unsafe_ptr(), Int(64))
+            var n = external_call["read", Int](Int32(0), tmp.unsafe_ptr(), Int(64))
             if n > 0:
                 return
 
@@ -244,7 +244,7 @@ struct Terminal(Movable):
         An incomplete sequence is only resolved once ESC_TIMEOUT_MS has passed without
         new bytes, so a sequence split across reads is not mistaken for a lone Esc."""
         var tmp = List[UInt8](length=4096, fill=0)
-        var n = external_call["read", Int](Int(0), tmp.unsafe_ptr(), Int(4096))
+        var n = external_call["read", Int](Int32(0), tmp.unsafe_ptr(), Int(4096))
         var data = List[UInt8]()
         for i in range(n):
             data.append(tmp[i])

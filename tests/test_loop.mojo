@@ -21,7 +21,7 @@ struct Pipe:
 
     def send(self, s: String):
         var b = str_bytes(s)
-        _ = external_call["write", Int](self.w, b.unsafe_ptr(), len(b))
+        _ = external_call["write", Int](Int32(self.w), b.unsafe_ptr(), len(b))
 
     def close(self):
         _ = external_call["close", Int32](Int32(self.r))

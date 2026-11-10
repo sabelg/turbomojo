@@ -127,12 +127,19 @@ Press **F1** inside the IDE for the full keyboard reference.
 ## Testing
 
 ```bash
-scripts/check.sh
+pixi run check
 ```
 
 builds the IDE, compiles and runs every `tests/test_*.mojo` (std.testing TestSuite files), and
 runs a scripted smoke test of the real UI in a private tmux server. It prints `CHECK OK` only
 if everything passed.
+
+The project builds against the stable Mojo release (1.2 or newer). A second environment tracks
+the nightly toolchain as an early warning for upcoming changes:
+
+```bash
+pixi run canary
+```
 
 `scripts/tui-test.sh` lets you script key presses by hand and capture the screen:
 

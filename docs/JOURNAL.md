@@ -502,3 +502,26 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   `bin` on PATH so the real-server test runs.
 - Not done (Phase 2): incremental sync, more than one tracked file, underlines in the
   editor, completion, hover, definition, restart policy.
+
+## 2026-11-10 · P0-20 stable Mojo channel · done
+
+- Installed Mojo 1.1.0 from the stable channel in a side environment: the IDE built and
+  the whole gate passed there unchanged.
+- The stable channel has since moved to **Mojo 1.2.0**, and neither 1.2.0 nor the newest
+  nightly (1.3.0.dev2026111005) built the IDE: the standard library now declares `write`
+  (and `read`, once it is linked) with a 32-bit file descriptor, and Mojo requires every
+  use of a C function to agree with the first declaration. Probed 12 signature variants on
+  three toolchains: descriptor as `Int` builds only on <= 1.1.0 / the September nightly,
+  descriptor as `Int32` only on >= 1.2.0. All 14 `read`/`write` call sites now pass
+  `Int32`, so the minimum supported Mojo is 1.2.0.
+- `pixi.toml`: the default environment uses the stable channel (`mojo >=1.2,<2`, currently
+  1.2.0); a `nightly` environment tracks max-nightly. New tasks: `pixi run check` (gate on
+  stable) and `pixi run canary` (same gate on nightly).
+- `scripts/check.sh` takes `TM_ENV` / `TM_MANIFEST` to choose the toolchain and exports
+  that toolchain's `bin` and `MODULAR_HOME` for the tests. First canary run failed one
+  language-server test because the script inherited the stable environment's
+  `MODULAR_HOME` while running the nightly server; fixed in the script.
+- Verified: gate CHECK OK on stable 1.2.0 and on nightly 1.3.0.dev2026111005 (19 files,
+  402 tests, smoke test, incl. the real language server of each toolchain).
+- Lesson for later tasks: direct libc calls that the standard library also makes
+  (`read`, `write`, `open`, ...) can break on a toolchain update; the canary is the guard.
