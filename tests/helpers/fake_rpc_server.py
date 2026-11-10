@@ -89,13 +89,18 @@ def main():
         params = msg.get("params")
         if method == "exit":
             return 0
+        if method is None and "id" in msg and str(mid).startswith("srv"):
+            # the client's answer to one of our own requests
+            main.client_answers = getattr(main, "client_answers", []) + [msg.get("result")]
+            continue
         # ---- a minimal language server
         if method == "initialize":
             send({"jsonrpc": "2.0", "id": mid, "result": {
                 # FAKE_SYNC=2: incremental sync with save notifications
                 "capabilities": {"textDocumentSync": ({"openClose": True, "change": 2, "save": True}
                                                       if os.environ.get("FAKE_SYNC") == "2" else 1),
-                                 "hoverProvider": True, "foldingRangeProvider": False, "definitionProvider": True, "referencesProvider": True,
+                                 "hoverProvider": True, "foldingRangeProvider": False, "definitionProvider": True, "codeActionProvider": {"resolveProvider": True},
+                                 "executeCommandProvider": {"commands": ["fake.organise"]}, "referencesProvider": True,
                                  "signatureHelpProvider": {"triggerCharacters": ["(", ","]},
                                  "completionProvider": {"triggerCharacters": [".", "("], "resolveProvider": True},
                                  "renameProvider": {"prepareProvider": True}},
@@ -130,7 +135,7 @@ def main():
                         ch = len(line[:at].encode("utf-16-le")) // 2
                         diags.append({"range": {"start": {"line": n, "character": ch},
                                                 "end": {"line": n, "character": ch + len(word)}},
-                                      "severity": sev, "message": "found %s\nsecond line of detail" % word})
+                                      "severity": sev, "code": "E%d" % sev, "message": "found %s\nsecond line of detail" % word})
             send({"jsonrpc": "2.0", "method": "window/logMessage", "params": {"type": 3, "message": "checked v%s" % doc.get("version")}})
             send({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics",
                   "params": {"uri": doc["uri"], "version": doc.get("version"), "diagnostics": diags}})
@@ -357,6 +362,72 @@ def main():
         if method == "release":             # send the answer that was held back
             send(main.held)
             continue
+        if method == "textDocument/codeAction":
+            uri = params["textDocument"]["uri"]
+            text = DOCS.get(uri, "")
+            lines = text.split("\n")
+            ln = params["range"]["start"]["line"]
+            line = lines[ln] if ln < len(lines) else ""
+            main.actions_asked = getattr(main, "actions_asked", []) + [
+                {"range": params["range"], "codes": [d.get("code") for d in params["context"]["diagnostics"]]}]
+            u16 = lambda s: len(s.encode("utf-16-le")) // 2
+
+            def swap(old, new, in_uri=uri, in_line=None, row=None):
+                l = line if in_line is None else in_line
+                r = ln if row is None else row
+                at = l.find(old)
+                return {"range": {"start": {"line": r, "character": u16(l[:at])},
+                                  "end": {"line": r, "character": u16(l[:at + len(old)])}}, "newText": new}
+
+            organise = {"title": "Organise imports", "command": "fake.organise", "arguments": [uri]}
+            out_actions = []
+            if "typo" in line:
+                out_actions = [
+                    {"title": "Extract to a function", "kind": "refactor.extract", "disabled": {"reason": "nothing is selected"}},
+                    organise,
+                    {"title": "Add a comment", "kind": "quickfix",
+                     "edit": {"changes": {uri: [{"range": {"start": {"line": ln, "character": 0}, "end": {"line": ln, "character": 0}}, "newText": "# note\n"}]}}},
+                    {"title": "Change 'typo' to 'type'", "kind": "quickfix", "isPreferred": True,
+                     "edit": {"changes": {uri: [swap("typo", "type")]}}},
+                    {"kind": "quickfix"},                       # no title: not shown
+                ]
+            elif "lazy" in line:
+                out_actions = [{"title": "Make it eager", "kind": "quickfix", "data": {"line": ln}}]
+            elif "both" in line:
+                out_actions = [{"title": "Finish and organise", "kind": "source",
+                                "edit": {"documentChanges": [{"textDocument": {"uri": uri, "version": 1}, "edits": [swap("both", "done")]}]},
+                                "command": organise}]
+            elif "wide" in line:
+                other = uri.rsplit("/", 1)[0] + "/other.mojo"
+                with open(other[len("file://"):], encoding="utf-8") as fh:
+                    first = fh.read().split("\n")[0]
+                out_actions = [{"title": "Rename wide everywhere", "kind": "refactor",
+                                "edit": {"changes": {uri: [swap("wide", "broad")], other: [swap("wide", "broad", other, first, 0)]}}}]
+            elif "empty" in line:
+                out_actions = [{"title": "Does nothing", "kind": "quickfix", "edit": {"changes": {}}}]
+            if "ACTBUSY" in text and len(main.actions_asked) < 3:
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32801, "message": "outdated request"}})
+            else:
+                send({"jsonrpc": "2.0", "id": mid, "result": out_actions if "nullanswer" not in line else None})
+            continue
+        if method == "codeAction/resolve":
+            item = dict(params)
+            uri = next(iter(DOCS))
+            ln = params["data"]["line"]
+            l = DOCS[uri].split("\n")[ln]
+            at = l.find("lazy")
+            item["edit"] = {"changes": {uri: [{"range": {"start": {"line": ln, "character": at}, "end": {"line": ln, "character": at + 4}}, "newText": "eager"}]}}
+            main.resolved_actions = getattr(main, "resolved_actions", 0) + 1
+            send({"jsonrpc": "2.0", "id": mid, "result": item})
+            continue
+        if method == "workspace/executeCommand":
+            main.executed = getattr(main, "executed", []) + [params]
+            uri = params["arguments"][0]
+            send({"jsonrpc": "2.0", "id": "srv%d" % len(main.executed), "method": "workspace/applyEdit", "params": {
+                "label": "Organise imports",
+                "edit": {"changes": {uri: [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 0}}, "newText": "# organised\n"}]}}}})
+            send({"jsonrpc": "2.0", "id": mid, "result": None})
+            continue
         if method == "textDocument/signatureHelp":
             text = DOCS.get(params["textDocument"]["uri"], "")
             main.sigs = getattr(main, "sigs", 0) + 1
@@ -424,7 +495,9 @@ def main():
             continue
         if method == "doc_state":        # what this server holds, for the tests
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "renames": getattr(main, "renames", []), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
+                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "renames": getattr(main, "renames", []), "actions_asked": getattr(main, "actions_asked", []),
+                "executed": getattr(main, "executed", []), "client_answers": getattr(main, "client_answers", []),
+                "resolved_actions": getattr(main, "resolved_actions", 0), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
             continue
         if method == "closed_docs":
             send({"jsonrpc": "2.0", "id": mid, "result": getattr(main, "closed", [])})

@@ -28,7 +28,7 @@ from signals import SignalFd, send_signal, own_pid
 from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
-from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit
+from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
 from filestate import *
 from markdown import MdLine
@@ -223,6 +223,18 @@ struct App(Movable):
     var ren_vpaths: List[String]     # the open files and their versions when the edits were asked for
     var ren_versions: List[Int]
     var ren_edit: WorkspaceEdit      # waiting for the user's go-ahead
+    var edit_noun: String            # the operation whose edit is being offered ("Rename", "Quick fix")
+    var edit_done: String
+    var actions: List[CodeAction]    # what the open Quick Fix list offers
+    var act_chosen: CodeAction
+    var act_stage: Int               # 0 idle, 1 asked for the list, 2 asked for the chosen action's edit
+    var act_req_id: Int
+    var act_path: String
+    var act_row: Int
+    var act_col: Int
+    var act_retries: Int
+    var act_retry_due: Int
+    var act_command_due: Bool        # the chosen action's command runs once its edit is applied
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -395,6 +407,18 @@ struct App(Movable):
         self.ren_vpaths = List[String]()
         self.ren_versions = List[Int]()
         self.ren_edit = WorkspaceEdit()
+        self.edit_noun = "Rename"
+        self.edit_done = ""
+        self.actions = List[CodeAction]()
+        self.act_chosen = CodeAction()
+        self.act_stage = 0
+        self.act_req_id = -1
+        self.act_path = ""
+        self.act_row = -1
+        self.act_col = -1
+        self.act_retries = 0
+        self.act_retry_due = 0
+        self.act_command_due = False
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -519,6 +543,8 @@ struct App(Movable):
             t = min(t, max(1, (self.ref_retry_due - now) // 1000000 + 1))
         if self.ren_retry_due > 0:
             t = min(t, max(1, (self.ren_retry_due - now) // 1000000 + 1))
+        if self.act_retry_due > 0:
+            t = min(t, max(1, (self.act_retry_due - now) // 1000000 + 1))
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.watch_enabled and not self.watch.active():

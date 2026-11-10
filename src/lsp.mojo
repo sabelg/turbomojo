@@ -104,11 +104,13 @@ struct Diag(Copyable, Movable):
 struct DocDiags(Copyable, Movable):
     var uri: String
     var items: List[Diag]
+    var raw: List[String]  # each item as the server sent it (JSON), to hand back with code action requests
     var version: Int       # document version the server reported them for (-1 if none)
 
     def __init__(out self, uri: String):
         self.uri = uri
         self.items = List[Diag]()
+        self.raw = List[String]()
         self.version = -1
 
 
@@ -139,6 +141,7 @@ struct LspCaps(Copyable, Movable):
     var rename: Bool
     var prepare_rename: Bool
     var code_action: Bool
+    var code_action_resolve: Bool
     var document_symbol: Bool
     var workspace_symbol: Bool
     var formatting: Bool
@@ -170,6 +173,7 @@ struct LspCaps(Copyable, Movable):
         self.rename = False
         self.prepare_rename = False
         self.code_action = False
+        self.code_action_resolve = False
         self.document_symbol = False
         self.workspace_symbol = False
         self.formatting = False
@@ -288,6 +292,7 @@ def parse_caps(caps: Json) -> LspCaps:
     if c.rename:
         c.prepare_rename = caps.bool(caps.path(0, "renameProvider/prepareProvider"))
     c.code_action = cap_on(caps, "codeActionProvider")
+    c.code_action_resolve = c.code_action and caps.bool(caps.path(0, "codeActionProvider/resolveProvider"))
     c.document_symbol = cap_on(caps, "documentSymbolProvider")
     c.workspace_symbol = cap_on(caps, "workspaceSymbolProvider")
     c.formatting = cap_on(caps, "documentFormattingProvider")
@@ -594,6 +599,75 @@ def parse_workspace_edit(doc: Json, result: Int) -> WorkspaceEdit:
     return we^
 
 
+struct CodeAction(Copyable, Movable):
+    """Something the server offers to do at a place: a fix or a refactoring."""
+    var title: String
+    var kind: String        # "quickfix", "refactor.extract", ... ('' if not said)
+    var preferred: Bool
+    var disabled: String    # why it cannot be used now ('' if it can)
+    var edit_json: String   # its WorkspaceEdit ('' if none, or not sent yet)
+    var command: String     # a server command to run after the edit ('' if none)
+    var args_json: String
+    var raw: String         # the whole item, for codeAction/resolve
+
+    def __init__(out self):
+        self.title = ""
+        self.kind = ""
+        self.preferred = False
+        self.disabled = ""
+        self.edit_json = ""
+        self.command = ""
+        self.args_json = ""
+        self.raw = ""
+
+
+def parse_code_action(doc: Json, node: Int) -> CodeAction:
+    var a = CodeAction()
+    a.title = doc.str(doc.get(node, "title"))
+    a.raw = doc.dump(node)
+    var cmd = doc.get(node, "command")
+    if cmd >= 0 and doc.kind(cmd) == 3:
+        # a bare Command: {title, command, arguments}
+        a.command = doc.str(cmd)
+        var args = doc.get(node, "arguments")
+        if args >= 0:
+            a.args_json = doc.dump(args)
+        return a^
+    a.kind = doc.str(doc.get(node, "kind"))
+    a.preferred = doc.bool(doc.get(node, "isPreferred"))
+    var dis = doc.get(node, "disabled")
+    if dis >= 0:
+        a.disabled = doc.str(doc.get(dis, "reason"), "not available here")
+    var ed = doc.get(node, "edit")
+    if ed >= 0 and not doc.is_null(ed):
+        a.edit_json = doc.dump(ed)
+    if cmd >= 0 and doc.kind(cmd) == 5:
+        a.command = doc.str(doc.get(cmd, "command"))
+        var args = doc.get(cmd, "arguments")
+        if args >= 0:
+            a.args_json = doc.dump(args)
+    return a^
+
+
+def parse_code_actions(doc: Json, result: Int) -> List[CodeAction]:
+    """Read a codeAction answer: preferred actions first, then fixes, then the rest,
+    each group in the server's order. Items without a title are left out."""
+    var all = List[CodeAction]()
+    if result < 0 or doc.is_null(result):
+        return all^
+    for node in doc.children(result):
+        var a = parse_code_action(doc, node)
+        if a.title.byte_length() > 0:
+            all.append(a^)
+    var out = List[CodeAction]()
+    for rank in range(3):
+        for a in all:
+            var r = 0 if a.preferred else (1 if a.kind.startswith("quickfix") else 2)
+            if r == rank:
+                out.append(a.copy())
+    return out^
+
+
 struct RenameStart(Movable):
     """Answer to prepareRename: may the symbol be renamed, and what is its name now
     (`known` False: the server left finding the name to the editor)."""
@@ -776,6 +850,8 @@ struct LspClient(Copyable, Movable):
     var queued_text: List[String]      # text of documents waiting for the server (same order as unsent docs)
     var diags: List[DocDiags]
     var updated: List[String]          # URIs whose diagnostics changed since last take_updated()
+    var asked_edits: List[String]      # edits the server asked us to apply (JSON), until take_asked_edits()
+    var asked_labels: List[String]
     var server_name: String
     var caps: Json                     # the server's capabilities object (empty until ready)
     var table: LspCaps                 # the same, as a typed table
@@ -795,6 +871,8 @@ struct LspClient(Copyable, Movable):
         self.queued_text = List[String]()
         self.diags = List[DocDiags]()
         self.updated = List[String]()
+        self.asked_edits = List[String]()
+        self.asked_labels = List[String]()
         self.server_name = ""
         self.caps = Json()
         self.table = LspCaps()
@@ -844,6 +922,7 @@ struct LspClient(Copyable, Movable):
         w.begin_obj()
         w.key("workspace")
         w.begin_obj()
+        w.kv_bool("applyEdit", True)
         w.key("workspaceEdit")
         w.begin_obj()
         w.kv_bool("documentChanges", True)
@@ -869,6 +948,34 @@ struct LspClient(Copyable, Movable):
         w.str("markdown")
         w.str("plaintext")
         w.end_arr()
+        w.end_obj()
+        w.key("codeAction")
+        w.begin_obj()
+        w.kv_bool("isPreferredSupport", True)
+        w.kv_bool("disabledSupport", True)
+        w.key("codeActionLiteralSupport")
+        w.begin_obj()
+        w.key("codeActionKind")
+        w.begin_obj()
+        w.key("valueSet")
+        w.begin_arr()
+        w.str("quickfix")
+        w.str("refactor")
+        w.str("refactor.extract")
+        w.str("refactor.inline")
+        w.str("refactor.rewrite")
+        w.str("source")
+        w.str("source.organizeImports")
+        w.end_arr()
+        w.end_obj()
+        w.end_obj()
+        w.key("resolveSupport")
+        w.begin_obj()
+        w.key("properties")
+        w.begin_arr()
+        w.str("edit")
+        w.end_arr()
+        w.end_obj()
         w.end_obj()
         w.key("rename")
         w.begin_obj()
@@ -1100,6 +1207,47 @@ struct LspClient(Copyable, Movable):
             return -1
         return self.conn.request("textDocument/references", self.position_params(uri, line, character) + ",\"context\":{\"includeDeclaration\":true}}", now)
 
+    def diagnostics_json(self, uri: String, r1: Int, r2: Int) -> String:
+        """The problems reported for lines r1..r2 of a document, as the JSON array the
+        server sent them in."""
+        var out = String("[")
+        var i = self.diags_index(uri)
+        if i >= 0:
+            var n = 0
+            for k in range(len(self.diags[i].items)):
+                if self.diags[i].items[k].line <= r2 and self.diags[i].items[k].end_line >= r1 and k < len(self.diags[i].raw):
+                    out += ("," if n > 0 else "") + self.diags[i].raw[k]
+                    n += 1
+        return out + "]"
+
+    def request_code_actions(mut self, uri: String, r1: Int, c1: Int, r2: Int, c2: Int, now: Int) -> Int:
+        """Ask what can be done about a range (columns in UTF-16 units): fixes for the
+        problems on its lines, refactorings. -1 if the server cannot be asked now."""
+        if self.state != LSP_READY or not self.table.code_action or self.find_doc(uri) < 0:
+            return -1
+        var p = "{\"textDocument\":{\"uri\":" + json_quote(uri) + "},\"range\":{\"start\":{\"line\":" + String(r1) + ",\"character\":" + String(c1) + "},\"end\":{\"line\":" + String(r2) + ",\"character\":" + String(c2) + "}},\"context\":{\"diagnostics\":" + self.diagnostics_json(uri, r1, r2) + ",\"triggerKind\":1}}"
+        return self.conn.request("textDocument/codeAction", p, now)
+
+    def request_action_resolve(mut self, raw_action: String, now: Int) -> Int:
+        if self.state != LSP_READY or not self.table.code_action_resolve:
+            return -1
+        return self.conn.request("codeAction/resolve", raw_action, now)
+
+    def request_execute(mut self, command: String, args_json: String, now: Int) -> Int:
+        """Have the server run one of its commands (the result, if it changes text,
+        comes back as a workspace/applyEdit request)."""
+        if self.state != LSP_READY:
+            return -1
+        var p = "{\"command\":" + json_quote(command)
+        if args_json.byte_length() > 0:
+            p += ",\"arguments\":" + args_json
+        return self.conn.request("workspace/executeCommand", p + "}", now)
+
+    def take_asked_edits(mut self) -> List[String]:
+        var out = self.asked_edits.copy()
+        self.asked_edits.clear()
+        return out^
+
     def request_prepare_rename(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
         """Ask whether the symbol at a position can be renamed. -1 if the server cannot
         be asked (or does not answer this question)."""
@@ -1183,6 +1331,7 @@ struct LspClient(Copyable, Movable):
             self.diags.append(DocDiags(uri))
             i = len(self.diags) - 1
         self.diags[i].items.clear()
+        self.diags[i].raw.clear()
         self.diags[i].version = m.doc.int(m.doc.get(p, "version"), -1)
         for d in m.doc.children(m.doc.get(p, "diagnostics")):
             self.diags[i].items.append(Diag(
@@ -1193,6 +1342,7 @@ struct LspClient(Copyable, Movable):
                 m.doc.int(m.doc.get(d, "severity"), SEV_ERROR),
                 m.doc.str(m.doc.get(d, "message")),
             ))
+            self.diags[i].raw.append(m.doc.dump(d))
         if not (uri in self.updated):
             self.updated.append(uri)
 
@@ -1238,6 +1388,15 @@ struct LspClient(Copyable, Movable):
                 # requests we can satisfy with "nothing" get null; the rest are refused
                 if m.method == "client/registerCapability" or m.method == "client/unregisterCapability" or m.method == "window/workDoneProgress/create":
                     self.conn.respond(m.id_json, "null")
+                elif m.method == "workspace/applyEdit":
+                    # handed to the editor, which checks it and may ask the user
+                    var ed = m.doc.get(m.params(), "edit")
+                    if ed >= 0:
+                        self.asked_edits.append(m.doc.dump(ed))
+                        self.asked_labels.append(m.doc.str(m.doc.get(m.params(), "label")))
+                        self.conn.respond(m.id_json, "{\"applied\":true}")
+                    else:
+                        self.conn.respond(m.id_json, "{\"applied\":false,\"failureReason\":\"no edit\"}")
                 elif m.method == "workspace/configuration":
                     var n = m.doc.size(m.doc.get(m.params(), "items"))
                     var arr = String("[")

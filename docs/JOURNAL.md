@@ -1614,3 +1614,39 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
     meanwhile" check is used instead.
   - The preview lists the old lines; it does not show the new text side by side.
 - Verified: `check.sh` CHECK OK (33 files, 753 tests).
+
+## 2026-11-10 · P2-10 Code actions (quick-fix menu) · done
+
+- `src/lsp.mojo`: `request_code_actions` (range + the server's own diagnostics for
+  those lines, kept verbatim in `DocDiags.raw` so `code`/`data` survive),
+  `request_action_resolve`, `request_execute`; `CodeAction`, `parse_code_action(s)`
+  (bare commands, literal actions, isPreferred, disabled, edit, command; preferred
+  first, then quick fixes, then the rest); server request `workspace/applyEdit` is
+  accepted and queued (`asked_edits`). Client capabilities for code actions and
+  `workspace.applyEdit`; `code_action_resolve` in the capability table.
+- `src/app_nav.mojo`: `actions_command` -> list dialog "Quick Fix" -> `action_chosen`
+  -> edit (fetched with `codeAction/resolve` if not sent) -> command
+  (`workspace/executeCommand`; its edit comes back through `server_edits`).
+  The second half of rename became `offer_edit` / `edit_apply`, shared by rename, code
+  actions and server-requested edits: same checks, same listing, same question when
+  other files change, one undo step per file.
+- Command: Quick fix (Alt-Enter), Search menu.
+- Tests (6 new in `tests/test_lsp.mojo`, 80 there): answer forms and order; the list,
+  the diagnostics and range sent, applying the preferred fix, undo, a disabled action,
+  Esc, a selection as range; bare command and edit+command (edit first); resolve on
+  demand and an action across two files with the question; no actions / null / empty
+  edit / retry / cursor moved / no feature / no server; the real server.
+  `test_server_requests_are_answered` was changed on purpose: it used
+  `workspace/applyEdit` as its example of a refused request, which is now accepted.
+- Real mojo-lsp-server 1.2: advertises code actions (kinds quickfix, refactor, info)
+  but returned an empty list for an unknown name, a type mismatch and the whole file
+  in my probes; the IDE then says "No quick fixes or actions here". So applying a real
+  Mojo fix is unverified - everything about applying is tested against the fake server.
+- Not done / unverified:
+  - `workspace/applyEdit` is answered "applied: true" when queued, before the edit is
+    checked or the user has agreed; a server that relies on the answer is told too much.
+  - No hint (light bulb) that a line has fixes; no "fix all"; `source.*` actions are
+    not run on save; no key to apply the preferred fix directly.
+  - Not tried by hand in tmux; Alt-Enter depends on the terminal sending it.
+  - A server-requested edit that arrives while a dialog is open is dropped with a message.
+- Verified: `check.sh` CHECK OK (33 files, 759 tests).

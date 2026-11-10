@@ -27,6 +27,7 @@ comptime D_CHANGED = 19
 comptime D_FINDFILES = 20
 comptime D_RENAME = 21
 comptime D_RENAME_APPLY = 22
+comptime D_ACTIONS = 23
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

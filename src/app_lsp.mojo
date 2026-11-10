@@ -303,6 +303,9 @@ __extension App:
         if self.ren_retry_due > 0 and now >= self.ren_retry_due:
             self.ren_retry_due = 0
             self.rename_resend()
+        if self.act_retry_due > 0 and now >= self.act_retry_due:
+            self.act_retry_due = 0
+            self.actions_resend()
         if self.sig_retry_due > 0 and now >= self.sig_retry_due:
             self.sig_retry_due = 0
             var si = self.active_editor()
@@ -317,6 +320,8 @@ __extension App:
                 self.hover_arrived(m)
             elif m.id == self.sig_req_id:
                 self.sig_arrived(m)
+            elif m.id == self.act_req_id:
+                self.actions_reply(m)
             elif m.id == self.ren_req_id:
                 self.rename_reply(m)
             elif m.id == self.ref_req_id:
@@ -326,6 +331,8 @@ __extension App:
                     self.definition_arrived(m)
                 except e:
                     self.say("Cannot open the definition: " + String(e))
+        if len(self.lsp.asked_edits) > 0:
+            self.server_edits()
         var i = self.find_editor(self.lsp_path) if self.lsp_path.byte_length() > 0 else -1
         if i < 0 and self.lsp_path.byte_length() > 0:
             # the window whose problems were shown is gone; other files stay in step

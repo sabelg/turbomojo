@@ -12,12 +12,12 @@ from json import json_parse
 from term import wait_readable
 from app import *
 from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER, M_DIALOG
-from dialog import D_RENAME, D_RENAME_APPLY, D_INFO
+from dialog import D_RENAME, D_RENAME_APPLY, D_INFO, D_ACTIONS
 from app_nav import plan_edits
 from markdown import md_plain
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_REFERENCES, CM_RENAME, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
-from term import MOD_SHIFT, fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN, KEY_LEFT, KEY_HOME
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_REFERENCES, CM_RENAME, CM_ACTIONS, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
+from term import MOD_SHIFT, MOD_ALT, fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN, KEY_LEFT, KEY_HOME
 from signals import own_pid
 from util import cp_len, decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
 from config import load_settings, read_text
@@ -177,13 +177,23 @@ def test_server_requests_are_answered() raises:
     var data = frame("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"client/registerCapability\",\"params\":{}}")
     for b in frame("{\"jsonrpc\":\"2.0\",\"id\":\"cfg\",\"method\":\"workspace/configuration\",\"params\":{\"items\":[{},{},{}]}}"):
         data.append(b)
-    for b in frame("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"workspace/applyEdit\",\"params\":{}}"):
+    for b in frame("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"workspace/someNewThing\",\"params\":{}}"):
+        data.append(b)
+    # an edit the server wants made is kept for the editor; one without an edit is declined
+    for b in frame("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"workspace/applyEdit\",\"params\":{\"label\":\"Tidy\",\"edit\":{\"changes\":{}}}}"):
+        data.append(b)
+    for b in frame("{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"workspace/applyEdit\",\"params\":{}}"):
         data.append(b)
     for b in frame("{\"jsonrpc\":\"2.0\",\"method\":\"window/logMessage\",\"params\":{\"type\":3,\"message\":\"hello from server\"}}"):
         data.append(b)
     c.handle(c.conn.feed(data))
     var sent = frames_sent(c)
-    assert_equal(len(sent), 3)
+    assert_equal(len(sent), 5)
+    assert_equal(sent[3], "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"applied\":true}}")
+    assert_true(sent[4].find("\"applied\":false") > 0, sent[4])
+    assert_equal(len(c.asked_edits), 1)
+    assert_equal(c.asked_edits[0], "{\"changes\":{}}")
+    assert_equal(c.asked_labels[0], "Tidy")
     assert_equal(sent[0], "{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":null}")
     assert_equal(sent[1], "{\"jsonrpc\":\"2.0\",\"id\":\"cfg\",\"result\":[null,null,null]}")
     var refused = json_parse(sent[2])
@@ -2093,9 +2103,222 @@ def test_rename_is_dropped_when_the_text_changed_meanwhile() raises:
     _ = app.wins[i].buf.insert(2, 0, decode("# "), 1, 2, app.wins[i].new_group())
     _ = app.lsp.conn.request("release", "")
     wait_ren(app)
-    assert_equal(app.status, "The text changed while the server was working - rename again")
+    assert_equal(app.status, "The text changed while the server was working - try again")
     assert_equal(buf_text(app, path), "# RENSLOW | name = 1 | # print(name) | ")
     app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+# ------------------------------------------------------------ code actions
+def wait_act(mut app: App):
+    var t0 = now()
+    while (app.act_req_id >= 0 or app.act_retry_due > 0) and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+
+
+def offered(app: App) -> String:
+    """The lines of the open Quick Fix list, joined with " | "."""
+    var s = String("")
+    for k in range(len(app.dlg.items)):
+        if k > 0:
+            s += " | "
+        s += app.dlg.items[k]
+    return s
+
+
+def test_code_action_answers_in_every_form() raises:
+    var d = json_parse("[{\"title\": \"Run it\", \"command\": \"x.run\", \"arguments\": [1, \"a\"]}, {\"title\": \"Refactor\", \"kind\": \"refactor.inline\", \"disabled\": {\"reason\": \"no\"}}, {\"title\": \"Fix B\", \"kind\": \"quickfix\", \"edit\": {\"changes\": {}}, \"command\": {\"title\": \"t\", \"command\": \"x.after\"}}, {\"title\": \"Fix A\", \"kind\": \"quickfix\", \"isPreferred\": true, \"edit\": null}, {\"kind\": \"quickfix\"}]")
+    var a = parse_code_actions(d, 0)
+    assert_equal(len(a), 4)                              # the one without a title is left out
+    # the preferred one first, then fixes, then the rest in the server's order
+    assert_equal(a[0].title, "Fix A")
+    assert_true(a[0].preferred)
+    assert_equal(a[0].edit_json, "")                     # null is "no edit yet"
+    assert_equal(a[1].title, "Fix B")
+    assert_true(a[1].edit_json.byte_length() > 0)
+    assert_equal(a[1].command, "x.after")
+    assert_equal(a[2].title, "Run it")                   # a bare command
+    assert_equal(a[2].command, "x.run")
+    assert_equal(a[2].args_json, "[1,\"a\"]")
+    assert_equal(a[3].disabled, "no")
+    assert_equal(len(parse_code_actions(json_parse("null"), 0)), 0)
+    assert_equal(len(parse_code_actions(json_parse("[]"), 0)), 0)
+
+
+def test_quick_fix_list_and_applying_a_fix() raises:
+    var dir = scratch("act1")
+    var app = comp_app(dir, "x = 1\ny = typo BUG\nz = 3\n")
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    run_ticks(app, 600, False)                          # the problem on line 2 has been reported
+    assert_equal(build_registry().find_key(KEY_ENTER | MOD_ALT), CM_ACTIONS)
+    app.wins[i].goto(1, 2)
+    app.handle(key_event(KEY_ENTER | MOD_ALT))
+    assert_equal(app.status, "Asking the language server...")
+    wait_act(app)
+    assert_equal(app.mode, M_DIALOG)
+    assert_equal(app.dlg.kind, D_ACTIONS)
+    assert_equal(offered(app), "Change 'typo' to 'type' | Add a comment | Extract to a function  (nothing is selected) | Organise imports")
+    # the server was told the place and given back its own report of the problem there
+    var st = server_state(app)
+    var asked = st.at(st.get(0, "actions_asked"), 0)
+    assert_equal(st.int(st.path(asked, "range/start/line"), -1), 1)
+    assert_equal(st.int(st.path(asked, "range/start/character"), -1), 2)
+    assert_equal(st.size(st.get(asked, "codes")), 1)
+    assert_equal(st.str(st.at(st.get(asked, "codes"), 0)), "E1")
+    # Enter takes the first (preferred) one
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(buf_text(app, path), "x = 1 | y = type BUG | z = 3 | ")
+    assert_equal(app.status, "Applied: Change 'typo' to 'type': 1 change in 1 file")
+    app.exec(CM_UNDO)
+    assert_equal(buf_text(app, path), "x = 1 | y = typo BUG | z = 3 | ")
+    # an action that cannot be used says why and changes nothing
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    app.handle(key_event(KEY_DOWN))
+    app.handle(key_event(KEY_DOWN))
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.status, "Not available: nothing is selected")
+    assert_equal(buf_text(app, path), "x = 1 | y = typo BUG | z = 3 | ")
+    # Esc closes the list
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    app.handle(key_event(KEY_ESC))
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(buf_text(app, path), "x = 1 | y = typo BUG | z = 3 | ")
+    # a selection is sent as the range
+    app.wins[i].goto(1, 0)
+    app.wins[i].ar = 1
+    app.wins[i].ac = 8
+    app.wins[i].sel = True
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    app.handle(key_event(KEY_ESC))
+    st = server_state(app)
+    asked = st.at(st.get(0, "actions_asked"), st.size(st.get(0, "actions_asked")) - 1)
+    assert_equal(st.int(st.path(asked, "range/start/character"), -1), 0)
+    assert_equal(st.int(st.path(asked, "range/end/character"), -1), 8)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_actions_that_run_a_server_command() raises:
+    var dir = scratch("act2")
+    var app = comp_app(dir, "y = typo\nz = both\n")
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    # a bare command: the server answers with an edit of its own
+    app.wins[i].goto(0, 1)
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    for _ in range(3):
+        app.handle(key_event(KEY_DOWN))
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.status, "Running: Organise imports")
+    run_ticks(app, 600, False)
+    assert_equal(buf_text(app, path), "# organised | y = typo | z = both | ")
+    assert_equal(app.status, "Applied: Organise imports: 1 change in 1 file")
+    var st = server_state(app)
+    assert_equal(st.str(st.get(st.at(st.get(0, "executed"), 0), "command")), "fake.organise")
+    assert_true(st.bool(st.get(st.at(st.get(0, "client_answers"), 0), "applied")))
+    # an action with an edit and a command: the edit first, then the command
+    app.wins[i].goto(2, 5)
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    assert_equal(offered(app), "Finish and organise")
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(buf_text(app, path), "# organised | y = typo | z = done | ")
+    run_ticks(app, 600, False)
+    assert_equal(buf_text(app, path), "# organised | # organised | y = typo | z = done | ")
+    st = server_state(app)
+    assert_equal(st.size(st.get(0, "executed")), 2)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_action_resolved_on_demand_and_across_files() raises:
+    var dir = scratch("act3")
+    with open(dir + "/other.mojo", "w") as f:
+        f.write("wide = 1\n")
+    var app = comp_app(dir, "a = lazy\nprint(wide)\n")
+    var path = dir + "/a.mojo"
+    var other = dir + "/other.mojo"
+    var i = app.find_editor(path)
+    # the edit is fetched only when the action is chosen
+    app.wins[i].goto(0, 0)
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    assert_equal(offered(app), "Make it eager")
+    var st = server_state(app)
+    assert_equal(st.int(st.get(0, "resolved_actions"), -1), 0)
+    app.handle(key_event(KEY_ENTER))
+    wait_act(app)
+    assert_equal(buf_text(app, path), "a = eager | print(wide) | ")
+    assert_equal(app.status, "Applied: Make it eager: 1 change in 1 file")
+    # an action that changes another file asks first, like a rename
+    app.wins[i].goto(1, 7)
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.mode, M_DIALOG)
+    assert_equal(app.dlg.kind, D_RENAME_APPLY)
+    assert_equal(app.dlg.lines[0], "Rename wide everywhere:")
+    assert_equal(app.dlg.lines[1], "2 changes in 2 files (listed in the Message window)")
+    assert_equal(buf_text(app, path), "a = eager | print(wide) | ")
+    app.handle(key_event(KEY_ESC))
+    assert_equal(app.status, "Quick fix cancelled - nothing was changed")
+    assert_equal(app.find_editor(other), -1)
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    app.handle(key_event(KEY_ENTER))
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(buf_text(app, path), "a = eager | print(broad) | ")
+    assert_equal(buf_text(app, other), "broad = 1 | ")
+    assert_equal(app.status, "Applied: Rename wide everywhere: 2 changes in 2 files - not saved yet")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_no_actions_retries_and_missing_server() raises:
+    var dir = scratch("act4")
+    var app = comp_app(dir, "# ACTBUSY\nplain = 1\nnullanswer\nempty = 2\ny = typo\n")
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    var before = buf_text(app, path)
+    app.wins[i].goto(4, 0)
+    app.exec(CM_ACTIONS)
+    wait_act(app)                                       # refused twice, then answered
+    assert_equal(app.mode, M_DIALOG)
+    assert_equal(app.status, "4 actions offered")
+    app.handle(key_event(KEY_ESC))
+    app.wins[i].goto(1, 0)
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(app.status, "No quick fixes or actions here")
+    app.wins[i].goto(2, 0)
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    assert_equal(app.status, "No quick fixes or actions here")
+    app.wins[i].goto(3, 0)
+    app.exec(CM_ACTIONS)
+    wait_act(app)
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.status, "Quick fix: the server sent no changes")
+    # the cursor moved before the list came: no list
+    app.wins[i].goto(4, 0)
+    app.exec(CM_ACTIONS)
+    app.wins[i].goto(0, 0)
+    run_ticks(app, 400, False)
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(buf_text(app, path), before)
+    app.lsp.table.code_action = False
+    app.exec(CM_ACTIONS)
+    assert_equal(app.status, "This language server offers no quick fixes")
+    app.lsp_stop()
+    app.exec(CM_ACTIONS)
+    assert_true(app.status.find("Start the language server first") == 0, app.status)
     _ = run_system("rm -rf '" + dir + "'")
 
 
@@ -2634,6 +2857,41 @@ def test_real_server_renames_a_local_variable() raises:
     else:
         # a newer server that can do it: every use must have changed
         assert_true(buf_text(app, path).find("twice") < 0, buf_text(app, path))
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_real_server_answers_a_code_action_request() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realact")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'def twice(n: Int) -> Int:\\n    return m * 2\\n\\ndef main():\\n    print(twice(4))\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var t0 = now()
+    while app.lsp.state != LSP_READY and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    run_ticks(app, 3000, False)
+    var i = app.find_editor(path)
+    assert_true(len(app.wins[i].buf.marks) > 0, "the unknown name is reported")
+    app.wins[i].goto(1, 11)                              # on the unknown "m"
+    app.exec(CM_ACTIONS)
+    t0 = now()
+    while (app.act_req_id >= 0 or app.act_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    # Mojo 1.2 advertises code actions but offers none for this error; either outcome
+    # is a proper answer, an error message from the server is not
+    if app.mode == M_DIALOG:
+        print("      real server offers: " + offered(app))
+        assert_equal(app.dlg.kind, D_ACTIONS)
+    else:
+        print("      real server code actions: " + app.status)
+        assert_equal(app.status, "No quick fixes or actions here")
     app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 

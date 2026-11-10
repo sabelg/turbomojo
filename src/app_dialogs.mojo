@@ -183,10 +183,13 @@ __extension App:
                 self.rename_accept(self.dlg.field_text(0))
         elif kind == D_RENAME_APPLY:
             if b == 0:
-                self.rename_apply()
+                self.edit_apply()
             else:
-                self.ren_stage = 0
-                self.say("Rename cancelled - nothing was changed")
+                self.act_command_due = False
+                self.say(self.edit_noun + " cancelled - nothing was changed")
+        elif kind == D_ACTIONS:
+            if b == 0:
+                self.action_chosen(self.dlg.item_data[self.dlg.selected_item()] if self.dlg.selected_item() >= 0 else -1)
         elif kind == D_RECOVER:
             if b == 0:
                 _ = self.recover_swaps()
@@ -395,8 +398,8 @@ __extension App:
         else:
             self.mode = M_NORMAL
             if self.dlg.kind == D_RENAME_APPLY:
-                self.ren_stage = 0
-                self.say("Rename cancelled - nothing was changed")
+                self.act_command_due = False
+                self.say(self.edit_noun + " cancelled - nothing was changed")
 
     def find_button(mut self, b: Int):
         var kind = self.dlg.kind

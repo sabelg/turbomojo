@@ -421,12 +421,7 @@ __extension App:
         if self.ren_stage == 1:
             self.ren_req_id = self.lsp.request_prepare_rename(uri, self.ren_row, c16, now)
         else:
-            self.ren_vpaths.clear()
-            self.ren_versions.clear()
-            for k in range(len(self.wins)):
-                if self.wins[k].kind == WK_EDITOR and self.wins[k].path.byte_length() > 0:
-                    self.ren_vpaths.append(self.wins[k].path)
-                    self.ren_versions.append(self.wins[k].buf.version)
+            self.snapshot_versions()
             self.ren_req_id = self.lsp.request_rename(uri, self.ren_row, c16, self.ren_new, now)
         if self.ren_req_id < 0:
             self.ren_stage = 0
@@ -494,23 +489,52 @@ __extension App:
         # ---- the edits
         self.ren_stage = 0
         var we = parse_workspace_edit(m.doc, m.result())
-        if we.problem.byte_length() > 0:
-            self.info("Rename", "The server's answer cannot be applied: " + we.problem)
-            return
-        if we.count() == 0:
+        if we.count() == 0 and we.problem.byte_length() == 0:
             self.say("The server found nothing to rename")
             return
+        self.offer_edit(we^, "Rename", "Rename Symbol", "Rename " + self.ren_old + " to " + self.ren_new, "Renamed " + self.ren_old + " to " + self.ren_new)
+
+    def snapshot_versions(mut self):
+        """Remember the state of every open file, to notice edits made while the server
+        works on an answer."""
+        self.ren_vpaths.clear()
+        self.ren_versions.clear()
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_EDITOR and self.wins[k].path.byte_length() > 0:
+                self.ren_vpaths.append(self.wins[k].path)
+                self.ren_versions.append(self.wins[k].buf.version)
+
+    def versions_changed(self) -> Bool:
         for k in range(len(self.ren_vpaths)):
             var wi = self.find_editor(self.ren_vpaths[k])
             if wi < 0 or self.wins[wi].buf.version != self.ren_versions[k]:
-                self.say("The text changed while the server was working - rename again")
-                return
+                return True
+        return False
+
+    def offer_edit(mut self, var we: WorkspaceEdit, noun: String, title: String, what: String, done: String):
+        """Changes a server asks for (a rename, a quick fix): check them, list the
+        places in the Message window, and apply them - at once if only the file being
+        edited changes, after a question otherwise. `noun` names the operation in
+        messages, `title` the dialog, `what` the list, `done` the final message."""
+        self.edit_noun = noun
+        self.edit_done = done
+        if we.problem.byte_length() > 0:
+            self.info(noun, "The server's answer cannot be applied: " + we.problem)
+            return
+        if we.count() == 0:
+            self.say(noun + ": the server sent no changes")
+            return
+        if self.versions_changed():
+            self.say("The text changed while the server was working - try again")
+            return
         try:
             for f in we.files:
                 _ = plan_edits(self.lines_of(f.path), f.edits)
         except e:
-            self.info("Rename", "The server's answer cannot be applied: " + String(e))
+            self.info(noun, "The server's answer cannot be applied: " + String(e))
             return
+        var ai = self.active_editor()
+        var here = self.wins[ai].path if ai >= 0 else String("")
         # ---- preview: every place in the Message window
         var locs = List[LspLocation]()
         for f in we.files:
@@ -518,25 +542,26 @@ __extension App:
                 locs.append(LspLocation(f.path, ed.r1, ed.c1))
         for a in range(1, len(locs)):
             var b = a
-            while b > 0 and place_before(locs[b], locs[b - 1], self.ren_path):
+            while b > 0 and place_before(locs[b], locs[b - 1], here):
                 var tmp = locs[b].copy()
                 locs[b] = locs[b - 1].copy()
                 locs[b - 1] = tmp^
                 b -= 1
-        self.show_places("Rename " + self.ren_old + " to " + self.ren_new, locs)
         var others = 0
         var unopened = 0
         for f in we.files:
-            if f.path != self.ren_path:
+            if f.path != here:
                 others += 1
             if self.find_editor(f.path) < 0:
                 unopened += 1
+        if others > 0 or len(locs) > 1:
+            self.show_places(what, locs)
         self.ren_edit = we^
         if others == 0:
-            self.rename_apply()             # this file only: one undo step takes it back
+            self.edit_apply()               # this file only: one undo step takes it back
             return
-        var d = Dialog(D_RENAME_APPLY, "Rename Symbol", min(self.scr.w - 4, 64), 9)
-        d.lines.append("Rename " + self.ren_old + " to " + self.ren_new + ":")
+        var d = Dialog(D_RENAME_APPLY, title, min(self.scr.w - 4, 64), 9)
+        d.lines.append(what + ":")
         d.lines.append(count_of(self.ren_edit.count(), "change") + " in " + count_of(len(self.ren_edit.files), "file") + " (listed in the Message window)")
         if unopened > 0:
             d.lines.append(count_of(unopened, "file") + " will be opened; nothing is saved until you save")
@@ -557,15 +582,17 @@ __extension App:
             raise Error(basename(path) + " does not exist")
         return self.file_lines(path)
 
-    def rename_apply(mut self):
+    def edit_apply(mut self):
         var n = self.ren_edit.count()
         var files = len(self.ren_edit.files)
         var problem = self.apply_workspace_edit()
         self.ren_edit = WorkspaceEdit()
         if problem.byte_length() > 0:
-            self.info("Rename", "Nothing was changed: " + problem)
+            var noun = self.edit_noun
+            self.info(noun, "Nothing was changed: " + problem)
             return
-        self.say("Renamed " + self.ren_old + " to " + self.ren_new + ": " + count_of(n, "change") + " in " + count_of(files, "file") + (" - not saved yet" if files > 1 else ""))
+        self.say(self.edit_done + ": " + count_of(n, "change") + " in " + count_of(files, "file") + (" - not saved yet" if files > 1 else ""))
+        self.action_after_edit()
 
     def apply_workspace_edit(mut self) -> String:
         """Apply self.ren_edit: every file is checked first, then each is changed in one
@@ -616,6 +643,164 @@ __extension App:
             if bi >= 0:
                 self.focus(bi)
         return ""
+
+    # ========================================================== code actions
+    def actions_command(mut self):
+        """Quick fix: ask the language server what it can do about the problems on the
+        cursor's line (or the selection); the offers open in a list (actions_arrived)."""
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        var path = self.wins[ai].path
+        if self.lsp.state != LSP_READY or path.byte_length() == 0 or self.lsp.find_doc(path_to_uri(path)) < 0:
+            self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
+            return
+        if not self.lsp.table.code_action:
+            self.say("This language server offers no quick fixes")
+            return
+        self.act_retries = 0
+        self.act_stage = 1
+        self.act_path = path
+        self.act_row = self.wins[ai].cr
+        self.act_col = self.wins[ai].cc
+        self.actions_resend()
+        if self.act_req_id >= 0:
+            self.say("Asking the language server...")
+
+    def actions_resend(mut self):
+        var ai = self.active_editor()
+        if ai < 0 or self.act_stage == 0 or self.wins[ai].path != self.act_path or self.wins[ai].cr != self.act_row or self.wins[ai].cc != self.act_col:
+            self.act_stage = 0
+            self.act_req_id = -1
+            return
+        var now = now_ns()
+        self.lsp_send_changes(ai, now, False)
+        self.snapshot_versions()
+        if self.act_stage == 2:
+            self.act_req_id = self.lsp.request_action_resolve(self.act_chosen.raw, now)
+        else:
+            var r1 = self.wins[ai].cr
+            var c1 = self.wins[ai].cc
+            var r2 = r1
+            var c2 = c1
+            if self.wins[ai].sel:
+                var ar = self.wins[ai].ar
+                var ac = self.wins[ai].ac
+                if ar < r1 or (ar == r1 and ac < c1):
+                    r1 = ar
+                    c1 = ac
+                else:
+                    r2 = ar
+                    c2 = ac
+            self.act_req_id = self.lsp.request_code_actions(path_to_uri(self.act_path), r1, self.wins[ai].buf.utf16_col(r1, c1), r2, self.wins[ai].buf.utf16_col(r2, c2), now)
+        if self.act_req_id < 0:
+            self.act_stage = 0
+            self.say("The language server cannot be asked now")
+
+    def actions_reply(mut self, m: RpcMessage):
+        self.act_req_id = -1
+        var stage = self.act_stage
+        var ai = self.active_editor()
+        if stage == 0 or ai < 0 or self.mode != M_NORMAL or self.wins[ai].path != self.act_path or self.wins[ai].cr != self.act_row or self.wins[ai].cc != self.act_col:
+            self.act_stage = 0
+            return
+        if m.kind == RPC_ERROR:
+            if retry_later(m) and self.act_retries < COMP_MAX_RETRIES:
+                self.act_retries += 1
+                self.act_retry_due = now_ns() + COMP_RETRY_MS * 1000000
+                return
+            self.act_stage = 0
+            self.say("Language server: " + m.error_message())
+            return
+        self.act_stage = 0
+        if stage == 2:
+            # the chosen action, now with its edit
+            var full = parse_code_action(m.doc, m.result())
+            if full.edit_json.byte_length() == 0 and full.command.byte_length() == 0:
+                self.say("Quick fix: the server sent no changes")
+                return
+            self.act_chosen = full^
+            self.action_run()
+            return
+        self.actions = parse_code_actions(m.doc, m.result())
+        if len(self.actions) == 0:
+            self.say("No quick fixes or actions here")
+            return
+        var items = List[String]()
+        var data = List[Int]()
+        var widest = 20
+        for k in range(len(self.actions)):
+            var t = self.actions[k].title
+            if self.actions[k].disabled.byte_length() > 0:
+                t += "  (" + self.actions[k].disabled + ")"
+            widest = max(widest, cp_len(t))
+            items.append(t)
+            data.append(k)
+        var d = Dialog(D_ACTIONS, "Quick Fix", max(40, min(self.scr.w - 4, widest + 8)), max(8, min(len(items) + 6, min(20, self.desk_h()))))
+        d.set_items(items^, data^)
+        d.buttons.append("~A~pply")
+        d.buttons.append("~C~ancel")
+        self.say(count_of(len(self.actions), "action") + " offered")
+        self.show(d^)
+
+    def action_chosen(mut self, k: Int):
+        if k < 0 or k >= len(self.actions):
+            return
+        self.act_chosen = self.actions[k].copy()
+        if self.act_chosen.disabled.byte_length() > 0:
+            self.say("Not available: " + self.act_chosen.disabled)
+            return
+        if self.act_chosen.edit_json.byte_length() == 0 and self.act_chosen.command.byte_length() == 0:
+            if not self.lsp.table.code_action_resolve:
+                self.say("Quick fix: the server sent no changes")
+                return
+            self.act_stage = 2
+            self.act_retries = 0
+            self.actions_resend()
+            return
+        self.action_run()
+
+    def action_run(mut self):
+        """Carry out self.act_chosen: its edit first, then its command."""
+        if self.act_chosen.edit_json.byte_length() > 0:
+            self.act_command_due = self.act_chosen.command.byte_length() > 0
+            try:
+                var doc = json_parse(self.act_chosen.edit_json)
+                var title = self.act_chosen.title
+                self.offer_edit(parse_workspace_edit(doc, 0), "Quick fix", "Quick Fix", title, "Applied: " + title)
+            except e:
+                self.say("Quick fix: the server's answer cannot be read")
+            return
+        self.act_command_due = True
+        self.say("Running: " + self.act_chosen.title)
+        self.action_after_edit()
+
+    def action_after_edit(mut self):
+        """Called when an edit has been applied (and by action_run when there is none):
+        run the command of the chosen action, if it has one waiting."""
+        if not self.act_command_due:
+            return
+        self.act_command_due = False
+        self.snapshot_versions()
+        if self.lsp.request_execute(self.act_chosen.command, self.act_chosen.args_json, now_ns()) < 0:
+            self.say("The language server cannot be asked now")
+
+    def server_edits(mut self):
+        """Edits the server asked us to make (workspace/applyEdit), usually the result
+        of a command of an action."""
+        var pending = self.lsp.take_asked_edits()
+        var labels = self.lsp.asked_labels.copy()
+        self.lsp.asked_labels.clear()
+        for k in range(len(pending)):
+            if self.mode != M_NORMAL:
+                self.say("An edit from the language server was dropped (a dialog was open)")
+                continue
+            var label = labels[k] if k < len(labels) and labels[k].byte_length() > 0 else (self.act_chosen.title if self.act_chosen.title.byte_length() > 0 else String("Edit from the language server"))
+            try:
+                var doc = json_parse(pending[k])
+                self.offer_edit(parse_workspace_edit(doc, 0), "Quick fix", "Quick Fix", label, "Applied: " + label)
+            except e:
+                self.say("Quick fix: the server's edit cannot be read")
 
     # ====================================================== go to definition
     def definition_command(mut self):
