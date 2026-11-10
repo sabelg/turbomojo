@@ -79,3 +79,18 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   styles, cursor column, colours) so it is not only "whatever the code drew".
 - One test expectation was wrong (space after the check mark); fixed in the test.
 - Verified: 16/16 pass; `check.sh` CHECK OK (5 files, 100 tests).
+
+## 2026-11-10 · P0-06 window editing tests · done
+
+- Added `tests/test_window.mojo` (53 tests): typing and undo grouping, overwrite mode,
+  typing over a selection, newline/auto-indent (after `:`, in tab-indented files, inside
+  indentation, splitting a line), backspace (tab stops, tabs, joining lines, selection),
+  delete, Tab/Shift-Tab (single line, block, blank lines, selection ending at column 0),
+  toggle comment (single, block with mixed indent, mixed commented state), duplicate and
+  delete line, cursor movement (wrapping, words, smart Home, document Home/End, remembered
+  column), visual columns with tabs/wide/combining characters, selection normalisation,
+  find (advance, wrap, case, overlapping, not found), replace-all (count, no rescan, one
+  undo), bracket matching within and across lines, whole-buffer replace, goto clamping.
+- All 53 passed on the first run; no editor bugs found. Expected values were written from
+  the intended behaviour before running, not copied from output.
+- Verified: `check.sh` CHECK OK (6 files, 153 tests).
