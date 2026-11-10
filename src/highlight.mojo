@@ -16,6 +16,75 @@ comptime C_DEF = 10
 comptime C_COUNT = 11
 
 
+def line_state(b: List[UInt8], start: Int, end: Int, state: Int) -> Int:
+    # Lexer state after the line stored in b[start:end] (no newline), given the state at
+    # its start: 0 = normal, 1 = inside a triple-double-quoted string, 2 = inside a
+    # triple-single-quoted string.
+    #
+    # This is Highlighter.line reduced to the only things that can change the state:
+    # comments, quotes and backslashes. All of them are ASCII, so it can run on raw UTF-8
+    # bytes. It must always agree with Highlighter.line (the tests compare the two).
+    var i = start
+    var st = state
+    if st != 0:
+        var q = 34 if st == 1 else 39
+        var found = -1
+        var j = start
+        while j + 2 < end:
+            if Int(b[j]) == q and Int(b[j + 1]) == q and Int(b[j + 2]) == q:
+                found = j
+                break
+            j += 1
+        if found < 0:
+            return st
+        i = found + 3
+        st = 0
+    while i < end:
+        var c = Int(b[i])
+        if c == 35:
+            return 0
+        if c == 34 or c == 39:
+            if i + 2 < end and Int(b[i + 1]) == c and Int(b[i + 2]) == c:
+                var j = i + 3
+                var found = -1
+                while j + 2 < end:
+                    if Int(b[j]) == c and Int(b[j + 1]) == c and Int(b[j + 2]) == c:
+                        found = j
+                        break
+                    j += 1
+                if found < 0:
+                    return 1 if c == 34 else 2
+                i = found + 3
+                continue
+            var j = i + 1
+            while j < end:
+                if Int(b[j]) == 92:
+                    j += 2
+                    continue
+                if Int(b[j]) == c:
+                    j += 1
+                    break
+                j += 1
+            i = j
+            continue
+        i += 1
+    return 0
+
+
+def scan_states(b: List[UInt8], state: Int, mut out: List[UInt8]) -> Int:
+    """Run `line_state` over a block of whole lines (each ending in a newline) and append
+    the state at the start of every following line to `out`. Returns the final state."""
+    var st = state
+    var start = 0
+    var n = len(b)
+    for i in range(n):
+        if b[i] == 10:
+            st = line_state(b, start, i, st)
+            out.append(UInt8(st))
+            start = i + 1
+    return st
+
+
 def words(s: String) -> List[String]:
     var out = List[String]()
     for w in s.split(" "):

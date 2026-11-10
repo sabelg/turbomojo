@@ -617,3 +617,39 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
 - Also for later (P1-05): opening goes bytes -> codepoint list -> bytes; loading straight
   from validated bytes would cut the 0.9 s and the temporary memory.
 - Verified: `check.sh` CHECK OK (20 files, 419 tests).
+
+## 2026-11-10 · P1-03 incremental highlighting · done
+
+- Problem (measured in P1-02): each frame re-ran the highlighter from line 0 to the first
+  visible line to learn whether the view starts inside a triple-quoted string.
+- `highlight.line_state()` is the highlighter reduced to what can change that state
+  (comments, quotes, backslashes), running on raw UTF-8 bytes; `scan_states()` runs it
+  over a block of lines. A test compares it with `Highlighter.line` on 6,000 random lines
+  in each of the three start states.
+- `TextBuffer.lstate` caches the state at the start of every scanned line. It is built
+  lazily (only as far as has been shown), in blocks straight from the rope's bytes.
+  `note_edit` keeps it aligned with edits by removing/inserting entries for the lines the
+  edit removed/added, so later lines keep their cached states at their new rows.
+  `Window.sync_lex` (called before drawing) re-scans from the edited line and stops as
+  soon as the state rejoins the cached one. If a change keeps propagating (a newly opened
+  string), it stops after 4,000 lines and drops the tail, which is rebuilt when shown.
+  Changes of more than 64 lines simply drop the tail. `Window.lex_state_at` reads the
+  cache, with a slow but correct fallback when it is not synced.
+- `tests/test_lexcache.mojo` (15 tests): scanner vs highlighter, lazy building, docstring
+  states, cost of typing/newline/join in a 5,000-line file (at most 2 to 4 lines scanned),
+  opening and closing a string, undo, cut-off of long propagation and later completion,
+  several edits before one sync, 200-line paste and 300-line delete, 1,500 random edits
+  over 6 seeds where the cache is compared with a full re-scan after every step (with
+  full and partial syncs), lookups without syncing, message windows, and drawing from
+  inside a docstring. Four initial failures were wrong expectations in the tests (a
+  hand-written case, and the cache also holding the state after the last line).
+- Measured with `build/ab` (same benchmark as P1-02):
+
+  | | 10,000 lines | 1,000,000 lines |
+  |---|---|---|
+  | goto middle + draw | 12 ms -> 2.2 ms | 1164 ms -> 71 ms (one-time scan of 500k lines) |
+  | 5 chars + 5 draws in the middle | 58 ms -> 6.5 ms | 5813 ms -> 4.1 ms |
+
+- Not done: the backlog line also mentions caching each line's visual width. Nothing
+  needs it yet (the horizontal scrollbar only looks at visible rows), so it was left out.
+- Verified: `check.sh` CHECK OK (21 files, 434 tests).

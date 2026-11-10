@@ -42,6 +42,12 @@ struct TextBuffer(Copyable, Movable):
     var tab_width: Int      # columns a tab character advances to (display)
     var indent_size: Int    # spaces per indentation level when indenting with spaces
     var trim_on_save: Bool  # strip trailing whitespace when saving (.editorconfig)
+    # Highlighter state cache (see Window.sync_lex): lstate[i] is the lexer state at the
+    # start of line i for every i < len(lstate). Lines beyond that are not scanned yet.
+    var lstate: List[UInt8]
+    var ldirty_from: Int    # first row whose lines must be re-scanned (-1 = none)
+    var ldirty_to: Int      # last row of the edited region
+    var lex_work: Int       # lines scanned so far (for tests and profiling)
 
     def __init__(out self):
         self.rope = Rope()
@@ -55,6 +61,11 @@ struct TextBuffer(Copyable, Movable):
         self.tab_width = TAB_WIDTH
         self.indent_size = TAB_WIDTH
         self.trim_on_save = False
+        self.lstate = List[UInt8]()
+        self.lstate.append(0)
+        self.ldirty_from = -1
+        self.ldirty_to = -1
+        self.lex_work = 0
 
     def load(mut self, cps: List[Int]):
         """Replace the content. Tabs are kept; "\r\n" becomes "\n" in memory and the file
@@ -88,6 +99,10 @@ struct TextBuffer(Copyable, Movable):
         self.crlf = crlf_n > lf_n
         self.use_tabs = tabs > spaces
         self.rope.load_cps(clean)
+        self.lstate.clear()
+        self.lstate.append(0)
+        self.ldirty_from = -1
+        self.ldirty_to = -1
         self.undos.clear()
         self.redos.clear()
         self.modified = False
@@ -157,12 +172,55 @@ struct TextBuffer(Copyable, Movable):
             return List[Int]()
         return self.rope.slice(a, b)
 
+    def line_bytes(self, r: Int) -> List[UInt8]:
+        """UTF-8 bytes of line r without its newline."""
+        return self.rope.slice_bytes(self.rope.line_start(r), self.rope.line_end(r))
+
+    def note_edit(mut self, r: Int, old_extra: Int, new_extra: Int):
+        """Keep the state cache aligned with an edit that started on row r, removed
+        `old_extra` line breaks and added `new_extra`. States of lines before r stay
+        valid. States of the lines after the edit are kept (shifted to their new rows) so
+        that re-scanning can stop as soon as it reaches a line whose state is unchanged."""
+        var known = len(self.lstate) - 1            # lines 0..known-1 have been scanned
+        if r >= known:
+            return                                  # the edited line was never scanned
+        if old_extra > 64 or new_extra > 64:
+            # a large change: forget everything after the edit; it is rebuilt lazily
+            while len(self.lstate) > r + 1:
+                _ = self.lstate.pop()
+            if self.ldirty_from > r:
+                self.ldirty_from = -1
+                self.ldirty_to = -1
+            elif self.ldirty_from >= 0:
+                self.ldirty_to = min(self.ldirty_to, r)
+            return
+        for _ in range(old_extra):
+            if r + 1 < len(self.lstate):
+                _ = self.lstate.pop(r + 1)
+        for _ in range(new_extra):
+            self.lstate.insert(r + 1, 255)          # placeholder, overwritten by sync_lex
+        var delta = new_extra - old_extra
+        if self.ldirty_from < 0:
+            self.ldirty_from = r
+            self.ldirty_to = r + new_extra
+        else:
+            var old_to = self.ldirty_to
+            if old_to > r:
+                old_to = max(r, old_to + delta)
+            self.ldirty_from = min(self.ldirty_from, r)
+            self.ldirty_to = max(old_to, r + new_extra)
+
     # --------------------------------------------------------- raw edits
     def insert_raw(mut self, r: Int, c: Int, text: List[Int]) -> Pos:
         # clamp like the rope does, so the returned end position matches what happened
         var rr = max(0, min(r, self.rope.line_count() - 1))
         var cc = max(0, min(c, self.rope.line_len(rr)))
         self.rope.insert(self.rope.offset(rr, cc), text)
+        var breaks = 0
+        for ch in text:
+            if ch == 10:
+                breaks += 1
+        self.note_edit(rr, 0, breaks)
         self.modified = True
         self.version += 1
         return self.end_of(rr, cc, text)
@@ -172,8 +230,11 @@ struct TextBuffer(Copyable, Movable):
         var b = self.rope.offset(r2, c2)
         var out = List[Int]()
         if b > a:
+            var first = self.rope.line_of(a)
+            var breaks = self.rope.line_of(b) - first
             out = self.rope.slice(a, b)
             self.rope.delete(a, b)
+            self.note_edit(first, breaks, 0)
         self.modified = True
         self.version += 1
         return out^

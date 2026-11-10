@@ -91,6 +91,8 @@ __extension App:
             if self.wins[i].follow:
                 self.wins[i].ensure_visible()
                 self.wins[i].follow = False
+            # highlighter states for the visible rows (incremental; see Window.sync_lex)
+            self.wins[i].sync_lex(self.wins[i].top + self.wins[i].rows() + 1)
         for i in range(n):
             self.draw_window(i, i == n - 1)
             if i == n - 1 and self.wins[i].w < self.scr.w:

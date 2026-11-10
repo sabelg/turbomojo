@@ -49,11 +49,7 @@ __extension Window:
         var has_sel = self.has_sel()
         var sr = self.sel_range()
         # find highlighter state at the first visible line
-        var st = 0
-        var tmp = List[Int]()
-        if not is_msg:
-            for r in range(0, min(self.top, self.buf.count())):
-                st = hl.line(self.buf.line(r), st, tmp)
+        var st = self.lex_state_at(self.top)
         scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
         var classes = List[Int]()
         for i in range(rws):

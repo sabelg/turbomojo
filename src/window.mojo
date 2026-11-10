@@ -7,10 +7,12 @@ from buffer import TextBuffer, Pos, TAB_WIDTH
 from watch import FileSig
 from screen import Screen
 from palette import Palette
-from highlight import Highlighter, C_TEXT
+from highlight import Highlighter, C_TEXT, line_state, scan_states
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
 
 comptime WK_EDITOR = 0
+comptime LEX_BUDGET = 4000     # lines re-scanned after an edit before giving up on rejoining
+comptime LEX_BLOCK = 20000     # lines scanned per block when extending the cache
 comptime WK_MESSAGE = 1
 
 comptime ACT_NONE = 0
@@ -151,6 +153,70 @@ struct Window(Copyable, Movable):
 
     def sync_want(mut self):
         self.want = self.vcol(self.cr, self.cc)
+
+    # ------------------------------------------------- highlighter state cache
+    def sync_lex(mut self, upto: Int):
+        """Bring the per-line lexer state cache up to date: re-scan the lines touched by
+        edits until the state rejoins what was cached, then extend the cache so that it
+        covers rows 0..upto. Call before drawing."""
+        if self.kind != WK_EDITOR:
+            return
+        var count = self.buf.count()
+        if self.buf.ldirty_from >= 0:
+            var row = self.buf.ldirty_from
+            var last = self.buf.ldirty_to
+            self.buf.ldirty_from = -1
+            self.buf.ldirty_to = -1
+            if row < len(self.buf.lstate):
+                var st = Int(self.buf.lstate[row])
+                var budget = LEX_BUDGET
+                while row < count:
+                    var bytes = self.buf.line_bytes(row)
+                    st = line_state(bytes, 0, len(bytes), st)
+                    self.buf.lex_work += 1
+                    if row + 1 >= len(self.buf.lstate):
+                        self.buf.lstate.append(UInt8(st))
+                    elif row >= last and Int(self.buf.lstate[row + 1]) == st:
+                        break                       # rejoined the cached states
+                    else:
+                        self.buf.lstate[row + 1] = UInt8(st)
+                    row += 1
+                    budget -= 1
+                    if budget <= 0 and row >= last:
+                        # the change keeps propagating (e.g. a new open string): stop
+                        # here and let the rest be rebuilt lazily when it is shown
+                        while len(self.buf.lstate) > row + 1:
+                            _ = self.buf.lstate.pop()
+                        break
+        # extend: scan whole lines in blocks straight from the stored bytes
+        var want = min(upto, count - 1)
+        while len(self.buf.lstate) - 1 < want:
+            var known = len(self.buf.lstate) - 1
+            var stop = min(count - 1, max(want, known + 1))
+            stop = min(stop, known + LEX_BLOCK)
+            var a = self.buf.rope.line_start(known)
+            var b = self.buf.rope.line_start(stop)      # rows known..stop-1 end with a newline
+            var block = self.buf.rope.slice_bytes(a, b)
+            _ = scan_states(block, Int(self.buf.lstate[known]), self.buf.lstate)
+            self.buf.lex_work += stop - known
+            if len(self.buf.lstate) - 1 != stop:
+                break                               # defensive: never loop forever
+
+    def lex_state_at(self, row: Int) -> Int:
+        """Lexer state at the start of `row`: from the cache when it covers the row,
+        otherwise computed by scanning from the last cached line (slow path)."""
+        if self.kind != WK_EDITOR:
+            return 0
+        var known = len(self.buf.lstate) - 1
+        var clean = self.buf.ldirty_from < 0 or self.buf.ldirty_from >= row
+        if row <= known and clean:
+            return Int(self.buf.lstate[row])
+        var from_row = min(known, row) if clean else min(self.buf.ldirty_from, min(known, row))
+        var st = Int(self.buf.lstate[from_row])
+        for r in range(from_row, min(row, self.buf.count())):
+            var bytes = self.buf.line_bytes(r)
+            st = line_state(bytes, 0, len(bytes), st)
+        return st
 
     def ensure_visible(mut self):
         var rws = self.rows()
