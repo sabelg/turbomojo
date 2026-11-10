@@ -2,6 +2,8 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
 from window import Window, WK_EDITOR, ACT_OTHER
+from window_search import *
+from window_draw import *
 from util import decode, to_str
 
 

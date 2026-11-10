@@ -12,6 +12,8 @@ from menu import build_menus, draw_menubar, draw_dropdown
 from commands import build_registry, CM_LINENUM
 from dialog import Dialog, Field, D_FIND, D_INFO
 from window import Window, WK_EDITOR, WK_MESSAGE
+from window_search import *
+from window_draw import *
 from util import decode, to_str, env_or, path_exists, bytes_to_str, str_bytes, cp_len
 
 

@@ -56,20 +56,31 @@ Press **F1** inside the IDE for the full keyboard reference.
 | File | Purpose |
 |---|---|
 | `src/term.mojo` | termios raw mode via FFI, window size, key / SGR mouse / bracketed-paste parser |
-| `src/screen.mojo` | Cell buffer, box drawing, shadows, truecolor diff renderer |
+| `src/screen.mojo` | Cell buffer, box drawing, shadows, truecolor diff renderer, text dump for tests |
 | `src/buffer.mojo` | Codepoint line buffer with grouped undo/redo records |
 | `src/highlight.mojo` | Mojo tokenizer with multi-line string state |
-| `src/window.mojo` | Editor/message windows: movement, editing, search, drawing |
-| `src/menu.mojo` | Command IDs, menu definitions, menu bar and drop-down drawing |
+| `src/window.mojo` | Editor/message window state, movement and editing commands |
+| `src/window_search.mojo`, `src/window_draw.mojo` | Find/replace/bracket matching and window drawing (extend `Window`) |
+| `src/commands.mojo` | Command registry: ids, titles, hints, default keys, menu layout |
+| `src/menu.mojo` | Menu structures and drawing (contents generated from the registry) |
 | `src/dialog.mojo` | Turbo Vision-style dialogs: input lines, check boxes, list boxes, buttons |
 | `src/palette.mojo` | Colour themes |
-| `src/app.mojo` | Desktop, event loop, commands, compiler integration, mouse |
-| `src/util.mojo` | UTF-8, paths, popen/system, base64 |
+| `src/appstate.mojo` | The `App` struct: all application state and small helpers |
+| `src/app_*.mojo` | `App` behaviour as extensions: files, dialogs, menus, exec (command dispatch), pickers, jobs (build/format/run), input, mouse, draw |
+| `src/app.mojo` | Event loop; `from app import *` gives `App` with all extensions |
+| `src/util.mojo` | UTF-8, display widths, paths, popen/system, base64 |
 
 ## Testing
 
-`scripts/tui-test.sh` runs the IDE inside a private tmux server, so you can script key presses
-and capture the screen:
+```bash
+scripts/check.sh
+```
+
+builds the IDE, compiles and runs every `tests/test_*.mojo` (std.testing TestSuite files), and
+runs a scripted smoke test of the real UI in a private tmux server. It prints `CHECK OK` only
+if everything passed.
+
+`scripts/tui-test.sh` lets you script key presses by hand and capture the screen:
 
 ```bash
 scripts/tui-test.sh start examples/hello.mojo

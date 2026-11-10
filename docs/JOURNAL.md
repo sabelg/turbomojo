@@ -150,3 +150,20 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   key labels, generated menu structure, rebinding.
 - Verified: `check.sh` CHECK OK (8 files, 194 tests); looked at the generated F1 screen and
   the Window menu in the running IDE through tmux.
+
+## 2026-11-10 · P0-09 split app.mojo · done
+
+- Probed first: Mojo allows `__extension App:` blocks in other modules, and modules that
+  star-import each other circularly (`from x import *`) see each other's extension
+  methods. A plain `import x` does not bring extensions into scope.
+- `app.mojo` (2014 lines) is now `appstate.mojo` (struct, fields, init, helpers, 261 lines)
+  plus extension modules: `app_files`, `app_dialogs`, `app_menus`, `app_exec`,
+  `app_pickers`, `app_jobs`, `app_input`, `app_mouse`, `app_draw`, and `app.mojo` (event
+  loop). The method bodies were moved verbatim by line range; no logic changed.
+- `window.mojo` (871 lines) was split the same way into `window.mojo` (576),
+  `window_search.mojo` and `window_draw.mojo`.
+- Largest source file is now `window.mojo` at 576 lines (target: none over ~700).
+- Callers that need the methods use `from app import *` / `from window_draw import *`.
+- README source layout and testing sections updated.
+- Verified: `check.sh` CHECK OK (8 files, 194 tests, smoke test) after each of the two
+  splits.

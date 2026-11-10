@@ -1,6 +1,6 @@
 """TurboMojo - a Turbo C++ style TUI IDE for Mojo, written in Mojo."""
 from std.sys import argv
-from app import App
+from app import *
 from commands import CM_NEW
 
 
