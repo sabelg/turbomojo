@@ -94,3 +94,28 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
 - All 53 passed on the first run; no editor bugs found. Expected values were written from
   the intended behaviour before running, not copied from output.
 - Verified: `check.sh` CHECK OK (6 files, 153 tests).
+
+## 2026-11-10 · P0-07 mouse tests · done
+
+- Added `tests/test_mouse.mojo` (30 tests) sending synthetic mouse events through
+  `App.handle()` on an 80x25 screen: click-to-place (past end of line, below the text, with
+  tabs, wide characters and a scrolled view), drag selection forwards/backwards, stray
+  motion after release, wheel scrolling and its limits, right click ignored, scrollbar
+  arrows and page area, corner resize, title-bar move, desktop bounds and minimum size,
+  zoom box, close box with and without unsaved changes (Cancel / No buttons), raising a
+  background window, menu bar open/switch/close, menu item and separator clicks, status-bar
+  click, dialog check box / input line / OK / Cancel / close box, clicks outside a dialog,
+  list click-then-click to accept, wheel in a list, Message window row selection.
+- Result: no mouse bugs found; 29 passed at once. The one failure was a wrong assumption in
+  the test: with a check box focused, typing `c` fires the Cancel hot letter (Turbo Vision
+  behaviour), so the test now clicks the input line before typing.
+- Together with the SGR decoding tests in `test_term.mojo`, the path from terminal bytes to
+  editor action is now covered. Still unverified: a real terminal emitting those bytes
+  (tmux cannot inject mouse input), so a manual check in a real terminal is still worth
+  doing once.
+- Performance finding: `mojo run` took 47 s for this file while the compiled binary takes
+  0.05 s. `scripts/check.sh` now compiles each test file to `build/tests/` and runs the
+  binary; the full gate takes about 15 s. Re-verified that a failing test still fails the
+  gate. Measured while investigating: one full `draw()` is ~0.28 ms, a full-screen
+  `render()` ~0.06 ms.
+- Verified: `check.sh` CHECK OK (7 files, 183 tests).
