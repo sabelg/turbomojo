@@ -117,6 +117,9 @@ comptime CM_TASKS = 174
 comptime CM_TASK_AGAIN = 175
 comptime CM_RUNCONFIGS = 176
 comptime CM_TRUST = 177
+comptime CM_MOJODOCS = 178
+comptime CM_DOCFETCH = 179
+comptime CM_DOCFIND = 180
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -687,6 +690,9 @@ def build_registry() -> Registry:
     # ---- Help / system
     r.cmd(CM_HELP, "help.keyboard", "~K~eyboard reference", "Show the keyboard reference", [fkey(1)])
     r.cmd(CM_DOCS, "help.topicSearch", "~T~opic search", "Show the documentation of the name at the cursor", [fkey(1) | MOD_CTRL])
+    r.cmd(CM_MOJODOCS, "help.mojoDocs", "~M~ojo documentation", "Read the Mojo manual, reference, standard library, examples and courses", [fkey(1) | MOD_SHIFT])
+    r.cmd(CM_DOCFIND, "help.findInDocs", "~F~ind in documentation...", "Search the Mojo documentation: words, phrases, standard library names, headings, code", [fkey(1) | MOD_ALT])
+    r.cmd(CM_DOCFETCH, "help.downloadDocs", "Do~w~nload documentation...", "Download or update the Mojo documentation from Modular's public repositories")
     r.cmd(CM_ABOUT, "help.about", "~A~bout...", "Show version and credits")
     r.cmd(CM_REFRESH, "view.repaint", "~R~epaint desktop", "Redraw the whole screen")
 
@@ -842,5 +848,8 @@ def build_registry() -> Registry:
     r.menu("~H~elp")
     r.item(CM_HELP)
     r.item(CM_DOCS)
+    r.item(CM_MOJODOCS)
+    r.item(CM_DOCFIND)
+    r.item(CM_DOCFETCH)
     r.item(CM_ABOUT)
     return r^

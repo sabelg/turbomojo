@@ -35,6 +35,8 @@ comptime D_TASKS = 27
 comptime D_RUNCFGS = 28
 comptime D_RUNCFG = 29
 comptime D_TRUST = 30
+comptime D_DOCFETCH = 31
+comptime D_DOCFIND = 32
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

@@ -38,6 +38,7 @@ from app_pickers import *
 from app_outline import *
 from app_layout import *
 from app_explorer import *
+from app_docs import *
 from app_input import *
 from app_mouse import *
 from app_draw import *

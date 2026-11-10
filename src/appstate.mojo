@@ -36,6 +36,7 @@ from layout import Layout
 from project import PixiTask
 from runconfig import RunConfig
 from trust import TrustStore
+from doclib import DocLibrary, DocIndex, Found, default_docs_home
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
@@ -51,6 +52,7 @@ comptime PG_MESSAGE = 0                 # pages of the bottom panel: compiler an
 comptime PG_SEARCH = 1                  # search results and lists of places,
 comptime PG_PROBLEMS = 2                # what the language server reports
 comptime PG_COUNT = 3
+comptime M_DOCS = 5                     # the documentation reader fills the screen
 comptime M_HOVER = 4                    # a hover window is open over the editor
 
 comptime VERSION = "1.0"
@@ -77,6 +79,7 @@ def now_ns() -> Int:
 
 comptime JOB_BUILD = 1
 comptime JOB_FORMAT = 2
+comptime JOB_DOCS = 4                    # downloading the documentation
 comptime JOB_TASK = 3                    # a pixi task of the project
 comptime SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -312,6 +315,27 @@ struct App(Movable):
     var trust_enforced: Bool         # off in tests and wherever nobody could answer the question
     var trust_cmd: Int               # the command that waits for the answer (0 = none)
     var trust_held: Bool             # tool commands of the project file are not in use
+    var doc_home: String             # where the downloaded documentation is
+    var doc_lib: DocLibrary
+    var doc_loaded: Bool
+    var doc_rows: List[Int]          # the contents as shown: indexes into doc_lib.pages (hits first while searching)
+    var doc_open_books: List[String] # titles of the books whose chapters are shown
+    var doc_row: Int                 # the marked line of the contents
+    var doc_toc_top: Int
+    var doc_path: String             # the file the page pane shows ('' = the welcome page)
+    var doc_lines: List[MdLine]
+    var doc_links: List[String]
+    var doc_width: Int               # the width the page was laid out for
+    var doc_scroll: Int
+    var doc_link: Int                # the link under Enter (-1 = none)
+    var doc_focus: Int               # 0 the contents, 1 the page
+    var doc_back: List[String]       # pages gone through, "scroll<TAB>path"
+    var doc_fwd: List[String]
+    var doc_index: DocIndex          # every title, heading, declaration and line, for the finder
+    var doc_found: List[Found]       # what the open finder lists
+    var doc_find_text: String        # its field when the list was made
+    var doc_find_back: Bool          # the finder was opened from the reader: closing it returns there
+    var doc_mark: String             # what to highlight in the page (the word looked for)
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -577,6 +601,27 @@ struct App(Movable):
         self.trust_enforced = False
         self.trust_cmd = 0
         self.trust_held = False
+        self.doc_home = default_docs_home()
+        self.doc_lib = DocLibrary()
+        self.doc_loaded = False
+        self.doc_rows = List[Int]()
+        self.doc_open_books = List[String]()
+        self.doc_row = 0
+        self.doc_toc_top = 0
+        self.doc_path = ""
+        self.doc_lines = List[MdLine]()
+        self.doc_links = List[String]()
+        self.doc_width = 0
+        self.doc_scroll = 0
+        self.doc_link = -1
+        self.doc_focus = 0
+        self.doc_back = List[String]()
+        self.doc_fwd = List[String]()
+        self.doc_index = DocIndex()
+        self.doc_found = List[Found]()
+        self.doc_find_text = ""
+        self.doc_find_back = False
+        self.doc_mark = ""
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -787,6 +832,9 @@ struct App(Movable):
         self.config_warnings = s.warnings.copy()
         self.keymap = s.keymap
         self.restore_session = s.restore_session
+        if s.docs_home.byte_length() > 0 and s.docs_home != self.doc_home:
+            self.doc_home = s.docs_home
+            self.doc_loaded = False
         if s.tiled != self.tiled:
             self.tiled = s.tiled
             self.lay = Layout()

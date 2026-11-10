@@ -37,6 +37,7 @@ from app_nav import *
 from app_outline import *
 from app_layout import *
 from app_explorer import *
+from app_docs import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -65,6 +66,8 @@ __extension App:
             self.say("Macro recording stopped: too long")
         if self.mode == M_DIALOG and self.dlg.kind == D_PALETTE:
             self.quick_refresh()
+        if self.mode == M_DIALOG and self.dlg.kind == D_DOCFIND:
+            self.docs_find_refresh()
         if self.mode == M_DIALOG and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE):
             self.find_refresh()
 
@@ -86,6 +89,9 @@ __extension App:
         self.handle_key(e.key)
 
     def handle_key(mut self, k: Int) raises:
+        if self.mode == M_DOCS:
+            self.docs_key(k)
+            return
         if self.mode == M_DIALOG:
             self.dialog_key(k)
             return

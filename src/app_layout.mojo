@@ -41,6 +41,7 @@ from layout import *
 from session import *
 from filestate import content_hash
 from app_explorer import *
+from app_docs import *
 from outline import *
 from symindex import *
 from docs import *

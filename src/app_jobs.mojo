@@ -37,6 +37,7 @@ from app_nav import *
 from app_outline import *
 from app_layout import *
 from app_explorer import *
+from app_docs import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
@@ -256,6 +257,8 @@ __extension App:
         return Float64(Int(perf_counter_ns()) - self.job.t0) / 1e9
 
     def job_header(self) -> String:
+        if self.job.kind == JOB_DOCS:
+            return "Downloading the Mojo documentation into " + self.job.path
         if self.job.kind == JOB_TASK:
             return "pixi run " + self.job.exe + "   (in " + self.job.path + ")"
         if self.job.kind == JOB_BUILD:
@@ -298,7 +301,7 @@ __extension App:
         if got and self.job.kind == JOB_BUILD and self.job.pid != 0:
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Compiling...")
-        if got and self.job.kind == JOB_TASK and self.job.pid != 0:
+        if got and (self.job.kind == JOB_TASK or self.job.kind == JOB_DOCS) and self.job.pid != 0:
             self.task_output("Running...")
         if eof:
             self.finish_job()
@@ -307,7 +310,9 @@ __extension App:
         var st = Int(external_call["pclose", Int32](self.job.fp))
         self.job.active = False
         var secs = self.job_elapsed()
-        if self.job.kind == JOB_TASK:
+        if self.job.kind == JOB_DOCS:
+            self.docs_fetched(st)
+        elif self.job.kind == JOB_TASK:
             self.finish_task(st, secs)
         elif self.job.kind == JOB_BUILD:
             self.finish_build(st, secs)

@@ -36,6 +36,7 @@ from app_nav import *
 from app_outline import *
 from app_layout import *
 from app_explorer import *
+from app_docs import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -173,6 +174,14 @@ __extension App:
             if s >= 0 and ai >= 0:
                 self.jump_mark()
                 self.wins[ai].goto(self.dlg.item_data[s], self.wins[ai].indent_of(self.dlg.item_data[s]))
+        elif kind == D_DOCFIND:
+            if b == 0:
+                self.docs_find_go(self.dlg.selected_item())
+            elif self.doc_find_back:
+                self.mode = M_DOCS
+        elif kind == D_DOCFETCH:
+            if b == 0:
+                self.docs_fetch()
         elif kind == D_TRUST:
             self.trust_answer(b)
         elif kind == D_RUNCFGS:
@@ -415,6 +424,8 @@ __extension App:
             self.find_close(True)
         else:
             self.mode = M_NORMAL
+            if self.dlg.kind == D_DOCFIND and self.doc_find_back:
+                self.mode = M_DOCS              # back to the page the finder was opened from
             if self.dlg.kind == D_RENAME_APPLY:
                 self.act_command_due = False
                 self.say(self.edit_noun + " cancelled - nothing was changed")

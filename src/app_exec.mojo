@@ -36,6 +36,7 @@ from app_nav import *
 from app_outline import *
 from app_layout import *
 from app_explorer import *
+from app_docs import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -408,6 +409,16 @@ __extension App:
             self.term.wait_byte()
             self.term.enter()
             self.scr.force = True
+        elif cmd == CM_MOJODOCS:
+            self.docs_open()
+        elif cmd == CM_DOCFIND:
+            var ai = self.active_editor()
+            var word = String("")
+            if ai >= 0 and self.wins[ai].has_sel() and self.wins[ai].ar == self.wins[ai].cr:
+                word = self.word_under(ai)      # a selected name is what is looked for
+            self.docs_find_dialog(word)
+        elif cmd == CM_DOCFETCH:
+            self.docs_fetch_ask()
         elif cmd == CM_TRUST:
             self.trust_dialog(0)
         elif cmd == CM_RUNCONFIGS:

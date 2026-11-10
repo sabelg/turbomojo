@@ -38,6 +38,7 @@ from app_pickers import *
 from app_nav import *
 from app_layout import *
 from app_explorer import *
+from app_docs import *
 from outline import *
 from symindex import *
 from docs import *
@@ -473,6 +474,9 @@ __extension App:
             if part.byte_length() > 0:
                 md += ("\n\n---\n\n" if md.byte_length() > 0 else "") + part
         if md.byte_length() == 0:
+            # not in the project: a name of the standard library, if its reference is downloaded
+            if self.docs_api_lookup(name, asked):
+                return True
             if not asked:
                 return False
             if self.lsp.state == LSP_READY and self.lsp.table.hover and self.wins[ai].path.byte_length() > 0 and self.lsp.find_doc(path_to_uri(self.wins[ai].path)) >= 0:

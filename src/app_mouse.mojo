@@ -37,6 +37,7 @@ from app_nav import *
 from app_outline import *
 from app_layout import *
 from app_explorer import *
+from app_docs import *
 from app_jobs import *
 from app_input import *
 from app_draw import *
@@ -46,6 +47,9 @@ __extension App:
     def handle_mouse(mut self, e: Event) raises:
         var x = e.mx
         var y = e.my
+        if self.mode == M_DOCS:
+            self.docs_mouse(e)
+            return
         # ---- wheel
         if e.button == MB_WHEEL_UP or e.button == MB_WHEEL_DOWN:
             var d = -3 if e.button == MB_WHEEL_UP else 3

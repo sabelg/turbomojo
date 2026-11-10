@@ -37,6 +37,8 @@ Example:
                                 # relative ones are taken from the folder of the config file
     docs_paths = []             # folders with Mojo sources of libraries: their documentation
                                 # is found by Ctrl-F1 too (e.g. a checkout of the standard library)
+    docs_home = ""              # where Help > Mojo documentation keeps its download
+                                # (empty: ~/.local/share/turbomojo/docs)
 
     [keys]
     "file.save" = ["F2", "Ctrl-S"]     # command name = one key or a list of keys
@@ -133,6 +135,7 @@ struct Settings(Copyable, Movable):
     var lsp_server: String
     var include_paths: List[String]
     var docs_paths: List[String]
+    var docs_home: String
     var tab_width: Int
     var indent_size: Int
     var large_file_mb: Int
@@ -163,6 +166,7 @@ struct Settings(Copyable, Movable):
         self.lsp_server = "mojo-lsp-server"
         self.include_paths = List[String]()
         self.docs_paths = List[String]()
+        self.docs_home = ""
         self.tab_width = 4
         self.indent_size = 4
         self.large_file_mb = 50
@@ -265,6 +269,7 @@ struct Settings(Copyable, Movable):
                 self.include_paths = doc.vals[ii].items.copy()
             else:
                 self.warnings.append("tools.include_paths must be a folder or a list of folders")
+        self.docs_home = doc.get_str("tools.docs_home", self.docs_home)
         var di = doc.find("tools.docs_paths")
         if di >= 0:
             if doc.vals[di].kind == T_STR and doc.vals[di].s.byte_length() > 0:
@@ -291,7 +296,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.include_paths", "tools.docs_paths"]:
+        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

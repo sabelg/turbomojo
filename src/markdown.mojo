@@ -79,6 +79,17 @@ def find_closing(cps: List[Int], start: Int, marker: Int, count: Int) -> Int:
 
 def md_inline(src: List[Int], base: Int, mut out: MdLine):
     """Parse inline markup of one paragraph's text and append it to `out`."""
+    var links = List[String]()
+    var from_at = len(out.st)
+    md_inline_links(src, base, out, links)
+    for k in range(from_at, len(out.st)):
+        if out.st[k] < 0:
+            out.st[k] = MD_LINK
+
+
+def md_inline_links(src: List[Int], base: Int, mut out: MdLine, mut links: List[String]):
+    """md_inline that also keeps where links lead: the address of each link is added to
+    `links`, and the link's characters get the style -(its index in `links`) - 1."""
     var n = len(src)
     var i = 0
     while i < n:
@@ -120,7 +131,7 @@ def md_inline(src: List[Int], base: Int, mut out: MdLine):
                 var inner = List[Int]()
                 for k in range(i + 2, close):
                     inner.append(src[k])
-                md_inline(inner, MD_BOLD if base == MD_TEXT or base == MD_ITALIC else base, out)
+                md_inline_links(inner, MD_BOLD if base == MD_TEXT or base == MD_ITALIC else base, out, links)
                 i = close + 2
                 continue
         # italic: *text* or _text_ (an underscore inside a word is just an underscore)
@@ -131,7 +142,7 @@ def md_inline(src: List[Int], base: Int, mut out: MdLine):
                 var inner = List[Int]()
                 for k in range(i + 1, close):
                     inner.append(src[k])
-                md_inline(inner, MD_ITALIC if base == MD_TEXT else base, out)
+                md_inline_links(inner, MD_ITALIC if base == MD_TEXT else base, out, links)
                 i = close + 1
                 continue
         # link: [text](url) shows the text; <http://...> shows the address
@@ -156,7 +167,16 @@ def md_inline(src: List[Int], base: Int, mut out: MdLine):
                     var inner = List[Int]()
                     for k in range(i + 1, rb):
                         inner.append(src[k])
-                    md_inline(inner, MD_LINK, out)
+                    var target = List[Int]()
+                    for k in range(rb + 2, rp):
+                        target.append(src[k])
+                    var p0 = len(out.st)
+                    var inner_links = List[String]()
+                    md_inline_links(inner, MD_LINK, out, inner_links)
+                    links.append(to_str(target))
+                    for k in range(p0, len(out.st)):
+                        if out.st[k] == MD_LINK or out.st[k] < 0:
+                            out.st[k] = -len(links)
                     i = rp + 1
                     continue
         if c == 60:
@@ -168,8 +188,12 @@ def md_inline(src: List[Int], base: Int, mut out: MdLine):
                 if is_space(src[k]):
                     break
             if gt > i + 8 and src[i + 1] == 104 and src[i + 2] == 116 and src[i + 3] == 116 and src[i + 4] == 112:
+                var target = List[Int]()
                 for k in range(i + 1, gt):
-                    out.add(src[k], MD_LINK)
+                    target.append(src[k])
+                links.append(to_str(target))
+                for k in range(i + 1, gt):
+                    out.add(src[k], -len(links))
                 i = gt + 1
                 continue
         # a few HTML entities
@@ -272,6 +296,155 @@ def md_gap(lines_so_far: Int, last_kind: Int, kind: Int, blank_seen: Bool) -> Bo
 def md_render(text: String, width: Int, hl: Highlighter) -> List[MdLine]:
     """The Markdown `text` as styled lines no wider than `width` columns (code block
     lines may be wider; the caller clips them)."""
+    var links = List[String]()
+    var out = md_render_rich(text, width, hl, links, False)
+    for k in range(len(out)):
+        for q in range(len(out[k].st)):
+            if out[k].st[q] < 0:
+                out[k].st[q] = MD_LINK
+    return out^
+
+
+def table_cells(line: List[Int]) -> List[List[Int]]:
+    """The cells of a table row "| a | b |" (outer bars optional, \\| is a bar in a cell)."""
+    var cells = List[List[Int]]()
+    var cur = List[Int]()
+    var a = 0
+    var b = len(line)
+    while a < b and is_space(line[a]):
+        a += 1
+    while b > a and is_space(line[b - 1]):
+        b -= 1
+    if a < b and line[a] == 124:
+        a += 1
+    if b > a and line[b - 1] == 124 and not (b - 2 >= a and line[b - 2] == 92):
+        b -= 1
+    var i = a
+    while i < b:
+        if line[i] == 92 and i + 1 < b and line[i + 1] == 124:
+            cur.append(124)
+            i += 2
+            continue
+        if line[i] == 124:
+            cells.append(cur.copy())
+            cur.clear()
+        else:
+            cur.append(line[i])
+        i += 1
+    cells.append(cur.copy())
+    # trim
+    for k in range(len(cells)):
+        var c = cells[k].copy()
+        var x = 0
+        var y = len(c)
+        while x < y and is_space(c[x]):
+            x += 1
+        while y > x and is_space(c[y - 1]):
+            y -= 1
+        var t = List[Int]()
+        for q in range(x, y):
+            t.append(c[q])
+        cells[k] = t^
+    return cells^
+
+
+def is_table_rule(line: List[Int]) -> Bool:
+    """The line under a table's header: bars, dashes, colons and blanks, with a dash."""
+    var dash = False
+    var bar = False
+    for c in line:
+        if c == 45:
+            dash = True
+        elif c == 124:
+            bar = True
+        elif c != 58 and not is_space(c):
+            return False
+    return dash and bar
+
+
+def md_table(rows: List[List[List[Int]]], width: Int, mut links: List[String], mut out: List[MdLine]):
+    """Draw a table (the first row is its header) as a grid no wider than `width`:
+    columns as wide as their longest cell, the widest ones narrowed and their cells
+    wrapped if it would not fit."""
+    var ncol = 0
+    for r in rows:
+        ncol = max(ncol, len(r))
+    if ncol == 0:
+        return
+    # every cell as styled text
+    var cells = List[List[MdLine]]()
+    var widths = List[Int]()
+    for _ in range(ncol):
+        widths.append(1)
+    for ri in range(len(rows)):
+        var line_cells = List[MdLine]()
+        for ci in range(ncol):
+            var m = MdLine()
+            if ci < len(rows[ri]):
+                md_inline_links(rows[ri][ci], MD_BOLD if ri == 0 else MD_TEXT, m, links)
+            widths[ci] = max(widths[ci], md_width(m.cps, 0, len(m.cps)))
+            line_cells.append(m^)
+        cells.append(line_cells^)
+    # fit: borders take 3 columns per cell and one more
+    var room = max(ncol * 4, width - (3 * ncol + 1))
+    var total = 0
+    for wv in widths:
+        total += wv
+    while total > room:
+        var widest = 0
+        for ci in range(ncol):
+            if widths[ci] > widths[widest]:
+                widest = ci
+        if widths[widest] <= 4:
+            break
+        widths[widest] -= 1
+        total -= 1
+    def_rule(widths, 0x250C, 0x252C, 0x2510, out)
+    for ri in range(len(cells)):
+        # wrap each cell to its column; the row is as high as its highest cell
+        var wrapped = List[List[MdLine]]()
+        var height = 1
+        for ci in range(ncol):
+            var part = List[MdLine]()
+            md_wrap(cells[ri][ci], widths[ci], MdLine(), MdLine(), part)
+            if len(part) == 0:
+                part.append(MdLine())
+            height = max(height, len(part))
+            wrapped.append(part^)
+        for h in range(height):
+            var row = MdLine()
+            row.add(0x2502, MD_DIM)
+            for ci in range(ncol):
+                row.add(32, MD_TEXT)
+                var used = 0
+                if h < len(wrapped[ci]):
+                    for q in range(len(wrapped[ci][h].cps)):
+                        row.add(wrapped[ci][h].cps[q], wrapped[ci][h].st[q])
+                    used = md_width(wrapped[ci][h].cps, 0, len(wrapped[ci][h].cps))
+                for _ in range(max(0, widths[ci] - used)):
+                    row.add(32, MD_TEXT)
+                row.add(32, MD_TEXT)
+                row.add(0x2502, MD_DIM)
+            out.append(row^)
+        if ri == 0 and len(cells) > 1:
+            def_rule(widths, 0x251C, 0x253C, 0x2524, out)
+    def_rule(widths, 0x2514, 0x2534, 0x2518, out)
+
+
+def def_rule(widths: List[Int], left: Int, mid: Int, right: Int, mut out: List[MdLine]):
+    var r = MdLine()
+    r.add(left, MD_DIM)
+    for ci in range(len(widths)):
+        for _ in range(widths[ci] + 2):
+            r.add(0x2500, MD_DIM)
+        r.add(right if ci == len(widths) - 1 else mid, MD_DIM)
+    out.append(r^)
+
+
+def md_render_rich(text: String, width: Int, hl: Highlighter, mut links: List[String], rich: Bool) -> List[MdLine]:
+    """md_render for whole documents. The addresses of links are collected in `links`
+    (a link's characters have the style -(index) - 1). With `rich`, tables are drawn
+    as grids and first- and second-level headings get a rule under them."""
     var out = List[MdLine]()
     var w = max(8, width)
     var src = decode(text)
@@ -347,13 +520,14 @@ def md_render(text: String, width: Int, hl: Highlighter) -> List[MdLine]:
                     d += 1
                 if d > ind and d - ind <= 3 and d + 1 < len(line) and (line[d] == 46 or line[d] == 41) and is_space(line[d + 1]):
                     bullet = d - ind + 2
-        var breaks = at_end or blank or fence or heading > 0 or rule or quote or bullet > 0
+        var table = rich and not blank and not at_end and heading == 0 and bullet == 0 and line[ind] == 124 and k < len(lines) and is_table_rule(lines[k])
+        var breaks = at_end or blank or fence or heading > 0 or rule or quote or bullet > 0 or table
         if breaks and len(para_src) > 0:
             if md_gap(len(out), last_kind, 1, blank_seen):
                 out.append(MdLine())
             last_kind = 1
             blank_seen = False
-            md_inline(para_src, MD_TEXT, para)
+            md_inline_links(para_src, MD_TEXT, para, links)
             md_wrap(para, w, MdLine(), MdLine(), out)
             para = MdLine()
             para_src.clear()
@@ -361,6 +535,25 @@ def md_render(text: String, width: Int, hl: Highlighter) -> List[MdLine]:
             break
         if blank:
             blank_seen = True
+            continue
+        if table:
+            var rows = List[List[List[Int]]]()
+            rows.append(table_cells(line))
+            k += 1                      # the rule under the header
+            while k < len(lines):
+                var tl = lines[k].copy()
+                var ti = 0
+                while ti < len(tl) and is_space(tl[ti]):
+                    ti += 1
+                if ti == len(tl) or tl[ti] != 124:
+                    break
+                rows.append(table_cells(tl))
+                k += 1
+            if md_gap(len(out), last_kind, 7, blank_seen):
+                out.append(MdLine())
+            last_kind = 7
+            blank_seen = False
+            md_table(rows, w, links, out)
             continue
         if fence:
             # the language after the fence decides whether to colour the code
@@ -398,12 +591,22 @@ def md_render(text: String, width: Int, hl: Highlighter) -> List[MdLine]:
             last_kind = 2
             blank_seen = False
             var hline = MdLine()
-            md_inline(body, MD_HEAD, hline)
+            md_inline_links(body, MD_HEAD, hline, links)
             # inline code inside a heading keeps the heading look
             for z in range(len(hline.st)):
                 if hline.st[z] == MD_CODE:
                     hline.st[z] = MD_HEAD
+            var before = len(out)
             md_wrap(hline, w, MdLine(), MdLine(), out)
+            if rich and heading <= 2:
+                # the big headings stand on a rule as long as their text
+                var longest = 1
+                for z in range(before, len(out)):
+                    longest = max(longest, md_width(out[z].cps, 0, len(out[z].cps)))
+                var under = MdLine()
+                for _ in range(min(w, longest if heading == 2 else w)):
+                    under.add(0x2550 if heading == 1 else 0x2500, MD_DIM)
+                out.append(under^)
             continue
         if rule:
             # a rule between blocks; none at the very top
@@ -427,7 +630,7 @@ def md_render(text: String, width: Int, hl: Highlighter) -> List[MdLine]:
             last_kind = 5
             blank_seen = False
             var qt = MdLine()
-            md_inline(body, MD_ITALIC, qt)
+            md_inline_links(body, MD_ITALIC, qt, links)
             var bar = MdLine()
             bar.add(0x2502, MD_DIM)
             bar.add(32, MD_DIM)
@@ -454,7 +657,7 @@ def md_render(text: String, width: Int, hl: Highlighter) -> List[MdLine]:
             last_kind = 6
             blank_seen = False
             var item = MdLine()
-            md_inline(body, MD_TEXT, item)
+            md_inline_links(body, MD_TEXT, item, links)
             var first = MdLine()
             var rest = MdLine()
             var depth = min(ind, 12)

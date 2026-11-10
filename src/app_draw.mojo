@@ -38,6 +38,7 @@ from app_nav import *
 from app_outline import *
 from app_layout import *
 from app_explorer import *
+from app_docs import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -100,6 +101,9 @@ __extension App:
             if self.job.kind == JOB_TASK:
                 what = "Task "
                 subject = self.job.exe
+            if self.job.kind == JOB_DOCS:
+                what = "Downloading "
+                subject = "documentation"
             var e = self.job_elapsed()
             right = bytes_to_str(b) + " " + what + subject + " " + String(Int(e)) + "." + String(Int(e * 10) % 10) + "s  ^F2 cancel  " + right
         var rl = cp_len(right)
@@ -154,7 +158,12 @@ __extension App:
         # status line
         var items = List[String]()
         var cmds = List[Int]()
-        if self.mode == M_MENU:
+        if self.mode == M_DOCS:
+            self.draw_docs()
+            for h in self.docs_hints():
+                items.append(h)
+                cmds.append(CM_NONE)
+        elif self.mode == M_MENU:
             items.append(self.menus[self.menu_idx].items[self.menu_item].hint)
             cmds.append(CM_NONE)
         elif self.mode == M_DIALOG:
@@ -345,7 +354,7 @@ __extension App:
                     fg = p.doc_dim
                 var at = xx
                 xx = self.scr.draw_cp(xx, y + r, lines[k].cps[q], fg, bg)
-                if st == MD_LINK and xx > at:
+                if (st == MD_LINK or st < 0) and xx > at:
                     self.scr.underline(at, y + r, False, p.doc_fg)
         self.scr.no_clip()
 
