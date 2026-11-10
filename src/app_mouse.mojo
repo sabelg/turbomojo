@@ -91,8 +91,11 @@ __extension App:
                 self.wins[t].follow = True
             elif self.drag == 4:
                 # Alt+drag: a column selection from where the button went down
-                var br = max(0, min(self.wins[t].buf.count() - 1, self.wins[t].top + (y - self.wins[t].y - 1)))
+                var bp = self.wins[t].screen_to_pos(x, y)
+                var br = bp.r
                 var bv = max(0, self.wins[t].left + (x - self.wins[t].x - 1 - self.wins[t].gut))
+                if self.wins[t].wrap:
+                    bv = self.wins[t].vcol(bp.r, bp.c)
                 self.wins[t].box_select(self.drag_dy, self.drag_dx, br, bv)
             return
         if e.button != MB_LEFT:
@@ -220,6 +223,8 @@ __extension App:
             self.drag = 4                               # ...and Alt+drag makes a box from here
             self.drag_dy = p.r
             self.drag_dx = max(0, self.wins[t].left + (x - self.wins[t].x - 1 - self.wins[t].gut))
+            if self.wins[t].wrap:
+                self.drag_dx = self.wins[t].vcol(p.r, p.c)
             return
         self.wins[t].collapse()
         self.wins[t].begin_move(False)

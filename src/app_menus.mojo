@@ -112,6 +112,8 @@ __extension App:
             out.append(CM_CLOCK)
         if self.show_ws:
             out.append(CM_SHOWWS)
+        if self.soft_wrap:
+            out.append(CM_WRAP)
         var ti = self.top_editor()
         if ti >= 0 and self.wins[ti].buf.use_tabs:
             out.append(CM_USETABS)

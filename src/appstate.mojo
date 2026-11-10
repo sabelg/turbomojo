@@ -177,6 +177,7 @@ struct App(Movable):
     var log_path: String       # empty until run(): tests never write to the state dir
     var fault: String          # fault injection for crash tests (TURBOMOJO_FAULT)
     var show_ws: Bool
+    var soft_wrap: Bool
 
     def __init__(out self):
         self.term = Terminal()
@@ -263,6 +264,7 @@ struct App(Movable):
         self.config_warnings = List[String]()
         self.fault = env_or("TURBOMOJO_FAULT", "")
         self.show_ws = False
+        self.soft_wrap = False
 
     # =================================================================== utils
     def desk_h(self) -> Int:
@@ -344,6 +346,10 @@ struct App(Movable):
         self.hl_line = s.highlight_line
         self.show_clock = s.clock
         self.show_ws = s.show_whitespace
+        self.soft_wrap = s.soft_wrap
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EDITOR and self.wins[i].wrap != self.soft_wrap:
+                self.wins[i].set_wrap(self.soft_wrap)
         self.tab_width = s.tab_width
         self.indent_size = s.indent_size
         self.large_file_bytes = s.large_file_mb * 1024 * 1024
@@ -426,6 +432,7 @@ struct App(Movable):
         win.gut = win.gutter_for(self.line_numbers)
         win.buf.tab_width = self.tab_width
         win.buf.indent_size = self.indent_size
+        win.wrap = self.soft_wrap
         self.wins.append(win^)
         return len(self.wins) - 1
 

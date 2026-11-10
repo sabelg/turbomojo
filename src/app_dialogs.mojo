@@ -357,9 +357,10 @@ __extension App:
         self.wins[ai].ensure_visible()
         var dh = min(self.dlg.h, self.scr.h - 2)
         var dy = max(1, self.scr.h - dh - 1)
-        var row_y = self.wins[ai].y + 1 + (self.wins[ai].cr - self.wins[ai].top)
+        var row_y = self.wins[ai].cursor_cell().r
         if row_y >= dy:
             self.wins[ai].top = max(0, self.wins[ai].cr - 2)
+            self.wins[ai].top_seg = 0
 
     def find_close(mut self, restore: Bool):
         self.mode = M_NORMAL

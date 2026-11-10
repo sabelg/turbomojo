@@ -925,3 +925,39 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - Pasting a block at a single cursor inserts it as ordinary lines, not as a block.
   - Ctrl-Shift-Alt-arrows and Alt+drag were not tried on a real terminal emulator.
 - Verified: `check.sh` CHECK OK (26 files, 567 tests).
+
+## 2026-11-10 · P1-12 soft wrap · done
+
+- `Window.wrap` and `top_seg` (which screen row of line `top` is the first one shown).
+  `wrap_layout` gives, for a line, the character index and visual column where each
+  screen row begins: rows break after the last blank that fits, a word longer than a row
+  is cut, a wide character never straddles the edge, and one column stays free for the
+  cursor after the last character. Helpers: `seg_of`, `row_segs`, `col_in_seg`,
+  `advance_top`, `screen_row_of`, `pos_at_screen_row`, `cursor_cell`, `set_wrap`.
+- Wrap-aware: drawing (one loop for both modes; line number, current-line colour,
+  selection, search marks and extra cursors per screen row), Up/Down and PgUp/PgDn by
+  screen rows keeping the horizontal offset, `ensure_visible` and scrolling inside a
+  line taller than the window, mouse clicks, the terminal cursor position, the Find
+  dialog's keep-in-view, Alt+drag.
+- Option: Options > Soft wrap (`options.softWrap`, Alt-Z), setting `editor.soft_wrap`,
+  remembered like the other options; applies to all editor windows and new ones.
+- Tests: `tests/test_wrap.mojo` (17 tests): break positions (blanks, long words, wide
+  characters, tabs), 300 random lines checked for "rows cover the line exactly and none
+  is too wide", drawing with and without line numbers, selection and current line over
+  two rows, movement, remembered offset, cursor cell, click round trip for every
+  position, a 20+ row line walked from end to start with the cursor always in view,
+  scrolling, typing past the edge, re-wrapping after a resize, the option in the app.
+  Wrong expectations of mine: a tab column miscount, a text that wrapped into three rows
+  instead of two, and a loop condition in a test. The Options menu golden file was
+  regenerated (one new row, reviewed).
+- Tried by hand in tmux: Alt-Z on a file with a 400-character line and a 150-character
+  word.
+- Not done / unverified:
+  - Home/End work on the whole line, not the screen row. No hanging indent for
+    continuation rows; a row may start with the blank it was broken at.
+  - Layout is recomputed from the line each time it is needed (no cache); cost grows
+    with line length. Not measured on very long lines or with large files.
+  - The vertical scrollbar still counts lines, not screen rows; the horizontal one is
+    drawn but meaningless while wrapping.
+  - Column selection with wrap on was not tested beyond compiling.
+- Verified: `check.sh` CHECK OK (27 files, 584 tests).

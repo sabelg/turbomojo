@@ -15,6 +15,7 @@ Example:
 
     [editor]
     auto_indent = true
+    soft_wrap = false           # continue long lines on the next screen row
     tab_width = 4               # display width of a tab character
     indent_size = 4             # spaces per indent level (.editorconfig overrides both)
     large_file_mb = 50          # files above this size open in large-file mode
@@ -101,6 +102,7 @@ struct Settings(Copyable, Movable):
     var highlight_line: Bool
     var clock: Bool
     var show_whitespace: Bool
+    var soft_wrap: Bool
     var compiler: String
     var tab_width: Int
     var indent_size: Int
@@ -117,6 +119,7 @@ struct Settings(Copyable, Movable):
         self.highlight_line = True
         self.clock = True
         self.show_whitespace = False
+        self.soft_wrap = False
         self.compiler = "mojo"
         self.tab_width = 4
         self.indent_size = 4
@@ -151,6 +154,7 @@ struct Settings(Copyable, Movable):
         self.highlight_line = self.take_bool(doc, "ui.highlight_line", self.highlight_line)
         self.clock = self.take_bool(doc, "ui.clock", self.clock)
         self.show_whitespace = self.take_bool(doc, "ui.show_whitespace", self.show_whitespace)
+        self.soft_wrap = self.take_bool(doc, "editor.soft_wrap", self.soft_wrap)
         self.auto_indent = self.take_bool(doc, "editor.auto_indent", self.auto_indent)
         var ti = doc.find("ui.theme")
         if ti >= 0:
@@ -182,7 +186,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler"]:
+        for k in ["ui.theme", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys."):

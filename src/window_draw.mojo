@@ -56,12 +56,28 @@ __extension Window:
         var st = self.lex_state_at(self.top)
         scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
         var classes = List[Int]()
+        # with soft wrap a line can take several screen rows ("segments")
+        var r = self.top
+        var seg = self.top_seg if self.wrap else 0
+        var loaded = -1
+        var ln = List[Int]()
+        var starts = List[Int]()
+        var vs = List[Int]()
         for i in range(rws):
-            var r = self.top + i
             var yy = self.y + 1 + i
             if r >= self.buf.count():
                 break
-            var ln = self.buf.line(r)
+            if loaded != r:
+                ln = self.buf.line(r)
+                self.wrap_layout(ln, starts, vs)
+                if not plain:
+                    st = hl.line(ln, st, classes)
+                loaded = r
+                seg = min(seg, len(starts) - 1)
+            var s0 = starts[seg]
+            var s1 = starts[seg + 1] if seg + 1 < len(starts) else len(ln)
+            var v0 = vs[seg]
+            var off = v0 if self.wrap else self.left     # visual column shown at the left edge
             var rowbg = bg
             var rowfg = fg
             if is_msg:
@@ -80,28 +96,26 @@ __extension Window:
                 rowbg = pal.curline_bg
                 scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
             if self.gut > 0:
-                var num = String(r + 1)
+                var num = String(r + 1) if seg == 0 else String("")
                 var pad = self.gut - 1 - cp_len(num)
                 var s = String("")
                 for _ in range(pad):
                     s += " "
                 s += num + " "
                 _ = scr.text(self.x + 1, yy, s, pal.frame_act if r == self.cr and active else pal.gutter_fg, pal.gutter_bg)
-            if not plain:
-                st = hl.line(ln, st, classes)
             var n = len(ln)
             scr.clip(cx0, self.y + 1, cls, self.h - 2)
-            var v = 0
+            var v = v0
             var lastx = -1
-            var lim = self.left + cls
-            var nextc = 0
+            var lim = off + cls
+            var nextc = s0
             # other matches of the current search on this row (skipped for huge lines)
             var ms = List[Int]()
             var mi = 0
             if self.hs_on and not is_msg and n > 0 and n <= 20000:
                 var mcols = self.scope_cols(r, n)
                 ms = self.hs.all_in(ln, mcols.c1, mcols.c2)
-            for c in range(n):
+            for c in range(s0, s1):
                 if v >= lim:
                     break
                 if c < nextc:
@@ -116,7 +130,7 @@ __extension Window:
                     if lastx >= 0:
                         scr.combine(lastx, yy, ch)
                     continue
-                if v + a <= self.left:
+                if v + a <= off:
                     v += a
                     lastx = -1
                     continue
@@ -135,11 +149,11 @@ __extension Window:
                 if (r == brk.r and c == brk.c) or (r == self.cr and c == bc):
                     cfg = pal.bracket_fg
                     cbg = pal.bracket_bg
-                var sx = cx0 + v - self.left
-                if ch == 9 or v < self.left:
+                var sx = cx0 + v - off
+                if ch == 9 or v < off:
                     # tab (or a wide char cut by the left edge): blank cells
-                    for k in range(max(v, self.left), v + a):
-                        scr.put(cx0 + k - self.left, yy, 32, cfg, cbg)
+                    for k in range(max(v, off), v + a):
+                        scr.put(cx0 + k - off, yy, 32, cfg, cbg)
                     if ch == 9 and show_ws:
                         scr.put(max(sx, cx0), yy, 0x2192, pal.gutter_fg, cbg)
                     lastx = -1
@@ -154,14 +168,20 @@ __extension Window:
             for e in self.extra:
                 if e.r != r:
                     continue
+                if self.seg_of(starts, e.c) != seg:
+                    continue
                 var ev = self.vcol(r, e.c)
-                if ev >= self.left and ev < lim:
-                    scr.set_bg(cx0 + ev - self.left, yy, pal.match_fg if pal.match_fg != rowbg else pal.sel_fg)
-                    scr.set_fg(cx0 + ev - self.left, yy, rowbg)
+                if ev >= off and ev < lim:
+                    scr.set_bg(cx0 + ev - off, yy, pal.match_fg if pal.match_fg != rowbg else pal.sel_fg)
+                    scr.set_fg(cx0 + ev - off, yy, rowbg)
             # selection past end of line shows the newline
-            if has_sel and sr.r1 <= r and r < sr.r2 and v >= self.left and v < lim:
-                scr.put(cx0 + v - self.left, yy, 32, pal.sel_fg, pal.sel_bg)
+            if has_sel and sr.r1 <= r and r < sr.r2 and s1 == n and v >= off and v < lim:
+                scr.put(cx0 + v - off, yy, 32, pal.sel_fg, pal.sel_bg)
             scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
+            seg += 1
+            if seg >= len(starts):
+                r += 1
+                seg = 0
         scr.no_clip()
 
         # bottom: position + modified marker

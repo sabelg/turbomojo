@@ -52,6 +52,8 @@ struct Window(Copyable, Movable):
     var cc: Int
     var want: Int
     var top: Int
+    var top_seg: Int      # soft wrap: which screen row of line `top` is the first one shown
+    var wrap: Bool        # soft wrap: long lines continue on the next screen row
     var left: Int
     var x: Int
     var y: Int
@@ -116,6 +118,8 @@ struct Window(Copyable, Movable):
         self.last_act = ACT_NONE
         self.follow = True
         self.gut = 0
+        self.top_seg = 0
+        self.wrap = False
         self.clustered = False
         self.extra = List[Cur]()
         self.box_on = False
@@ -200,6 +204,188 @@ struct Window(Copyable, Movable):
 
     def sync_want(mut self):
         self.want = self.vcol(self.cr, self.cc)
+        if self.wrap:
+            # with soft wrap Up/Down keep the column inside the screen row
+            var starts = List[Int]()
+            var vs = List[Int]()
+            self.wrap_layout(self.buf.line(self.cr), starts, vs)
+            self.want -= vs[self.seg_of(starts, self.cc)]
+
+    # ------------------------------------------------------------ soft wrap
+    def wrap_layout(self, ln: List[Int], mut starts: List[Int], mut vs: List[Int]):
+        """Where the screen rows of a line begin: character index (`starts`) and visual
+        column (`vs`) of each. Without soft wrap a line is one row. Rows are broken after
+        the last blank that fits, or in the middle of a word that is longer than a row.
+        One column is kept free so the cursor can stand after the last character."""
+        starts.clear()
+        vs.clear()
+        starts.append(0)
+        vs.append(0)
+        if not self.wrap:
+            return
+        var width = max(4, self.cols() - 1)
+        var n = len(ln)
+        var i = 0
+        var v = 0
+        var seg_start = 0
+        var seg_v = 0
+        var after_space = -1         # index just after the last blank of this row
+        var after_space_v = 0
+        while i < n:
+            var e = cluster_end(ln, i)
+            var a = self.span(ln, i, e, v)
+            if v + a - seg_v > width and i > seg_start:
+                var b = i
+                var bv = v
+                if after_space > seg_start and ln[i] != 32 and ln[i] != 9:
+                    b = after_space
+                    bv = after_space_v
+                starts.append(b)
+                vs.append(bv)
+                seg_start = b
+                seg_v = bv
+                after_space = -1
+                continue
+            if ln[i] == 32 or ln[i] == 9:
+                after_space = e
+                after_space_v = v + a
+            v += a
+            i = e
+
+    def seg_of(self, starts: List[Int], c: Int) -> Int:
+        """Which screen row of its line holds character index c."""
+        var k = len(starts) - 1
+        while k > 0 and starts[k] > c:
+            k -= 1
+        return k
+
+    def row_segs(self, r: Int) -> Int:
+        """How many screen rows line r takes."""
+        if not self.wrap:
+            return 1
+        var starts = List[Int]()
+        var vs = List[Int]()
+        self.wrap_layout(self.buf.line(r), starts, vs)
+        return len(starts)
+
+    def col_in_seg(self, r: Int, k: Int, x: Int) -> Int:
+        """Character index on screen row k of line r at horizontal offset x."""
+        var ln = self.buf.line(r)
+        var starts = List[Int]()
+        var vs = List[Int]()
+        self.wrap_layout(ln, starts, vs)
+        var seg = max(0, min(k, len(starts) - 1))
+        var last = seg == len(starts) - 1
+        var end = len(ln) if last else starts[seg + 1]
+        var i = starts[seg]
+        var v = vs[seg]
+        while i < end:
+            var e = cluster_end(ln, i)
+            var a = self.span(ln, i, e, v)
+            if a > 0 and v + a - vs[seg] > x:
+                if x - (v - vs[seg]) >= (a + 1) // 2 and a > 1 and (last or e < end):
+                    return e
+                return i
+            v += a
+            i = e
+        if last:
+            return end
+        # the position after the last character of a wrapped row belongs to the next row
+        return max(starts[seg], end - 1)
+
+    def advance_top(mut self, d: Int):
+        """Scroll by d screen rows (soft wrap)."""
+        var count = self.buf.count()
+        self.top = max(0, min(count - 1, self.top))
+        var segs = self.row_segs(self.top)
+        self.top_seg = max(0, min(self.top_seg, segs - 1))
+        var left = d
+        while left > 0:
+            if self.top_seg + 1 < segs:
+                self.top_seg += 1
+            elif self.top + 1 < count:
+                self.top += 1
+                self.top_seg = 0
+                segs = self.row_segs(self.top)
+            else:
+                break
+            left -= 1
+        while left < 0:
+            if self.top_seg > 0:
+                self.top_seg -= 1
+            elif self.top > 0:
+                self.top -= 1
+                segs = self.row_segs(self.top)
+                self.top_seg = segs - 1
+            else:
+                break
+            left += 1
+
+    def screen_row_of(self, r: Int, c: Int, limit: Int) -> Int:
+        """Screen row (0 = first row of the window) where position (r, c) is shown;
+        -1 if it is above the window, `limit` if it is `limit` or more rows down."""
+        if not self.wrap:
+            if r < self.top:
+                return -1
+            return min(limit, r - self.top)
+        var starts = List[Int]()
+        var vs = List[Int]()
+        self.wrap_layout(self.buf.line(r), starts, vs)
+        var seg = self.seg_of(starts, c)
+        if r < self.top or (r == self.top and seg < self.top_seg):
+            return -1
+        if r == self.top:
+            return min(limit, seg - self.top_seg)
+        var y = self.row_segs(self.top) - self.top_seg
+        var row = self.top + 1
+        while row < r and y < limit:
+            y += self.row_segs(row)
+            row += 1
+        return min(limit, y + seg)
+
+    def pos_at_screen_row(self, y: Int) -> Pos:
+        """Line and screen-row index within it shown on window row y: Pos(line, index)."""
+        if not self.wrap:
+            return Pos(self.top + y, 0)
+        var r = self.top
+        var seg = self.top_seg
+        var count = self.buf.count()
+        var segs = self.row_segs(r) if r < count else 1
+        seg = min(seg, segs - 1)
+        for _ in range(y):
+            if seg + 1 < segs:
+                seg += 1
+            else:
+                r += 1
+                seg = 0
+                if r >= count:
+                    break
+                segs = self.row_segs(r)
+        return Pos(r, seg)
+
+    def cursor_cell(self) -> Pos:
+        """Screen position of the cursor as Pos(y, x); y = -1 when it is not in view."""
+        var rws = self.rows()
+        if not self.wrap:
+            var y = self.cr - self.top
+            if y < 0 or y >= rws:
+                return Pos(-1, -1)
+            return Pos(self.y + 1 + y, self.x + 1 + self.gut + self.vcol(self.cr, self.cc) - self.left)
+        var y = self.screen_row_of(self.cr, self.cc, rws)
+        if y < 0 or y >= rws:
+            return Pos(-1, -1)
+        var starts = List[Int]()
+        var vs = List[Int]()
+        self.wrap_layout(self.buf.line(self.cr), starts, vs)
+        var x = self.vcol(self.cr, self.cc) - vs[self.seg_of(starts, self.cc)]
+        return Pos(self.y + 1 + y, self.x + 1 + self.gut + x)
+
+    def set_wrap(mut self, on: Bool):
+        self.wrap = on
+        self.top_seg = 0
+        self.left = 0
+        self.sync_want()
+        self.follow = True
 
     # ------------------------------------------------- highlighter state cache
     def sync_lex(mut self, upto: Int):
@@ -268,6 +454,27 @@ struct Window(Copyable, Movable):
     def ensure_visible(mut self):
         var rws = self.rows()
         var cls = self.cols()
+        if self.wrap:
+            self.left = 0
+            self.top = max(0, min(self.top, self.buf.count() - 1))
+            if self.cr < self.top or self.cr - self.top >= rws:
+                # far away: start near the cursor line, then adjust by screen rows
+                self.top = self.cr if self.cr < self.top else self.cr - rws + 1
+                self.top_seg = 0
+            var y = self.screen_row_of(self.cr, self.cc, rws)
+            if y < 0:
+                var starts = List[Int]()
+                var vs = List[Int]()
+                self.wrap_layout(self.buf.line(self.cr), starts, vs)
+                self.top = self.cr
+                self.top_seg = self.seg_of(starts, self.cc)
+                return
+            var guard = 0
+            while y >= rws and guard < 100000:
+                self.advance_top(1)
+                y = self.screen_row_of(self.cr, self.cc, rws)
+                guard += 1
+            return
         if self.cr < self.top:
             self.top = self.cr
         if self.cr >= self.top + rws:
@@ -281,11 +488,21 @@ struct Window(Copyable, Movable):
             self.top = 0
 
     def scroll(mut self, d: Int):
+        if self.wrap:
+            self.advance_top(d)
+            self.follow = False
+            return
         var maxtop = max(0, self.buf.count() - 1)
         self.top = max(0, min(maxtop, self.top + d))
         self.follow = False
 
     def screen_to_pos(self, px: Int, py: Int) -> Pos:
+        if self.wrap:
+            var at = self.pos_at_screen_row(max(0, py - self.y - 1))
+            var wr = max(0, min(at.r, self.buf.count() - 1))
+            if at.r >= self.buf.count():
+                return Pos(wr, self.buf.llen(wr))
+            return Pos(wr, self.col_in_seg(wr, at.c, max(0, px - self.x - 1 - self.gut)))
         var r = self.top + (py - self.y - 1)
         var v = self.left + (px - self.x - 1 - self.gut)
         r = max(0, min(r, self.buf.count() - 1))
@@ -427,12 +644,41 @@ struct Window(Copyable, Movable):
 
     def move_vert(mut self, d: Int, shift: Bool):
         self.begin_move(shift)
+        if self.wrap:
+            # by screen rows, keeping the horizontal offset
+            var steps = d if d > 0 else -d
+            var count = self.buf.count()
+            for _ in range(steps):
+                var starts = List[Int]()
+                var vs = List[Int]()
+                self.wrap_layout(self.buf.line(self.cr), starts, vs)
+                var k = self.seg_of(starts, self.cc)
+                if d > 0:
+                    if k + 1 < len(starts):
+                        self.cc = self.col_in_seg(self.cr, k + 1, self.want)
+                    elif self.cr + 1 < count:
+                        self.cr += 1
+                        self.cc = self.col_in_seg(self.cr, 0, self.want)
+                    else:
+                        break
+                else:
+                    if k > 0:
+                        self.cc = self.col_in_seg(self.cr, k - 1, self.want)
+                    elif self.cr > 0:
+                        self.cr -= 1
+                        self.cc = self.col_in_seg(self.cr, self.row_segs(self.cr) - 1, self.want)
+                    else:
+                        break
+            return
         self.cr = max(0, min(self.buf.count() - 1, self.cr + d))
         self.cc = self.col_at_vcol(self.cr, self.want)
 
     def page(mut self, d: Int, shift: Bool):
         var n = self.rows() - 1
-        self.top = max(0, min(self.buf.count() - 1, self.top + d * n))
+        if self.wrap:
+            self.advance_top(d * n)
+        else:
+            self.top = max(0, min(self.buf.count() - 1, self.top + d * n))
         self.move_vert(d * n, shift)
 
     def home(mut self, shift: Bool, doc: Bool):

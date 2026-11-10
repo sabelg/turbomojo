@@ -52,6 +52,7 @@ comptime CM_COMPILER = 74
 comptime CM_CANCEL = 75
 comptime CM_LSP = 76
 comptime CM_FINDFILES = 77
+comptime CM_WRAP = 78
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
 comptime CM_CURBELOW = 112
@@ -365,6 +366,7 @@ def build_registry() -> Registry:
     r.cmd(CM_HLLINE, "options.highlightLine", "~H~ighlight line", "Toggle current line highlighting")
     r.cmd(CM_CLOCK, "options.clock", "Cl~o~ck", "Toggle the menu bar clock")
     r.cmd(CM_SHOWWS, "options.showWhitespace", "Show ~w~hitespace", "Show tab characters as arrows")
+    r.cmd(CM_WRAP, "options.softWrap", "Soft w~r~ap", "Continue long lines on the next screen row instead of scrolling sideways", [alt(122)])
     r.cmd(CM_USETABS, "options.indentWithTabs", "Indent with ~t~abs", "Tab key and auto-indent use tab characters (auto-detected)")
     r.cmd(CM_CRLF, "options.crlf", "CRLF line ~e~ndings", "Save the file with Windows line endings (auto-detected)")
     r.cmd(CM_THEME0, "options.themeClassic", "Theme: Turbo ~C~lassic", "The 1992 CGA blue look")
@@ -457,6 +459,7 @@ def build_registry() -> Registry:
     r.item(CM_HLLINE)
     r.item(CM_CLOCK)
     r.item(CM_SHOWWS)
+    r.item(CM_WRAP)
     r.item(CM_USETABS)
     r.item(CM_CRLF)
     r.sep()

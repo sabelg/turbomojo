@@ -149,8 +149,9 @@ __extension App:
         self.scr.cvis = False
         var t = self.top()
         if (self.mode == M_NORMAL or self.mode == M_COMPLETE) and t >= 0 and self.wins[t].kind == WK_EDITOR:
-            var cx = self.wins[t].x + 1 + self.wins[t].gut + self.wins[t].vcol(self.wins[t].cr, self.wins[t].cc) - self.wins[t].left
-            var cy = self.wins[t].y + 1 + self.wins[t].cr - self.wins[t].top
+            var cell = self.wins[t].cursor_cell()
+            var cx = cell.c
+            var cy = cell.r
             if cx > self.wins[t].x and cx < self.wins[t].x + self.wins[t].w - 1 and cy > self.wins[t].y and cy < self.wins[t].y + self.wins[t].h - 1:
                 self.scr.cx = cx
                 self.scr.cy = cy

@@ -54,6 +54,8 @@ __extension App:
             self.persist_option("ui", "clock", toml_bool(self.show_clock))
         elif cmd == CM_SHOWWS:
             self.persist_option("ui", "show_whitespace", toml_bool(self.show_ws))
+        elif cmd == CM_WRAP:
+            self.persist_option("editor", "soft_wrap", toml_bool(self.soft_wrap))
         elif cmd == CM_AUTOINDENT:
             self.persist_option("editor", "auto_indent", toml_bool(self.auto_indent))
         elif cmd >= CM_THEME0 and cmd < CM_THEME0 + THEME_COUNT:
@@ -230,6 +232,12 @@ __extension App:
             self.show_clock = not self.show_clock
         elif cmd == CM_SHOWWS:
             self.show_ws = not self.show_ws
+        elif cmd == CM_WRAP:
+            self.soft_wrap = not self.soft_wrap
+            for i in range(len(self.wins)):
+                if self.wins[i].kind == WK_EDITOR:
+                    self.wins[i].set_wrap(self.soft_wrap)
+            self.say("Soft wrap " + ("on" if self.soft_wrap else "off"))
         elif cmd == CM_USETABS:
             var i = self.top_editor()
             if i >= 0:

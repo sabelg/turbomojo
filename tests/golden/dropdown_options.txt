@@ -5,6 +5,7 @@
                                 │ Highlight line         │
                                 │ Clock                  │
                                 │ Show whitespace        │
+                                │ Soft wrap        Alt-Z │
                                 │ Indent with tabs       │
                                 │ CRLF line endings      │
                                 ├────────────────────────┤
@@ -12,5 +13,4 @@
                                 │ Theme: Midnight Neon   │
                                 │ Theme: Amber CRT       │
                                 └────────────────────────┘
-
 
