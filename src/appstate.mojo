@@ -28,7 +28,7 @@ from signals import SignalFd, send_signal, own_pid
 from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
-from lsp import LspClient
+from lsp import LspClient, CompletionItem
 from grep import FileSearch
 from filestate import *
 from toml import toml_set, toml_quote, toml_bool
@@ -48,6 +48,8 @@ comptime EV_COMMAND = 100               # a macro step that runs a command (Even
 comptime MACRO_MAX = 100000            # recording stops by itself at this many steps
 comptime LSP_MAX_RESTARTS = 3            # automatic restarts of a crashed language server...
 comptime LSP_CRASH_WINDOW_S = 60         # ...within this many seconds; after that it stays off
+comptime COMP_RETRY_MS = 150            # wait before asking again when the server is still analysing
+comptime COMP_MAX_RETRIES = 12
 comptime STATUS_MS = 4000        # how long a status-line message stays
 comptime RESIZE_POLL_MS = 250    # until SIGWINCH handling lands (P0-11)
 comptime SPINNER_MS = 100
@@ -157,6 +159,27 @@ struct App(Movable):
     var comp_items: List[String]
     var comp_sel: Int
     var comp_start: Int
+    var comp_insert: List[String]    # what each item puts into the text
+    var comp_kind: List[Int]         # LSP kind; -1 for a word found in the text
+    var comp_detail: List[String]
+    var comp_doc: List[String]
+    var comp_raw: List[String]       # the server's item, for asking for its details
+    var comp_srv: List[CompletionItem]   # the server's answer for the word being typed
+    var comp_srv_have: Bool
+    var comp_srv_incomplete: Bool
+    var comp_srv_path: String
+    var comp_srv_row: Int
+    var comp_srv_start: Int
+    var comp_req_id: Int             # completion request on its way (-1 none)
+    var comp_req_path: String
+    var comp_req_row: Int
+    var comp_req_start: Int
+    var comp_req_trigger: String     # the trigger character of that request ('' if asked by hand)
+    var comp_retries: Int            # how often the server said "not yet" for this spot
+    var comp_retry_due: Int          # when to ask again (0 = no retry pending)
+    var comp_waiting: Bool           # nothing to show yet: the popup opens when the answer comes
+    var comp_resolve_id: Int
+    var comp_resolve_label: String
     var st_x0: List[Int]
     var st_x1: List[Int]
     var st_cmd: List[Int]
@@ -264,6 +287,27 @@ struct App(Movable):
         self.comp_items = List[String]()
         self.comp_sel = 0
         self.comp_start = 0
+        self.comp_insert = List[String]()
+        self.comp_kind = List[Int]()
+        self.comp_detail = List[String]()
+        self.comp_doc = List[String]()
+        self.comp_raw = List[String]()
+        self.comp_srv = List[CompletionItem]()
+        self.comp_srv_have = False
+        self.comp_srv_incomplete = False
+        self.comp_srv_path = ""
+        self.comp_srv_row = -1
+        self.comp_srv_start = -1
+        self.comp_req_id = -1
+        self.comp_req_path = ""
+        self.comp_req_row = -1
+        self.comp_req_start = -1
+        self.comp_req_trigger = ""
+        self.comp_retries = 0
+        self.comp_retry_due = 0
+        self.comp_waiting = False
+        self.comp_resolve_id = -1
+        self.comp_resolve_label = ""
         self.st_x0 = List[Int]()
         self.st_x1 = List[Int]()
         self.st_cmd = List[Int]()
@@ -365,6 +409,8 @@ struct App(Movable):
             t = min(t, (self.lsp_change_due - now) // 1000000 + 1)
         if self.lsp_restart_due > 0:
             t = min(t, max(1, (self.lsp_restart_due - now) // 1000000 + 1))
+        if self.comp_retry_due > 0:
+            t = min(t, max(1, (self.comp_retry_due - now) // 1000000 + 1))
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.watch_enabled and not self.watch.active():

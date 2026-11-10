@@ -283,6 +283,13 @@ __extension App:
                 else:
                     self.say("Language server: " + self.lsp.last_error)
             return
+        if self.comp_retry_due > 0 and now >= self.comp_retry_due:
+            self.completion_retry(now)
+        for m in self.lsp.take_replies():
+            if m.id == self.comp_req_id:
+                self.completion_arrived(m)
+            elif m.id == self.comp_resolve_id:
+                self.resolve_arrived(m)
         var i = self.find_editor(self.lsp_path) if self.lsp_path.byte_length() > 0 else -1
         if i < 0 and self.lsp_path.byte_length() > 0:
             # the window whose problems were shown is gone; other files stay in step

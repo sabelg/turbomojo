@@ -304,6 +304,149 @@ def parse_caps(caps: Json) -> LspCaps:
     return c^
 
 
+struct CompletionItem(Copyable, Movable):
+    var label: String
+    var insert: String      # the text to put in the buffer (the label unless the server says otherwise)
+    var kind: Int           # LSP CompletionItemKind, 0 if not given
+    var detail: String      # usually the signature or type
+    var doc: String         # documentation as text (Markdown source if the server sent that)
+    var sort: String        # the key the server wants the list ordered by
+    var filter: String      # the text typed characters are matched against
+    var raw: String         # the item as received, for completionItem/resolve
+
+    def __init__(out self):
+        self.label = ""
+        self.insert = ""
+        self.kind = 0
+        self.detail = ""
+        self.doc = ""
+        self.sort = ""
+        self.filter = ""
+        self.raw = ""
+
+
+struct CompletionList(Movable):
+    var items: List[CompletionItem]
+    var incomplete: Bool    # the server has more: ask again when more is typed
+
+    def __init__(out self):
+        self.items = List[CompletionItem]()
+        self.incomplete = False
+
+
+comptime COMPLETION_MAX = 1000     # more items than this are not kept
+
+
+def doc_text(doc: Json, node: Int) -> String:
+    """Documentation is a plain string or {kind, value}."""
+    if node < 0 or doc.is_null(node):
+        return ""
+    var v = doc.get(node, "value")
+    if v >= 0:
+        return doc.str(v)
+    return doc.str(node)
+
+
+def parse_completion_item(doc: Json, node: Int) -> CompletionItem:
+    var it = CompletionItem()
+    it.label = doc.str(doc.get(node, "label"))
+    it.kind = doc.int(doc.get(node, "kind"), 0)
+    it.detail = doc.str(doc.get(node, "detail"))
+    it.doc = doc_text(doc, doc.get(node, "documentation"))
+    it.sort = doc.str(doc.get(node, "sortText"), it.label)
+    it.filter = doc.str(doc.get(node, "filterText"), it.label)
+    it.insert = it.label
+    var ins = doc.get(node, "insertText")
+    if ins >= 0 and doc.str(ins).byte_length() > 0:
+        it.insert = doc.str(ins)
+    var te = doc.path(node, "textEdit/newText")
+    if te >= 0 and doc.str(te).byte_length() > 0:
+        it.insert = doc.str(te)
+    it.raw = doc.dump(node)
+    return it^
+
+
+def parse_completion(doc: Json, node: Int) -> CompletionList:
+    """A completion result: an array of items, or {isIncomplete, items}; null is empty.
+    Items come back ordered by their sort key (stable), at most COMPLETION_MAX."""
+    var out = CompletionList()
+    if node < 0 or doc.is_null(node):
+        return out^
+    var arr = node
+    var inner = doc.get(node, "items")
+    if inner >= 0:
+        arr = inner
+        out.incomplete = doc.bool(doc.get(node, "isIncomplete"))
+    var found = List[CompletionItem]()
+    for c in doc.children(arr):
+        if len(found) >= COMPLETION_MAX:
+            out.incomplete = True
+            break
+        var it = parse_completion_item(doc, c)
+        if it.label.byte_length() > 0:
+            found.append(it^)
+    # stable merge sort on the sort keys
+    var n = len(found)
+    var idx = List[Int]()
+    var tmp = List[Int]()
+    for i in range(n):
+        idx.append(i)
+        tmp.append(0)
+    var width = 1
+    while width < n:
+        var lo = 0
+        while lo < n:
+            var mid = min(lo + width, n)
+            var hi = min(lo + 2 * width, n)
+            var i = lo
+            var j = mid
+            var k = lo
+            while i < mid and j < hi:
+                if found[idx[j]].sort < found[idx[i]].sort:
+                    tmp[k] = idx[j]
+                    j += 1
+                else:
+                    tmp[k] = idx[i]
+                    i += 1
+                k += 1
+            while i < mid:
+                tmp[k] = idx[i]
+                i += 1
+                k += 1
+            while j < hi:
+                tmp[k] = idx[j]
+                j += 1
+                k += 1
+            lo += 2 * width
+        for q in range(n):
+            idx[q] = tmp[q]
+        width *= 2
+    for i in range(n):
+        out.items.append(found[idx[i]].copy())
+    return out^
+
+
+def kind_tag(kind: Int) -> String:
+    """A three-letter tag for a completion item kind (LSP numbers)."""
+    if kind == 2 or kind == 3 or kind == 4:
+        return "fn "
+    if kind == 5 or kind == 10 or kind == 20:
+        return "fld"
+    if kind == 6 or kind == 12:
+        return "var"
+    if kind == 7 or kind == 8 or kind == 13 or kind == 22 or kind == 25:
+        return "typ"
+    if kind == 9 or kind == 17 or kind == 19:
+        return "mod"
+    if kind == 14:
+        return "kw "
+    if kind == 21:
+        return "con"
+    if kind == 15:
+        return "snp"
+    return "   "
+
+
 @fieldwise_init
 struct OpenDoc(Copyable, Movable):
     var uri: String
@@ -328,6 +471,7 @@ struct LspClient(Copyable, Movable):
     var starts: Int                    # how many times a server has been launched
     var last_error: String
     var log: List[String]              # window/logMessage and showMessage texts (latest last)
+    var replies: List[RpcMessage]      # answers to feature requests, waiting for the IDE to take them
 
     def __init__(out self):
         self.conn = RpcConn()
@@ -346,6 +490,7 @@ struct LspClient(Copyable, Movable):
         self.starts = 0
         self.last_error = ""
         self.log = List[String]()
+        self.replies = List[RpcMessage]()
 
     # ------------------------------------------------------------ lifecycle
     def start(mut self, cmd: String, root_dir: String, stderr_path: String, pid: Int, now: Int) -> Bool:
@@ -397,6 +542,19 @@ struct LspClient(Copyable, Movable):
         w.key("synchronization")
         w.begin_obj()
         w.kv_bool("didSave", True)
+        w.end_obj()
+        w.key("completion")
+        w.begin_obj()
+        w.kv_bool("contextSupport", True)
+        w.key("completionItem")
+        w.begin_obj()
+        w.kv_bool("snippetSupport", False)
+        w.key("documentationFormat")
+        w.begin_arr()
+        w.str("plaintext")
+        w.str("markdown")
+        w.end_arr()
+        w.end_obj()
         w.end_obj()
         w.key("publishDiagnostics")
         w.begin_obj()
@@ -546,6 +704,35 @@ struct LspClient(Copyable, Movable):
         self.conn.notify("textDocument/didSave", "{\"textDocument\":{\"uri\":" + json_quote(uri) + "}}")
         return True
 
+    def take_replies(mut self) -> List[RpcMessage]:
+        """Answers to feature requests that have arrived since the last call."""
+        var out = self.replies.copy()
+        self.replies.clear()
+        return out^
+
+    def position_params(self, uri: String, line: Int, character: Int) -> String:
+        """The start of a TextDocumentPositionParams object (without the closing brace)."""
+        return "{\"textDocument\":{\"uri\":" + json_quote(uri) + "},\"position\":{\"line\":" + String(line) + ",\"character\":" + String(character) + "}"
+
+    def request_completion(mut self, uri: String, line: Int, character: Int, trigger: String, now: Int) -> Int:
+        """Ask for completions at a position (UTF-16 column). `trigger` is the character
+        that caused it ('' when the user asked). Returns the request id, -1 if the server
+        cannot be asked now."""
+        if self.state != LSP_READY or not self.table.completion or self.find_doc(uri) < 0:
+            return -1
+        var p = self.position_params(uri, line, character)
+        if trigger.byte_length() > 0:
+            p += ",\"context\":{\"triggerKind\":2,\"triggerCharacter\":" + json_quote(trigger) + "}}"
+        else:
+            p += ",\"context\":{\"triggerKind\":1}}"
+        return self.conn.request("textDocument/completion", p, now)
+
+    def request_resolve(mut self, raw_item: String, now: Int) -> Int:
+        """Ask for the missing details (documentation) of a completion item."""
+        if self.state != LSP_READY or not self.table.completion_resolve or raw_item.byte_length() == 0:
+            return -1
+        return self.conn.request("completionItem/resolve", raw_item, now)
+
     def doc_version(self, uri: String) -> Int:
         var i = self.find_doc(uri)
         return self.docs[i].version if i >= 0 else -1
@@ -630,6 +817,11 @@ struct LspClient(Copyable, Movable):
                         self.docs[k].sent = True
                         q += 1
                 self.queued_text.clear()
+            elif (m.kind == RPC_RESPONSE or m.kind == RPC_ERROR) and m.id != self.init_id and self.state == LSP_READY:
+                # an answer to something the IDE asked: kept until it is fetched
+                self.replies.append(m.copy())
+                if len(self.replies) > 64:
+                    _ = self.replies.pop(0)
             elif m.kind == RPC_ERROR and m.id == self.init_id:
                 self.state = LSP_FAILED
                 self.last_error = "initialize failed: " + m.error_message()

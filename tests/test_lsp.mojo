@@ -11,10 +11,10 @@ from rpc import *
 from json import json_parse
 from term import wait_readable
 from app import *
-from appstate import App, now_ns, M_NORMAL
+from appstate import App, now_ns, M_NORMAL, M_COMPLETE
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, build_registry
-from term import fkey
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, build_registry
+from term import fkey, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC
 from signals import own_pid
 from util import decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
 from config import load_settings, read_text
@@ -784,6 +784,287 @@ def test_columns_of_problems_after_wide_characters() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
+# --------------------------------------------------------------- completion
+def test_completion_results_are_parsed_and_ordered() raises:
+    var d = json_parse(
+        "{\"isIncomplete\": true, \"items\": ["
+        + "{\"label\": \"zeta\", \"sortText\": \"2\", \"kind\": 3, \"detail\": \"def zeta()\", \"documentation\": \"plain doc\"},"
+        + "{\"label\": \"alpha\", \"sortText\": \"3\", \"insertText\": \"alpha()\"},"
+        + "{\"label\": \"mid\", \"sortText\": \"1\", \"textEdit\": {\"newText\": \"pkg.mid\"}, \"insertText\": \"ignored\", \"filterText\": \"m\","
+        + " \"documentation\": {\"kind\": \"markdown\", \"value\": \"**md**\"}},"
+        + "{\"kind\": 3},"
+        + "{\"label\": \"same\", \"sortText\": \"1\"}]}"
+    )
+    var lst = parse_completion(d, 0)
+    assert_true(lst.incomplete)
+    assert_equal(len(lst.items), 4)                     # the one without a label is dropped
+    assert_equal(lst.items[0].label, "mid")             # by sort key; equal keys keep their order
+    assert_equal(lst.items[1].label, "same")
+    assert_equal(lst.items[2].label, "zeta")
+    assert_equal(lst.items[3].label, "alpha")
+    assert_equal(lst.items[0].insert, "pkg.mid")        # the text edit wins
+    assert_equal(lst.items[0].filter, "m")
+    assert_equal(lst.items[0].doc, "**md**")
+    assert_equal(lst.items[2].insert, "zeta")
+    assert_equal(lst.items[2].kind, 3)
+    assert_equal(lst.items[2].detail, "def zeta()")
+    assert_equal(lst.items[2].doc, "plain doc")
+    assert_equal(lst.items[3].insert, "alpha()")
+    assert_equal(lst.items[3].sort, "3")
+    assert_true(lst.items[2].raw.find("\"label\"") >= 0)
+    var arr = parse_completion(json_parse("[{\"label\": \"only\"}]"), 0)
+    assert_false(arr.incomplete)
+    assert_equal(arr.items[0].sort, "only")             # no sort key: the label
+    assert_equal(len(parse_completion(json_parse("null"), 0).items), 0)
+    assert_equal(len(parse_completion(json_parse("[]"), 0).items), 0)
+    assert_equal(kind_tag(3), "fn ")
+    assert_equal(kind_tag(22), "typ")
+    assert_equal(kind_tag(6), "var")
+    assert_equal(kind_tag(99), "   ")
+
+
+def comp_app(dir: String, body: String) raises -> App:
+    with open(dir + "/a.mojo", "w") as f:
+        f.write(body)
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.lsp_server = FAKE
+    app.open_path(dir + "/a.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    return app^
+
+
+def wait_popup(mut app: App, want: Int):
+    """Until the popup shows `want` items (the server's answer has been merged in)."""
+    var t0 = now()
+    while not (app.mode == M_COMPLETE and len(app.comp_items) >= want) and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+
+
+def labels(app: App) -> String:
+    var out = String("")
+    for k in range(len(app.comp_items)):
+        out += app.comp_items[k] + " "
+    return out
+
+
+def test_server_items_come_first_and_words_follow() raises:
+    var dir = scratch("comp1")
+    var app = comp_app(dir, "var print_me = 1\nvar probe = 2\npr\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(2, 2)
+    app.exec(CM_COMPLETE)
+    # at once: the words from the text
+    assert_equal(app.mode, M_COMPLETE)
+    assert_equal(labels(app), "print_me probe print ")     # words of the text, then keywords
+    wait_popup(app, 5)
+    # then the server's items in its order (sort keys a, b, e), filtered by "pr",
+    # and after them the words it did not offer
+    assert_equal(labels(app), "prefix_len print_line Zebra print_me probe print ")
+    assert_equal(app.comp_sel, 0)                       # the server's first item is under the bar
+    assert_equal(app.comp_kind[0], 6)
+    assert_equal(app.comp_kind[3], -1)
+    assert_equal(app.comp_detail[1], "def print_line(s: String)")
+    assert_true(app.comp_doc[1].find("Prints **s**") >= 0)
+    # typing narrows the list without asking again
+    app.handle(key_event(105))                          # "i"
+    assert_equal(labels(app), "print_line print_me print ")
+    var st = server_state(app)
+    assert_equal(st.size(st.get(0, "asked")), 1)
+    assert_equal(st.int(st.get(st.at(st.get(0, "asked"), 0), "line")), 2)
+    assert_equal(st.int(st.get(st.at(st.get(0, "asked"), 0), "character")), 2)
+    assert_equal(st.int(st.get(st.at(st.get(0, "asked"), 0), "kind")), 1)
+    # Enter takes the selected one
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(to_str(app.wins[i].buf.line(2)), "print_line")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_a_selection_the_user_made_survives_the_server_answer() raises:
+    var dir = scratch("compkeep")
+    var app = comp_app(dir, "# SLOWCOMPLETE\nvar print_me = 1\nvar probe = 2\npr\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(3, 2)
+    app.exec(CM_COMPLETE)
+    assert_equal(labels(app), "print_me probe print ")
+    app.handle(key_event(KEY_DOWN))                     # the user picks "probe" while waiting
+    wait_popup(app, 5)
+    assert_equal(app.comp_items[app.comp_sel], "probe")
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(to_str(app.wins[i].buf.line(3)), "probe")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_item_with_its_own_insert_text_replaces_what_was_typed() raises:
+    var dir = scratch("comp2")
+    var app = comp_app(dir, "x = prZ\ny = Pa\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(0, 7)
+    app.exec(CM_COMPLETE)
+    wait_popup(app, 1)
+    assert_equal(labels(app), "Zebra ")                 # matched through its filter text
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(to_str(app.wins[i].buf.line(0)), "x = zebra.Zebra")
+    app.exec(CM_UNDO)
+    assert_equal(to_str(app.wins[i].buf.line(0)), "x = prZ")       # one step back
+    app.wins[i].goto(1, 6)
+    app.exec(CM_COMPLETE)
+    wait_popup(app, 1)
+    assert_equal(labels(app), "Path ")
+    app.handle(key_event(KEY_TAB))
+    assert_equal(to_str(app.wins[i].buf.line(1)), "y = Path()")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_trigger_character_opens_the_member_list_and_details_are_fetched() raises:
+    var dir = scratch("comp3")
+    var app = comp_app(dir, "items\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(0, 5)
+    app.handle(key_event(46))                           # "."
+    assert_equal(app.mode, M_NORMAL)                    # nothing to show yet
+    assert_true(app.comp_waiting)
+    wait_popup(app, 3)
+    assert_equal(labels(app), "capacity append clear ")
+    assert_equal(app.comp_doc[0], "How many items fit before the list grows.")
+    var st = server_state(app)
+    var asked = st.at(st.get(0, "asked"), 0)
+    assert_equal(st.int(st.get(asked, "character")), 6)
+    assert_equal(st.int(st.get(asked, "kind")), 2)
+    assert_equal(st.str(st.get(asked, "char")), ".")
+    # moving to an item without documentation asks the server for it, once
+    app.handle(key_event(KEY_DOWN))
+    assert_equal(app.comp_items[app.comp_sel], "append")
+    var t0 = now()
+    while app.comp_doc[1].byte_length() == 0 and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+    assert_equal(app.comp_doc[1], "Details for append, fetched on request.")
+    app.handle(key_event(KEY_UP))
+    app.handle(key_event(KEY_DOWN))
+    run_ticks(app, 200, False)
+    st = server_state(app)
+    assert_equal(st.size(st.get(0, "resolved")), 1)
+    # typing filters the member list; accepting completes after the dot
+    app.handle(key_event(99))                           # "c"
+    assert_equal(labels(app), "capacity clear ")
+    app.handle(key_event(KEY_DOWN))
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(to_str(app.wins[i].buf.line(0)), "items.clear")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_late_and_empty_answers() raises:
+    var dir = scratch("comp4")
+    var app = comp_app(dir, "# SLOWCOMPLETE\nqx\nzz\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    # the cursor leaves before the answer comes: the answer is dropped
+    app.wins[i].goto(1, 2)
+    app.exec(CM_COMPLETE)
+    assert_true(app.comp_waiting)                       # no word starts with "qx" elsewhere
+    assert_equal(app.status, "Asking the language server...")
+    app.wins[i].goto(2, 0)
+    run_ticks(app, 900, False)
+    assert_equal(app.mode, M_NORMAL)
+    assert_false(app.comp_waiting)
+    # a server with nothing to say
+    app.wins[i].buf.load(decode("# NOCOMPLETE\nqq\n"))
+    run_ticks(app, 500, False)
+    app.wins[i].goto(1, 2)
+    app.exec(CM_COMPLETE)
+    var t0 = now()
+    while app.comp_waiting and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(app.status, "No completions here")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_server_that_is_still_analysing_is_asked_again() raises:
+    var dir = scratch("compbusy")
+    var app = comp_app(dir, "# BUSYSERVER\nitems\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(1, 5)
+    app.handle(key_event(46))                           # "."
+    wait_popup(app, 3)                                  # two refusals, then the list
+    assert_equal(labels(app), "capacity append clear ")
+    var st = server_state(app)
+    assert_equal(st.size(st.get(0, "asked")), 3)
+    assert_equal(app.comp_retries, 0)                   # the count starts afresh next time
+    app.handle(key_event(KEY_ESC))
+    # a real failure is reported, not retried for ever
+    app.wins[i].buf.load(decode("# BROKENCOMPLETE\nqx\n"))
+    run_ticks(app, 500, False)
+    app.wins[i].goto(1, 2)
+    app.exec(CM_COMPLETE)
+    var t0 = now()
+    while app.comp_waiting and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+    assert_equal(app.status, "Language server: internal error in completion")
+    assert_equal(app.mode, M_NORMAL)
+    st = server_state(app)
+    assert_equal(st.size(st.get(0, "asked")), 4)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_without_a_server_word_completion_is_unchanged() raises:
+    var app = App()
+    app.scr.resize(100, 30)
+    app.exec(CM_NEW)
+    var i = app.top()
+    app.wins[i].buf.load(decode("alphabet alpine\nal"))
+    app.wins[i].goto(1, 2)
+    app.exec(CM_COMPLETE)
+    assert_equal(app.mode, M_COMPLETE)
+    assert_equal(labels(app), "alphabet alpine alias alignof all ")     # then keywords and builtins
+    assert_equal(app.comp_kind[0], -1)
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(to_str(app.wins[i].buf.line(1)), "alphabet")
+    # a single candidate is still inserted directly
+    app.wins[i].buf.load(decode("unique_word\nuni"))
+    app.wins[i].goto(1, 3)
+    app.exec(CM_COMPLETE)
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(to_str(app.wins[i].buf.line(1)), "unique_word")
+    app.wins[i].buf.load(decode("x\n"))
+    app.wins[i].goto(1, 0)
+    app.exec(CM_COMPLETE)
+    assert_equal(app.status, "Type the start of an identifier, then Ctrl-Space")
+
+
+def test_popup_shows_kinds_details_and_documentation() raises:
+    var dir = scratch("comp5")
+    var app = comp_app(dir, "pr\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(0, 2)
+    app.exec(CM_COMPLETE)
+    wait_popup(app, 3)
+    app.handle(key_event(KEY_DOWN))                     # print_line: has documentation
+    assert_equal(app.comp_items[app.comp_sel], "print_line")
+    app.draw()
+    var screen = to_str(app.scr.to_text())
+    assert_true(screen.find("var prefix_len") > 0, "kind tag before the name")
+    assert_true(screen.find("fn  print_line") > 0)
+    assert_true(screen.find("def print_line(s: String)") > 0, "the signature beside it")
+    var top_rows = String("")
+    for y in range(1, 12):
+        top_rows += "\n" + to_str(app.scr.row_text(y))
+    assert_true(screen.find("Prints **s** and a line break.") > 0, "documentation panel:" + top_rows)
+    assert_true(screen.find("print_line(\"hi\")") > 0)
+    assert_true(screen.find("```") < 0, "code fences are not shown")
+    assert_true(screen.find("Returns nothing.") > 0)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
 # ---------------------------------------------------------- document sync
 def server_state(mut app: App) raises -> Json:
     """Ask the fake server what documents it holds (a JSON object: docs, saved, ranged,
@@ -1086,6 +1367,54 @@ def test_real_server_follows_ranged_edits_from_the_editor() raises:
     var d = app.lsp.diagnostics(uri)
     assert_true(len(d) >= 1, "the new error is reported")
     assert_equal(d[0].line, 2)                           # on the line the editor has it on
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_real_server_completes_members_after_a_dot() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realcomp")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'from std.collections import List\\n\\ndef main():\\n    var items = List[Int]()\\n    items\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var t0 = now()
+    while app.lsp.state != LSP_READY and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    run_ticks(app, 3000, False)                          # let it analyse the file
+    print("      real server: " + app.lsp.table.describe()[2])
+    var trig = String("")
+    for t in app.lsp.table.completion_triggers:
+        trig += t + " "
+    print("      real server completion triggers: " + trig)
+    if not app.lsp.table.completion:
+        print("      (the server offers no completion)")
+        app.lsp_stop()
+        return
+    var i = app.find_editor(path)
+    app.wins[i].goto(4, 9)
+    app.handle(key_event(46))                            # "."
+    if not app.comp_waiting and app.mode != M_COMPLETE:
+        # "." is not announced as a trigger: ask by hand
+        app.exec(CM_COMPLETE)
+    t0 = now()
+    while app.mode != M_COMPLETE and (app.comp_waiting or app.comp_req_id >= 0 or app.comp_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    var some = String("")
+    for k in range(min(8, len(app.comp_items))):
+        some += app.comp_items[k] + " "
+    print("      real server offered " + String(len(app.comp_items)) + " items: " + some)
+    assert_equal(app.mode, M_COMPLETE)
+    var has_append = False
+    for k in range(len(app.comp_items)):
+        if app.comp_items[k] == "append":
+            has_append = True
+    assert_true(has_append, "List has an append method")
     app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 

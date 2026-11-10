@@ -241,6 +241,7 @@ __extension App:
                 self.wins[t].clear_highlight()
         elif k < K_BASE and k >= 32:
             self.wins[t].multi(OP_TYPE, k, self.insert_mode, False, none)
+            self.maybe_trigger_completion(k)
         self.wins[t].follow = True
 
     def window_at(self, x: Int, y: Int) -> Int:

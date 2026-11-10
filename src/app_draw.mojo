@@ -202,27 +202,75 @@ __extension App:
         self.wins[i].draw(self.scr, p, self.hl, active, self.hl_line, self.insert_mode, self.show_ws)
 
     def draw_completion(mut self, cx: Int, cy: Int):
+        """The completion popup under (or above) the cursor: a tag for the kind of each
+        item, its name and, dimmed, its signature or type; beside it a panel with the
+        selected item's details and documentation when there are any."""
         var p = self.pal.copy()
         var n = len(self.comp_items)
+        if n == 0:
+            return
         var h = min(8, n)
-        var w = 12
-        for s in self.comp_items:
-            w = max(w, cp_len(s) + 2)
-        w = min(w, 40)
-        var ai = self.top()
-        var plen = self.wins[ai].cc - self.comp_start
-        var x = max(0, min(cx - plen - 1, self.scr.w - w - 2))
-        var y = cy + 1
-        if y + h > self.scr.h - 1:
-            y = cy - h
         var topi = max(0, min(self.comp_sel - h + 1, n - h))
         if self.comp_sel < topi:
             topi = self.comp_sel
+        var tags = False
+        var label_w = 10
+        var detail_w = 0
+        for k in range(n):
+            if self.comp_kind[k] >= 0:
+                tags = True
+            label_w = max(label_w, cp_len(self.comp_items[k]))
+        for k in range(topi, topi + h):
+            detail_w = max(detail_w, cp_len(self.comp_detail[k]))
+        label_w = min(label_w, 36)
+        detail_w = min(detail_w, max(0, 58 - label_w))
+        var tag_w = 4 if tags else 0
+        var w = 1 + tag_w + label_w + (2 + detail_w if detail_w > 0 else 0) + 1
+        w = min(w, self.scr.w - 2)
+        var ai = self.top()
+        var plen = self.wins[ai].cc - self.comp_start
+        var x = max(0, min(cx - plen - 1 - tag_w, self.scr.w - w - 2))
+        var y = cy + 1
+        if y + h > self.scr.h - 1:
+            y = cy - h
         for r in range(h):
             var k = topi + r
             var sel = k == self.comp_sel
             var fg = p.list_sel_fg if sel else p.list_fg
             var bg = p.list_sel_bg if sel else p.list_bg
             self.scr.fill(x, y + r, w, 1, 32, fg, bg)
-            _ = self.scr.text(x + 1, y + r, self.comp_items[k], fg, bg)
+            self.scr.clip(x, y + r, w, 1)
+            if tags:
+                var tag = kind_tag(self.comp_kind[k]) if self.comp_kind[k] >= 0 else String("abc")
+                _ = self.scr.text(x + 1, y + r, tag, fg if sel else p.gutter_fg, bg)
+            _ = self.scr.text(x + 1 + tag_w, y + r, self.comp_items[k], fg, bg)
+            if detail_w > 0 and self.comp_detail[k].byte_length() > 0:
+                _ = self.scr.text(x + 1 + tag_w + label_w + 2, y + r, self.comp_detail[k], fg if sel else p.gutter_fg, bg)
+            self.scr.no_clip()
         self.scr.shadow(x, y, w, h, p.shadow_fg, p.shadow_bg)
+        # ---- details of the selected item
+        var k = self.comp_sel
+        var info = String(self.comp_detail[k])
+        if self.comp_doc[k].byte_length() > 0:
+            info += ("\n\n" if info.byte_length() > 0 else "") + self.comp_doc[k]
+        if info.byte_length() == 0 or (self.comp_doc[k].byte_length() == 0 and cp_len(self.comp_detail[k]) <= detail_w):
+            return                          # nothing the list row does not already show
+        var pw = min(44, self.scr.w - (x + w) - 3)
+        var px = x + w + 1
+        if pw < 20:
+            # no room on the right: try the left side
+            pw = min(44, x - 2)
+            px = x - pw - 1
+        if pw < 20:
+            return
+        var lines = wrap_plain(info, pw - 2)
+        var ph = min(len(lines), 10)
+        var py = y
+        if py + ph > self.scr.h - 1:
+            py = max(1, self.scr.h - 1 - ph)
+        self.scr.fill(px, py, pw, ph, 32, p.list_fg, p.list_bg)
+        self.scr.clip(px, py, pw, ph)
+        for r in range(ph):
+            _ = self.scr.text(px + 1, py + r, lines[r], p.list_fg, p.list_bg)
+        self.scr.no_clip()
+        self.scr.shadow(px, py, pw, ph, p.shadow_fg, p.shadow_bg)

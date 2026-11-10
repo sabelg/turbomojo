@@ -1387,3 +1387,47 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
     without line numbers only the underline shows.
   - Columns inside a line are not adjusted while typing before the server answers.
 - Verified: `check.sh` CHECK OK (32 files, 701 tests).
+
+## 2026-11-10 · P2-04 completion from the server · done
+
+- Client: `request_completion` (position in UTF-16 units, trigger kind and character),
+  `request_resolve`, `parse_completion` (array or `{isIncomplete, items}`; label, kind,
+  detail, documentation as string or markup, insertText, textEdit.newText, sortText,
+  filterText; stable sort by sort key; at most 1,000 items), `kind_tag`. Answers to
+  feature requests are queued in `LspClient.replies` for the IDE to take. The client
+  declares completion support without snippets.
+- Popup (`App.start_complete` and friends): the words from the file appear at once as
+  before; the server is asked at the same time and its items are merged in when the
+  answer arrives: server items first in the server's order, then words it did not
+  offer. The server's list is reused while the same word is typed (narrowed locally),
+  unless the server said it was incomplete. After a `.` only the server's members are
+  shown. A selection the user already made is kept when the answer arrives; otherwise
+  the server's first item is under the bar. Accepting types the missing part, or
+  replaces what was typed when the item's insert text does not start with it.
+- Trigger characters announced by the server (`.` for Mojo) ask for completions as
+  soon as they are typed; the popup opens when the answer comes.
+- Details: each row shows a kind tag, the name and the detail; a side panel shows
+  detail and documentation of the selected item (plain wrapping, code-fence lines
+  dropped: `util.wrap_plain`). Items without documentation are resolved on request
+  when the server supports it, once per item.
+- Found with the real server: asked right after an edit it answers with the error
+  "outdated request", because it is still analysing. Such answers (and the protocol's
+  ContentModified/RequestCancelled codes) are now followed by another try every 150 ms,
+  up to 12 times, while the cursor stays in the same word. Other errors are reported
+  in the status line. Without this the real server never completed after typing `.`.
+- Tests: 9 new in `tests/test_lsp.mojo` (45): parsing; merge order and local narrowing
+  (one request only); insert text and text edits with undo; trigger character, member
+  list, resolve once; kept selection; late and empty answers; retry after "outdated"
+  and a reported failure; popup rendering with tags, signature and documentation;
+  unchanged word completion without a server; and against the real server: `.` after a
+  `List[Int]` variable offers 60 members including `append`. 1 in `tests/test_util.mojo`
+  for wrapping. Several first failures were my expectations forgetting that keywords
+  are part of word completion; one was real (the bar jumped to the last item when the
+  answer arrived).
+- Not done / unverified:
+  - Snippets, additional text edits (auto-imports) and commit characters are not
+    supported; `textEdit` ranges are ignored (the typed word is what gets replaced).
+  - Matching is by prefix on the filter text, case-sensitive; no fuzzy matching.
+  - The documentation panel shows Markdown source (P2-05 renders Markdown).
+  - Not tried by hand in tmux; the real-server test drives the same code path.
+- Verified: `check.sh` CHECK OK (32 files, 712 tests).

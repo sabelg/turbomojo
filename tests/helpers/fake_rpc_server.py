@@ -138,12 +138,50 @@ def main():
             main.closed = getattr(main, "closed", []) + [params["textDocument"]["uri"]]
             DOCS.pop(params["textDocument"]["uri"], None)
             continue
+        if method == "textDocument/completion":
+            # what a small language server might offer; "." asks for members
+            main.asked = getattr(main, "asked", []) + [{
+                "line": params["position"]["line"], "character": params["position"]["character"],
+                "kind": params.get("context", {}).get("triggerKind"), "char": params.get("context", {}).get("triggerCharacter")}]
+            text = DOCS.get(params["textDocument"]["uri"], "")
+            if "SLOWCOMPLETE" in text:
+                time.sleep(0.4)
+            if "BUSYSERVER" in text and len(main.asked) < 3:
+                # like a real server that is still analysing the last edit
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32801, "message": "outdated request"}})
+                continue
+            if "BROKENCOMPLETE" in text:
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": "internal error in completion"}})
+                continue
+            if params.get("context", {}).get("triggerCharacter") == ".":
+                items = [{"label": "append", "kind": 2, "detail": "def append(self, value: T)", "sortText": "1", "data": 1},
+                         {"label": "clear", "kind": 2, "detail": "def clear(self)", "sortText": "2", "data": 2},
+                         {"label": "capacity", "kind": 5, "detail": "Int", "sortText": "0",
+                          "documentation": "How many items fit before the list grows."}]
+                send({"jsonrpc": "2.0", "id": mid, "result": items})
+            elif "NOCOMPLETE" in text:
+                send({"jsonrpc": "2.0", "id": mid, "result": None})
+            else:
+                items = [{"label": "print_line", "kind": 3, "detail": "def print_line(s: String)", "sortText": "b",
+                          "documentation": {"kind": "markdown", "value": "Prints **s** and a line break.\n\n```mojo\nprint_line(\"hi\")\n```\nReturns nothing."}},
+                         {"label": "prefix_len", "kind": 6, "detail": "Int", "sortText": "a"},
+                         {"label": "Path", "kind": 22, "insertText": "Path()", "sortText": "c"},
+                         {"label": "pass", "kind": 14, "sortText": "d"},
+                         {"label": "Zebra", "kind": 7, "filterText": "prZ", "textEdit": {"newText": "zebra.Zebra"}, "sortText": "e"}]
+                send({"jsonrpc": "2.0", "id": mid, "result": {"isIncomplete": False, "items": items}})
+            continue
+        if method == "completionItem/resolve":
+            item = dict(params)
+            item["documentation"] = "Details for %s, fetched on request." % params.get("label")
+            main.resolved = getattr(main, "resolved", []) + [params.get("label")]
+            send({"jsonrpc": "2.0", "id": mid, "result": item})
+            continue
         if method == "textDocument/didSave":
             SAVED.append(params["textDocument"]["uri"])
             continue
         if method == "doc_state":        # what this server holds, for the tests
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "docs": DOCS, "saved": SAVED, "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
+                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
             continue
         if method == "closed_docs":
             send({"jsonrpc": "2.0", "id": mid, "result": getattr(main, "closed", [])})

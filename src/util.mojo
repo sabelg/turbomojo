@@ -122,6 +122,47 @@ def write_file(path: String, data: List[UInt8]) -> Bool:
     return written == n and closed == 0
 
 
+def wrap_plain(text: String, width: Int) -> List[String]:
+    """Text as lines of at most `width` characters, broken at blanks where possible.
+    Line breaks in the text are kept; Markdown code-fence lines are dropped."""
+    var out = List[String]()
+    var w = max(1, width)
+    var cur = List[Int]()
+    var cps = decode(text)
+    cps.append(10)
+    var line = List[Int]()
+    for c in cps:
+        if c != 10:
+            if c != 13:
+                line.append(c if c != 9 else 32)
+            continue
+        var is_fence = len(line) >= 3 and line[0] == 96 and line[1] == 96 and line[2] == 96
+        if not is_fence:
+            var i = 0
+            var n = len(line)
+            if n == 0:
+                out.append("")
+            while i < n:
+                var end = min(n, i + w)
+                if end < n:
+                    # back up to the last blank in this stretch
+                    var b = end
+                    while b > i and line[b] != 32:
+                        b -= 1
+                    if b > i:
+                        end = b
+                out.append(slice_str(line, i, end))
+                i = end
+                while i < n and line[i] == 32 and end < n:
+                    i += 1
+        line.clear()
+    # no blank lines at the end
+    while len(out) > 0 and out[len(out) - 1].byte_length() == 0:
+        _ = out.pop()
+    _ = cur
+    return out^
+
+
 def bytes_to_str(b: List[UInt8]) -> String:
     return String(unsafe_from_utf8=Span(b))
 

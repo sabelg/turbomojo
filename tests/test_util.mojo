@@ -5,7 +5,7 @@ from util import (
     decode, decode_list, encode_cp, to_str, slice_str, str_bytes, bytes_to_str,
     char_width, str_width, cp_len, pad_right, is_digit, is_alpha, is_ident, lower,
     lower_str, fuzzy_score, shell_quote, strip_ansi, join_path, dirname, basename,
-    stem, normalize_path, abs_path, base64,
+    stem, normalize_path, abs_path, base64, wrap_plain,
 )
 
 
@@ -208,6 +208,26 @@ def test_decode_keeps_text_after_a_bad_byte() raises:
     var good: List[UInt8] = [0xC3, 0xA9, 0xE6, 0x97, 0xA5, 0xF0, 0x9F, 0x94, 0xA5]
     var want3: List[Int] = [0xE9, 0x65E5, 0x1F525]
     assert_equal(to_str(decode_list(good)), to_str(want3))
+
+
+
+def joined(lines: List[String]) -> String:
+    var out = String("")
+    for i in range(len(lines)):
+        out += ("|" if i > 0 else "") + lines[i]
+    return out
+
+
+def test_wrap_plain() raises:
+    assert_equal(joined(wrap_plain("one two three four", 9)), "one two|three|four")
+    assert_equal(joined(wrap_plain("abcdefghijkl", 5)), "abcde|fghij|kl")          # a long word is cut
+    assert_equal(joined(wrap_plain("first\n\nsecond line", 20)), "first||second line")
+    assert_equal(joined(wrap_plain("text\n```mojo\ncode()\n```\nmore", 20)), "text|code()|more")
+    assert_equal(joined(wrap_plain("tail\n\n\n", 20)), "tail")
+    assert_equal(joined(wrap_plain("", 20)), "")
+    assert_equal(joined(wrap_plain("日本語 テキスト", 4)), "日本語|テキスト")
+    for l in wrap_plain("a quite long sentence that has to be broken several times over", 11):
+        assert_true(cp_len(l) <= 11, l)
 
 
 def main() raises:
