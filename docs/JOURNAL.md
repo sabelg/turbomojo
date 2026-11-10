@@ -1210,3 +1210,45 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - Hashing reads the whole file once more at load and save; not measured on big files
     below the large-file limit.
 - Verified: `check.sh` CHECK OK (32 files, 675 tests, smoke with the restart scenario).
+
+## 2026-11-10 · P1-20 tree-sitter spike · blocked (decision: keep the lexer)
+
+- Question: can the editor get a real syntax tree for Mojo from tree-sitter using only
+  the project's package channels (conda-forge and the Modular channel)?
+- Found with `pixi search`: `libtree-sitter` 0.27.2 (linux-aarch64 and linux-64),
+  `tree-sitter-cli`, the Python binding `tree_sitter`, and grammars for other languages
+  (`tree-sitter-python` 0.25.0, bash, c, ...). **No Mojo grammar** under any name tried
+  (`tree-sitter-mojo`, `*tree-sitter*`). The task's condition for going on is therefore
+  not met.
+- To have a number rather than a guess, the nearest grammar (Python) was run over this
+  repository's Mojo code in a throwaway pixi environment (`bench/
+  treesitter_python_grammar.py`, environment since deleted): 81 files, 27,394 lines;
+  **all 81 files had errors, 40.0% of all lines lay inside ERROR nodes** (6,139 error or
+  missing nodes of 343,750). The lines that start errors begin with `var` (4,039),
+  `def` (1,343, argument conventions and `raises`), `comptime` (375), `return` (184),
+  `struct` (51), `__extension`, and uses of `^`. A tree that is 40% error is no basis
+  for highlighting, folding or selection.
+- Not measured: the Mojo standard library (the installed toolchain ships no `.mojo`
+  sources), and no FFI binding from Mojo to `libtree-sitter` was written, since there
+  is nothing to load into it.
+- Decision: keep the hand-written lexer with its per-line state cache (P1-03) and
+  indentation folding (P1-13). Structure-aware features come from the language server
+  in Phase 2 (document symbols, folding ranges, semantic tokens where it offers them).
+- What would unblock it: a maintained Mojo grammar published to conda-forge or the
+  Modular channel; or permission to build a grammar from source (needs the tree-sitter
+  CLI, a C compiler and a grammar repository from outside the configured channels,
+  which the runner's rules do not allow). Writing a Mojo grammar ourselves is a project
+  of its own and is not on the roadmap.
+- No dependency was added and no source file changed; only the measuring script and
+  these records. Verified: `check.sh` CHECK OK (32 files, 675 tests).
+
+### Phase 1 summary (2026-11-10)
+
+Tasks P1-01 to P1-19 are done; P1-20 is blocked as described above. The editor core
+now has: a rope with line/UTF-16 summaries, incremental highlighting, grapheme
+clusters, fast loading and a large-file mode, a regex engine checked against Python,
+search and replace with options, find in files, multiple cursors, column selection,
+soft wrap, folding, line operations, auto-closing pairs, rulers, keymaps with two-key
+sequences, the kitty keyboard protocol, macros, BOM/Latin-1 handling, and undo history
+kept between sessions. Things verified only by unit tests, never on a real terminal
+emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinations.
