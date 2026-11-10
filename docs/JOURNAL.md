@@ -51,3 +51,14 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   `test_paste_terminator_split_across_reads` (written with the fix; not run against the old
   code).
 - Verified: 20/20 pass; `check.sh` CHECK OK (smoke test exercises real key input).
+
+## 2026-11-10 · P0-04 highlighter tests · done
+
+- Added `tests/test_highlight.mojo` (19 tests): def/struct/trait/comptime names, keywords,
+  builtins, `self`, keywords inside identifiers, comments, `#` inside strings, escapes,
+  unterminated strings, triple-quoted strings on one line and across lines (both quote
+  kinds, blank lines, reopening on the same line), numbers, digits in identifiers,
+  decorators, string prefixes, symbols.
+- No highlighter bugs found. One test initially failed because of a wrong expected length
+  in the test itself (14 codepoints, not 15); corrected.
+- Verified: 19/19 pass; `check.sh` CHECK OK (4 test files, 84 tests in total).
