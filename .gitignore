@@ -1,0 +1,6 @@
+build/
+examples/build/
+.pixi/
+probe/
+.claude/
+*.swp

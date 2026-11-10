@@ -1,0 +1,170 @@
+"""Mojo syntax highlighter (line-based with triple-quoted string state)."""
+from std.collections import List
+from util import is_digit, is_alpha, is_ident, slice_str
+
+comptime C_TEXT = 0
+comptime C_KW = 1
+comptime C_TYPE = 2
+comptime C_CMT = 3
+comptime C_STR = 4
+comptime C_NUM = 5
+comptime C_DECO = 6
+comptime C_SYM = 7
+comptime C_BUILTIN = 8
+comptime C_SELF = 9
+comptime C_DEF = 10
+comptime C_COUNT = 11
+
+
+def words(s: String) -> List[String]:
+    var out = List[String]()
+    for w in s.split(" "):
+        var t = String(w)
+        if t.byte_length() > 0:
+            out.append(t)
+    return out^
+
+
+struct Highlighter(Movable):
+    var kws: List[String]
+    var types: List[String]
+    var builtins: List[String]
+
+    def __init__(out self):
+        self.kws = words(
+            "def fn struct trait var let alias comptime if elif else for while in return raises raise"
+            " try except finally with as import from pass break continue and or not is True False None"
+            " out mut owned read ref inout borrowed deinit lambda yield async await del global nonlocal"
+            " assert class match case where capturing escaping unsafe"
+        )
+        self.types = words(
+            "Int Int8 Int16 Int32 Int64 Int128 Int256 UInt UInt8 UInt16 UInt32 UInt64 UInt128 UInt256"
+            " Float16 Float32 Float64 BFloat16 Bool String StringLiteral StringSlice List Dict Set"
+            " Optional Variant Tuple SIMD DType Scalar Pointer UnsafePointer OpaquePointer Span Error"
+            " Copyable Movable ImplicitlyCopyable Writable Stringable Representable Hashable EqualityComparable"
+            " Comparable Sized Boolable Intable Absable AnyType NoneType Self Codepoint InlineArray"
+            " LayoutTensor Layout IndexList Writer Origin MutOrigin ImmutOrigin Iterator ArcPointer OwnedPointer"
+        )
+        self.builtins = words(
+            "print len range min max abs round String Int str ord chr isinstance input open rebind"
+            " constrained debug_assert external_call parallelize vectorize sizeof alignof bitcast"
+            " atol atof hash iter next enumerate zip reversed sorted sum any all"
+        )
+
+    def has(self, lst: List[String], w: String) -> Bool:
+        for x in lst:
+            if x == w:
+                return True
+        return False
+
+    def classify(self, w: String) -> Int:
+        if w == "self":
+            return C_SELF
+        if self.has(self.kws, w):
+            return C_KW
+        if self.has(self.types, w):
+            return C_TYPE
+        if self.has(self.builtins, w):
+            return C_BUILTIN
+        return C_TEXT
+
+    def line(self, cps: List[Int], state: Int, mut cls: List[Int]) -> Int:
+        """Fill `cls` with a class per codepoint; returns the state for the next line.
+        state: 0 = normal, 1 = inside \"\"\" string, 2 = inside ''' string."""
+        cls.clear()
+        var n = len(cps)
+        for _ in range(n):
+            cls.append(C_TEXT)
+        var i = 0
+        var st = state
+        if st != 0:
+            var q = 34 if st == 1 else 39
+            var j = 0
+            var found = -1
+            while j + 2 < n + 0:
+                if cps[j] == q and cps[j + 1] == q and cps[j + 2] == q:
+                    found = j
+                    break
+                j += 1
+            if found < 0:
+                for k in range(n):
+                    cls[k] = C_STR
+                return st
+            for k in range(found + 3):
+                cls[k] = C_STR
+            i = found + 3
+            st = 0
+        var prev_word = String("")
+        while i < n:
+            var c = cps[i]
+            if c == 35:
+                for k in range(i, n):
+                    cls[k] = C_CMT
+                break
+            if c == 34 or c == 39:
+                if i + 2 < n and cps[i + 1] == c and cps[i + 2] == c:
+                    var j = i + 3
+                    var found = -1
+                    while j + 2 < n:
+                        if cps[j] == c and cps[j + 1] == c and cps[j + 2] == c:
+                            found = j
+                            break
+                        j += 1
+                    if found < 0:
+                        for k in range(i, n):
+                            cls[k] = C_STR
+                        return 1 if c == 34 else 2
+                    for k in range(i, found + 3):
+                        cls[k] = C_STR
+                    i = found + 3
+                    continue
+                var j = i + 1
+                while j < n:
+                    if cps[j] == 92:
+                        j += 2
+                        continue
+                    if cps[j] == c:
+                        j += 1
+                        break
+                    j += 1
+                for k in range(i, min(j, n)):
+                    cls[k] = C_STR
+                i = j
+                continue
+            if is_digit(c) and (i == 0 or not is_ident(cps[i - 1])):
+                var j = i
+                while j < n and (is_ident(cps[j]) or cps[j] == 46):
+                    j += 1
+                for k in range(i, j):
+                    cls[k] = C_NUM
+                i = j
+                continue
+            if c == 64:
+                var j = i + 1
+                while j < n and (is_ident(cps[j]) or cps[j] == 46):
+                    j += 1
+                for k in range(i, j):
+                    cls[k] = C_DECO
+                i = j
+                continue
+            if is_alpha(c):
+                var j = i
+                while j < n and is_ident(cps[j]):
+                    j += 1
+                var w = slice_str(cps, i, j)
+                var k = self.classify(w)
+                if k == C_TEXT and (prev_word == "def" or prev_word == "struct" or prev_word == "trait" or prev_word == "fn" or prev_word == "comptime"):
+                    k = C_DEF
+                # string prefixes like r"..." / f"..."
+                if j < n and (cps[j] == 34 or cps[j] == 39) and j - i == 1:
+                    k = C_STR
+                for q in range(i, j):
+                    cls[q] = k
+                prev_word = w
+                i = j
+                continue
+            if c != 32:
+                cls[i] = C_SYM
+                prev_word = ""
+            i += 1
+        return st

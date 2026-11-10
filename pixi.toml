@@ -1,0 +1,12 @@
+[workspace]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "turbo-mojo"
+platforms = ["linux-aarch64", "linux-64"]
+version = "0.1.0"
+
+[tasks]
+build = "mkdir -p build && mojo build -I src src/main.mojo -o build/tmide"
+run = { cmd = "./build/tmide", depends-on = ["build"] }
+
+[dependencies]
+mojo = "==1.2.0.dev2026092905"
