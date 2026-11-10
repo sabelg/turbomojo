@@ -1,6 +1,7 @@
 """Double-buffered cell screen with truecolor diff rendering."""
 from std.collections import List
 from util import decode, encode_cp, append_str, append_int, char_width
+from caps import COLOR_16, COLOR_256, COLOR_TRUE, rgb_to_256, rgb_to_16, sgr_16
 
 comptime CONT = -5  # right half of a double-width character
 
@@ -21,6 +22,8 @@ struct Screen(Movable):
     var cy: Int
     var cvis: Bool
     var cblock: Bool
+    var color_mode: Int   # COLOR_TRUE / COLOR_256 / COLOR_16: how colours are sent
+    var sync: Bool        # wrap each frame in synchronized-output markers (mode 2026)
     var cx0: Int
     var cy0: Int
     var cx1: Int
@@ -42,6 +45,8 @@ struct Screen(Movable):
         self.cy = 0
         self.cvis = False
         self.cblock = False
+        self.color_mode = COLOR_TRUE
+        self.sync = True
         self.cx0 = 0
         self.cy0 = 0
         self.cx1 = 0
@@ -225,8 +230,27 @@ struct Screen(Movable):
     def bg_at(self, x: Int, y: Int) -> Int:
         return self.bg[y * self.w + x]
 
+    def emit_color(self, mut out: List[UInt8], rgb: Int, background: Bool):
+        """Append the SGR sequence for one colour in the terminal's colour depth."""
+        if self.color_mode == COLOR_TRUE:
+            append_str(out, "\x1b[48;2;" if background else "\x1b[38;2;")
+            append_int(out, (rgb >> 16) & 255)
+            append_str(out, ";")
+            append_int(out, (rgb >> 8) & 255)
+            append_str(out, ";")
+            append_int(out, rgb & 255)
+        elif self.color_mode == COLOR_256:
+            append_str(out, "\x1b[48;5;" if background else "\x1b[38;5;")
+            append_int(out, rgb_to_256(rgb))
+        else:
+            append_str(out, "\x1b[")
+            append_int(out, sgr_16(rgb_to_16(rgb), background))
+        append_str(out, "m")
+
     def render(mut self, mut out: List[UInt8]):
-        append_str(out, "\x1b[?2026h\x1b[?25l")
+        if self.sync:
+            append_str(out, "\x1b[?2026h")
+        append_str(out, "\x1b[?25l")
         var lastfg = -1
         var lastbg = -1
         var px = -1
@@ -254,22 +278,10 @@ struct Screen(Movable):
                 var f = self.fg[k]
                 var b = self.bg[k]
                 if f != lastfg:
-                    append_str(out, "\x1b[38;2;")
-                    append_int(out, (f >> 16) & 255)
-                    append_str(out, ";")
-                    append_int(out, (f >> 8) & 255)
-                    append_str(out, ";")
-                    append_int(out, f & 255)
-                    append_str(out, "m")
+                    self.emit_color(out, f, False)
                     lastfg = f
                 if b != lastbg:
-                    append_str(out, "\x1b[48;2;")
-                    append_int(out, (b >> 16) & 255)
-                    append_str(out, ";")
-                    append_int(out, (b >> 8) & 255)
-                    append_str(out, ";")
-                    append_int(out, b & 255)
-                    append_str(out, "m")
+                    self.emit_color(out, b, True)
                     lastbg = b
                 var c = self.ch[k]
                 if c < 32:
@@ -294,4 +306,5 @@ struct Screen(Movable):
             append_str(out, "H")
             append_str(out, "\x1b[1 q" if self.cblock else "\x1b[3 q")
             append_str(out, "\x1b[?25h")
-        append_str(out, "\x1b[?2026l")
+        if self.sync:
+            append_str(out, "\x1b[?2026l")

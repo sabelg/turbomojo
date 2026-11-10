@@ -89,7 +89,11 @@ __extension App:
         self.term.crash_log = self.log_path
         self.term.crash_header = "TurboMojo " + VERSION + "  pid " + String(own_pid()) + "  started " + timestamp()
         self.term.enter()
+        var caps = self.term.probe(CAPS_TIMEOUT_MS)
+        self.scr.color_mode = caps.color
+        self.scr.sync = caps.sync_output
         _ = self.sig.open()
+        var early = self.term.take_early()
         while self.running:
             var sz = self.term.size()
             if sz[0] != self.scr.w or sz[1] != self.scr.h:
@@ -113,6 +117,12 @@ __extension App:
             if not self.running:
                 break
             var evs = self.term.poll()
+            if len(early) > 0:
+                # keys typed while the terminal was being probed come first
+                for ev in evs:
+                    early.append(ev.copy())
+                evs = early.copy()
+                early.clear()
             for k in range(len(evs)):
                 try:
                     self.handle(evs[k])

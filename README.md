@@ -27,8 +27,15 @@ Start it through `pixi run` so that `mojo` is on `PATH`, because Build, Run, For
 To use a different compiler binary, set `TURBOMOJO_COMPILER` or change it under
 **Compile ▸ Compiler command…**.
 
-It needs a terminal with truecolor and SGR mouse support. Almost every modern terminal has both
-(kitty, WezTerm, iTerm2, GNOME Terminal, Windows Terminal, tmux, and others).
+It works best in a terminal with 24-bit colour and SGR mouse support (kitty, WezTerm, iTerm2,
+GNOME Terminal, Windows Terminal and others). Colour depth is taken from `$COLORTERM` and
+`$TERM`, and the IDE falls back to 256 or 16 colours where needed; set
+`TURBOMOJO_COLORS=truecolor|256|16` to override. Inside tmux you get 256 colours unless
+`COLORTERM=truecolor` is passed through. To see what your terminal reports:
+
+```bash
+pixi run ./build/tmide --caps
+```
 
 ## Features
 

@@ -2,8 +2,9 @@
 from std.ffi import external_call
 from std.collections import List
 from std.time import perf_counter_ns
-from util import decode_list, append_str
+from util import decode_list, append_str, env_or
 from crash import CrashGuard
+from caps import Caps, CAPS_QUERY, detect_color_level
 
 comptime K_BASE = 0x110000
 comptime KEY_ESC = K_BASE + 1
@@ -68,6 +69,11 @@ def key_event(k: Int) -> Event:
 comptime ESC_TIMEOUT_MS = 25
 
 
+def is_terminal() -> Bool:
+    """True when both input and output are attached to a terminal."""
+    return Int(external_call["isatty", Int32](Int32(0))) == 1 and Int(external_call["isatty", Int32](Int32(1))) == 1
+
+
 def wait_readable(fds: List[Int], timeout_ms: Int) -> Int:
     """Sleep in poll() until one of `fds` is readable or the timeout passes.
 
@@ -111,6 +117,8 @@ struct Terminal(Movable):
     var paste: List[UInt8]
     var last_input_ns: Int
     var guard: CrashGuard
+    var caps: Caps
+    var early: List[Event]     # input that arrived while probing the terminal
     var crash_log: String      # set before enter() to enable the crash guard
     var crash_header: String
 
@@ -123,6 +131,8 @@ struct Terminal(Movable):
         self.paste = List[UInt8]()
         self.last_input_ns = 0
         self.guard = CrashGuard()
+        self.caps = Caps()
+        self.early = List[Event]()
         self.crash_log = ""
         self.crash_header = ""
 
@@ -166,6 +176,34 @@ struct Terminal(Movable):
         self.flush()
         self.cooked()
         self.guard.set_tui(False)
+
+    def probe(mut self, timeout_ms: Int) -> Caps:
+        """Ask the terminal what it supports. Waits until it answers the final request
+        or the timeout passes (a terminal that answers nothing costs one timeout)."""
+        self.caps.color = detect_color_level(env_or("COLORTERM", ""), env_or("TERM", ""), env_or("TURBOMOJO_COLORS", ""))
+        if not is_terminal():
+            return self.caps.copy()     # nobody there to answer
+        append_str(self.out, CAPS_QUERY)
+        self.flush()
+        var deadline = Int(perf_counter_ns()) + timeout_ms * 1000000
+        var fds = List[Int]()
+        fds.append(0)
+        while not self.caps.answered:
+            var left = (deadline - Int(perf_counter_ns())) // 1000000
+            if left <= 0:
+                break
+            if wait_readable(fds, left) == 0:
+                break
+            for e in self.poll():
+                self.early.append(e.copy())
+        return self.caps.copy()
+
+    def take_early(mut self) -> List[Event]:
+        var out = List[Event]()
+        for e in self.early:
+            out.append(e.copy())
+        self.early.clear()
+        return out^
 
     def size(self) -> Tuple[Int, Int]:
         var ws = List[UInt16](length=4, fill=0)
@@ -329,11 +367,15 @@ struct Terminal(Movable):
                         return 1
                     return 0
                 var final = Int(self.inbuf[j])
-                var private = j > i + 2 and Int(self.inbuf[i + 2]) == 60
+                # a leading < = > ? marks a private sequence: "<" is SGR mouse, "?" a reply
+                var marker = 0
+                if j > i + 2 and Int(self.inbuf[i + 2]) >= 60 and Int(self.inbuf[i + 2]) <= 63:
+                    marker = Int(self.inbuf[i + 2])
+                var private = marker == 60
                 var params = List[Int]()
                 var cur = 0
                 var have = False
-                var start = i + 3 if private else i + 2
+                var start = i + 3 if marker != 0 else i + 2
                 for k in range(start, j):
                     var b = Int(self.inbuf[k])
                     if b >= 48 and b <= 57:
@@ -355,7 +397,10 @@ struct Terminal(Movable):
                             Event(EV_MOUSE, 0, params[1] - 1, params[2] - 1, btn, final == 77, (b & 32) != 0, List[Int]())
                         )
                     return j - i + 1
-                self.csi(final, params, evs)
+                if marker == 63:
+                    self.terminal_reply(final, params)
+                elif marker == 0:
+                    self.csi(final, params, evs)
                 return j - i + 1
             if d == 79:
                 if i + 2 >= n:
@@ -406,6 +451,15 @@ struct Terminal(Movable):
             return 0
         evs.append(key_event(self.plain_key(i, l)))
         return l
+
+    def terminal_reply(mut self, final: Int, params: List[Int]):
+        """Replies to our capability queries ("CSI ? ... final"). They produce no events."""
+        if final == 121 and len(params) >= 2:       # DECRPM: CSI ? mode ; value $ y
+            self.caps.mode_report(params[0], params[1])
+        elif final == 117:                          # kitty keyboard: CSI ? flags u
+            self.caps.kitty_keyboard = True
+        elif final == 99:                           # DA1: CSI ? ... c
+            self.caps.answered = True
 
     def csi(mut self, final: Int, params: List[Int], mut evs: List[Event]):
         var mods = 0

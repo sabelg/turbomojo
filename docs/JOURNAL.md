@@ -261,3 +261,33 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   the stack trace (function names) but not that line.
 - Unverified: macOS (`memfd_create` and `dup3` are Linux-specific).
 - Verified: `check.sh` CHECK OK (11 files, 230 tests, smoke incl. crash scenarios).
+
+## 2026-11-10 · P0-13 terminal capability probe · done
+
+- New `src/caps.mojo`: `Caps` (colour depth, synchronized output 2026, grapheme clustering
+  2027, colour-scheme notification 2031, in-band resize 2048, kitty keyboard, whether the
+  terminal answered) and colour mapping (`rgb_to_256`, `rgb_to_16`, `sgr_16`).
+- `Terminal.probe()` sends DECRQM queries, the kitty keyboard query and a final DA1
+  request, and waits up to 150 ms for the DA1 answer. Replies (`CSI ? ...`) are recognised
+  by the input parser and produce no key events; keys typed during the probe are kept and
+  delivered first. Previously `CSI ? 1 u` would have been misread as a key.
+- Colour depth comes from `$COLORTERM`/`$TERM` with a `TURBOMOJO_COLORS` override.
+  `Screen.render` now emits 24-bit, 256-colour (`38;5;N`) or 16-colour SGR codes
+  accordingly, and wraps frames in mode-2026 markers only when the terminal supports them.
+- Behaviour change: inside tmux without `COLORTERM`, the IDE now uses 256 colours (it used
+  to send 24-bit codes regardless). The CGA palette maps to near-identical cube colours.
+- `tmide --caps` prints the detected capabilities. The IDE now refuses to start its UI
+  when stdin/stdout is not a terminal (exit status 2) instead of writing escape codes into
+  a pipe; found when a piped `--caps` run leaked the terminal's reply onto the shell.
+- The detected values are stored for later tasks: kitty keyboard (P1-16), grapheme
+  clustering (P1-04), colour-scheme notification (P7-01). Nothing enables them yet.
+- `tests/test_caps.mojo` (20 tests): reply parsing incl. mixed with typing and split across
+  reads, kitty key events still parsed as keys, colour-level detection and override, cube
+  levels, known 256-colour indices, index validity over ~80k sampled colours, exact CGA
+  mapping to 16 colours, SGR codes, rendering in all three depths, sync markers on/off.
+  One expectation of mine was wrong (0xC0CAF5 is nearer bright white than grey); fixed.
+- Verified live in tmux: `--caps` reports "256 colours, answered: yes"; the UI renders with
+  `38;5;227`/`48;5;19` (auto), `93`/`44` (16-colour) and `38;2;...` (truecolor override).
+  `check.sh` CHECK OK (12 files, 250 tests).
+- Unverified: replies from terminals other than tmux (kitty, WezTerm, Ghostty, iTerm2 are
+  not available here); the parsing is tested against the documented reply formats only.

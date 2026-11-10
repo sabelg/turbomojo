@@ -33,6 +33,7 @@ comptime VERSION = "1.0"
 comptime STATUS_MS = 4000        # how long a status-line message stays
 comptime RESIZE_POLL_MS = 250    # until SIGWINCH handling lands (P0-11)
 comptime SPINNER_MS = 100
+comptime CAPS_TIMEOUT_MS = 150   # how long to wait for the terminal's capability replies
 
 
 def now_ns() -> Int:

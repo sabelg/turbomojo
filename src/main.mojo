@@ -2,12 +2,25 @@
 from std.sys import argv
 from std.ffi import external_call
 from app import *
+from term import is_terminal
 from commands import CM_NEW
 
 
 def main() raises:
     var app = App()
     var args = argv()
+    if len(args) == 2 and String(args[1]) == "--caps":
+        # diagnostics: show what this terminal reports, then exit
+        app.term.raw()
+        var caps = app.term.probe(300)
+        app.term.cooked()
+        print("TurboMojo terminal capabilities")
+        for line in caps.describe():
+            print("  " + line)
+        return
+    if not is_terminal():
+        print("TurboMojo needs an interactive terminal (input or output is redirected).")
+        external_call["exit", NoneType](Int32(2))
     for i in range(1, len(args)):
         try:
             app.open_path(String(args[i]))
