@@ -2,6 +2,7 @@
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
 from caps import (
+    detect_styled_underline,
     Caps, detect_color_level, rgb_to_256, rgb_to_16, sgr_16, cube_level, cube_value,
     ansi16_rgb, COLOR_16, COLOR_256, COLOR_TRUE, CAPS_QUERY,
 )
@@ -88,7 +89,7 @@ def test_describe_lists_every_capability() raises:
     var c = Caps()
     c.sync_output = True
     var lines = c.describe()
-    assert_equal(len(lines), 7)
+    assert_equal(len(lines), 8)
     assert_true(lines[0].endswith("24-bit colour"))
     assert_true(lines[1].endswith(": yes"))
     assert_true(lines[2].endswith(": no"))
@@ -213,6 +214,20 @@ def test_screen_defaults_keep_previous_behaviour() raises:
     var s = Screen(2, 1)
     assert_equal(s.color_mode, COLOR_TRUE)
     assert_true(s.sync)
+
+
+
+def test_styled_underline_guess() raises:
+    assert_true(detect_styled_underline("xterm-kitty", "", "", ""))
+    assert_true(detect_styled_underline("xterm-256color", "WezTerm", "", ""))
+    assert_true(detect_styled_underline("xterm-256color", "", "7600", ""))      # a recent VTE
+    assert_false(detect_styled_underline("xterm-256color", "", "5000", ""))     # an old one
+    assert_false(detect_styled_underline("xterm-256color", "", "", ""))
+    assert_false(detect_styled_underline("xterm-256color", "", "abc", ""))
+    assert_false(detect_styled_underline("tmux-256color", "WezTerm", "7600", ""))   # inside tmux: no
+    assert_false(detect_styled_underline("screen", "", "", ""))
+    assert_true(detect_styled_underline("tmux-256color", "", "", "curly"))      # the user knows better
+    assert_false(detect_styled_underline("xterm-kitty", "", "", "plain"))
 
 
 def main() raises:

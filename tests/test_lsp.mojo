@@ -13,7 +13,7 @@ from term import wait_readable
 from app import *
 from appstate import App, now_ns, M_NORMAL
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, build_registry
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, build_registry
 from term import fkey
 from signals import own_pid
 from util import decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
@@ -320,7 +320,7 @@ def test_ide_shows_live_diagnostics_from_a_server() raises:
     run_ticks(app, 5000, True)
     assert_true(app.lsp_last_latency_ms >= 0, "diagnostics arrived")
     var text = message_text(app)
-    assert_true(text.find("Language server diagnostics for " + path) == 0)
+    assert_true(text.find("Problems reported by the language server") == 0, text)
     assert_true(text.find(path + ":2:7: error: found BUG") > 0, text)
     assert_true(text.find("    second line of detail") > 0)
     assert_true(text.find("1 problem(s)") > 0)
@@ -651,6 +651,136 @@ def test_fake_server_receives_the_include_flags() raises:
     app.lsp_stop()
     var first = bytes_to_str(run_capture("head -1 '" + dir + "/starts.log'").out)
     assert_true(first.find("-I " + dir + " -I " + dir) >= 0, first)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+# ------------------------------------------------------- problems in the UI
+def test_problems_of_all_files_are_listed_and_marked_in_the_editors() raises:
+    var dir = scratch("probs")
+    _ = run_system("printf 'ok line\\n  a BUG here\\n' > '" + dir + "/a.mojo'; printf 'x = 1 WARN\\nfine\\nBUG\\n' > '" + dir + "/b.mojo'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.lsp_server = FAKE
+    app.open_path(dir + "/a.mojo")
+    app.open_path(dir + "/b.mojo")
+    app.focus(app.find_editor(dir + "/a.mojo"))
+    app.exec(CM_LSP)
+    var t0 = now()
+    while len(app.errs) < 3 and now() - t0 < 8000 * MS:
+        run_ticks(app, 30, False)
+    var text = message_text(app)
+    # the active file first, then the other; one line per problem
+    var a_at = text.find(dir + "/a.mojo:2:5: error: found BUG")
+    var b_warn = text.find(dir + "/b.mojo:1:7: warning: found WARN")
+    var b_err = text.find(dir + "/b.mojo:3:1: error: found BUG")
+    assert_true(a_at > 0 and b_warn > a_at and b_err > b_warn, text)
+    assert_true(text.find("3 problem(s) in 2 files") > 0, text)
+    assert_equal(app.wins[app.msg_index()].title, "Problems")
+    assert_equal(len(app.errs), 3)
+    # the windows know their problems
+    var ai = app.find_editor(dir + "/a.mojo")
+    var bi = app.find_editor(dir + "/b.mojo")
+    assert_equal(len(app.wins[ai].buf.marks), 1)
+    assert_equal(app.wins[ai].buf.marks[0].l1, 1)
+    assert_equal(app.wins[ai].buf.marks[0].c1, 4)
+    assert_equal(app.wins[ai].buf.marks[0].c2, 7)
+    assert_equal(app.wins[ai].buf.marks[0].severity, SEV_ERROR)
+    assert_equal(len(app.wins[bi].buf.marks), 2)
+    assert_equal(app.wins[bi].buf.mark_severity(0), SEV_WARNING)
+    assert_equal(app.wins[bi].buf.mark_severity(1), 0)
+    assert_equal(app.wins[bi].buf.mark_severity(2), SEV_ERROR)
+    # drawn: underlined range, coloured line number
+    app.draw()
+    var wx = app.wins[ai].x + 1 + app.wins[ai].gut
+    var wy = app.wins[ai].y + 1
+    assert_true(app.scr.ul_at(wx + 4, wy + 1) != 0, "the word BUG is underlined")
+    assert_true(app.scr.ul_at(wx + 6, wy + 1) != 0)
+    assert_equal(app.scr.ul_at(wx + 3, wy + 1), 0)
+    assert_equal(app.scr.ul_at(wx + 7, wy + 1), 0)
+    assert_equal(app.scr.ul_at(wx + 4, wy), 0)
+    assert_equal(app.scr.fg_at(app.wins[ai].x + 3, wy + 1), app.pal.diag_err)     # the "2" of the line number
+    assert_true(app.scr.fg_at(app.wins[ai].x + 3, wy) != app.pal.diag_err)
+    # the status line explains the problem on the cursor line
+    app.wins[ai].goto(1, 0)
+    app.status_until = 0
+    app.draw()
+    var last = to_str(app.scr.row_text(app.scr.h - 1))
+    assert_true(last.find("error: found BUG") > 0, last)
+    assert_true(last.find("INS") > 0, last)
+    app.wins[ai].goto(0, 0)
+    app.draw()
+    assert_true(to_str(app.scr.row_text(app.scr.h - 1)).find("found BUG") < 0)
+    # next problem / previous problem walk the list across files
+    app.exec(CM_NEXTERR)
+    assert_equal(app.wins[app.top()].path, dir + "/a.mojo")
+    assert_equal(app.wins[app.top()].cr, 1)
+    app.exec(CM_NEXTERR)
+    assert_equal(app.wins[app.top()].path, dir + "/b.mojo")
+    assert_equal(app.wins[app.top()].cr, 0)
+    assert_equal(app.wins[app.top()].cc, 6)
+    app.exec(CM_PREVERR)
+    assert_equal(app.wins[app.top()].path, dir + "/a.mojo")
+    # stopping the server takes the marks away
+    app.lsp_stop()
+    assert_equal(len(app.wins[app.find_editor(dir + "/a.mojo")].buf.marks), 0)
+    assert_equal(len(app.wins[app.find_editor(dir + "/b.mojo")].buf.marks), 0)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_problem_marks_follow_edits_until_the_server_answers() raises:
+    var dir = scratch("shift")
+    _ = run_system("printf 'one\\ntwo BUG\\nthree\\n' > '" + dir + "/a.mojo'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.lsp_server = FAKE
+    app.open_path(dir + "/a.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    var i = app.find_editor(dir + "/a.mojo")
+    assert_equal(app.wins[i].buf.marks[0].l1, 1)
+    _ = app.wins[i].buf.insert(0, 0, decode("new\nlines\n"), 0, 0, 0)     # two lines above
+    assert_equal(app.wins[i].buf.marks[0].l1, 3)                           # at once, before any answer
+    _ = app.wins[i].buf.delete(0, 0, 1, 0, 0, 0, 0)
+    assert_equal(app.wins[i].buf.marks[0].l1, 2)
+    _ = app.wins[i].buf.delete(1, 0, 3, 0, 0, 0, 0)                        # the marked line is deleted
+    assert_equal(len(app.wins[i].buf.marks), 0)
+    # the server's next report is the truth again
+    var t0 = now()
+    while app.lsp_change_due == 0 and now() - t0 < 1000 * MS:
+        run_ticks(app, 20, False)
+    run_ticks(app, 1500, False)
+    assert_equal(len(app.wins[i].buf.marks), 0)
+    assert_true(message_text(app).find("No problems found") > 0)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_columns_of_problems_after_wide_characters() raises:
+    var dir = scratch("wide")
+    _ = run_system("printf 'x = \"🔥🔥\" BUG\\n' > '" + dir + "/a.mojo'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.lsp_server = FAKE
+    app.open_path(dir + "/a.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    var i = app.find_editor(dir + "/a.mojo")
+    # the server counted each emoji as two units; the editor as one character
+    assert_equal(app.wins[i].buf.marks[0].c1, 9)
+    assert_equal(app.wins[i].buf.marks[0].c2, 12)
+    assert_true(message_text(app).find("a.mojo:1:10: error") > 0, message_text(app))
+    app.draw()
+    var wx = app.wins[i].x + 1 + app.wins[i].gut
+    var wy = app.wins[i].y + 1
+    # on screen the emoji are two columns each: "BUG" starts at column 11
+    assert_equal(app.scr.ul_at(wx + 10, wy), 0)
+    assert_true(app.scr.ul_at(wx + 11, wy) != 0)
+    assert_true(app.scr.ul_at(wx + 13, wy) != 0)
+    assert_equal(app.scr.ul_at(wx + 14, wy), 0)
+    app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 
 

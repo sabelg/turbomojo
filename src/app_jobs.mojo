@@ -74,6 +74,7 @@ __extension App:
 
     def fill_messages(mut self, header: String, data: List[UInt8], footer: String) -> Tuple[Int, Int]:
         var mi = self.ensure_msg()
+        self.wins[mi].title = "Message"
         var all = decode_list(data)
         var text = decode(header)
         text.append(10)

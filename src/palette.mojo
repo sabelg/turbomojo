@@ -50,6 +50,9 @@ struct Palette(Copyable, Movable):
     var bracket_bg: Int
     var match_fg: Int       # other matches of the current search
     var match_bg: Int
+    var diag_err: Int       # problem underlines and line numbers
+    var diag_warn: Int
+    var diag_note: Int
     var ruler_bg: Int       # the column guides (editor.rulers)
     var icon_fg: Int
     var scroll_fg: Int
@@ -112,6 +115,9 @@ struct Palette(Copyable, Movable):
         self.match_fg = BLACK
         self.match_bg = BROWN
         self.ruler_bg = 0x000080
+        self.diag_err = LRED
+        self.diag_warn = YELLOW
+        self.diag_note = LCYAN
         self.icon_fg = LGREEN
         self.scroll_fg = BLUE
         self.scroll_bg = CYAN
@@ -178,6 +184,9 @@ def theme(n: Int) -> Palette:
         p.match_fg = 0xC0CAF5
         p.match_bg = 0x5A4A1E
         p.ruler_bg = 0x24283B
+        p.diag_err = 0xF7768E
+        p.diag_warn = 0xE0AF68
+        p.diag_note = 0x7DCFFF
         p.icon_fg = 0xF7768E
         p.scroll_fg = 0x3B4261
         p.scroll_bg = 0x1A1B26
@@ -244,6 +253,9 @@ def theme(n: Int) -> Palette:
         p.match_fg = bk
         p.match_bg = lo
         p.ruler_bg = 0x241800
+        p.diag_err = 0xFF5533
+        p.diag_warn = 0xFFDD66
+        p.diag_note = hi
         p.icon_fg = hi
         p.scroll_fg = lo
         p.scroll_bg = bk

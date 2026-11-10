@@ -109,7 +109,15 @@ __extension Window:
                 for _ in range(pad):
                     s += " "
                 s += num + " "
-                _ = scr.text(self.x + 1, yy, s, pal.frame_act if r == self.cr and active else pal.gutter_fg, pal.gutter_bg)
+                var num_fg = pal.frame_act if r == self.cr and active else pal.gutter_fg
+                var sev = self.buf.mark_severity(r) if len(self.buf.marks) > 0 else 0
+                if sev == 1:
+                    num_fg = pal.diag_err           # a problem on this line
+                elif sev == 2:
+                    num_fg = pal.diag_warn
+                elif sev > 2:
+                    num_fg = pal.diag_note
+                _ = scr.text(self.x + 1, yy, s, num_fg, pal.gutter_bg)
                 if fold_mark != 32:
                     scr.put(self.x + self.gut, yy, fold_mark, pal.frame_act if fold_mark == 0x25B8 else pal.gutter_fg, pal.gutter_bg)
             var n = len(ln)
@@ -186,6 +194,21 @@ __extension Window:
             # selection past end of line shows the newline
             if has_sel and sr.r1 <= r and r < sr.r2 and s1 == n and v >= off and v < lim:
                 scr.put(cx0 + v - off, yy, 32, pal.sel_fg, pal.sel_bg)
+            # problems reported for this line: underline the range (at least one cell)
+            for m in self.buf.marks:
+                if r < m.l1 or r > m.l2 or is_msg:
+                    continue
+                var a_c = m.c1 if r == m.l1 else 0
+                var b_c = m.c2 if r == m.l2 else n
+                a_c = max(s0, min(a_c, n))
+                b_c = max(a_c, min(b_c, s1))
+                if a_c > s1 or (a_c == s1 and s1 < n):
+                    continue                    # on another screen row of this line
+                var va = self.vcol(r, a_c)
+                var vb = max(va + 1, self.vcol(r, b_c))
+                var ucol = pal.diag_err if m.severity == 1 else (pal.diag_warn if m.severity == 2 else pal.diag_note)
+                for uv in range(max(va, off), min(vb, lim)):
+                    scr.underline(cx0 + uv - off, yy, True, ucol)
             # column guides: only where nothing else colours the cell
             if not is_msg and not self.wrap:
                 for rc in self.rulers:

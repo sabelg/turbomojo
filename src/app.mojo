@@ -100,6 +100,7 @@ __extension App:
         var caps = self.term.probe(CAPS_TIMEOUT_MS)
         self.scr.color_mode = caps.color
         self.scr.sync = caps.sync_output
+        self.scr.styled_ul = caps.styled_underline
         if caps.kitty_keyboard:
             self.term.set_kitty(True)
         if caps.grapheme:

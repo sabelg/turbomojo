@@ -12,6 +12,7 @@ from menu import build_menus, draw_menubar, draw_dropdown
 from commands import build_registry, CM_LINENUM
 from dialog import Dialog, Field, D_FIND, D_INFO
 from window import Window, WK_EDITOR, WK_MESSAGE
+from buffer import Mark
 from window_search import *
 from window_draw import *
 from util import decode, to_str, env_or, path_exists, bytes_to_str, str_bytes, cp_len
@@ -288,6 +289,122 @@ def test_large_file_mode_draws_without_syntax_colours() raises:
     assert_equal(row(s2, 1), row(s, 1))                       # same text either way
     assert_true(row(s2, 0).find(" t.mojo (large file) ") > 0, "the frame says why colours are missing")
     assert_true(row(s, 0).find("large") < 0)
+
+
+
+# ---------------------------------------------------------------- underlines
+def has(data: List[UInt8], needle: String) -> Bool:
+    return bytes_to_str(data).find(needle) >= 0
+
+
+def test_underline_is_sent_plain_or_curly_and_always_switched_off() raises:
+    var s = Screen(10, 1)
+    _ = s.text(0, 0, "abcdef", 1, 2)
+    s.underline(2, 0, True, 0xFF8040)
+    s.underline(3, 0, True, 0xFF8040)
+    assert_equal(s.ul_at(2, 0), 3)
+    assert_equal(s.ul_at(1, 0), 0)
+    var plain = List[UInt8]()
+    s.render(plain)
+    assert_true(has(plain, "\x1b[4mcd\x1b[24me"), "plain underline around cd")
+    assert_false(has(plain, "58:2"))
+    assert_true(bytes_to_str(plain).find("\x1b[24m") > 0)
+    # the same on a terminal with styled underlines
+    var t = Screen(10, 1)
+    t.styled_ul = True
+    _ = t.text(0, 0, "abcdef", 1, 2)
+    t.underline(2, 0, True, 0xFF8040)
+    t.underline(3, 0, False, 0x102030)
+    var styled = List[UInt8]()
+    t.render(styled)
+    assert_true(has(styled, "\x1b[4:3m\x1b[58:2::255:128:64mc"), bytes_to_str(styled))
+    assert_true(has(styled, "\x1b[4:1m\x1b[58:2::16:32:48md"))
+    assert_true(has(styled, "\x1b[24me"))
+
+
+def test_underline_changes_are_redrawn_and_drawing_clears_them() raises:
+    var s = Screen(6, 1)
+    _ = s.text(0, 0, "abc", 1, 2)
+    var first = List[UInt8]()
+    s.render(first)
+    s.underline(1, 0, False, 0)
+    var second = List[UInt8]()
+    s.render(second)
+    assert_true(has(second, "\x1b[4mb\x1b[24m"), "only the newly underlined cell is sent")
+    assert_false(has(second, "a"))
+    var third = List[UInt8]()
+    s.render(third)                                     # nothing changed
+    assert_false(has(third, "b"))
+    _ = s.text(0, 0, "abc", 1, 2)                       # the next frame draws the text again
+    assert_equal(s.ul_at(1, 0), 0)
+    var fourth = List[UInt8]()
+    s.render(fourth)
+    assert_true(has(fourth, "b"), "the cell is sent again, now without the underline")
+    assert_false(has(fourth, "\x1b[4m"))
+    # a wide character is underlined as a whole, from either of its cells
+    var w = Screen(6, 1)
+    _ = w.text(0, 0, "日x", 1, 2)
+    w.underline(1, 0, True, 0)
+    assert_equal(w.ul_at(0, 0), 3)
+    w.clip(0, 0, 1, 1)
+    w.underline(3, 0, True, 0)                          # outside the clip: ignored
+    w.no_clip()
+    assert_equal(w.ul_at(3, 0), 0)
+
+
+def test_window_underlines_problem_ranges() raises:
+    var p = theme(0)
+    var h = Highlighter()
+    var w = Window(WK_EDITOR, "t.mojo", "", 0, 0, 40, 8, 1)
+    w.buf.load(decode("abc def\n\tx = 日本 y\nlast\n"))
+    w.gut = w.gutter_for(True)
+    w.buf.marks.append(Mark(0, 4, 0, 7, 1, "bad word"))                 # "def"
+    w.buf.marks.append(Mark(1, 5, 1, 7, 2, "two wide characters"))       # "日本" after a tab
+    w.buf.marks.append(Mark(2, 4, 2, 4, 1, "something missing at the end"))
+    w.buf.marks.append(Mark(0, 0, 0, 0, 3, "a note at the start"))
+    var s = Screen(40, 8)
+    w.draw(s, p, h, False, False, True, False)
+    var x0 = 1 + w.gut
+    assert_equal(s.ul_at(x0 + 4, 1), 3)
+    assert_equal(s.ul_at(x0 + 6, 1), 3)
+    assert_equal(s.ul_at(x0 + 7, 1), 0)
+    assert_equal(s.ul_at(x0 + 3, 1), 0)
+    assert_equal(s.ul_at(x0, 1), 3)                     # an empty range still shows one cell
+    assert_equal(s.ul_at(x0 + 1, 1), 0)
+    # row 2: tab (4 columns), "x = " then the two wide characters at columns 8..11
+    assert_equal(s.ul_at(x0 + 7, 2), 0)
+    assert_equal(s.ul_at(x0 + 8, 2), 3)
+    assert_equal(s.ul_at(x0 + 11, 2), 3)
+    assert_equal(s.ul_at(x0 + 12, 2), 0)
+    # row 3: at the end of "last": the cell after it
+    assert_equal(s.ul_at(x0 + 4, 3), 3)
+    assert_equal(s.ul_at(x0 + 3, 3), 0)
+    # line numbers take the colour of the worst problem on the line
+    assert_equal(s.fg_at(3, 1), p.diag_err)
+    assert_equal(s.fg_at(3, 2), p.diag_warn)
+    assert_equal(s.fg_at(3, 3), p.diag_err)
+    assert_equal(s.fg_at(3, 4), p.gutter_fg)
+    # loading another text forgets the problems
+    w.buf.load(decode("clean"))
+    assert_equal(len(w.buf.marks), 0)
+
+
+def test_multi_line_problem_range() raises:
+    var w = Window(WK_EDITOR, "t.mojo", "", 0, 0, 30, 8, 1)
+    w.buf.load(decode("ab(\n  cd,\n  ef)\nzz"))
+    w.buf.marks.append(Mark(0, 2, 2, 5, 2, "the whole call"))
+    var s = Screen(30, 8)
+    w.draw(s, theme(0), Highlighter(), False, False, True, False)
+    assert_equal(s.ul_at(1 + 1, 1), 0)
+    assert_equal(s.ul_at(1 + 2, 1), 3)                  # from the "(" to the end of the first line
+    assert_equal(s.ul_at(1 + 0, 2), 3)                  # all of the middle line
+    assert_equal(s.ul_at(1 + 4, 2), 3)
+    assert_equal(s.ul_at(1 + 4, 3), 3)                  # up to the ")" on the last
+    assert_equal(s.ul_at(1 + 5, 3), 0)
+    assert_equal(s.ul_at(1 + 0, 4), 0)
+    assert_equal(w.buf.mark_severity(1), 2)
+    assert_equal(w.buf.mark_text(1), "")                # the message belongs to the first line
+    assert_equal(w.buf.mark_text(0), "warning: the whole call")
 
 
 def main() raises:

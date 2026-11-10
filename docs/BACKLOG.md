@@ -57,7 +57,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 
 - [x] P2-01 LSP client core: initialize/initialized/shutdown, capability table, restart on crash, per-project `-I` paths
 - [x] P2-02 Document sync: didOpen/didChange (incremental, UTF-16 positions from the rope)/didSave/didClose with debounce
-- [ ] P2-03 Diagnostics: underlines (curly when supported), gutter marks, Problems window, next/previous problem
+- [x] P2-03 Diagnostics: underlines (curly when supported), gutter marks, Problems window, next/previous problem
 - [ ] P2-04 Completion popup from the server (kinds, detail, docs panel), merged with word completion
 - [ ] P2-05 Hover window with Markdown-to-cells rendering
 - [ ] P2-06 Signature help

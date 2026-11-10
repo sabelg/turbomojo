@@ -1345,3 +1345,45 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   on the line the editor has it on). So ranged changes with UTF-16 columns work against
   the real server, which closes the first "unverified" item of the entry above.
 - Verified: `check.sh` CHECK OK (32 files, 693 tests).
+
+## 2026-11-10 · P2-03 diagnostics in the editor · done
+
+- Screen: a per-cell underline attribute (`ul`, `underline()`, `ul_at()`), part of the
+  frame comparison. Rendered as `SGR 4` and switched off with `SGR 24` after the run and
+  at the end of every frame; on terminals that can, as `SGR 4:3` (curly) with the colour
+  in `SGR 58`. Whether a terminal can is guessed from `TERM`, `TERM_PROGRAM` and
+  `VTE_VERSION` (`caps.detect_styled_underline`); never inside tmux or screen;
+  `TURBOMOJO_UNDERLINE=curly|plain` overrides. `--caps` shows the guess.
+- Buffer: `marks` (line/column range, severity, message) with `mark_severity` and
+  `mark_text`. Marks move with inserted and removed lines, and a mark on a deleted line
+  goes, so they stay on their text until the server reports again.
+- Editor window: the range of each problem is underlined (an empty range and a problem
+  at the end of a line show one cell; multi-line ranges cover every line), in the
+  colour of its severity (new palette entries); the line number takes the colour of the
+  worst problem on its line.
+- Status line: while the cursor is on a line where a problem starts, its message takes
+  the place of the key hints.
+- Problems list: the Message window, titled "Problems", now lists the problems of all
+  files the server has reported on (active file first), with a count per files; the
+  compiler-message navigation (Enter, Alt-F8, Alt-F7) walks it across files.
+- Regression fixed: since P1-17 the INS/OVR indicator was shown only while a macro was
+  being recorded (an indentation slip when the REC indicator was added; no test looked
+  at it). A test now does.
+- Tests: 4 in `tests/test_screen.mojo` (underline bytes plain and styled, redraw and
+  clearing, wide characters and clipping, window underlines with tabs and wide
+  characters, multi-line range), 1 in `tests/test_caps.mojo`, 3 in `tests/test_lsp.mojo`
+  (two files listed and marked, colours, status hint, INS, next/previous, cleared on
+  stop; marks following edits; columns after emoji). The header text of the list
+  changed, so one older assertion was updated.
+- Tried by hand in tmux with the real server on a file with a type error: red line
+  number, `"oops"` underlined, the message in the status line and in the Problems
+  window.
+- Not done / unverified:
+  - Curly, coloured underlines were only checked as output bytes; no terminal that
+    draws them was available (tmux gets the plain form by design).
+  - Problems are known only for open files; nothing is listed for the rest of the
+    project. Related information and diagnostic tags (unused, deprecated) are ignored.
+  - There are no separate gutter symbols: the line number's colour is the mark, so
+    without line numbers only the underline shows.
+  - Columns inside a line are not adjusted while typing before the server answers.
+- Verified: `check.sh` CHECK OK (32 files, 701 tests).

@@ -5,7 +5,7 @@ The text itself lives in `Rope` (src/rope.mojo), so loading, editing and line lo
 fast on very large files. Line endings are normalised to "\n" in memory; `crlf` remembers
 that the file used CR LF and `to_bytes` writes it back that way."""
 from std.collections import List
-from util import encode_cp, decode_list
+from util import encode_cp, decode_list, decode, to_str
 from rope import Rope
 
 comptime UNDO_INSERT = 1
@@ -46,6 +46,17 @@ struct DocChange(Copyable, Movable):
     var text: List[Int]
 
 
+@fieldwise_init
+struct Mark(Copyable, Movable):
+    """A problem reported for a range of the text (lines and character columns)."""
+    var l1: Int
+    var c1: Int
+    var l2: Int
+    var c2: Int
+    var severity: Int      # 1 error, 2 warning, 3 information, 4 hint
+    var message: String
+
+
 comptime ENC_UTF8 = 0
 comptime ENC_LATIN1 = 1
 
@@ -58,6 +69,7 @@ struct TextBuffer(Copyable, Movable):
     var folds: List[Int]      # rows of the folded block headers, ascending
     var fold_ends: List[Int]  # last hidden row of each fold (as of fold_version)
     var fold_version: Int
+    var marks: List[Mark]     # problems shown in this buffer (from the language server)
     var track: Bool           # record edits in `changes` (a language server follows this buffer)
     var changes: List[DocChange]
     var changes_lost: Bool    # too much happened, or the text was replaced: send it whole
@@ -89,6 +101,7 @@ struct TextBuffer(Copyable, Movable):
         self.bom = False
         self.encoding = ENC_UTF8
         self.mixed_eol = False
+        self.marks = List[Mark]()
         self.track = False
         self.changes = List[DocChange]()
         self.changes_lost = False
@@ -265,7 +278,33 @@ struct TextBuffer(Copyable, Movable):
         self.drop_changes()
         return out^
 
+    def mark_severity(self, r: Int) -> Int:
+        """The most serious problem that touches line r (1 = error ... 4 = hint; 0 none)."""
+        var best = 0
+        for m in self.marks:
+            if r >= m.l1 and r <= m.l2 and (best == 0 or m.severity < best):
+                best = m.severity
+        return best
+
+    def mark_text(self, r: Int) -> String:
+        """"error: message" for the most serious problem that starts on line r ('' if
+        none); only the first line of the message."""
+        var best = -1
+        for i in range(len(self.marks)):
+            if self.marks[i].l1 == r and (best < 0 or self.marks[i].severity < self.marks[best].severity):
+                best = i
+        if best < 0:
+            return ""
+        var word = String("error") if self.marks[best].severity == 1 else (String("warning") if self.marks[best].severity == 2 else String("note"))
+        var first = List[Int]()
+        for c in decode(self.marks[best].message):
+            if c == 10:
+                break
+            first.append(c)
+        return word + ": " + to_str(first)
+
     def after_load(mut self):
+        self.marks.clear()
         if self.track:
             self.drop_changes()
             self.changes_lost = True       # a different text altogether
@@ -586,6 +625,13 @@ struct TextBuffer(Copyable, Movable):
             if ch == 10:
                 breaks += 1
         self.note_edit(rr, 0, breaks)
+        if breaks > 0 and len(self.marks) > 0:
+            # problems below the insertion keep pointing at their lines until the
+            # server reports again
+            for i in range(len(self.marks)):
+                if self.marks[i].l1 > rr or (self.marks[i].l1 == rr and cc <= self.marks[i].c1):
+                    self.marks[i].l1 += breaks
+                    self.marks[i].l2 += breaks
         if breaks > 0 and len(self.folds) > 0:
             # folded headers below the insertion move down with their lines
             for i in range(len(self.folds)):
@@ -610,6 +656,14 @@ struct TextBuffer(Copyable, Movable):
             out = self.rope.slice(a, b)
             self.rope.delete(a, b)
             self.note_edit(first, breaks, 0)
+            if breaks > 0 and len(self.marks) > 0:
+                var left = List[Mark]()
+                for m in self.marks:
+                    if m.l1 <= first:
+                        left.append(m.copy())
+                    elif m.l1 > first + breaks:
+                        left.append(Mark(m.l1 - breaks, m.c1, m.l2 - breaks, m.c2, m.severity, m.message))
+                self.marks = left^
             if breaks > 0 and len(self.folds) > 0:
                 # headers on removed lines lose their fold; the ones below move up
                 var kept = List[Int]()

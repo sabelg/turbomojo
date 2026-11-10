@@ -26,6 +26,7 @@ struct Caps(Copyable, Movable):
     var color_scheme: Bool     # mode 2031: light/dark change notifications
     var inband_resize: Bool    # mode 2048: resize reports on the input stream
     var kitty_keyboard: Bool   # progressive keyboard enhancement protocol
+    var styled_underline: Bool # curly and coloured underlines (guessed from the environment)
     var answered: Bool         # the terminal replied to the final DA1 request
 
     def __init__(out self):
@@ -35,6 +36,7 @@ struct Caps(Copyable, Movable):
         self.color_scheme = False
         self.inband_resize = False
         self.kitty_keyboard = False
+        self.styled_underline = False
         self.answered = False
 
     def mode_report(mut self, mode: Int, value: Int):
@@ -59,12 +61,37 @@ struct Caps(Copyable, Movable):
         out.append("colour-scheme notify: " + yes_no(self.color_scheme))
         out.append("in-band resize      : " + yes_no(self.inband_resize))
         out.append("kitty keyboard      : " + yes_no(self.kitty_keyboard))
+        out.append("curly underlines    : " + yes_no(self.styled_underline) + " (guessed)")
         out.append("answered queries    : " + yes_no(self.answered))
         return out^
 
 
 def yes_no(b: Bool) -> String:
     return "yes" if b else "no"
+
+
+def detect_styled_underline(term: String, term_program: String, vte_version: String, override: String) -> Bool:
+    """Can the terminal draw curly, coloured underlines (SGR 4:3 and 58)? There is no
+    query for it, so this goes by the names of terminals known to do it; the user can
+    decide with TURBOMOJO_UNDERLINE=curly|plain. Inside tmux or screen the answer is no:
+    they pass the sequences on only when configured to."""
+    if override == "curly":
+        return True
+    if override == "plain":
+        return False
+    if term.startswith("tmux") or term.startswith("screen"):
+        return False
+    if term.find("kitty") >= 0 or term.find("ghostty") >= 0 or term.find("wezterm") >= 0 or term.find("foot") >= 0 or term.find("alacritty") >= 0 or term.find("contour") >= 0:
+        return True
+    if term_program == "WezTerm" or term_program == "ghostty" or term_program == "iTerm.app" or term_program == "vscode":
+        return True
+    # VTE (GNOME Terminal and relatives) since 0.52
+    var v = 0
+    for b in vte_version.as_bytes():
+        if b < 48 or b > 57:
+            return False
+        v = v * 10 + Int(b) - 48
+    return v >= 5200
 
 
 def detect_color_level(colorterm: String, term: String, override: String) -> Int:

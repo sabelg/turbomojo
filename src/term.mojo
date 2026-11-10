@@ -4,7 +4,7 @@ from std.collections import List
 from std.time import perf_counter_ns
 from util import decode_list, append_str, env_or
 from crash import CrashGuard
-from caps import Caps, CAPS_QUERY, detect_color_level
+from caps import Caps, CAPS_QUERY, detect_color_level, detect_styled_underline
 
 comptime K_BASE = 0x110000
 comptime KEY_ESC = K_BASE + 1
@@ -213,6 +213,9 @@ struct Terminal(Movable):
         """Ask the terminal what it supports. Waits until it answers the final request
         or the timeout passes (a terminal that answers nothing costs one timeout)."""
         self.caps.color = detect_color_level(env_or("COLORTERM", ""), env_or("TERM", ""), env_or("TURBOMOJO_COLORS", ""))
+        self.caps.styled_underline = detect_styled_underline(
+            env_or("TERM", ""), env_or("TERM_PROGRAM", ""), env_or("VTE_VERSION", ""), env_or("TURBOMOJO_UNDERLINE", "")
+        )
         if not is_terminal():
             return self.caps.copy()     # nobody there to answer
         append_str(self.out, CAPS_QUERY)

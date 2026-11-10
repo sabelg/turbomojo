@@ -19,6 +19,9 @@ struct Screen(Movable):
     var pbg: List[Int]
     var cmb: List[Int]
     var pcmb: List[Int]
+    var ul: List[Int]           # underline per cell: 0 none, else (kind << 24) | colour; kind 1 straight, 3 curly
+    var pul: List[Int]
+    var styled_ul: Bool         # the terminal draws curly and coloured underlines
     var xseq: List[List[Int]]   # pool of multi-codepoint cell extras (see intern)
     var clustered: Bool         # terminal draws grapheme clusters as one glyph (mode 2027)
     var force: Bool
@@ -44,6 +47,9 @@ struct Screen(Movable):
         self.pbg = List[Int]()
         self.cmb = List[Int]()
         self.pcmb = List[Int]()
+        self.ul = List[Int]()
+        self.pul = List[Int]()
+        self.styled_ul = False
         self.xseq = List[List[Int]]()
         self.clustered = False
         self.force = True
@@ -71,6 +77,8 @@ struct Screen(Movable):
         self.pbg = List[Int](length=n, fill=-1)
         self.cmb = List[Int](length=n, fill=0)
         self.pcmb = List[Int](length=n, fill=0)
+        self.ul = List[Int](length=n, fill=0)
+        self.pul = List[Int](length=n, fill=0)
         self.force = True
         self.no_clip()
 
@@ -148,6 +156,7 @@ struct Screen(Movable):
         for j in range(n):
             self.ch[k + j] = CONT if j > 0 else c
             self.cmb[k + j] = 0
+            self.ul[k + j] = 0
             self.fg[k + j] = fg
             self.bg[k + j] = bg
         self.cmb[k] = xid
@@ -214,6 +223,19 @@ struct Screen(Movable):
             return x
         self.put(x, y, c, fg, bg)
         return x + max(w, 1)
+
+    def underline(mut self, x: Int, y: Int, curly: Bool, rgb: Int):
+        """Underline the character already drawn at (x, y). `curly` and the colour are
+        used on terminals that can draw them; elsewhere it is a plain underline in the
+        text colour. Drawing a character there again removes it."""
+        if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
+            return
+        var k = self.head_of(y * self.w + x)
+        self.ul[k] = ((3 if curly else 1) << 24) | (rgb & 0xFFFFFF)
+
+    def ul_at(self, x: Int, y: Int) -> Int:
+        """0 = not underlined, 1 = straight, 3 = curly."""
+        return self.ul[self.head_of(y * self.w + x)] >> 24
 
     def set_fg(mut self, x: Int, y: Int, fg: Int):
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
@@ -336,6 +358,7 @@ struct Screen(Movable):
         append_str(out, "\x1b[?25l")
         var lastfg = -1
         var lastbg = -1
+        var lastul = 0          # every frame ends with underlining switched off
         var px = -1
         var py = -1
         for y in range(self.h):
@@ -349,7 +372,7 @@ struct Screen(Movable):
                     continue
                 if (
                     not self.force and self.ch[k] == self.pch[k] and self.cmb[k] == self.pcmb[k]
-                    and self.fg[k] == self.pfg[k] and self.bg[k] == self.pbg[k]
+                    and self.fg[k] == self.pfg[k] and self.bg[k] == self.pbg[k] and self.ul[k] == self.pul[k]
                 ):
                     continue
                 if py != y or px != x:
@@ -366,6 +389,23 @@ struct Screen(Movable):
                 if b != lastbg:
                     self.emit_color(out, b, True)
                     lastbg = b
+                var u = self.ul[k]
+                if u != lastul:
+                    if u == 0:
+                        append_str(out, "\x1b[24m")
+                    elif self.styled_ul:
+                        append_str(out, "\x1b[4:")
+                        append_int(out, u >> 24)
+                        append_str(out, "m\x1b[58:2::")
+                        append_int(out, (u >> 16) & 255)
+                        append_str(out, ":")
+                        append_int(out, (u >> 8) & 255)
+                        append_str(out, ":")
+                        append_int(out, u & 255)
+                        append_str(out, "m")
+                    else:
+                        append_str(out, "\x1b[4m")
+                    lastul = u
                 var c = self.ch[k]
                 if c < 32:
                     c = 32
@@ -383,9 +423,12 @@ struct Screen(Movable):
                 px = x + run if m < XBASE else -1
                 py = y
                 self.pcmb[k] = self.cmb[k]
+                self.pul[k] = u
                 self.pch[k] = self.ch[k]
                 self.pfg[k] = f
                 self.pbg[k] = b
+        if lastul != 0:
+            append_str(out, "\x1b[24m")
         self.force = False
         if len(self.xseq) > XSEQ_MAX:
             # the pool only grows; start over and repaint everything next frame

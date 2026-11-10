@@ -48,13 +48,26 @@ __extension App:
         self.st_x1.clear()
         self.st_cmd.clear()
         var x = 1
-        for i in range(len(items)):
-            var x0 = x
-            x = self.scr.hot_text(x, y, items[i], p.status_fg, p.status_hot, p.status_bg)
-            self.st_x0.append(x0)
-            self.st_x1.append(x)
-            self.st_cmd.append(cmds[i])
-            x += 2
+        # the problem on the cursor line, if the language server reported one, takes the
+        # place of the key hints: it needs the room and matters more just then
+        var problem = String("")
+        var pe = self.top_editor()
+        if pe >= 0 and pe == self.top() and self.mode == M_NORMAL and len(self.wins[pe].buf.marks) > 0:
+            problem = self.wins[pe].buf.mark_text(self.wins[pe].cr)
+        if problem.byte_length() > 0:
+            var pc = decode(problem)
+            var room = max(8, self.scr.w - 30)
+            if len(pc) > room:
+                problem = slice_str(pc, 0, room - 1) + "…"
+            x = self.scr.text(x, y, problem, p.status_hot, p.status_bg) + 2
+        else:
+            for i in range(len(items)):
+                var x0 = x
+                x = self.scr.hot_text(x, y, items[i], p.status_fg, p.status_hot, p.status_bg)
+                self.st_x0.append(x0)
+                self.st_x1.append(x)
+                self.st_cmd.append(cmds[i])
+                x += 2
         var right = String("")
         if self.status_until > now_ns():
             right = self.status
@@ -70,9 +83,9 @@ __extension App:
                 right += ("CRLF" if self.wins[ti].buf.crlf else "LF") + "  " + (("Tabs:" + String(self.wins[ti].buf.tab_width)) if self.wins[ti].buf.use_tabs else ("Spaces:" + String(self.wins[ti].buf.indent_size))) + "  "
             if self.lsp.active():
                 right += "LSP  "
+            right += "INS" if self.insert_mode else "OVR"
         if self.macro_rec:
             right = "● REC  " + right
-            right += "INS" if self.insert_mode else "OVR"
         if self.job.active:
             var sp = decode(SPINNER)
             var b = List[UInt8]()
