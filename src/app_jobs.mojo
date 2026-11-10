@@ -298,7 +298,7 @@ __extension App:
             self.wins[t].goto(e.row - 1, max(0, e.col - 1))
             mi = self.msg_index()
             if mi >= 0 and e.msg_line < self.wins[mi].buf.count():
-                self.say(to_str(self.wins[mi].buf.lines[e.msg_line].c))
+                self.say(to_str(self.wins[mi].buf.line(e.msg_line)))
 
     def format_file(mut self) raises:
         if self.job_busy():

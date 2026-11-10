@@ -584,3 +584,36 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   `to_utf16` 33 ms; `to_bytes` 80 ms. Depth 5, about 51k leaves.
 - Not yet used by the editor: P1-02 moves `TextBuffer` onto it.
 - Verified: `check.sh` CHECK OK on stable Mojo 1.2.0 (20 files, 419 tests).
+
+## 2026-11-10 · P1-02 TextBuffer on the rope · done
+
+- `TextBuffer` now stores its text in a `Rope` instead of a list of codepoint lists. The
+  public behaviour is unchanged: (row, column) editing, `count`/`llen`/`at`/`get_text`,
+  undo/redo records, CRLF / tab / final-newline detection (now done in one pass over the
+  input). New accessor `line(r)` returns a row's codepoints.
+- Callers no longer reach into line storage (`buf.lines[r].c` is gone, 16 places). Loops
+  that read a line character by character now fetch the line once: visual columns,
+  indentation, search and replace-all, bracket matching, trailing-whitespace trimming,
+  drawing. Single-keystroke helpers that touch a few characters still use `at()`.
+- All 419 tests and the smoke test passed on the first build with no test changes.
+- Measured through `App` without a terminal (`build/ab`, aarch64):
+
+  | | 10,000 lines | 1,000,000 lines (53 MB) |
+  |---|---|---|
+  | open | 9.6 ms | 914 ms |
+  | draw at top | 1.3 ms | 0.8 ms |
+  | type 5 chars + 5 draws at top | 6.5 ms | 3.9 ms |
+  | newline + backspace | 0.02 ms | 0.04 ms |
+  | 2 undos | 0.01 ms | 0.03 ms |
+  | find a string near the end | 7.4 ms | 800 ms |
+  | bytes for saving | 0.8 ms | 91 ms |
+  | **goto middle + draw** | 12 ms | **1164 ms** |
+  | **5 chars + 5 draws in the middle** | 58 ms | **5813 ms** |
+
+- Known problem, not introduced here but made about twice as costly by it: every frame
+  re-runs the highlighter from line 0 to the first visible line, so drawing deep inside a
+  large file is slow (about 2.3 us per line above the view). P1-03 (incremental
+  highlighting with cached per-line lexer state) is the next task and removes it.
+- Also for later (P1-05): opening goes bytes -> codepoint list -> bytes; loading straight
+  from validated bytes would cut the 0.9 s and the temporary memory.
+- Verified: `check.sh` CHECK OK (20 files, 419 tests).

@@ -10,11 +10,12 @@ from window import *
 
 __extension Window:
     # ------------------------------------------------------------- search
-    def match_at(self, r: Int, c: Int, pat: List[Int], cs: Bool) -> Bool:
-        if c + len(pat) > self.buf.llen(r):
+    def match_in(self, ln: List[Int], c: Int, pat: List[Int], cs: Bool) -> Bool:
+        """Does `pat` occur in the line `ln` at column c?"""
+        if c < 0 or c + len(pat) > len(ln):
             return False
         for i in range(len(pat)):
-            var a = self.buf.lines[r].c[c + i]
+            var a = ln[c + i]
             var b = pat[i]
             if not cs:
                 a = lower(a)
@@ -22,6 +23,9 @@ __extension Window:
             if a != b:
                 return False
         return True
+
+    def match_at(self, r: Int, c: Int, pat: List[Int], cs: Bool) -> Bool:
+        return self.match_in(self.buf.line(r), c, pat, cs)
 
     def find_next(mut self, pat: List[Int], cs: Bool) -> Bool:
         """Search forward from the cursor (wrapping). Selects the match."""
@@ -37,10 +41,11 @@ __extension Window:
         for k in range(n + 1):
             var r = (sr + k) % n
             var start = sc if k == 0 else 0
-            var lim = self.buf.llen(r) - len(pat)
+            var ln = self.buf.line(r)
+            var lim = len(ln) - len(pat)
             var c = start
             while c <= lim:
-                if self.match_at(r, c, pat, cs):
+                if self.match_in(ln, c, pat, cs):
                     self.sel = True
                     self.ar = r
                     self.ac = c
@@ -68,12 +73,14 @@ __extension Window:
         var count = 0
         for r in range(self.buf.count()):
             var c = 0
-            while c + len(pat) <= self.buf.llen(r):
-                if self.match_at(r, c, pat, cs):
+            var ln = self.buf.line(r)
+            while c + len(pat) <= len(ln):
+                if self.match_in(ln, c, pat, cs):
                     _ = self.buf.delete(r, c, r, c + len(pat), self.cr, self.cc, g)
                     _ = self.buf.insert(r, c, rep, self.cr, self.cc, g)
                     c += len(rep)
                     count += 1
+                    ln = self.buf.line(r)       # the line changed under us
                 else:
                     c += 1
         self.sel = False
@@ -89,25 +96,29 @@ __extension Window:
         return c
 
     def match_bracket(self) -> Pos:
+        """Position of the bracket matching the one at (or just before) the cursor, or
+        Pos(-1, -1). Looks at most 2000 lines away."""
         var opens = List[Int]()
-        opens.append(40)
-        opens.append(91)
-        opens.append(123)
         var closes = List[Int]()
-        closes.append(41)
-        closes.append(93)
-        closes.append(125)
+        for o in [40, 91, 123]:
+            opens.append(o)
+        for cl in [41, 93, 125]:
+            closes.append(cl)
+        var here = self.buf.line(self.cr)
         for back in range(2):
             var c = self.cc - back
-            var ch = self.buf.at(self.cr, c)
+            if c < 0 or c >= len(here):
+                continue
+            var ch = here[c]
             for k in range(3):
                 if ch == opens[k]:
                     var depth = 0
                     var r = self.cr
                     var cc = c
+                    var ln = here.copy()
                     while r < self.buf.count():
-                        while cc < self.buf.llen(r):
-                            var x = self.buf.at(r, cc)
+                        while cc < len(ln):
+                            var x = ln[cc]
                             if x == opens[k]:
                                 depth += 1
                             elif x == closes[k]:
@@ -117,16 +128,18 @@ __extension Window:
                             cc += 1
                         r += 1
                         cc = 0
-                        if r - self.cr > 2000:
+                        if r - self.cr > 2000 or r >= self.buf.count():
                             break
+                        ln = self.buf.line(r)
                     return Pos(-1, -1)
                 if ch == closes[k]:
                     var depth = 0
                     var r = self.cr
                     var cc = c
+                    var ln = here.copy()
                     while r >= 0:
                         while cc >= 0:
-                            var x = self.buf.at(r, cc)
+                            var x = ln[cc]
                             if x == closes[k]:
                                 depth += 1
                             elif x == opens[k]:
@@ -137,6 +150,7 @@ __extension Window:
                         r -= 1
                         if r < 0 or self.cr - r > 2000:
                             break
-                        cc = self.buf.llen(r) - 1
+                        ln = self.buf.line(r)
+                        cc = len(ln) - 1
                     return Pos(-1, -1)
         return Pos(-1, -1)

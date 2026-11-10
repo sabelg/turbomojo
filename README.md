@@ -104,8 +104,8 @@ Press **F1** inside the IDE for the full keyboard reference.
 |---|---|
 | `src/term.mojo` | termios raw mode via FFI, window size, key / SGR mouse / bracketed-paste parser |
 | `src/screen.mojo` | Cell buffer, box drawing, shadows, truecolor diff renderer, text dump for tests |
-| `src/buffer.mojo` | Codepoint line buffer with grouped undo/redo records |
-| `src/rope.mojo` | UTF-8 rope on a B-tree with byte/character/line/UTF-16 summaries (the next text storage; not yet used by the editor) |
+| `src/rope.mojo` | Text storage: UTF-8 rope on a B-tree with byte/character/line/UTF-16 summaries |
+| `src/buffer.mojo` | Text buffer on the rope: (row, column) editing, grouped undo/redo, per-file settings |
 | `src/highlight.mojo` | Mojo tokenizer with multi-line string state |
 | `src/window.mojo` | Editor/message window state, movement and editing commands |
 | `src/window_search.mojo`, `src/window_draw.mojo` | Find/replace/bracket matching and window drawing (extend `Window`) |

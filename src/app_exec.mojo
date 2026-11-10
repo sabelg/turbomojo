@@ -117,7 +117,7 @@ __extension App:
                     self.wins[ai].follow = True
                 self.say(String(len(self.clipboard)) + " characters copied")
             elif src >= 0 and self.wins[src].kind == WK_MESSAGE:
-                self.clipboard = self.wins[src].buf.lines[self.wins[src].cr].c.copy()
+                self.clipboard = self.wins[src].buf.line(self.wins[src].cr)
                 self.osc52(self.clipboard.copy())
         elif cmd == CM_PASTE:
             if ai >= 0 and len(self.clipboard) > 0:

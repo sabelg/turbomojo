@@ -70,7 +70,7 @@ __extension App:
         var data = List[Int]()
         for r in range(self.wins[ai].buf.count()):
             var ind = self.wins[ai].indent_of(r)
-            var line = self.wins[ai].buf.lines[r].c.copy()
+            var line = self.wins[ai].buf.line(r)
             var rest = slice_str(line, ind, len(line))
             var kw = String("")
             for k in ["def ", "fn ", "struct ", "trait ", "comptime "]:
@@ -164,7 +164,7 @@ __extension App:
         var pc = decode(prefix)
         var np = len(pc)
         for r in range(self.wins[ai].buf.count()):
-            var line = self.wins[ai].buf.lines[r].c.copy()
+            var line = self.wins[ai].buf.line(r)
             var i = 0
             var n = len(line)
             while i < n:
@@ -200,7 +200,7 @@ __extension App:
         if ai < 0:
             return
         var start = self.wins[ai].word_start()
-        var prefix = slice_str(self.wins[ai].buf.lines[self.wins[ai].cr].c, start, self.wins[ai].cc)
+        var prefix = slice_str(self.wins[ai].buf.line(self.wins[ai].cr), start, self.wins[ai].cc)
         if prefix.byte_length() == 0:
             self.say("Type the start of an identifier, then Ctrl-Space")
             return

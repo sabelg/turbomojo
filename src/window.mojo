@@ -124,23 +124,25 @@ struct Window(Copyable, Movable):
     def vcol(self, r: Int, c: Int) -> Int:
         """Visual (screen) column of character index c on row r."""
         var v = 0
-        var n = min(c, self.buf.llen(r))
+        var ln = self.buf.line(r)
+        var n = min(c, len(ln))
         for i in range(n):
-            v += self.adv(self.buf.lines[r].c[i], v)
+            v += self.adv(ln[i], v)
         return v
 
     def col_at_vcol(self, r: Int, target: Int) -> Int:
         """Character index whose cell covers visual column `target`."""
         var v = 0
-        var n = self.buf.llen(r)
+        var ln = self.buf.line(r)
+        var n = len(ln)
         var i = 0
         while i < n:
-            var a = self.adv(self.buf.lines[r].c[i], v)
+            var a = self.adv(ln[i], v)
             if a > 0 and v + a > target:
                 # closer to the right edge of a tab/wide char -> place after it
                 if target - v >= (a + 1) // 2 and a > 1:
                     i += 1
-                    while i < n and char_width(self.buf.lines[r].c[i]) == 0:
+                    while i < n and char_width(ln[i]) == 0:
                         i += 1
                 return i
             v += a
@@ -369,8 +371,9 @@ struct Window(Copyable, Movable):
     def indent_of(self, r: Int) -> Int:
         """Number of leading whitespace characters (spaces or tabs)."""
         var i = 0
-        var n = self.buf.llen(r)
-        while i < n and (self.buf.at(r, i) == 32 or self.buf.at(r, i) == 9):
+        var ln = self.buf.line(r)
+        var n = len(ln)
+        while i < n and (ln[i] == 32 or ln[i] == 9):
             i += 1
         return i
 
@@ -388,8 +391,9 @@ struct Window(Copyable, Movable):
         t.append(10)
         if auto_indent:
             var ind = min(self.indent_of(self.cr), self.cc)
+            var cur_line = self.buf.line(self.cr)
             for i in range(ind):
-                t.append(self.buf.lines[self.cr].c[i])
+                t.append(cur_line[i])
             var k = self.cc - 1
             while k >= 0 and (self.buf.at(self.cr, k) == 32 or self.buf.at(self.cr, k) == 9):
                 k -= 1
@@ -407,8 +411,9 @@ struct Window(Copyable, Movable):
         if self.cc > 0:
             var n = 1
             var all_spaces = True
-            for i in range(self.cc):
-                if self.buf.at(self.cr, i) != 32:
+            var ln = self.buf.line(self.cr)
+            for i in range(min(self.cc, len(ln))):
+                if ln[i] != 32:
                     all_spaces = False
                     break
             if all_spaces:
@@ -527,7 +532,7 @@ struct Window(Copyable, Movable):
         var g = self.new_group()
         var t = List[Int]()
         t.append(10)
-        for c in self.buf.lines[self.cr].c:
+        for c in self.buf.line(self.cr):
             t.append(c)
         _ = self.buf.insert(self.cr, self.buf.llen(self.cr), t, self.cr, self.cc, g)
         self.cr += 1
@@ -556,9 +561,10 @@ struct Window(Copyable, Movable):
         var g = 0
         var changed = 0
         for r in range(self.buf.count()):
-            var n = self.buf.llen(r)
+            var ln = self.buf.line(r)
+            var n = len(ln)
             var e = n
-            while e > 0 and (self.buf.at(r, e - 1) == 32 or self.buf.at(r, e - 1) == 9):
+            while e > 0 and (ln[e - 1] == 32 or ln[e - 1] == 9):
                 e -= 1
             if e < n:
                 if g == 0:

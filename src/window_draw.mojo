@@ -53,7 +53,7 @@ __extension Window:
         var tmp = List[Int]()
         if not is_msg:
             for r in range(0, min(self.top, self.buf.count())):
-                st = hl.line(self.buf.lines[r].c, st, tmp)
+                st = hl.line(self.buf.line(r), st, tmp)
         scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
         var classes = List[Int]()
         for i in range(rws):
@@ -61,10 +61,11 @@ __extension Window:
             var yy = self.y + 1 + i
             if r >= self.buf.count():
                 break
+            var ln = self.buf.line(r)
             var rowbg = bg
             var rowfg = fg
             if is_msg:
-                var lt = to_str(self.buf.lines[r].c)
+                var lt = to_str(ln)
                 if str_contains(lt, "error:"):
                     rowfg = pal.msg_err
                 elif str_contains(lt, "warning:"):
@@ -87,8 +88,8 @@ __extension Window:
                 s += num + " "
                 _ = scr.text(self.x + 1, yy, s, pal.frame_act if r == self.cr and active else pal.gutter_fg, pal.gutter_bg)
             if not is_msg:
-                st = hl.line(self.buf.lines[r].c, st, classes)
-            var n = self.buf.llen(r)
+                st = hl.line(ln, st, classes)
+            var n = len(ln)
             scr.clip(cx0, self.y + 1, cls, self.h - 2)
             var v = 0
             var lastx = -1
@@ -96,7 +97,7 @@ __extension Window:
             for c in range(n):
                 if v >= lim:
                     break
-                var ch = self.buf.lines[r].c[c]
+                var ch = ln[c]
                 var a = self.adv(ch, v)
                 if a == 0:
                     if lastx >= 0:

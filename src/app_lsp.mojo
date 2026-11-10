@@ -74,7 +74,7 @@ __extension App:
         for d in items:
             var line_text = List[Int]()
             if d.line >= 0 and d.line < self.wins[i].buf.count():
-                line_text = self.wins[i].buf.lines[d.line].c.copy()
+                line_text = self.wins[i].buf.line(d.line)
             text += diagnostic_line(path, line_text, d) + "\n"
             # remaining lines of a multi-line message, indented
             var first = True
