@@ -82,7 +82,7 @@ __extension App:
                 continue
             var name = slice_str(line, s0, e)
             var pad = String("")
-            for _ in range(self.wins[ai].vcol(r, ind) // 4):
+            for _ in range(self.wins[ai].vcol(r, ind) // max(1, self.wins[ai].buf.indent_size)):
                 pad += "  "
             var tag = String("ƒ ") if kw == "def " or kw == "fn " else (String("◆ ") if kw == "struct " else (String("◇ ") if kw == "trait " else String("= ")))
             items.append(pad_right(pad + tag + name, 44) + ":" + String(r + 1))

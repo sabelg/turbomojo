@@ -15,6 +15,8 @@ Example:
 
     [editor]
     auto_indent = true
+    tab_width = 4               # display width of a tab character
+    indent_size = 4             # spaces per indent level (.editorconfig overrides both)
 
     [tools]
     compiler = "mojo"
@@ -26,7 +28,7 @@ Example:
 Options changed from the Options menu are written back to the user file; everything else
 in that file (comments, order, other keys) is left as it is."""
 from std.collections import List
-from toml import TomlDoc, toml_parse, T_STR, T_BOOL, T_LIST
+from toml import TomlDoc, toml_parse, T_STR, T_BOOL, T_LIST, T_INT
 from util import env_or, path_exists, dirname, join_path
 
 comptime PROJECT_CONFIG_NAME = ".turbomojo.toml"
@@ -99,6 +101,8 @@ struct Settings(Copyable, Movable):
     var clock: Bool
     var show_whitespace: Bool
     var compiler: String
+    var tab_width: Int
+    var indent_size: Int
     var key_commands: List[String]       # command names with custom bindings
     var key_names: List[List[String]]    # their key names, as written in the file
     var warnings: List[String]
@@ -112,6 +116,8 @@ struct Settings(Copyable, Movable):
         self.clock = True
         self.show_whitespace = False
         self.compiler = "mojo"
+        self.tab_width = 4
+        self.indent_size = 4
         self.key_commands = List[String]()
         self.key_names = List[List[String]]()
         self.warnings = List[String]()
@@ -124,6 +130,15 @@ struct Settings(Copyable, Movable):
             self.warnings.append(key + " must be true or false")
             return current
         return doc.vals[i].b
+
+    def take_size(mut self, doc: TomlDoc, key: String, current: Int) -> Int:
+        var i = doc.find(key)
+        if i < 0:
+            return current
+        if doc.vals[i].kind != T_INT or doc.vals[i].i < 1 or doc.vals[i].i > 64:
+            self.warnings.append(key + " must be a number from 1 to 64")
+            return current
+        return doc.vals[i].i
 
     def apply(mut self, doc: TomlDoc):
         """Overlay the values present in `doc`; invalid ones are reported and skipped."""
@@ -147,6 +162,8 @@ struct Settings(Copyable, Movable):
                 self.warnings.append("tools.compiler must be a non-empty string")
             else:
                 self.compiler = doc.vals[ci].s
+        self.tab_width = self.take_size(doc, "editor.tab_width", self.tab_width)
+        self.indent_size = self.take_size(doc, "editor.indent_size", self.indent_size)
         for name in doc.keys_in("keys"):
             var ki = doc.find("keys." + name)
             if doc.vals[ki].kind != T_STR and doc.vals[ki].kind != T_LIST:
@@ -156,7 +173,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "tools.compiler"]:
+        for k in ["ui.theme", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.tab_width", "editor.indent_size", "tools.compiler"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys."):

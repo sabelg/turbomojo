@@ -53,6 +53,9 @@ show_whitespace = false
 [editor]
 auto_indent = true
 
+tab_width = 4               # display width of a tab character
+indent_size = 4             # spaces per indent level
+
 [tools]
 compiler = "mojo"           # the TURBOMOJO_COMPILER environment variable overrides this
 
@@ -65,6 +68,11 @@ Changing something in the Options menu writes just that setting back to your use
 leaves the rest of the file, including comments, alone. Command names for `[keys]` are listed in
 `src/commands.mojo` (`file.open`, `compile.build`, `search.find`, ...). Mistakes in a config file
 are shown in the status line at startup and written to the log; the IDE still starts.
+
+**EditorConfig.** A `.editorconfig` in the file's folder or above it is honoured per file:
+`indent_style`, `indent_size`, `tab_width`, `end_of_line` (lf/crlf), `insert_final_newline` and
+`trim_trailing_whitespace`. These override the `[editor]` sizes above and the tab/space
+auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 
 ## Features
 
@@ -128,6 +136,5 @@ scripts/tui-test.sh stop
 
 ## Known limitations
 
-- Tab stops are fixed at 4 columns.
 - Each screen cell keeps only one combining mark, so stacked diacritics show just the last one.
 - Ctrl-F9 Run hands the terminal to your program on purpose, the way Turbo's user screen did. Build and Format run in the background.

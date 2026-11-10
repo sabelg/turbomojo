@@ -4,7 +4,7 @@ from util import encode_cp
 
 comptime UNDO_INSERT = 1
 comptime UNDO_DELETE = 2
-comptime TAB_WIDTH = 4
+comptime TAB_WIDTH = 4   # default; each buffer carries its own tab_width / indent_size
 
 
 struct Line(Copyable, Movable):
@@ -43,6 +43,9 @@ struct TextBuffer(Copyable, Movable):
     var crlf: Bool
     var use_tabs: Bool
     var eol_at_eof: Bool
+    var tab_width: Int      # columns a tab character advances to (display)
+    var indent_size: Int    # spaces per indentation level when indenting with spaces
+    var trim_on_save: Bool  # strip trailing whitespace when saving (.editorconfig)
 
     def __init__(out self):
         self.lines = List[Line]()
@@ -54,6 +57,9 @@ struct TextBuffer(Copyable, Movable):
         self.crlf = False
         self.use_tabs = False
         self.eol_at_eof = True
+        self.tab_width = TAB_WIDTH
+        self.indent_size = TAB_WIDTH
+        self.trim_on_save = False
 
     def load(mut self, cps: List[Int]):
         """Split exactly on newlines: tabs are kept, a trailing newline yields a

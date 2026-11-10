@@ -322,3 +322,28 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   and logged. `check.sh` CHECK OK (13 files, 279 tests).
 - Not done here: `.editorconfig` (P0-14b); a trailing comment on a line that `toml_set`
   rewrites is dropped (documented in the function).
+
+## 2026-11-10 · P0-14b .editorconfig, and P1-06 per-buffer tab width · done
+
+- `TextBuffer` now carries `tab_width` (display width of a tab), `indent_size` (spaces per
+  level) and `trim_on_save`; `window.mojo` uses them everywhere the fixed `TAB_WIDTH` was
+  used (visual columns, Tab key, auto-indent, backspace in indentation, block
+  indent/outdent). This is backlog task P1-06, done here because `indent_size` needs it.
+- New `src/editorconfig.mojo`: parser (sections, `root`, `=` or `:`, comments, case
+  folding), glob matching (`*`, `**`, `?`, classes, negation, ranges, braces incl. nested
+  and numeric, escapes; patterns without `/` match at any depth), layered resolution
+  (nearest file wins, later sections win, stop at `root = true`, section paths relative to
+  their own file), and the size rules (`tab_width` defaults to `indent_size`;
+  `indent_size = tab`; tabs without an `indent_size` mean one tab stop).
+- Applied when a file is opened, when a new file gets its name in Save As, and on save
+  (trailing whitespace is trimmed in the buffer as one undo step before writing; line
+  endings and the final newline follow the properties).
+- User config gained `[editor] tab_width` and `indent_size` as defaults for all files.
+  The status bar shows e.g. `Spaces:2` or `Tabs:8`.
+- `tests/test_editorconfig.mojo` (23 tests). One failure was a real omission in the code
+  (tabs with no `indent_size` should give `indent_size = tab`); fixed in the code.
+- Verified live in tmux: with `indent_size = 2` and trimming on, typing `if x:` + Enter
+  indented by 2 more spaces and the saved file had no trailing spaces.
+  `check.sh` CHECK OK (14 files, 302 tests).
+- Not supported: `end_of_line = cr`, `charset`, `max_line_length` (read and ignored).
+- Phase 0 status: P0-15 .. P0-21 remain.

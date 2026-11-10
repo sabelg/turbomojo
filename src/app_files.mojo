@@ -65,11 +65,33 @@ __extension App:
             self.say("Loaded " + p)
         else:
             self.say("New file: " + p)
+        self.apply_editorconfig(i)
+
+    def apply_buffer_settings(mut self, i: Int, ec: EcProps):
+        """Give a buffer its indentation and line-ending rules: user defaults first, then
+        whatever .editorconfig specifies for the file."""
+        self.wins[i].buf.tab_width = ec.effective_tab_width(self.tab_width)
+        self.wins[i].buf.indent_size = ec.effective_indent_size(self.indent_size)
+        if ec.has_indent_style:
+            self.wins[i].buf.use_tabs = ec.use_tabs
+        if ec.has_eol:
+            self.wins[i].buf.crlf = ec.crlf
+        if ec.has_final_newline:
+            self.wins[i].buf.eol_at_eof = ec.final_newline
+        self.wins[i].buf.trim_on_save = ec.has_trim and ec.trim
+
+    def apply_editorconfig(mut self, i: Int):
+        if self.wins[i].path.byte_length() > 0:
+            self.apply_buffer_settings(i, ec_for_file(self.wins[i].path))
+        else:
+            self.apply_buffer_settings(i, EcProps())
 
     def save_window(mut self, i: Int, next: Int) raises -> Bool:
         if self.wins[i].path.byte_length() == 0:
             self.saveas_dialog(i, next)
             return False
+        if self.wins[i].buf.trim_on_save:
+            _ = self.wins[i].trim_trailing_whitespace()
         var b = self.wins[i].buf.to_bytes()
         with open(self.wins[i].path, "w") as f:
             f.write(bytes_to_str(b))

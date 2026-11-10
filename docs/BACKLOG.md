@@ -21,7 +21,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P0-12 Crash safety: terminal always restored on error paths; crash log under `~/.local/state/turbomojo/`
 - [x] P0-13 Terminal capability probe (`Caps`): kitty keyboard, modes 2026/2027/2031/2048 via DECRQM, truecolor detection with 256/16-colour fallback rendering
 - [x] P0-14a Config: TOML subset parser; `~/.config/turbomojo/config.toml` and project `.turbomojo.toml`; all Options persist; key rebinding from config
-- [ ] P0-14b Honour `.editorconfig` (indent style/size, EOL, final newline, trim trailing whitespace)
+- [x] P0-14b Honour `.editorconfig` (indent style/size, EOL, final newline, trim trailing whitespace)
 - [ ] P0-15 Swap files and crash recovery (write every 2 s when dirty; offer recovery on open)
 - [ ] P0-16 External change detection (inotify via FFI, or mtime polling fallback): reload clean buffers, ask for modified ones
 - [ ] P0-17 JSON parser/writer module with tests (objects, arrays, strings with escapes and \u, numbers, bool, null)
@@ -37,7 +37,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [ ] P1-03 Line metadata cache (visual width, lexer end state); incremental highlighting that re-lexes only from the edited line until states converge
 - [ ] P1-04 Grapheme cluster segmentation (UAX #29 extended clusters) with tests; cursor, delete and selection move by cluster; screen cells hold full clusters
 - [ ] P1-05 Large-file behaviour: open a generated 1M-line file under 1 s; large-file mode above 50 MB; benchmark script recorded in the journal
-- [ ] P1-06 Configurable tab width per buffer (from config/.editorconfig)
+- [x] P1-06 Configurable tab width per buffer (from config/.editorconfig) (done with P0-14b)
 - [ ] P1-07 Regex engine module (Thompson NFA: classes, groups, alternation, quantifiers, anchors, captures) with tests
 - [ ] P1-08 Search upgrade: regex/case/whole-word/in-selection options, highlight all matches, match count, replace with capture groups, incremental search as you type
 - [ ] P1-09 Find in files: background `rg --json` (or built-in walker), results window with jump-to

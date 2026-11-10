@@ -23,6 +23,7 @@ from dialog import *
 from util import *
 from signals import SignalFd, send_signal, own_pid
 from config import *
+from editorconfig import EcProps, ec_for_file
 from toml import toml_set, toml_quote, toml_bool
 
 comptime M_NORMAL = 0
@@ -127,6 +128,8 @@ struct App(Movable):
     var sig: SignalFd
     var recovered: Int
     var recovery_dir: String
+    var tab_width: Int         # defaults for new buffers (user config)
+    var indent_size: Int
     var config_path: String    # user config file; empty until load_config() (tests stay hermetic)
     var config_warnings: List[String]
     var log_path: String       # empty until run(): tests never write to the state dir
@@ -181,6 +184,8 @@ struct App(Movable):
         self.recovery_dir = state_dir() + "/recovered"
         self.log_path = ""
         self.config_path = ""
+        self.tab_width = 4
+        self.indent_size = 4
         self.config_warnings = List[String]()
         self.fault = env_or("TURBOMOJO_FAULT", "")
         self.show_ws = False
@@ -243,6 +248,8 @@ struct App(Movable):
         self.hl_line = s.highlight_line
         self.show_clock = s.clock
         self.show_ws = s.show_whitespace
+        self.tab_width = s.tab_width
+        self.indent_size = s.indent_size
         # the environment variable still wins over the files for the compiler
         self.compiler = env_or("TURBOMOJO_COMPILER", s.compiler)
         self.config_warnings = s.warnings.copy()
@@ -320,6 +327,8 @@ struct App(Movable):
             dh = max(6, self.wins[mi].y - 1)
         var win = Window(WK_EDITOR, title, path, off, 1 + off, self.scr.w - off, dh - off, self.free_number())
         win.gut = win.gutter_for(self.line_numbers)
+        win.buf.tab_width = self.tab_width
+        win.buf.indent_size = self.indent_size
         self.wins.append(win^)
         return len(self.wins) - 1
 

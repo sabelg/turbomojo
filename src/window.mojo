@@ -109,7 +109,7 @@ struct Window(Copyable, Movable):
     def adv(self, ch: Int, v: Int) -> Int:
         """Display columns taken by `ch` when it starts at visual column v."""
         if ch == 9:
-            return TAB_WIDTH - v % TAB_WIDTH
+            return self.buf.tab_width - v % self.buf.tab_width
         return char_width(ch)
 
     def vcol(self, r: Int, c: Int) -> Int:
@@ -370,7 +370,7 @@ struct Window(Copyable, Movable):
         if self.buf.use_tabs:
             t.append(9)
         else:
-            for _ in range(TAB_WIDTH):
+            for _ in range(self.buf.indent_size):
                 t.append(32)
         return t^
 
@@ -403,7 +403,7 @@ struct Window(Copyable, Movable):
                     all_spaces = False
                     break
             if all_spaces:
-                n = self.cc - ((self.cc - 1) // TAB_WIDTH) * TAB_WIDTH
+                n = self.cc - ((self.cc - 1) // self.buf.indent_size) * self.buf.indent_size
             _ = self.buf.delete(self.cr, self.cc - n, self.cr, self.cc, self.cr, self.cc, g)
             self.cc -= n
         elif self.cr > 0:
@@ -453,7 +453,7 @@ struct Window(Copyable, Movable):
                 if self.buf.at(r, 0) == 9:
                     n = 1
                 else:
-                    while n < TAB_WIDTH and self.buf.at(r, n) == 32:
+                    while n < self.buf.indent_size and self.buf.at(r, n) == 32:
                         n += 1
                 if n == 0:
                     continue
@@ -474,7 +474,7 @@ struct Window(Copyable, Movable):
         if self.buf.use_tabs:
             t.append(9)
         else:
-            var n = TAB_WIDTH - (self.vcol(self.cr, self.cc) % TAB_WIDTH)
+            var n = self.buf.indent_size - (self.vcol(self.cr, self.cc) % self.buf.indent_size)
             for _ in range(n):
                 t.append(32)
         self.insert_text(t, ACT_TYPE)
@@ -541,6 +541,29 @@ struct Window(Copyable, Movable):
         self.break_group()
         self.follow = True
         return out^
+
+    def trim_trailing_whitespace(mut self) -> Int:
+        """Remove spaces and tabs at line ends as one undo step. Returns lines changed."""
+        var g = 0
+        var changed = 0
+        for r in range(self.buf.count()):
+            var n = self.buf.llen(r)
+            var e = n
+            while e > 0 and (self.buf.at(r, e - 1) == 32 or self.buf.at(r, e - 1) == 9):
+                e -= 1
+            if e < n:
+                if g == 0:
+                    g = self.new_group()
+                _ = self.buf.delete(r, e, r, n, self.cr, self.cc, g)
+                changed += 1
+        if changed > 0:
+            self.clamp()
+            if self.sel:
+                self.ar = max(0, min(self.ar, self.buf.count() - 1))
+                self.ac = max(0, min(self.ac, self.buf.llen(self.ar)))
+            self.sync_want()
+            self.break_group()
+        return changed
 
     def undo(mut self):
         var p = self.buf.undo()

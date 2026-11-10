@@ -107,6 +107,7 @@ __extension App:
             var p = abs_path(self.cwd, name)
             self.wins[i].path = p
             self.wins[i].title = basename(p)
+            self.apply_editorconfig(i)      # the new name may fall under other rules
             var next = self.dlg.next
             if self.save_window(i, NEXT_NONE):
                 if next == NEXT_CLOSE:
