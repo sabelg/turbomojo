@@ -200,6 +200,14 @@ def lower_str(s: String) -> String:
     return to_str(cps)
 
 
+def lower_to_upper(s: String) -> String:
+    var cps = decode(s)
+    for i in range(len(cps)):
+        if cps[i] >= 97 and cps[i] <= 122:
+            cps[i] -= 32
+    return to_str(cps)
+
+
 def str_contains(hay: String, needle: String) -> Bool:
     return hay.find(needle) >= 0
 

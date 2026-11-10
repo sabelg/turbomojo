@@ -3,7 +3,8 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
 from app import App, M_NORMAL, M_MENU, M_DIALOG
 from term import Event, EV_MOUSE, MB_LEFT, MB_RIGHT, MB_WHEEL_UP, MB_WHEEL_DOWN
-from menu import CM_NEW, CM_FIND, CM_PALETTE, CM_MESSAGE, dropdown_rect_x
+from commands import CM_NEW, CM_FIND, CM_PALETTE, CM_MESSAGE
+from menu import dropdown_rect_x
 from dialog import D_CONFIRM_CLOSE, D_FIND, D_HELP, D_PALETTE
 from window import WK_EDITOR, WK_MESSAGE
 from util import decode, to_str

@@ -119,3 +119,34 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   gate. Measured while investigating: one full `draw()` is ~0.28 ms, a full-screen
   `render()` ~0.06 ms.
 - Verified: `check.sh` CHECK OK (7 files, 183 tests).
+
+## 2026-11-10 · correction to the P0-07 entry
+
+- The "performance finding" above was wrong. TestSuite prints times in **milliseconds**:
+  the "47 s" for `test_mouse.mojo` was 47 ms. Measured wall-clock: `mojo run` 6.3 s for
+  that file (almost all compilation); compile-then-run 2.1 s with a warm compile cache and
+  about the same as `mojo run` when cold. The gate's compile-then-run step stays because it
+  is correct and a little faster on repeat runs, not because of a large speed-up.
+- The other measurements in that entry (one `draw()` ~0.28 ms, full `render()` ~0.06 ms)
+  were taken with `perf_counter_ns` directly and stand.
+
+## 2026-11-10 · P0-08 command registry · done
+
+- New `src/commands.mojo`: command ids, a `Registry` of commands (id, stable name such as
+  `file.save`, title with hot letter, hint, default keys) plus the menu layout,
+  `key_name()` to print key codes ("Ctrl-F9", "Shift-Del"), and `rebind()` for later user
+  configuration.
+- Generated from it: the menus (`build_menus(reg)`), keyboard shortcuts
+  (`App.shortcut` is now `reg.find_key`, replacing a 90-line if-chain), the command palette
+  (now shows every binding and lists a command once even when it sits in two menus) and
+  the F1 keyboard reference (was hand-written text).
+- Behaviour changes: Search menu items are now titled "Next/Previous message" like the
+  Compile menu (same commands); Window ▸ "Close all" hot letter changed from `l` to `e`
+  because it clashed with "List..." (pressing `l` in the Window menu always picked Close
+  all). The clash was caught by the new uniqueness test.
+- Added `tests/test_commands.mojo` (11 tests): key names, unique ids/names, no key bound
+  twice, every command placed and every placement valid, unique hot letters per menu and
+  across menu titles, all 45 v1.0 key bindings checked one by one, unbound keys, primary
+  key labels, generated menu structure, rebinding.
+- Verified: `check.sh` CHECK OK (8 files, 194 tests); looked at the generated F1 screen and
+  the Window menu in the running IDE through tmux.

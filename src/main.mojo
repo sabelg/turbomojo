@@ -1,7 +1,7 @@
 """TurboMojo - a Turbo C++ style TUI IDE for Mojo, written in Mojo."""
 from std.sys import argv
 from app import App
-from menu import CM_NEW
+from commands import CM_NEW
 
 
 def main() raises:

@@ -14,6 +14,7 @@ from highlight import Highlighter
 from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from menu import *
+from commands import *
 from dialog import *
 from util import *
 
@@ -72,6 +73,7 @@ struct App(Movable):
     var theme_idx: Int
     var hl: Highlighter
     var wins: List[Window]
+    var reg: Registry
     var menus: List[Menu]
     var mode: Int
     var menu_idx: Int
@@ -117,7 +119,8 @@ struct App(Movable):
         self.pal = theme(0)
         self.hl = Highlighter()
         self.wins = List[Window]()
-        self.menus = build_menus()
+        self.reg = build_registry()
+        self.menus = build_menus(self.reg)
         self.mode = M_NORMAL
         self.menu_idx = 0
         self.menu_item = 0
@@ -656,77 +659,8 @@ struct App(Movable):
 
     # ============================================================= commands
     def shortcut(self, k: Int) -> Int:
-        if k == fkey(1):
-            return CM_HELP
-        if k == fkey(2) or k == ctrl(115):
-            return CM_SAVE
-        if k == fkey(3) or k == ctrl(111):
-            return CM_OPEN
-        if k == fkey(5):
-            return CM_ZOOM
-        if k == fkey(6):
-            return CM_NEXTWIN
-        if k == (fkey(6) | MOD_SHIFT):
-            return CM_PREVWIN
-        if k == fkey(9) or k == ctrl(98):
-            return CM_BUILD
-        if k == (fkey(9) | MOD_CTRL) or k == fkey(8):
-            return CM_RUN
-        if k == (fkey(9) | MOD_ALT):
-            return CM_FORMAT
-        if k == alt(120) or k == ctrl(113):
-            return CM_QUIT
-        if k == (fkey(3) | MOD_ALT) or k == ctrl(119):
-            return CM_CLOSE
-        if k == (fkey(5) | MOD_ALT):
-            return CM_USERSCREEN
-        if k == (fkey(7) | MOD_ALT):
-            return CM_PREVERR
-        if k == (fkey(8) | MOD_ALT):
-            return CM_NEXTERR
-        if k == alt(48):
-            return CM_WINLIST
-        if k == (KEY_BACKSPACE | MOD_ALT) or k == ctrl(122):
-            return CM_UNDO
-        if k == ctrl(121):
-            return CM_REDO
-        if k == ctrl(120) or k == (KEY_DELETE | MOD_SHIFT):
-            return CM_CUT
-        if k == ctrl(99) or k == (KEY_INSERT | MOD_CTRL):
-            return CM_COPY
-        if k == ctrl(118) or k == (KEY_INSERT | MOD_SHIFT):
-            return CM_PASTE
-        if k == (KEY_DELETE | MOD_CTRL):
-            return CM_CLEAR
-        if k == ctrl(97):
-            return CM_SELALL
-        if k == ctrl(47):
-            return CM_COMMENT
-        if k == ctrl(100):
-            return CM_DUPLINE
-        if k == ctrl(107):
-            return CM_DELLINE
-        if k == ctrl(32):
-            return CM_COMPLETE
-        if k == ctrl(102):
-            return CM_FIND
-        if k == ctrl(114):
-            return CM_REPLACE
-        if k == ctrl(108):
-            return CM_AGAIN
-        if k == ctrl(103):
-            return CM_GOTO
-        if k == ctrl(116):
-            return CM_SYMBOL
-        if k == ctrl(93):
-            return CM_MATCH
-        if k == ctrl(112):
-            return CM_PALETTE
-        if k == ctrl(110):
-            return CM_NEW
-        if k == (fkey(2) | MOD_CTRL):
-            return CM_CANCEL
-        return CM_NONE
+        """Command bound to key k (bindings live in the command registry)."""
+        return self.reg.find_key(k)
 
     def exec(mut self, cmd: Int) raises:
         var ai = self.active_editor()
@@ -1022,27 +956,16 @@ struct App(Movable):
         d.list_filter = True
         var items = List[String]()
         var data = List[Int]()
+        var seen = List[Int]()
         for m in self.menus:
-            var title = String("")
-            for c in decode(m.title):
-                if c != 126:
-                    var b = List[UInt8]()
-                    encode_cp(c, b)
-                    title += bytes_to_str(b)
+            var title = plain(m.title)
             if title == "≡":
                 title = "System"
             for it in m.items:
-                if it.cmd == CM_NONE:
+                if it.cmd == CM_NONE or it.cmd in seen:
                     continue
-                var label = String("")
-                for c in decode(it.label):
-                    if c != 126:
-                        var b = List[UInt8]()
-                        encode_cp(c, b)
-                        label += bytes_to_str(b)
-                var s = pad_right(title + ": " + label, 40)
-                s += it.key
-                items.append(s)
+                seen.append(it.cmd)
+                items.append(pad_right(title + ": " + plain(it.label), 40) + self.reg.all_keys_label(it.cmd))
                 data.append(it.cmd)
         d.set_items(items^, data^)
         d.buttons.append("~R~un")
@@ -1092,33 +1015,51 @@ struct App(Movable):
         self.show(d^)
 
     def help_dialog(mut self):
-        var d = Dialog(D_HELP, "Keyboard Reference", min(84, self.scr.w - 4), min(24, self.desk_h()))
+        """Keyboard reference generated from the command registry."""
+        var d = Dialog(D_HELP, "Keyboard Reference", min(72, self.scr.w - 4), min(24, self.desk_h()))
         var items = List[String]()
+        for mi in range(1, len(self.reg.menu_titles)):
+            var lines = List[String]()
+            for p in self.reg.layout:
+                if p.menu != mi or p.cmd == CM_NONE:
+                    continue
+                var keys = self.reg.all_keys_label(p.cmd)
+                if keys.byte_length() == 0:
+                    continue
+                var ci = self.reg.index_of(p.cmd)
+                var title = plain(self.reg.cmds[ci].title)
+                if title.endswith("..."):
+                    var tc = decode(title)
+                    title = slice_str(tc, 0, len(tc) - 3)
+                lines.append("  " + pad_right(keys, 24) + title)
+            if len(lines) == 0:
+                continue
+            if len(items) > 0:
+                items.append("")
+            items.append(lower_to_upper(plain(self.reg.menu_titles[mi])))
+            for l in lines:
+                items.append(l)
         for l in [
-            "FILE                                 EDIT",
-            "  F3 / Ctrl-O   Open                   Ctrl-Z / Alt-Bksp  Undo",
-            "  F2 / Ctrl-S   Save                   Ctrl-Y            Redo",
-            "  Ctrl-N        New                    Ctrl-X/C/V        Cut/Copy/Paste",
-            "  Alt-F3/Ctrl-W Close window           Shift-Del/Ctrl-Ins/Shift-Ins",
-            "  Alt-X/Ctrl-Q  Quit                   Ctrl-A            Select all",
-            "                                       Ctrl-/            Toggle comment",
-            "SEARCH                                 Ctrl-D            Duplicate line",
-            "  Ctrl-F  Find      Ctrl-R  Replace    Ctrl-K            Delete line",
-            "  Ctrl-L  Again     Ctrl-G  Go to line Ctrl-Space        Complete word",
-            "  Ctrl-T  Symbols   Ctrl-]  Bracket    Tab/Shift-Tab     Indent/outdent",
-            "  Ctrl-P  Command palette              Ins               Insert/overwrite",
             "",
-            "COMPILE / RUN                          WINDOWS",
-            "  F9 / Ctrl-B  Build (mojo build)      F5        Zoom",
-            "  Ctrl-F9 / F8 Run (mojo run)          F6/Sh-F6  Next/previous window",
-            "  Alt-F9       Format (mojo format)    Alt-1..9  Select window",
-            "  Alt-F8/F7    Next/prev message       Alt-0     Window list",
-            "  Alt-F5       User screen             Mouse: drag title, resize corner",
+            "MENUS",
+            "  F10                     Open the menu bar",
+            "  Alt-<letter>            Open the menu with that highlighted letter",
+            "  Alt-1..9                Go to window number",
+            "  Esc                     Close a menu or dialog",
             "",
-            "MENUS: F10 or Alt + highlighted letter.  Esc closes menus/dialogs.",
-            "Movement: arrows, Ctrl-arrows (words), Home (smart), End, PgUp/PgDn,",
-            "Ctrl-Home/End (file). Hold Shift to select. Mouse wheel scrolls.",
-            "Clipboard is mirrored to the system clipboard with OSC 52.",
+            "EDITING",
+            "  Arrows, Home, End       Move (Home toggles indent / column 1)",
+            "  Ctrl-Left/Right         Move by word",
+            "  Ctrl-Home/End           Start / end of file",
+            "  PgUp/PgDn               Page; Ctrl-Up/Down scrolls the view",
+            "  Shift + movement        Select",
+            "  Tab / Shift-Tab         Indent / outdent (selection or line)",
+            "  Ins                     Insert / overwrite mode",
+            "",
+            "MOUSE",
+            "  Click, drag, wheel      Place cursor, select, scroll",
+            "  Title bar / corner      Move / resize a window",
+            "  [■] / [↑]               Close / zoom a window",
         ]:
             items.append(String(l))
         var data = List[Int]()

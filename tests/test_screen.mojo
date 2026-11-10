@@ -8,7 +8,8 @@ from std.collections import List
 from screen import Screen, CONT
 from palette import Palette, theme
 from highlight import Highlighter
-from menu import build_menus, draw_menubar, draw_dropdown, CM_LINENUM
+from menu import build_menus, draw_menubar, draw_dropdown
+from commands import build_registry, CM_LINENUM
 from dialog import Dialog, Field, D_FIND, D_INFO
 from window import Window, WK_EDITOR, WK_MESSAGE
 from util import decode, to_str, env_or, path_exists, bytes_to_str, str_bytes, cp_len
@@ -157,11 +158,11 @@ def test_menubar_golden() raises:
     var s = Screen(80, 3)
     var p = theme(0)
     s.fill(0, 0, 80, 3, 32, 0, 0)
-    draw_menubar(s, p, build_menus(), 2, "12:34")
+    draw_menubar(s, p, build_menus(build_registry()), 2, "12:34")
     assert_true(row(s, 0).startswith("  ≡   File   Edit   Search   Run   Compile   Options   Window   Help"))
     assert_true(row(s, 0).endswith("12:34"))
     # the open menu (Edit, index 2) is highlighted, its neighbours are not
-    var menus = build_menus()
+    var menus = build_menus(build_registry())
     assert_equal(s.bg_at(menus[2].x + 1, 0), p.menu_sel_bg)
     assert_equal(s.bg_at(menus[1].x + 1, 0), p.menu_bg)
     assert_equal(s.fg_at(menus[1].x + 1, 0), p.menu_hot)   # hot letter of File
@@ -172,7 +173,7 @@ def test_dropdown_golden() raises:
     var s = Screen(60, 16)
     var p = theme(0)
     s.fill(0, 0, 60, 16, 32, 0, 0)
-    var menus = build_menus()
+    var menus = build_menus(build_registry())
     var checks = List[Int]()
     checks.append(CM_LINENUM)
     draw_menubar(s, p, menus, 6, "")
