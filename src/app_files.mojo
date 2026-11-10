@@ -11,7 +11,7 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
-from buffer import TextBuffer, Pos
+from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
@@ -110,13 +110,19 @@ __extension App:
         self.wins[i].overwrite_ok = False
         if self.wins[i].buf.trim_on_save:
             _ = self.wins[i].trim_trailing_whitespace()
+        var note = String("")
+        if self.wins[i].buf.encoding == ENC_LATIN1 and not self.wins[i].buf.latin1_ok():
+            # the text now has characters Latin-1 cannot hold
+            self.wins[i].buf.encoding = ENC_UTF8
+            note = " as UTF-8 (it has characters Latin-1 cannot hold)"
         var b = self.wins[i].buf.to_bytes()
-        with open(self.wins[i].path, "w") as f:
-            f.write(bytes_to_str(b))
+        if not write_file(self.wins[i].path, b):
+            raise Error("Could not write " + self.wins[i].path)
         self.wins[i].buf.modified = False
+        self.wins[i].buf.mixed_eol = False      # written with one kind of line end
         self.note_disk_state(i)
         self.drop_swap(i)
-        self.say("Saved " + self.wins[i].path)
+        self.say("Saved " + self.wins[i].path + note)
         return True
 
     def remove_window(mut self, i: Int):

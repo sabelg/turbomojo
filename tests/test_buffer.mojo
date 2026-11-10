@@ -1,7 +1,7 @@
 """Tests for src/buffer.mojo: loading/saving, edits, undo/redo, randomised consistency."""
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
-from buffer import TextBuffer, Pos
+from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from swap import write_bytes_atomic
 from util import decode, to_str, bytes_to_str, decode_list, read_file, str_bytes, env_or, run_system
 
@@ -374,13 +374,20 @@ def test_load_bytes_with_invalid_utf8() raises:
     cases.append(c6.copy())
     cases.append(c7.copy())
     cases.append(c8.copy())
+    # not UTF-8: read as Latin-1, one character per byte, and written back unchanged
     for i in range(len(cases)):
-        same_as_codepoint_load(cases[i], "invalid case " + String(i + 1))
-    # a bad byte is shown as U+FFFD and nothing around it is lost
+        var t = TextBuffer()
+        t.load_bytes(cases[i])
+        assert_equal(t.encoding, ENC_LATIN1, "case " + String(i + 1))
+        assert_false(t.bom)
+        var back = t.to_bytes()
+        assert_equal(len(back), len(cases[i]), "case " + String(i + 1) + ": length")
+        for k in range(len(back)):
+            assert_equal(Int(back[k]), Int(cases[i][k]), "case " + String(i + 1) + ": byte " + String(k))
     var b = TextBuffer()
     b.load_bytes(c1)
     assert_equal(b.at(0, 0), 97)
-    assert_equal(b.at(0, 1), 0xFFFD)
+    assert_equal(b.at(0, 1), 0xFF)                      # ÿ, not a replacement mark
     assert_equal(b.at(0, 2), 98)
 
 
@@ -396,7 +403,25 @@ def test_load_bytes_random_input() raises:
             else:
                 for q in str_bytes(pieces[r.next(len(pieces))]):
                     bytes.append(q)
-        same_as_codepoint_load(bytes, "round " + String(round))
+        var probe = TextBuffer()
+        probe.load_bytes(bytes)
+        if probe.encoding == ENC_UTF8:
+            same_as_codepoint_load(bytes, "round " + String(round))
+        else:
+            # read as Latin-1: writing and reading again gives the same text. (Left out:
+            # inputs with carriage returns, where "\r\r\n" in an LF file is written back
+            # as "\r\n" - a line-ending matter that has nothing to do with the encoding.)
+            var has_cr = False
+            for q in bytes:
+                if q == 13:
+                    has_cr = True
+            if has_cr:
+                continue
+            var again = TextBuffer()
+            again.load_bytes(probe.to_bytes())
+            assert_equal(again.encoding, ENC_LATIN1, "round " + String(round))
+            assert_equal(to_str(again.all_text()), to_str(probe.all_text()), "round " + String(round))
+            assert_equal(bytes_to_str(again.to_bytes()), bytes_to_str(probe.to_bytes()), "round " + String(round))
 
 
 def test_load_bytes_resets_undo_and_lexer_cache() raises:
@@ -433,6 +458,92 @@ def test_read_file_returns_exact_bytes() raises:
     _ = run_system("rm -f '" + path + "'")
     # a file that reports size 0 but has content
     assert_true(len(read_file("/proc/self/status")) > 0)
+
+
+
+# ---------------------------------------------------------------- encodings
+def same_bytes(a: List[UInt8], b: List[UInt8], what: String) raises:
+    assert_equal(len(a), len(b), what + ": length")
+    for k in range(len(a)):
+        assert_equal(Int(a[k]), Int(b[k]), what + ": byte " + String(k))
+
+
+def test_utf8_bom_is_kept() raises:
+    var src: List[UInt8] = [0xEF, 0xBB, 0xBF, 104, 105, 10]
+    var b = TextBuffer()
+    b.load_bytes(src)
+    assert_true(b.bom)
+    assert_equal(b.encoding, ENC_UTF8)
+    assert_equal(to_str(b.all_text()), "hi\n")           # the mark is not part of the text
+    assert_equal(b.llen(0), 2)
+    same_bytes(b.to_bytes(), src, "unchanged")
+    _ = b.insert(0, 0, decode("é"), 0, 0, 0)
+    var want: List[UInt8] = [0xEF, 0xBB, 0xBF, 0xC3, 0xA9, 104, 105, 10]
+    same_bytes(b.to_bytes(), want, "after an edit")
+    # tools get the text without the mark
+    assert_equal(bytes_to_str(b.text_bytes()), "éhi\n")
+    var only: List[UInt8] = [0xEF, 0xBB, 0xBF]
+    b.load_bytes(only)
+    assert_true(b.bom)
+    assert_equal(b.count(), 1)
+    same_bytes(b.to_bytes(), only, "only a mark")
+    var plain = TextBuffer()
+    plain.load_bytes(str_bytes("hi\n"))
+    assert_false(plain.bom)
+    assert_equal(len(plain.to_bytes()), 3)
+    # a mark in the middle of the text is an ordinary character
+    var mid: List[UInt8] = [97, 0xEF, 0xBB, 0xBF, 98]
+    plain.load_bytes(mid)
+    assert_false(plain.bom)
+    assert_equal(plain.llen(0), 3)
+
+
+def test_latin1_file_round_trips_and_shows_real_characters() raises:
+    var src: List[UInt8] = [99, 97, 102, 0xE9, 32, 0xFC, 98, 101, 114, 13, 10, 0xA9, 13, 10]   # "café über" CRLF "©"
+    var b = TextBuffer()
+    b.load_bytes(src)
+    assert_equal(b.encoding, ENC_LATIN1)
+    assert_true(b.crlf)
+    assert_equal(to_str(b.line(0)), "café über")
+    assert_equal(to_str(b.line(1)), "©")
+    same_bytes(b.to_bytes(), src, "unchanged")
+    _ = b.insert(1, 1, decode(" ñ"), 0, 0, 0)            # still Latin-1
+    assert_true(b.latin1_ok())
+    var want: List[UInt8] = [99, 97, 102, 0xE9, 32, 0xFC, 98, 101, 114, 13, 10, 0xA9, 32, 0xF1, 13, 10]
+    same_bytes(b.to_bytes(), want, "edited")
+    # the language server is given UTF-8
+    assert_equal(bytes_to_str(b.text_bytes()), "café über\r\n© ñ\r\n")
+
+
+def test_latin1_buffer_with_other_characters_is_written_as_utf8() raises:
+    var src: List[UInt8] = [0xE9, 10]
+    var b = TextBuffer()
+    b.load_bytes(src)
+    assert_equal(b.encoding, ENC_LATIN1)
+    _ = b.insert(0, 1, decode("日"), 0, 0, 0)
+    assert_false(b.latin1_ok())
+    assert_equal(bytes_to_str(b.to_bytes()), "é日\n")    # nothing is lost
+
+
+def test_mixed_line_endings_are_noticed() raises:
+    var b = TextBuffer()
+    b.load_bytes(str_bytes("a\r\nb\nc\n"))
+    assert_true(b.mixed_eol)
+    assert_false(b.crlf)                                 # the majority decides what is written
+    assert_equal(bytes_to_str(b.to_bytes()), "a\nb\nc\n")
+    b.load_bytes(str_bytes("a\r\nb\r\nc\n"))
+    assert_true(b.mixed_eol)
+    assert_true(b.crlf)
+    b.load_bytes(str_bytes("a\r\nb\r\n"))
+    assert_false(b.mixed_eol)
+    b.load_bytes(str_bytes("a\nb\n"))
+    assert_false(b.mixed_eol)
+    b.load(decode("a\r\nb\n"))
+    assert_true(b.mixed_eol)
+    b.load(decode("plain"))
+    assert_false(b.mixed_eol)
+    assert_false(b.bom)
+    assert_equal(b.encoding, ENC_UTF8)
 
 
 def main() raises:

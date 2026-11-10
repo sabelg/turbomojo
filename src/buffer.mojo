@@ -30,6 +30,10 @@ struct Pos(Copyable, Movable):
     var c: Int
 
 
+comptime ENC_UTF8 = 0
+comptime ENC_LATIN1 = 1
+
+
 struct TextBuffer(Copyable, Movable):
     var rope: Rope
     var undos: List[UndoRec]
@@ -38,6 +42,9 @@ struct TextBuffer(Copyable, Movable):
     var folds: List[Int]      # rows of the folded block headers, ascending
     var fold_ends: List[Int]  # last hidden row of each fold (as of fold_version)
     var fold_version: Int
+    var bom: Bool             # the file starts with a UTF-8 byte order mark (kept on save)
+    var encoding: Int         # ENC_UTF8 or ENC_LATIN1: how the file's bytes are read and written
+    var mixed_eol: Bool       # the file had both LF and CRLF line ends (saving makes them one kind)
     var large: Bool           # large-file mode: expensive features are off for this buffer
     var version: Int
     var crlf: Bool
@@ -59,6 +66,9 @@ struct TextBuffer(Copyable, Movable):
         self.redos = List[UndoRec]()
         self.modified = False
         self.large = False
+        self.bom = False
+        self.encoding = ENC_UTF8
+        self.mixed_eol = False
         self.folds = List[Int]()
         self.fold_ends = List[Int]()
         self.fold_version = -1
@@ -105,22 +115,28 @@ struct TextBuffer(Copyable, Movable):
             clean.append(c)
         self.eol_at_eof = len(clean) == 0 or clean[len(clean) - 1] == 10
         self.crlf = crlf_n > lf_n
+        self.mixed_eol = crlf_n > 0 and lf_n > 0
+        self.bom = False
+        self.encoding = ENC_UTF8
         self.use_tabs = tabs > spaces
         self.rope.load_cps(clean)
         self.after_load()
 
     def load_bytes(mut self, bytes: List[UInt8]):
         """load() straight from a file's bytes, without the detour through a list of
-        codepoints (8 bytes per character). Gives exactly the same result. Bytes that are
-        not valid UTF-8 take the slow path, where each bad byte becomes U+FFFD."""
+        codepoints (8 bytes per character). A UTF-8 byte order mark at the start is taken
+        off and remembered. Bytes that are not valid UTF-8 mean the file is in another
+        encoding: it is then read as Latin-1, one character per byte, which loses nothing
+        and writes back the same bytes."""
         var n = len(bytes)
+        var has_bom = n >= 3 and bytes[0] == 0xEF and bytes[1] == 0xBB and bytes[2] == 0xBF
         var clean = List[UInt8](capacity=n)
         var crlf_n = 0
         var lf_n = 0
         var tabs = 0
         var spaces = 0
         var at_line_start = True
-        var i = 0
+        var i = 3 if has_bom else 0
         while i < n:
             var c = Int(bytes[i])
             if c < 0x80:
@@ -168,7 +184,11 @@ struct TextBuffer(Copyable, Movable):
                     if bk < 0x80 or bk > 0xBF:
                         good = False
             if not good:
-                self.load(decode_list(bytes))
+                var cps = List[Int]()
+                for q in range(n):
+                    cps.append(Int(bytes[q]))
+                self.load(cps)
+                self.encoding = ENC_LATIN1
                 return
             for k in range(size):
                 clean.append(bytes[i + k])
@@ -176,6 +196,9 @@ struct TextBuffer(Copyable, Movable):
             i += size
         self.eol_at_eof = len(clean) == 0 or clean[len(clean) - 1] == 10
         self.crlf = crlf_n > lf_n
+        self.mixed_eol = crlf_n > 0 and lf_n > 0
+        self.bom = has_bom
+        self.encoding = ENC_UTF8
         self.use_tabs = tabs > spaces
         self.rope.load_bytes(clean)
         self.after_load()
@@ -344,9 +367,45 @@ struct TextBuffer(Copyable, Movable):
         """The whole text as codepoints, lines separated by "\n"."""
         return self.rope.to_cps()
 
+    def latin1_ok(self) -> Bool:
+        """Can every character be written as one Latin-1 byte (nothing above U+00FF)?"""
+        for b in self.rope.to_bytes():
+            if b >= 0xC4:
+                return False
+        return True
+
     def to_bytes(self) -> List[UInt8]:
-        """The bytes to write to disk: the file's line endings, and a final newline when
-        the buffer's policy asks for one and the last line is not empty."""
+        """The bytes to write to disk: in the file's encoding, with its byte order mark,
+        its line endings, and a final newline when the buffer's policy asks for one and
+        the last line is not empty. A Latin-1 buffer that has gained characters Latin-1
+        cannot hold is written as UTF-8 rather than losing them."""
+        var text = self.text_bytes()
+        if self.encoding == ENC_LATIN1 and self.latin1_ok():
+            var out = List[UInt8](capacity=len(text))
+            var i = 0
+            while i < len(text):
+                var b = Int(text[i])
+                if b < 0x80:
+                    out.append(text[i])
+                    i += 1
+                else:
+                    # two UTF-8 bytes (C2/C3 xx) are one Latin-1 byte
+                    out.append(UInt8(((b & 0x03) << 6) | (Int(text[i + 1]) & 0x3F)))
+                    i += 2
+            return out^
+        if self.bom and self.encoding == ENC_UTF8:
+            var out = List[UInt8](capacity=len(text) + 3)
+            out.append(0xEF)
+            out.append(0xBB)
+            out.append(0xBF)
+            for b in text:
+                out.append(b)
+            return out^
+        return text^
+
+    def text_bytes(self) -> List[UInt8]:
+        """The text as UTF-8 with the file's line endings and final newline: what tools
+        that take UTF-8 (the language server) are given."""
         var raw = self.rope.to_bytes()
         var need_final = self.eol_at_eof and self.rope.line_len(self.rope.line_count() - 1) > 0
         if not self.crlf:

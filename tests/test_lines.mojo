@@ -428,5 +428,79 @@ def test_trim_on_save_setting() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
+
+# ---------------------------------------------------------------- encodings
+def last_row(mut app: App) -> String:
+    app.status_until = 0
+    app.draw()
+    return to_str(app.scr.row_text(app.scr.h - 1))
+
+
+def test_encoding_and_line_end_state_in_the_status_line_and_on_save() raises:
+    var dir = env_or("TMPDIR", "/tmp") + "/turbomojo-enctest-" + String(own_pid())
+    _ = run_system("rm -rf '" + dir + "' && mkdir -p '" + dir + "'")
+    _ = run_system("printf '\\357\\273\\277bom\\n' > '" + dir + "/bom.txt'")
+    _ = run_system("printf 'caf\\351\\n' > '" + dir + "/latin.txt'")
+    _ = run_system("printf 'a\\r\\nb\\nc\\n' > '" + dir + "/mixed.txt'")
+    var app = App()
+    app.scr.resize(100, 25)
+    # byte order mark: shown, kept
+    app.open_path(dir + "/bom.txt")
+    var t = app.top()
+    assert_true(last_row(app).find("UTF-8 BOM") > 0, last_row(app))
+    app.wins[t].goto(0, 3)
+    app.wins[t].type_char(33, True)
+    app.exec(CM_SAVE)
+    var bom = read_file(dir + "/bom.txt")
+    assert_equal(len(bom), 8)
+    assert_equal(Int(bom[0]), 0xEF)
+    assert_equal(Int(bom[3]), 98)
+    assert_equal(Int(bom[6]), 33)
+    # Latin-1: shown, the accented letter is one byte again on disk
+    app.open_path(dir + "/latin.txt")
+    t = app.top()
+    assert_true(last_row(app).find("Latin-1") > 0, last_row(app))
+    assert_equal(to_str(app.wins[t].buf.line(0)), "café")
+    app.wins[t].goto(0, 4)
+    app.wins[t].type_char(115, True)
+    app.exec(CM_SAVE)
+    var lat = read_file(dir + "/latin.txt")
+    assert_equal(len(lat), 6)
+    assert_equal(Int(lat[3]), 0xE9)
+    assert_equal(Int(lat[4]), 115)
+    # a character Latin-1 cannot hold: saved as UTF-8, and the user is told
+    app.wins[t].type_char(0x65E5, True)
+    app.exec(CM_SAVE)
+    assert_true(app.status.find("as UTF-8") > 0, app.status)
+    assert_equal(bytes_to_str(read_file(dir + "/latin.txt")), "cafés日\n")
+    assert_true(last_row(app).find("Latin-1") < 0)
+    # mixed line ends: flagged until the file is saved with one kind
+    app.open_path(dir + "/mixed.txt")
+    t = app.top()
+    assert_true(last_row(app).find("Mixed>LF") > 0, last_row(app))
+    app.wins[t].goto(2, 1)
+    app.wins[t].type_char(33, True)
+    app.exec(CM_SAVE)
+    assert_equal(bytes_to_str(read_file(dir + "/mixed.txt")), "a\nb\nc!\n")
+    assert_true(last_row(app).find("Mixed") < 0)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_saving_to_a_place_that_cannot_be_written_reports_an_error() raises:
+    var app = App()
+    app.scr.resize(80, 25)
+    app.exec(CM_NEW)
+    var t = app.top()
+    app.wins[t].path = "/nonexistent-dir-turbomojo/x.txt"
+    app.wins[t].type_char(97, True)
+    var failed = False
+    try:
+        app.exec(CM_SAVE)
+    except:
+        failed = True
+    assert_true(failed)
+    assert_true(app.wins[t].buf.modified)                # still unsaved
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

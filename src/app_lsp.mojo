@@ -54,7 +54,7 @@ __extension App:
             self.lsp.did_close(self.lsp_uri)
         self.lsp_path = path
         self.lsp_uri = path_to_uri(path)
-        var text = bytes_to_str(self.wins[i].buf.to_bytes())
+        var text = bytes_to_str(self.wins[i].buf.text_bytes())
         if not self.lsp.did_open(self.lsp_uri, text):
             _ = self.lsp.did_change(self.lsp_uri, text)
         self.lsp_sent_version = self.wins[i].buf.version
@@ -124,7 +124,7 @@ __extension App:
         if self.lsp_change_due > 0 and now >= self.lsp_change_due and self.lsp.state == LSP_READY:
             self.lsp_change_due = 0
             if v != self.lsp_sent_version:
-                _ = self.lsp.did_change(self.lsp_uri, bytes_to_str(self.wins[i].buf.to_bytes()))
+                _ = self.lsp.did_change(self.lsp_uri, bytes_to_str(self.wins[i].buf.text_bytes()))
                 self.lsp_sent_version = v
                 self.lsp_sent_ns = now
         for uri in self.lsp.take_updated():

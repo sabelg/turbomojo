@@ -106,6 +106,22 @@ def read_file(path: String) -> List[UInt8]:
     return out^
 
 
+def write_file(path: String, data: List[UInt8]) -> Bool:
+    """Write the bytes to the file, replacing its content (the file itself stays the same
+    one: links and permissions are kept). False if it could not be written completely."""
+    var p = String(path)
+    var mode = String("wb")
+    var fp = external_call["fopen", Int](p.as_c_string_span(), mode.as_c_string_span())
+    if fp == 0:
+        return False
+    var n = len(data)
+    var written = n
+    if n > 0:
+        written = external_call["fwrite", Int](data.unsafe_ptr(), Int(1), n, fp)
+    var closed = Int(external_call["fclose", Int32](fp))
+    return written == n and closed == 0
+
+
 def bytes_to_str(b: List[UInt8]) -> String:
     return String(unsafe_from_utf8=Span(b))
 

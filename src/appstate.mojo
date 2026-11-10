@@ -13,7 +13,7 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
-from buffer import TextBuffer, Pos
+from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *

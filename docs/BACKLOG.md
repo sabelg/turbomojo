@@ -49,7 +49,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P1-15 Keymaps: Modern (default), Turbo/WordStar (Ctrl-K/Ctrl-Q chords), Emacs-lite; user key rebinding from config; chord support
 - [x] P1-16 Kitty keyboard protocol when the probe confirms it (push/pop flags, CSI u parsing, release events ignored)
 - [x] P1-17 Keyboard macros: record/replay
-- [ ] P1-18 Encodings: UTF-8 BOM preserved, Latin-1 fallback for invalid UTF-8, mixed-EOL indicator
+- [x] P1-18 Encodings: UTF-8 BOM preserved, Latin-1 fallback for invalid UTF-8, mixed-EOL indicator
 - [ ] P1-19 Persistent undo and cursor position across sessions (state dir)
 - [ ] P1-20 Tree-sitter spike: check whether `libtree-sitter` and a Mojo grammar are obtainable through pixi/conda; if so bind via FFI and measure error nodes on the stdlib; record decision in the journal. If not obtainable, mark blocked and keep the lexer
 

@@ -37,9 +37,13 @@ __extension App:
         var cr = self.wins[i].cr
         var cc = self.wins[i].cc
         var tmp = TextBuffer()
-        tmp.load(decode_list(read_bytes(self.wins[i].path)))
+        tmp.load_bytes(read_bytes(self.wins[i].path))
         self.wins[i].replace_all_text(tmp.all_text())
         self.wins[i].buf.crlf = tmp.crlf
+        self.wins[i].buf.bom = tmp.bom
+        self.wins[i].buf.encoding = tmp.encoding
+        self.wins[i].buf.mixed_eol = tmp.mixed_eol
+        self.wins[i].buf.eol_at_eof = tmp.eol_at_eof
         self.wins[i].cr = cr
         self.wins[i].cc = cc
         self.wins[i].clamp()

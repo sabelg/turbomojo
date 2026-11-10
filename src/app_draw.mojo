@@ -11,7 +11,7 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
-from buffer import TextBuffer, Pos
+from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
@@ -61,7 +61,13 @@ __extension App:
         else:
             var ti = self.top_editor()
             if ti >= 0:
-                right = ("CRLF" if self.wins[ti].buf.crlf else "LF") + "  " + (("Tabs:" + String(self.wins[ti].buf.tab_width)) if self.wins[ti].buf.use_tabs else ("Spaces:" + String(self.wins[ti].buf.indent_size))) + "  "
+                if self.wins[ti].buf.encoding == ENC_LATIN1:
+                    right += "Latin-1  "
+                elif self.wins[ti].buf.bom:
+                    right += "UTF-8 BOM  "
+                if self.wins[ti].buf.mixed_eol:
+                    right += "Mixed>"          # both kinds in the file; saving writes this one
+                right += ("CRLF" if self.wins[ti].buf.crlf else "LF") + "  " + (("Tabs:" + String(self.wins[ti].buf.tab_width)) if self.wins[ti].buf.use_tabs else ("Spaces:" + String(self.wins[ti].buf.indent_size))) + "  "
             if self.lsp.active():
                 right += "LSP  "
         if self.macro_rec:
