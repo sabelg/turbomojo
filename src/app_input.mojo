@@ -39,6 +39,11 @@ from app_draw import *
 __extension App:
     # ================================================================ input
     def handle(mut self, e: Event) raises:
+        self.handle_event(e)
+        if self.mode == M_DIALOG and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE):
+            self.find_refresh()
+
+    def handle_event(mut self, e: Event) raises:
         if e.kind == EV_MOUSE:
             self.handle_mouse(e)
             return
@@ -167,6 +172,7 @@ __extension App:
             self.insert_mode = not self.insert_mode
         elif k == KEY_ESC:
             self.wins[t].sel = False
+            self.wins[t].clear_highlight()
         elif k < K_BASE and k >= 32:
             self.wins[t].type_char(k, self.insert_mode)
         self.wins[t].follow = True

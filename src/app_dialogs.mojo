@@ -104,6 +104,9 @@ __extension App:
             return
         if kind == D_BUSY:
             return
+        if kind == D_FIND or kind == D_REPLACE:
+            self.find_button(b)
+            return
         self.mode = M_NORMAL
         if kind == D_SAVEAS and b == 0:
             var i = self.dlg.payload
@@ -134,30 +137,6 @@ __extension App:
                     self.remove_window(i)
                     if next == NEXT_QUIT:
                         self.quit()
-        elif kind == D_FIND and b == 0:
-            self.find_text = self.dlg.fields[0].text.copy()
-            self.find_case = self.dlg.check_vals[0]
-            self.find_again()
-        elif kind == D_REPLACE and b <= 1:
-            self.find_text = self.dlg.fields[0].text.copy()
-            self.replace_text = self.dlg.fields[1].text.copy()
-            self.find_case = self.dlg.check_vals[0]
-            var ai = self.active_editor()
-            if ai < 0:
-                return
-            if b == 1:
-                var n = self.wins[ai].replace_all(self.find_text, self.replace_text, self.find_case)
-                self.say(String(n) + " occurrence(s) replaced")
-            else:
-                if not self.wins[ai].sel_matches(self.find_text, self.find_case):
-                    _ = self.wins[ai].find_next(self.find_text, self.find_case)
-                if self.wins[ai].sel_matches(self.find_text, self.find_case):
-                    self.wins[ai].insert_text(self.replace_text, ACT_OTHER)
-                    self.wins[ai].break_group()
-                    if not self.wins[ai].find_next(self.find_text, self.find_case):
-                        self.say("No more matches")
-                else:
-                    self.info("Information", "Search string not found.")
         elif kind == D_GOTO and b == 0:
             var ai = self.active_editor()
             var t = self.dlg.field_text(0)
@@ -209,6 +188,213 @@ __extension App:
                 self.persist_option("tools", "compiler", toml_quote(c))
                 self.say("Compiler: " + c)
 
+    # ------------------------------------------------------------ find / replace
+    def current_search(self) -> Search:
+        return make_search(self.find_text, self.find_case, self.find_word, self.find_regex)
+
+    def match_note(self, ai: Int, s: Search) -> String:
+        """"Match 3 of 17" for the match selected in window ai."""
+        var n = self.wins[ai].count_matches(s, COUNT_LINE_LIMIT)
+        var total = String(n.r1) + ("+" if n.r2 == 1 else "")
+        if n.c1 > 0:
+            return "Match " + String(n.c1) + " of " + total
+        if n.r2 == 1:
+            return "Found (the text is too long to count the matches)"
+        return total + " match" + ("" if n.r1 == 1 else "es")
+
+    def open_find(mut self, replace: Bool):
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        var sel = self.wins[ai].selected_text()
+        var multi = 10 in sel
+        var seed = to_str(sel) if len(sel) > 0 and not multi else to_str(self.find_text)
+        var d = Dialog(D_REPLACE if replace else D_FIND, "Replace" if replace else "Find", 60, 14 if replace else 12)
+        d.fields.append(Field("~T~ext to find", seed))
+        if replace:
+            d.fields.append(Field("~N~ew text", to_str(self.replace_text)))
+            d.buttons.append("~R~eplace")
+            d.buttons.append("Change ~a~ll")
+        else:
+            d.buttons.append("~O~K")
+        d.buttons.append("~C~ancel")
+        d.checks.append("Case sens~i~tive")
+        d.check_vals.append(self.find_case)
+        d.checks.append("~W~hole words")
+        d.check_vals.append(self.find_word)
+        d.checks.append("Regular e~x~pression")
+        d.check_vals.append(self.find_regex)
+        d.checks.append("In ~s~election")
+        d.check_vals.append(multi)             # several lines selected: search inside them
+        d.check_cols = 2
+        d.at_bottom = True                     # leave the text and its matches in view
+        d.payload = ai
+        self.fo_cr = self.wins[ai].cr
+        self.fo_cc = self.wins[ai].cc
+        self.fo_sel = self.wins[ai].has_sel()
+        self.fo_ar = self.wins[ai].ar
+        self.fo_ac = self.wins[ai].ac
+        self.fo_top = self.wins[ai].top
+        self.wins[ai].scope_on = False
+        self.show(d^)
+        self.find_preview()
+
+    def find_window(self) -> Int:
+        """The editor the open Find dialog works on (-1 if it is gone)."""
+        var ai = self.dlg.payload
+        if ai < 0 or ai >= len(self.wins) or self.wins[ai].kind != WK_EDITOR:
+            return -1
+        return ai
+
+    def find_restore(mut self, ai: Int):
+        """Put the cursor, selection and scroll position back where the dialog found them."""
+        var last = self.wins[ai].buf.count() - 1
+        self.wins[ai].cr = min(self.fo_cr, last)
+        self.wins[ai].cc = self.fo_cc
+        self.wins[ai].sel = self.fo_sel
+        self.wins[ai].ar = min(self.fo_ar, last)
+        self.wins[ai].ac = self.fo_ac
+        self.wins[ai].top = self.fo_top
+        self.wins[ai].clamp()
+        self.wins[ai].sync_want()
+
+    def find_signature(self) -> String:
+        var sig = to_str(self.dlg.fields[0].text)
+        for v in self.dlg.check_vals:
+            sig += "\n1" if v else "\n0"
+        return sig
+
+    def find_refresh(mut self):
+        """Incremental search: called after every event while the Find dialog is open."""
+        if self.find_signature() != self.find_sig:
+            self.find_preview()
+
+    def find_preview(mut self):
+        """Show the dialog's current search in the editor: select the first match at or
+        after the place the search started from, highlight all matches, and report the
+        count (or the pattern error) in the dialog."""
+        self.find_sig = self.find_signature()
+        var ai = self.find_window()
+        if ai < 0:
+            return
+        self.find_restore(ai)
+        var s = make_search(self.dlg.fields[0].text, self.dlg.check_vals[0], self.dlg.check_vals[1], self.dlg.check_vals[2])
+        var in_sel = self.dlg.check_vals[3]
+        if not in_sel:
+            self.wins[ai].scope_on = False
+        elif not self.wins[ai].scope_on and self.fo_sel:
+            self.wins[ai].scope = self.wins[ai].sel_range()
+            self.wins[ai].scope_on = True
+        if len(s.pat) == 0:
+            self.wins[ai].clear_highlight()
+            self.dlg.note = ""
+            return
+        if not s.ok:
+            self.wins[ai].clear_highlight()
+            self.dlg.note = "Pattern error: " + s.error
+            return
+        if in_sel and not self.wins[ai].scope_on:
+            self.wins[ai].clear_highlight()
+            self.dlg.note = "Nothing is selected"
+            return
+        self.wins[ai].set_highlight(s)
+        if self.wins[ai].buf.count() > PREVIEW_LINE_LIMIT:
+            self.dlg.note = "Large text: press Enter to search"
+            return
+        var r0 = self.wins[ai].cr
+        var c0 = self.wins[ai].cc
+        if self.wins[ai].has_sel():
+            var q = self.wins[ai].sel_range()
+            r0 = q.r1
+            c0 = q.c1
+        if self.wins[ai].scope_on:
+            var sc = self.wins[ai].scope.copy()
+            if r0 < sc.r1 or (r0 == sc.r1 and c0 < sc.c1) or r0 > sc.r2:
+                r0 = sc.r1
+                c0 = sc.c1
+        if not self.wins[ai].search_from(s, r0, c0):
+            self.dlg.note = "No matches" + (" in the selection" if self.wins[ai].scope_on else "")
+            return
+        self.dlg.note = self.match_note(ai, s)
+        self.find_keep_in_view(ai)
+
+    def find_keep_in_view(mut self, ai: Int):
+        """Scroll so the selected match is not hidden behind the dialog."""
+        self.wins[ai].ensure_visible()
+        var dh = min(self.dlg.h, self.scr.h - 2)
+        var dy = max(1, self.scr.h - dh - 1)
+        var row_y = self.wins[ai].y + 1 + (self.wins[ai].cr - self.wins[ai].top)
+        if row_y >= dy:
+            self.wins[ai].top = max(0, self.wins[ai].cr - 2)
+
+    def find_close(mut self, restore: Bool):
+        self.mode = M_NORMAL
+        var ai = self.find_window()
+        if ai < 0:
+            return
+        self.wins[ai].scope_on = False
+        if restore:
+            self.find_restore(ai)
+            self.wins[ai].clear_highlight()
+
+    def dismiss_dialog(mut self):
+        """Esc or the close box."""
+        if self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE:
+            self.find_close(True)
+        else:
+            self.mode = M_NORMAL
+
+    def find_button(mut self, b: Int):
+        var kind = self.dlg.kind
+        var ai = self.find_window()
+        if b == len(self.dlg.buttons) - 1 or ai < 0:
+            self.find_close(True)
+            return
+        var big = self.wins[ai].buf.count() > PREVIEW_LINE_LIMIT
+        self.find_preview()             # the editor now shows exactly what the dialog says
+        self.find_text = self.dlg.fields[0].text.copy()
+        self.find_case = self.dlg.check_vals[0]
+        self.find_word = self.dlg.check_vals[1]
+        self.find_regex = self.dlg.check_vals[2]
+        if kind == D_REPLACE:
+            self.replace_text = self.dlg.fields[1].text.copy()
+        var s = self.current_search()
+        if len(s.pat) == 0:
+            self.find_close(True)
+            return
+        if not s.ok:
+            return                      # stay open: the note shows what is wrong
+        if big:
+            # no live preview on a huge text: search now, from where the cursor was
+            _ = self.wins[ai].search_next(s)
+        if kind == D_FIND:
+            var found = self.wins[ai].sel_is_match(s)
+            var note = self.dlg.note
+            self.find_close(not found)
+            if not found:
+                self.info("Information", "Search string not found.")
+            else:
+                self.say(self.match_note(ai, s) if big else note)
+        elif b == 1:
+            var n = self.wins[ai].replace_matches(s, self.replace_text)
+            self.find_close(False)
+            self.wins[ai].clear_highlight()
+            self.say(String(n) + " occurrence(s) replaced")
+        else:
+            # replace this match and move to the next one; the dialog stays open
+            if not self.wins[ai].replace_current(s, self.replace_text):
+                self.dlg.note = "No matches"
+                return
+            self.fo_cr = self.wins[ai].cr
+            self.fo_cc = self.wins[ai].cc
+            self.fo_sel = False
+            self.fo_top = self.wins[ai].top
+            self.find_preview()
+            if big:
+                _ = self.wins[ai].search_next(s)
+            if not self.wins[ai].sel_is_match(s):
+                self.dlg.note = "Replaced. No more matches"
+
     def dialog_key(mut self, k: Int) raises:
         if self.dlg.kind == D_RESULT:
             # any key closes the box; editing keys are not swallowed
@@ -217,8 +403,23 @@ __extension App:
                 self.handle_key(k)
             return
         if k == KEY_ESC:
-            self.mode = M_NORMAL
+            self.dismiss_dialog()
             return
+        if k & MOD_ALT != 0 and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE):
+            # Alt+letter reaches every control, also while typing in a field
+            var hk = lower(k & KEY_MASK)
+            for i in range(len(self.dlg.fields)):
+                if hot_char(self.dlg.fields[i].label) == hk:
+                    self.dlg.focus = i
+                    return
+            for i in range(len(self.dlg.checks)):
+                if hot_char(self.dlg.checks[i]) == hk:
+                    self.dlg.check_vals[i] = not self.dlg.check_vals[i]
+                    return
+            for i in range(len(self.dlg.buttons)):
+                if hot_char(self.dlg.buttons[i]) == hk:
+                    self.dialog_button(i)
+                    return
         var nf = self.dlg.n_focus()
         if k == KEY_TAB:
             if nf > 0:

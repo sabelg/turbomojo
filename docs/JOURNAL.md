@@ -767,3 +767,50 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
     for Python itself; they are tried on short texts in the reference and on long ones
     in the Mojo-only test.
 - Verified: `check.sh` CHECK OK (23 files, 486 tests).
+
+## 2026-11-10 · P1-08 search upgrade · done
+
+- New `src/search.mojo`: `Search` (pattern + case / whole word / regular expression) with
+  `caps_in` (first match in a line from a column), `all_in` and `replacement` (expands
+  `$1` etc. in regex mode). Plain text keeps a direct comparison; regex uses P1-07.
+- `Window`: `search_from`/`search_next` (wrapping, selects the match), `sel_is_match`,
+  `replace_current`, `replace_matches` (bottom to top, each line rebuilt from its
+  original text so `^` and `\b` mean what they meant before replacing; one undo step),
+  `count_matches`, `set_highlight`/`clear_highlight`, and a search scope
+  (`scope_on`/`scope`) for "in selection". The old `find_next`/`replace_all`/
+  `sel_matches` remain as plain-text wrappers.
+- Drawing: all matches of the highlighted search get `match_fg`/`match_bg` (new palette
+  entries in the three themes); the selected one keeps the selection colours.
+- Find/Replace dialogs: four options in two columns, a live note line, placed at the
+  bottom of the screen. After every key or click the editor shows the first match from
+  where the search began, with "Match i of n", "No matches" or the pattern error.
+  Esc/Cancel restores cursor, selection and scroll position; Enter keeps the match.
+  Replace replaces the selected match and stays open on the next one; Change all
+  reports the count. A multi-line selection turns "In selection" on. Alt+letter reaches
+  fields, options and buttons while typing in a field (before, Alt+letter did nothing
+  there). Ctrl+L continues and reports the match number; Esc in the editor clears the
+  marks. `Dialog` gained `note`, `check_cols`, `at_bottom`.
+- Behaviour change: matches no longer overlap. Searching "aa" in "aaa" used to stop at
+  0..2 and then 1..3; now it finds 0..2 only, the same matches that are counted,
+  highlighted and replaced. The old test for overlapping was rewritten to say so.
+- Tests: `tests/test_find.mojo` (31 tests) for options, counting, scope, replacing with
+  groups, line breaks in replacements, highlights, and the dialogs driven through
+  `App.handle` (typing, Alt keys, errors, replace one by one, change all, in selection,
+  cancel, scrolling clear of the dialog, huge texts). Failures on the way: Alt+letter
+  did not reach buttons from a field (fixed in the code); one wrong expectation of mine;
+  and a status text "0+ matches" that I first accepted in a test and then replaced with
+  a proper message.
+- Measured on the 1,000,000-line file (`build/search_bench`, not kept in the repo):
+  a search that finds nothing takes 1.4 s; counting matches costs about 1.4 us per line,
+  almost all of it fetching and decoding lines. So search-as-you-type and counting are
+  limited to texts of 50,000 lines (about 70 ms per key at the limit); beyond that the
+  dialog says "press Enter to search".
+- Not done / unverified:
+  - No "find previous", no search history, no preview of a replacement before applying.
+  - A regex cannot match across lines; zero-length matches are skipped.
+  - Whole-word uses the editor's idea of a word character (letters beyond ASCII count).
+  - Checked by hand in tmux only for Find (typing, regex option, error note, Esc); the
+    Replace dialog was exercised through tests, not by hand.
+  - The Find dialog covers the bottom 12 to 14 rows; on a very short terminal little of
+    the text stays visible.
+- Verified: `check.sh` CHECK OK (24 files, 517 tests).

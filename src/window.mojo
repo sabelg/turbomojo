@@ -9,6 +9,7 @@ from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT, line_state, scan_states
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
+from search import Search
 from grapheme import cluster_end, cluster_start, cluster_width, ends_with_plain_mark
 
 comptime WK_EDITOR = 0
@@ -59,6 +60,10 @@ struct Window(Copyable, Movable):
     var last_act: Int
     var follow: Bool
     var gut: Int
+    var hs: Search        # the search whose matches are highlighted
+    var hs_on: Bool
+    var scope_on: Bool    # searching is limited to `scope` (Find in selection)
+    var scope: Range
     var clustered: Bool   # the terminal draws a grapheme cluster as one glyph (mode 2027)
     var swap_file: String    # path of this buffer's swap file ('' if none written)
     var overwrite_ok: Bool   # the user chose to keep their version over a changed file
@@ -94,6 +99,10 @@ struct Window(Copyable, Movable):
         self.follow = True
         self.gut = 0
         self.clustered = False
+        self.hs = Search()
+        self.hs_on = False
+        self.scope_on = False
+        self.scope = Range(0, 0, 0, 0)
         self.swap_file = ""
         self.swap_version = -1
         self.disk_sig = FileSig()

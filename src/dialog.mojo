@@ -76,6 +76,11 @@ struct Dialog(Copyable, Movable):
     var field_y: List[Int]
     var field_x: Int
     var check_y: List[Int]
+    var check_x: List[Int]
+    var check_w: Int
+    var check_cols: Int     # check boxes are laid out in this many columns
+    var note: String        # a line of live information above the buttons
+    var at_bottom: Bool     # sit at the bottom of the screen instead of the middle
 
     def __init__(out self, kind: Int, title: String, w: Int, h: Int):
         self.kind = kind
@@ -109,6 +114,11 @@ struct Dialog(Copyable, Movable):
         self.field_y = List[Int]()
         self.field_x = 0
         self.check_y = List[Int]()
+        self.check_x = List[Int]()
+        self.check_w = 0
+        self.check_cols = 1
+        self.note = ""
+        self.at_bottom = False
 
     # ------------------------------------------------------------ focus
     def n_focus(self) -> Int:
@@ -203,6 +213,8 @@ struct Dialog(Copyable, Movable):
         var h = min(self.h, scr.h - 2)
         var x = (scr.w - w) // 2
         var y = max(1, (scr.h - h) // 2)
+        if self.at_bottom:
+            y = max(1, scr.h - h - 1)
         self.dx = x
         self.dy = y
         var bg = pal.dlg_bg
@@ -260,17 +272,26 @@ struct Dialog(Copyable, Movable):
             yy += 2
         # check boxes
         self.check_y.clear()
+        self.check_x.clear()
+        var ccols = max(1, self.check_cols)
+        self.check_w = max(8, (w - 6) // ccols)
         for i in range(len(self.checks)):
             var foc = self.focus == len(self.fields) + i
             var mark = "[X] " if self.check_vals[i] else "[ ] "
-            _ = scr.hot_text(x + 3, yy, mark + self.checks[i], pal.dlg_hot if foc else fg, pal.dlg_hot, bg)
-            self.check_y.append(yy)
+            var chx = x + 3 + (i % ccols) * self.check_w
+            var chy = yy + i // ccols
+            _ = scr.hot_text(chx, chy, mark + self.checks[i], pal.dlg_hot if foc else fg, pal.dlg_hot, bg)
+            self.check_y.append(chy)
+            self.check_x.append(chx)
             if foc:
-                cur_x = x + 4
-                cur_y = yy
-            yy += 1
+                cur_x = chx + 1
+                cur_y = chy
         if len(self.checks) > 0:
-            yy += 1
+            yy += (len(self.checks) + ccols - 1) // ccols + 1
+        if self.note.byte_length() > 0 and h >= 7:
+            scr.clip(x + 1, y + 1, w - 2, h - 2)
+            _ = scr.text(x + 3, y + h - 5, self.note, pal.dlg_hot, bg)
+            scr.no_clip()
         # list box
         if self.has_list:
             var lx = x + 2

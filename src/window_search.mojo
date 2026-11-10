@@ -5,89 +5,190 @@ from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
+from search import Search, make_search
 from window import *
 
 
 __extension Window:
     # ------------------------------------------------------------- search
-    def match_in(self, ln: List[Int], c: Int, pat: List[Int], cs: Bool) -> Bool:
-        """Does `pat` occur in the line `ln` at column c?"""
-        if c < 0 or c + len(pat) > len(ln):
-            return False
-        for i in range(len(pat)):
-            var a = ln[c + i]
-            var b = pat[i]
-            if not cs:
-                a = lower(a)
-                b = lower(b)
-            if a != b:
-                return False
-        return True
+    def scope_cols(self, r: Int, n: Int) -> Range:
+        """Columns of row r that may be searched: (c1, c2) in a Range, c2 < 0 for none.
+        The whole line unless the search is limited to a selection."""
+        if not self.scope_on:
+            return Range(r, 0, r, n)
+        if r < self.scope.r1 or r > self.scope.r2:
+            return Range(r, 0, r, -1)
+        var lo = self.scope.c1 if r == self.scope.r1 else 0
+        var hi = min(n, self.scope.c2) if r == self.scope.r2 else n
+        return Range(r, lo, r, hi)
 
-    def match_at(self, r: Int, c: Int, pat: List[Int], cs: Bool) -> Bool:
-        return self.match_in(self.buf.line(r), c, pat, cs)
+    def select_match(mut self, r: Int, s: Int, e: Int):
+        self.sel = True
+        self.ar = r
+        self.ac = s
+        self.cr = r
+        self.cc = e
+        self.sync_want()
+        self.follow = True
+        self.break_group()
 
-    def find_next(mut self, pat: List[Int], cs: Bool) -> Bool:
-        """Search forward from the cursor (wrapping). Selects the match."""
-        if len(pat) == 0:
+    def search_from(mut self, s: Search, r0: Int, c0: Int) -> Bool:
+        """Select the first match at or after (r0, c0), wrapping around the end of the
+        text (or of the search scope). Returns False if there is none."""
+        if not s.ok:
             return False
         var n = self.buf.count()
-        var sr = self.cr
-        var sc = self.cc
-        if self.has_sel():
-            var s = self.sel_range()
-            sr = s.r1
-            sc = s.c1 + 1
         for k in range(n + 1):
-            var r = (sr + k) % n
-            var start = sc if k == 0 else 0
+            var r = (r0 + k) % n
+            if self.scope_on and (r < self.scope.r1 or r > self.scope.r2):
+                continue
             var ln = self.buf.line(r)
-            var lim = len(ln) - len(pat)
-            var c = start
-            while c <= lim:
-                if self.match_in(ln, c, pat, cs):
-                    self.sel = True
-                    self.ar = r
-                    self.ac = c
-                    self.cr = r
-                    self.cc = c + len(pat)
-                    self.sync_want()
-                    self.follow = True
-                    self.break_group()
-                    return True
-                c += 1
+            var cols = self.scope_cols(r, len(ln))
+            var start = max(c0, cols.c1) if k == 0 else cols.c1
+            var m = s.caps_in(ln, start)
+            if len(m) > 0 and m[1] <= cols.c2:
+                self.select_match(r, m[0], m[1])
+                return True
         return False
 
-    def sel_matches(self, pat: List[Int], cs: Bool) -> Bool:
-        if not self.has_sel():
-            return False
-        var s = self.sel_range()
-        if s.r1 != s.r2 or s.c2 - s.c1 != len(pat):
-            return False
-        return self.match_at(s.r1, s.c1, pat, cs)
+    def search_next(mut self, s: Search) -> Bool:
+        """Find the next match after the cursor (wrapping) and select it."""
+        return self.search_from(s, self.cr, self.cc)
 
-    def replace_all(mut self, pat: List[Int], rep: List[Int], cs: Bool) -> Int:
-        if len(pat) == 0:
+    def sel_is_match(self, s: Search) -> Bool:
+        """Is the selection exactly one match?"""
+        if not self.has_sel() or not s.ok:
+            return False
+        var q = self.sel_range()
+        if q.r1 != q.r2:
+            return False
+        var m = s.caps_in(self.buf.line(q.r1), q.c1)
+        return len(m) > 0 and m[0] == q.c1 and m[1] == q.c2
+
+    def replace_current(mut self, s: Search, rep: List[Int]) -> Bool:
+        """Replace the selected match (one undo step). The cursor ends after the new text."""
+        if not self.sel_is_match(s):
+            return False
+        var q = self.sel_range()
+        var ln = self.buf.line(q.r1)
+        var m = s.caps_in(ln, q.c1)
+        var text = s.replacement(rep, ln, m)
+        var g = self.new_group()
+        _ = self.buf.delete(q.r1, q.c1, q.r1, q.c2, self.cr, self.cc, g)
+        var p = self.buf.insert(q.r1, q.c1, text, self.cr, self.cc, g)
+        if self.scope_on and q.r1 <= self.scope.r2:
+            # keep the end of the search scope on the same character
+            if q.r1 == self.scope.r2:
+                self.scope.c2 = p.c + (self.scope.c2 - q.c2)
+            self.scope.r2 += p.r - q.r1
+        self.sel = False
+        self.cr = p.r
+        self.cc = p.c
+        self.sync_want()
+        self.break_group()
+        self.follow = True
+        return True
+
+    def replace_matches(mut self, s: Search, rep: List[Int]) -> Int:
+        """Replace every match (inside the scope, if one is set) as one undo step.
+        Returns how many were replaced."""
+        if not s.ok:
             return 0
         var g = self.new_group()
         var count = 0
-        for r in range(self.buf.count()):
-            var c = 0
+        var last = self.buf.count() - 1
+        var first = 0
+        if self.scope_on:
+            first = self.scope.r1
+            last = min(last, self.scope.r2)
+        # bottom to top: a replacement that adds lines does not move the rows still to do
+        var r = last
+        while r >= first:
             var ln = self.buf.line(r)
-            while c + len(pat) <= len(ln):
-                if self.match_in(ln, c, pat, cs):
-                    _ = self.buf.delete(r, c, r, c + len(pat), self.cr, self.cc, g)
-                    _ = self.buf.insert(r, c, rep, self.cr, self.cc, g)
-                    c += len(rep)
-                    count += 1
-                    ln = self.buf.line(r)       # the line changed under us
+            var cols = self.scope_cols(r, len(ln))
+            var c = cols.c1
+            var out = List[Int]()
+            var from_c = -1
+            var upto = -1
+            var n_here = 0
+            while c < cols.c2:
+                var m = s.caps_in(ln, c)
+                if len(m) == 0 or m[1] > cols.c2:
+                    break
+                if from_c < 0:
+                    from_c = m[0]
                 else:
-                    c += 1
+                    for i in range(upto, m[0]):
+                        out.append(ln[i])        # the text between two matches
+                for v in s.replacement(rep, ln, m):
+                    out.append(v)
+                upto = m[1]
+                c = m[1]
+                n_here += 1
+            if n_here > 0:
+                _ = self.buf.delete(r, from_c, r, upto, self.cr, self.cc, g)
+                _ = self.buf.insert(r, from_c, out, self.cr, self.cc, g)
+                count += n_here
+            r -= 1
         self.sel = False
         self.clamp()
+        self.sync_want()
         self.break_group()
         self.follow = True
         return count
+
+    def count_matches(self, s: Search, line_limit: Int) -> Range:
+        """How many matches there are and which one is selected, as Range(total, index, ..):
+        r1 = total, c1 = 1-based number of the selected match (0 if the selection is not a
+        match), r2 = 1 if counting stopped at `line_limit` lines."""
+        var total = 0
+        var index = 0
+        var cut = 0
+        if not s.ok:
+            return Range(0, 0, 0, 0)
+        var q = self.sel_range()
+        var has = self.has_sel() and q.r1 == q.r2
+        var first = 0
+        var last = self.buf.count() - 1
+        if self.scope_on:
+            first = self.scope.r1
+            last = min(last, self.scope.r2)
+        if last - first + 1 > line_limit:
+            last = first + line_limit - 1
+            cut = 1
+        for r in range(first, last + 1):
+            var ln = self.buf.line(r)
+            var cols = self.scope_cols(r, len(ln))
+            var ms = s.all_in(ln, cols.c1, cols.c2)
+            var k = 0
+            while k + 1 < len(ms):
+                total += 1
+                if has and r == q.r1 and ms[k] == q.c1 and ms[k + 1] == q.c2:
+                    index = total
+                k += 2
+        return Range(total, index, cut, 0)
+
+    def set_highlight(mut self, s: Search):
+        """Show every match of `s` in the window until clear_highlight()."""
+        self.hs = s.copy()
+        self.hs_on = s.ok
+
+    def clear_highlight(mut self):
+        self.hs_on = False
+
+    # The plain-text forms used before the search options existed.
+    def match_at(self, r: Int, c: Int, pat: List[Int], cs: Bool) -> Bool:
+        var m = make_search(pat, cs, False, False).caps_in(self.buf.line(r), c)
+        return len(m) > 0 and m[0] == c
+
+    def find_next(mut self, pat: List[Int], cs: Bool) -> Bool:
+        return self.search_next(make_search(pat, cs, False, False))
+
+    def sel_matches(self, pat: List[Int], cs: Bool) -> Bool:
+        return self.sel_is_match(make_search(pat, cs, False, False))
+
+    def replace_all(mut self, pat: List[Int], rep: List[Int], cs: Bool) -> Int:
+        return self.replace_matches(make_search(pat, cs, False, False), rep)
 
     def word_start(self) -> Int:
         var c = self.cc

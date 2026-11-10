@@ -16,6 +16,7 @@ from highlight import Highlighter
 from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
+from search import Search, make_search
 from window_draw import *
 from menu import *
 from commands import *
@@ -35,6 +36,8 @@ comptime M_COMPLETE = 3
 
 comptime VERSION = "1.0"
 
+comptime COUNT_LINE_LIMIT = 50000     # matches are counted in at most this many lines
+comptime PREVIEW_LINE_LIMIT = 50000   # no search-as-you-type in longer texts
 comptime STATUS_MS = 4000        # how long a status-line message stays
 comptime RESIZE_POLL_MS = 250    # until SIGWINCH handling lands (P0-11)
 comptime SPINNER_MS = 100
@@ -108,6 +111,16 @@ struct App(Movable):
     var find_text: List[Int]
     var replace_text: List[Int]
     var find_case: Bool
+    var find_word: Bool
+    var find_regex: Bool
+    var find_sig: String       # what the Find dialog last searched for (text and options)
+    # where the editor was when the Find dialog opened (restored on Cancel)
+    var fo_cr: Int
+    var fo_cc: Int
+    var fo_sel: Bool
+    var fo_ar: Int
+    var fo_ac: Int
+    var fo_top: Int
     var run_args: String
     var compiler: String
     var errs: List[ErrLoc]
@@ -181,6 +194,15 @@ struct App(Movable):
         self.find_text = List[Int]()
         self.replace_text = List[Int]()
         self.find_case = False
+        self.find_word = False
+        self.find_regex = False
+        self.find_sig = ""
+        self.fo_cr = 0
+        self.fo_cc = 0
+        self.fo_sel = False
+        self.fo_ar = 0
+        self.fo_ac = 0
+        self.fo_top = 0
         self.run_args = ""
         self.compiler = env_or("TURBOMOJO_COMPILER", "mojo")
         self.errs = List[ErrLoc]()

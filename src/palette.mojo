@@ -48,6 +48,8 @@ struct Palette(Copyable, Movable):
     var gutter_bg: Int
     var bracket_fg: Int
     var bracket_bg: Int
+    var match_fg: Int       # other matches of the current search
+    var match_bg: Int
     var icon_fg: Int
     var scroll_fg: Int
     var scroll_bg: Int
@@ -106,6 +108,8 @@ struct Palette(Copyable, Movable):
         self.gutter_bg = 0x000088
         self.bracket_fg = WHITE
         self.bracket_bg = MAGENTA
+        self.match_fg = BLACK
+        self.match_bg = BROWN
         self.icon_fg = LGREEN
         self.scroll_fg = BLUE
         self.scroll_bg = CYAN
@@ -169,6 +173,8 @@ def theme(n: Int) -> Palette:
         p.gutter_bg = 0x1A1B26
         p.bracket_fg = 0xFFFFFF
         p.bracket_bg = 0x3D59A1
+        p.match_fg = 0xC0CAF5
+        p.match_bg = 0x5A4A1E
         p.icon_fg = 0xF7768E
         p.scroll_fg = 0x3B4261
         p.scroll_bg = 0x1A1B26
@@ -232,6 +238,8 @@ def theme(n: Int) -> Palette:
         p.gutter_bg = bk
         p.bracket_fg = bk
         p.bracket_bg = hi
+        p.match_fg = bk
+        p.match_bg = lo
         p.icon_fg = hi
         p.scroll_fg = lo
         p.scroll_bg = bk

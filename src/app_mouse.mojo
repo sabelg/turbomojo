@@ -102,7 +102,7 @@ __extension App:
                 self.dialog_button(b)
                 return
             if x == self.dlg.dx + 3 and y == self.dlg.dy:
-                self.mode = M_NORMAL
+                self.dismiss_dialog()
                 return
             for i in range(len(self.dlg.field_y)):
                 if y == self.dlg.field_y[i] and x >= self.dlg.field_x:
@@ -110,7 +110,7 @@ __extension App:
                     self.dlg.fields[i].cur = max(0, min(len(self.dlg.fields[i].text), x - self.dlg.field_x - 1 + self.dlg.fields[i].scroll))
                     return
             for i in range(len(self.dlg.check_y)):
-                if y == self.dlg.check_y[i]:
+                if y == self.dlg.check_y[i] and x >= self.dlg.check_x[i] and x < self.dlg.check_x[i] + self.dlg.check_w:
                     self.dlg.focus = len(self.dlg.fields) + i
                     self.dlg.check_vals[i] = not self.dlg.check_vals[i]
                     return

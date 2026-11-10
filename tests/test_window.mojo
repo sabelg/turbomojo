@@ -508,12 +508,14 @@ def test_find_case_sensitive_and_missing() raises:
     assert_false(w.find_next(decode(""), False))
 
 
-def test_find_overlapping_matches() raises:
+def test_find_continues_after_the_previous_match() raises:
+    # matches do not overlap (the same ones are counted and highlighted): after "aa" at
+    # 0..2 there is no further match in "aaa", so the search wraps to the first one
     var w = win("aaa")
     assert_true(w.find_next(decode("aa"), False))
     assert_cursor(w, 0, 2)
     assert_true(w.find_next(decode("aa"), False))
-    assert_cursor(w, 0, 3)
+    assert_cursor(w, 0, 2)
 
 
 def test_replace_all_counts_and_is_one_undo() raises:

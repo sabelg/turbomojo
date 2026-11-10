@@ -93,6 +93,12 @@ __extension Window:
             var lastx = -1
             var lim = self.left + cls
             var nextc = 0
+            # other matches of the current search on this row (skipped for huge lines)
+            var ms = List[Int]()
+            var mi = 0
+            if self.hs_on and not is_msg and n > 0 and n <= 20000:
+                var mcols = self.scope_cols(r, n)
+                ms = self.hs.all_in(ln, mcols.c1, mcols.c2)
             for c in range(n):
                 if v >= lim:
                     break
@@ -116,6 +122,11 @@ __extension Window:
                 var cbg = rowbg
                 if not plain:
                     cfg = pal.syn[classes[c]]
+                while mi + 1 < len(ms) and c >= ms[mi + 1]:
+                    mi += 2
+                if mi < len(ms) and c >= ms[mi]:
+                    cfg = pal.match_fg
+                    cbg = pal.match_bg
                 if self.in_sel(r, c):
                     cfg = pal.sel_fg
                     cbg = pal.sel_bg

@@ -83,7 +83,7 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Desktop | Overlapping windows with drag-to-move (title bar), drag-to-resize (bottom-right corner), zoom (F5), tile/cascade, Alt-1…9 window numbers, a window list (Alt-0) and drop shadows |
 | Editor | Mojo syntax colouring (keywords, types, builtins, strings and docstrings, numbers, decorators, def names), line numbers, current-line highlight, bracket matching, smart Home, auto-indent (indents after `:`), Tab/Shift-Tab block indent, toggle comment, duplicate/delete line, insert/overwrite modes (underline or block cursor) |
 | Undo | Grouped undo/redo. Typing a word undoes as one step, and so does Replace-all or Format |
-| Search | Find, Replace / Change all, Search again, Go to line, **Go to symbol** (fuzzy list of `def`/`struct`/`trait`/`comptime`) |
+| Search | Find and Replace with **search as you type**: the first match is selected, every match is highlighted and the dialog shows "Match 3 of 17" while you type (Esc puts the cursor back). Options: case sensitive, whole words, **regular expressions** (no backtracking, so no pattern can hang the editor; `$1`, `${1}`, `$0`, `\n` in the replacement) and **in selection**. Replace steps through matches one at a time, Change all is one undo step. Search again (Ctrl-L), Go to line, **Go to symbol** (fuzzy list of `def`/`struct`/`trait`/`comptime`) |
 | Command palette | Ctrl-P fuzzy-searches every menu command |
 | Completion | Ctrl-Space completes identifiers from the buffer plus Mojo keywords, types and builtins |
 | Compile | F9 runs `mojo build` **in the background**: you keep editing while a spinner and timer show progress, output streams into the Message window, and Ctrl-F2 cancels. When it finishes you get the Turbo-style result box. In the Message window, Enter or Alt-F8/F7 jumps to the error's line and column |
@@ -123,7 +123,8 @@ Press **F1** inside the IDE for the full keyboard reference.
 | `src/toml.mojo`, `src/config.mojo`, `src/editorconfig.mojo` | Config file reader/writer, layered settings, EditorConfig rules |
 | `src/swap.mojo`, `src/watch.mojo` | Swap files for crash recovery; detection of files changed by other programs |
 | `src/grapheme.mojo` | Grapheme cluster boundaries (UAX #29) and cluster widths |
-| `src/regex.mojo` | Regular expressions: parser, compiler and a Pike VM (no backtracking, captures, lazy quantifiers); not yet wired into the Find dialog |
+| `src/regex.mojo` | Regular expressions: parser, compiler and a Pike VM (no backtracking, captures, lazy quantifiers) |
+| `src/search.mojo` | A search request: text or regular expression plus the Find options, matched line by line |
 | `src/json.mojo` | JSON reader and writer (for the language-server, debugger and agent protocols) |
 | `src/proc.mojo`, `src/rpc.mojo` | Two-way non-blocking child processes; JSON-RPC with Content-Length framing |
 | `src/lsp.mojo` | Language Server Protocol client: lifecycle, document sync, diagnostics |
@@ -161,4 +162,5 @@ scripts/tui-test.sh stop
 ## Known limitations
 
 - Grapheme clusters use built-in tables for common scripts and emoji, not the full Unicode database; Indic conjuncts are split after the virama. Emoji sequences line up only on terminals that report grapheme clustering (mode 2027); elsewhere their parts are laid out side by side. Dialog input fields still step by codepoint.
+- Searching works line by line: a pattern cannot match across a line break, and matches of length zero are skipped. In texts over 50,000 lines the search runs when you press Enter instead of while you type, and matches are not counted.
 - Ctrl-F9 Run hands the terminal to your program on purpose, the way Turbo's user screen did. Build and Format run in the background.

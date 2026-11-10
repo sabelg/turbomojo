@@ -141,22 +141,7 @@ __extension App:
         elif cmd == CM_COMPLETE:
             self.start_complete()
         elif cmd == CM_FIND or cmd == CM_REPLACE:
-            if ai < 0:
-                return
-            var sel = self.wins[ai].selected_text()
-            var seed = to_str(sel) if len(sel) > 0 and not (10 in sel) else to_str(self.find_text)
-            var d = Dialog(D_FIND if cmd == CM_FIND else D_REPLACE, "Find" if cmd == CM_FIND else "Replace", 56, 11 if cmd == CM_FIND else 13)
-            d.fields.append(Field("~T~ext to find", seed))
-            if cmd == CM_REPLACE:
-                d.fields.append(Field("~N~ew text", to_str(self.replace_text)))
-                d.buttons.append("~R~eplace")
-                d.buttons.append("Change ~a~ll")
-            else:
-                d.buttons.append("~O~K")
-            d.buttons.append("~C~ancel")
-            d.checks.append("~C~ase sensitive")
-            d.check_vals.append(self.find_case)
-            self.show(d^)
+            self.open_find(cmd == CM_REPLACE)
         elif cmd == CM_AGAIN:
             self.find_again()
         elif cmd == CM_GOTO:
@@ -345,5 +330,11 @@ __extension App:
         var ai = self.active_editor()
         if ai < 0 or len(self.find_text) == 0:
             return
-        if not self.wins[ai].find_next(self.find_text, self.find_case):
+        var s = self.current_search()
+        if not s.ok:
+            return
+        self.wins[ai].set_highlight(s)
+        if not self.wins[ai].search_next(s):
             self.info("Information", "Search string not found.")
+        else:
+            self.say(self.match_note(ai, s))
