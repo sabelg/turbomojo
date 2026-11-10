@@ -36,6 +36,7 @@ from app_exec import *
 from app_pickers import *
 from app_nav import *
 from app_outline import *
+from app_layout import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -109,6 +110,7 @@ __extension App:
 
     def draw(mut self):
         var p = self.pal.copy()
+        self.layout_sync()
         self.scr.no_clip()
         self.scr.fill(0, 1, self.scr.w, self.scr.h - 2, p.desk_ch, p.desk_fg, p.desk_bg)
         var n = len(self.wins)
@@ -128,8 +130,17 @@ __extension App:
                 # folded blocks push later lines into view
                 last_shown = self.wins[i].pos_at_screen_row(self.wins[i].rows()).r + 1
             self.wins[i].sync_lex(last_shown)
+        self.tab_wid.clear()
+        self.tab_x0.clear()
+        self.tab_x1.clear()
+        self.tab_y.clear()
         for i in range(n):
+            if self.wins[i].hidden:
+                continue
             self.draw_window(i, i == n - 1)
+            if self.tiled and self.wins[i].kind == WK_EDITOR:
+                self.draw_tabs(i, i == n - 1)
+                continue                        # panes lie side by side: no shadow
             if i == n - 1 and self.wins[i].w < self.scr.w:
                 self.scr.shadow(self.wins[i].x, self.wins[i].y, self.wins[i].w, self.wins[i].h, p.shadow_fg, p.shadow_bg)
         draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, clock_hm() if self.show_clock else "")

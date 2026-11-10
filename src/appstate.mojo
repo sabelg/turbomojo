@@ -31,6 +31,7 @@ from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
 from outline import OutlineItem
 from symindex import SymbolIndex, IndexedSymbol
 from docs import DocEntry
+from layout import Layout
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
 from filestate import *
@@ -255,6 +256,13 @@ struct App(Movable):
     var symidx: SymbolIndex          # symbols of the project's Mojo files
     var ws_list: List[IndexedSymbol] # what the open project-symbol dialog lists
     var ws_building: Bool            # the dialog shows a list made while the index was being built
+    var tiled: Bool                  # the tiled layout (panes with tabs) instead of overlapping windows
+    var lay: Layout
+    var next_wid: Int
+    var tab_x0: List[Int]            # where tab labels were drawn (for the mouse): columns, row, window id
+    var tab_x1: List[Int]
+    var tab_y: List[Int]
+    var tab_wid: List[Int]
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -468,6 +476,13 @@ struct App(Movable):
         self.doc_sizes = List[Int]()
         self.doc_times = List[Int]()
         self.doc_entries = List[List[DocEntry]]()
+        self.tiled = False
+        self.lay = Layout()
+        self.next_wid = 1
+        self.tab_x0 = List[Int]()
+        self.tab_x1 = List[Int]()
+        self.tab_y = List[Int]()
+        self.tab_wid = List[Int]()
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -677,6 +692,11 @@ struct App(Movable):
                 self.include_paths.append(abs_path(base, ip))
         self.config_warnings = s.warnings.copy()
         self.keymap = s.keymap
+        if s.tiled != self.tiled:
+            self.tiled = s.tiled
+            self.lay = Layout()
+            for i in range(len(self.wins)):
+                self.wins[i].hidden = False
         self.user_key_cmds = s.key_commands.copy()
         self.user_key_names = List[List[String]]()
         for i in range(len(s.key_names)):
@@ -765,6 +785,8 @@ struct App(Movable):
             dh = max(6, self.wins[mi].y - 1)
         var win = Window(WK_EDITOR, title, path, off, 1 + off, self.scr.w - off, dh - off, self.free_number())
         win.gut = win.gutter_for(self.line_numbers)
+        win.wid = self.next_wid
+        self.next_wid += 1
         win.buf.tab_width = self.tab_width
         win.buf.indent_size = self.indent_size
         win.wrap = self.soft_wrap

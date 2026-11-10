@@ -100,6 +100,15 @@ comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
 comptime CM_DOCS = 160
+comptime CM_TILED = 161
+comptime CM_SPLIT_RIGHT = 162
+comptime CM_SPLIT_DOWN = 163
+comptime CM_NEXT_PANE = 164
+comptime CM_NEXT_TAB = 165
+comptime CM_PREV_TAB = 166
+comptime CM_MOVE_TAB = 167
+comptime CM_PANE_GROW = 168
+comptime CM_PANE_SHRINK = 169
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -648,6 +657,15 @@ def build_registry() -> Registry:
     r.cmd(CM_PREVWIN, "window.previous", "~P~revious", "Make the previous window active", [fkey(6) | MOD_SHIFT])
     r.cmd(CM_CLOSEALL, "window.closeAll", "Clos~e~ all", "Close all windows")
     r.cmd(CM_MESSAGE, "window.message", "~M~essage", "Open the compiler message window")
+    r.cmd(CM_TILED, "window.tiledLayout", "Tiled la~y~out", "Panes with tabs that share the screen, instead of overlapping windows")
+    r.cmd(CM_SPLIT_RIGHT, "window.splitRight", "Split ri~g~ht", "Move this file into a new pane to the right", [alt(92)])
+    r.cmd(CM_SPLIT_DOWN, "window.splitDown", "Split ~d~own", "Move this file into a new pane below", [alt(124)])
+    r.cmd(CM_NEXT_PANE, "window.nextPane", "Ne~x~t pane", "Go to the next pane", [fkey(6) | MOD_ALT])
+    r.cmd(CM_NEXT_TAB, "window.nextTab", "Next ta~b~", "Show the next file of this pane", [KEY_PGDN | MOD_ALT])
+    r.cmd(CM_PREV_TAB, "window.previousTab", "Previo~u~s tab", "Show the previous file of this pane", [KEY_PGUP | MOD_ALT])
+    r.cmd(CM_MOVE_TAB, "window.moveTab", "Mo~v~e to next pane", "Move this file to the next pane")
+    r.cmd(CM_PANE_GROW, "window.growPane", "Gro~w~ pane", "Make this pane larger", [alt(125)])
+    r.cmd(CM_PANE_SHRINK, "window.shrinkPane", "~S~hrink pane", "Make this pane smaller", [alt(123)])
     r.cmd(CM_OUTLINE, "window.outline", "~O~utline", "Show or hide the outline of the file: its functions, structs and traits", [fkey(12) | MOD_CTRL])
     r.cmd(CM_WINLIST, "window.list", "~L~ist...", "Show a list of open windows", [alt(48)])
     # ---- Help / system
@@ -781,6 +799,17 @@ def build_registry() -> Registry:
     r.item(CM_CLOSEALL)
     r.sep()
     r.item(CM_MESSAGE)
+    r.sep()
+    r.item(CM_TILED)
+    r.item(CM_SPLIT_RIGHT)
+    r.item(CM_SPLIT_DOWN)
+    r.item(CM_NEXT_PANE)
+    r.item(CM_NEXT_TAB)
+    r.item(CM_PREV_TAB)
+    r.item(CM_MOVE_TAB)
+    r.item(CM_PANE_GROW)
+    r.item(CM_PANE_SHRINK)
+    r.sep()
     r.item(CM_OUTLINE)
     r.item(CM_WINLIST)
 

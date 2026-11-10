@@ -34,6 +34,7 @@ from app_exec import *
 from app_pickers import *
 from app_nav import *
 from app_outline import *
+from app_layout import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -120,6 +121,8 @@ __extension App:
             out.append(CM_SHOWWS)
         if self.soft_wrap:
             out.append(CM_WRAP)
+        if self.tiled:
+            out.append(CM_TILED)
         if self.semantic_on:
             out.append(CM_SEMANTIC)
         if self.hints_on:

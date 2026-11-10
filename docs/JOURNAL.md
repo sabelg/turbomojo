@@ -1843,3 +1843,48 @@ through tests and, for a few early tasks, tmux; key combinations added here (F12
 Shift-F12, Ctrl-F12, Alt-F12, Shift-F2, Alt-Enter, Alt-, Alt-. Ctrl-F1) are bound and
 tested as key codes, not as bytes sent by particular terminals. Requests have no
 general timeout. The Options menu no longer fits a 20-row screen.
+
+## 2026-11-10 · P3-01 Layout tree: splits with tab groups; classic layout kept · done
+
+- New `src/layout.mojo`: `Layout`, a binary tree of splits (side by side / one above
+  the other, ratio in per mille) whose leaves are tab groups of window ids. `add`,
+  `remove` (an emptied group is taken out, its sibling takes the split's place),
+  `activate`, `split` (the shown tab moves to a new group; refused with a reason for a
+  single tab or a pane under 2 x 16 columns / 2 x 5 rows), `next_group`, `next_tab`,
+  `move_tab`, `resize`, `place` (rectangles without rounding loss), `describe`.
+- Windows got a lasting id (`wid`) and `hidden`. New `src/app_layout.mojo`:
+  `layout_sync` runs after every event and before drawing and reconciles tree and
+  windows (gone windows leave, new ones become tabs of the current pane, the editor in
+  front is the shown tab of its pane, rectangles are applied, Zoom gives one pane the
+  room) - so open / close / focus code elsewhere did not have to change.
+  `layout_command`, `draw_tabs` (names in the top border, the shown one inverse, `*`
+  for unsaved, "‹" "›" when they do not fit; positions kept for the mouse).
+- The panes use the desktop less the Message window (bottom) and the Outline window
+  (right). Hidden tabs are not drawn and not hit by the mouse; panes cannot be dragged
+  or resized by the frame.
+- Commands (Window menu): Tiled layout, Split right (Alt-\), Split down (Alt-|), Next
+  pane (Alt-F6), Next / Previous tab (Alt-PgDn / Alt-PgUp), Move to next pane, Grow /
+  Shrink pane (Alt-} / Alt-{). Setting `ui.layout = "classic" | "tiled"`.
+- Tests: new `tests/test_layout.mojo` (7, the tree alone) and `tests/test_tiled.mojo`
+  (7, in the app: tabs and their drawing, new files, tab keys, splits, moving, resizing,
+  closing, mouse on tabs and panes, Message / Outline / Zoom, many tabs, switching
+  layouts, the setting, an app without files).
+- Looked at in tmux with three files: tiled start from the setting, Alt-\ splits, tabs
+  show in the left pane's border, a second split of the one-file pane is refused with
+  the message. (Colours of the inverse tab not judged: tmux capture is text only.)
+- Decision, differing from the roadmap's wording: the classic layout stays the
+  **default**; tiled is opt-in. Docked panels (P3-02) are not there yet, and all
+  existing tests and goldens assume classic. To be revisited after P3-02.
+- Mistakes on the way: three test expectations (which neighbour shows after closing a
+  tab - the right one, as in browsers; one size computed wrongly by me).
+- Not done / unverified:
+  - A split cannot show one file twice (two views of one buffer do not exist), so a
+    pane with a single file cannot be split.
+  - No dragging of split borders or tabs with the mouse; no "close other tabs"; panes
+    are moved between only in reading order (no left/right/up/down keys).
+  - The layout is not saved (sessions are P3-07).
+  - Alt-\, Alt-|, Alt-{, Alt-}, Alt-F6, Alt-PgUp/PgDn as sent by real terminals: only
+    Alt-\ and Alt-| were tried (in tmux).
+  - The Window menu now has 22 rows with its separators: on a 24-row terminal it
+    reaches the last desktop row; not looked at.
+- Verified: `check.sh` CHECK OK (38 files, 806 tests).

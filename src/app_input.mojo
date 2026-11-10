@@ -35,6 +35,7 @@ from app_exec import *
 from app_pickers import *
 from app_nav import *
 from app_outline import *
+from app_layout import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -53,6 +54,7 @@ __extension App:
         self.handle_event(e)
         self.macro_key_live = False
         self.sig_follow()
+        self.layout_sync()
         if recording and self.mode == M_MENU and len(self.macro) > at:
             # the key opened a menu: what is chosen there is recorded as a command instead
             while len(self.macro) > at:
@@ -260,7 +262,7 @@ __extension App:
     def window_at(self, x: Int, y: Int) -> Int:
         var i = len(self.wins) - 1
         while i >= 0:
-            if self.wins[i].contains(x, y):
+            if self.wins[i].contains(x, y) and not self.wins[i].hidden:
                 return i
             i -= 1
         return -1

@@ -35,6 +35,7 @@ from app_exec import *
 from app_pickers import *
 from app_nav import *
 from app_outline import *
+from app_layout import *
 from app_jobs import *
 from app_input import *
 from app_draw import *
@@ -182,6 +183,13 @@ __extension App:
                     return
             return
         # ---- windows
+        for k in range(len(self.tab_wid)):
+            if y == self.tab_y[k] and x >= self.tab_x0[k] and x < self.tab_x1[k]:
+                var ti = self.win_by_wid(self.tab_wid[k])
+                if ti >= 0:
+                    self.focus(ti)              # a tab of a pane: show that file
+                    self.layout_sync()
+                    return
         var i = self.window_at(x, y)
         if i < 0:
             return
@@ -198,12 +206,15 @@ __extension App:
             if x >= wx + ww - 5 and x <= wx + ww - 3:
                 self.exec(CM_ZOOM)
                 return
+            if self.tiled and self.wins[t].kind == WK_EDITOR:
+                return                          # panes are not dragged about
             self.drag = 1
             self.drag_dx = x - wx
             self.drag_dy = y - wy
             return
         if x >= wx + ww - 2 and y >= wy + wh - 1:
-            self.drag = 2
+            if not (self.tiled and self.wins[t].kind == WK_EDITOR):
+                self.drag = 2
             return
         if x == wx + ww - 1:
             # vertical scrollbar

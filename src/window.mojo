@@ -69,6 +69,8 @@ struct Window(Copyable, Movable):
     var ar: Int
     var ac: Int
     var number: Int
+    var wid: Int             # a lasting identity (the tiled layout keeps windows by it); 0 = none yet
+    var hidden: Bool         # a tab that is not the one its pane shows: not drawn, not clickable
     var gseq: Int
     var cur_group: Int
     var last_act: Int
@@ -130,6 +132,8 @@ struct Window(Copyable, Movable):
         self.follow = True
         self.gut = 0
         self.lsp_sent_version = -1
+        self.wid = 0
+        self.hidden = False
         self.sem_version = -1
         self.hint_version = -1
         self.lsp_seen_version = -1

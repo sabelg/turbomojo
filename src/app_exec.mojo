@@ -34,6 +34,7 @@ from app_menus import *
 from app_pickers import *
 from app_nav import *
 from app_outline import *
+from app_layout import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -182,6 +183,8 @@ __extension App:
             self.persist_option("ui", "show_whitespace", toml_bool(self.show_ws))
         elif cmd == CM_WRAP:
             self.persist_option("editor", "soft_wrap", toml_bool(self.soft_wrap))
+        elif cmd == CM_TILED:
+            self.persist_option("ui", "layout", "\"tiled\"" if self.tiled else "\"classic\"")
         elif cmd == CM_SEMANTIC:
             self.persist_option("editor", "semantic_colors", toml_bool(self.semantic_on))
         elif cmd == CM_HINTS:
@@ -476,7 +479,12 @@ __extension App:
                     self.wins[t].zoomed = True
                 self.fit_windows()
         elif cmd == CM_TILE or cmd == CM_CASCADE:
-            self.arrange(cmd == CM_TILE)
+            if self.tiled:
+                self.say("The tiled layout arranges the windows itself (Window > Tiled layout turns it off)")
+            else:
+                self.arrange(cmd == CM_TILE)
+        elif cmd >= CM_TILED and cmd <= CM_PANE_SHRINK:
+            self.layout_command(cmd)
         elif cmd == CM_NEXTWIN:
             if len(self.wins) > 1:
                 self.focus(0)

@@ -36,6 +36,7 @@ from app_exec import *
 from app_jobs import *
 from app_pickers import *
 from app_nav import *
+from app_layout import *
 from outline import *
 from symindex import *
 from docs import *
