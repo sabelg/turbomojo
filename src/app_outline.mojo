@@ -38,6 +38,8 @@ from app_pickers import *
 from app_nav import *
 from outline import *
 from symindex import *
+from docs import *
+from watch import file_sig
 from app_input import *
 from app_mouse import *
 from app_draw import *
@@ -45,6 +47,7 @@ from app_draw import *
 
 comptime SYMIDX_SLICE_MS = 8          # work per pass of the event loop
 comptime SYMIDX_FIRST_MS = 40         # ... and when the dialog opens
+comptime DOCS_MAX_FILES = 4            # at most this many files are documented for one name
 comptime SYMIDX_FRESH_MS = 20000      # an index older than this is rebuilt on the next use
 
 
@@ -269,3 +272,105 @@ __extension App:
         if self.wins[t].kind == WK_EDITOR and self.wins[t].path == s.path:
             self.wins[t].goto(s.row, s.col)
             self.say(s.name)
+
+    # ====================================================== documentation
+    def docs_files_for(mut self, name: String, wait: Bool) -> List[String]:
+        """The files that define `name`: of the project (from the symbol index) and of
+        the documentation folders. With `wait` the indexes are completed first; without
+        it only what is already known is used (and missing indexes are started)."""
+        var files = List[String]()
+        if not self.symidx.built and not self.symidx.building:
+            self.symidx.start(self.symidx_root())
+        if wait:
+            while self.symidx.building:
+                self.symidx.step(50)
+        for i in range(len(self.wins)):
+            # open files are looked at as they are now
+            if self.wins[i].kind == WK_EDITOR and is_mojo_file(self.wins[i].path) and not self.wins[i].buf.large:
+                for it in scan_outline(self.wins[i].buf):
+                    if it.name == name and not (self.wins[i].path in files):
+                        files.append(self.wins[i].path)
+        for s in self.symidx.syms:
+            if s.name == name and not (s.path in files):
+                files.append(s.path)
+        for k in range(len(self.doc_idx)):
+            if not self.doc_idx[k].built and not self.doc_idx[k].building:
+                self.doc_idx[k].start(self.docs_paths[k])
+            if wait:
+                while self.doc_idx[k].building:
+                    self.doc_idx[k].step(50)
+            for s in self.doc_idx[k].syms:
+                if s.name == name and not (s.path in files):
+                    files.append(s.path)
+        return files^
+
+    def docs_of_file(mut self, path: String) -> List[DocEntry]:
+        """What `mojo doc` says about a file; run once per version of the file on disk."""
+        var sig = file_sig(path)
+        if not sig.exists:
+            return List[DocEntry]()
+        var stamp = sig.mtime_s * 1000000000 + sig.mtime_ns
+        for k in range(len(self.doc_files)):
+            if self.doc_files[k] == path:
+                if self.doc_sizes[k] == sig.size and self.doc_times[k] == stamp:
+                    return self.doc_entries[k].copy()
+                _ = self.doc_files.pop(k)
+                _ = self.doc_sizes.pop(k)
+                _ = self.doc_times.pop(k)
+                _ = self.doc_entries.pop(k)
+                break
+        var entries = List[DocEntry]()
+        var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
+        var res = run_capture("cd " + shell_quote(dirname(path)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(path) + " 2>/dev/null")
+        if res.status == 0 and len(res.out) > 0:
+            try:
+                var doc = json_parse(bytes_to_str(res.out))
+                entries = parse_mojo_doc(doc)
+            except e:
+                entries = List[DocEntry]()
+        self.doc_files.append(path)
+        self.doc_sizes.append(sig.size)
+        self.doc_times.append(stamp)
+        self.doc_entries.append(entries.copy())
+        return entries^
+
+    def docs_at_cursor(mut self, asked: Bool) -> Bool:
+        """Show the documentation of the name at the cursor in a window. `asked`
+        (Help > Topic search): look everywhere and say so if there is nothing - with
+        the language server's description as a last resort. Otherwise (F1) only what
+        can be found at once; False means the caller shows the general help."""
+        var ai = self.active_editor()
+        if ai < 0 or self.mode != M_NORMAL:
+            if asked:
+                self.say("Put the cursor on a name first")
+            return False
+        var name = self.word_under(ai)
+        if name.byte_length() == 0 or (decode(name)[0] >= 48 and decode(name)[0] <= 57):
+            if asked:
+                self.say("Put the cursor on a name first")
+            return False
+        var files = self.docs_files_for(name, asked)
+        var md = String("")
+        var n = 0
+        for f in files:
+            if n >= DOCS_MAX_FILES:
+                break
+            n += 1
+            var part = docs_for(self.docs_of_file(f), name)
+            if part.byte_length() > 0:
+                md += ("\n\n---\n\n" if md.byte_length() > 0 else "") + part
+        if md.byte_length() == 0:
+            if not asked:
+                return False
+            if self.lsp.state == LSP_READY and self.lsp.table.hover and self.wins[ai].path.byte_length() > 0 and self.lsp.find_doc(path_to_uri(self.wins[ai].path)) >= 0:
+                self.hover_command()            # what the language server knows
+                return True
+            self.say("No documentation found for " + name)
+            return False
+        self.hover_lines = md_render(md, max(20, min(76, self.scr.w - 6)), self.hl)
+        if len(self.hover_lines) == 0:
+            return False
+        self.hover_scroll = 0
+        self.mode = M_HOVER
+        self.say("")
+        return True

@@ -1782,3 +1782,64 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   - Not looked at by hand in tmux: the three `word_bg` colours are untested by eye;
     Alt-F12 as sent by real terminals is untested.
 - Verified: `check.sh` CHECK OK (35 files, 785 tests).
+
+## 2026-11-10 · P2-14 Offline docs: `mojo doc`; F1 on a symbol · done (not for the installed standard library)
+
+- Probed first: `mojo doc <file>` prints JSON in about 0.4 s; a folder is accepted only
+  if it is a package; a file that does not compile gives nothing. **The toolchain ships
+  the standard library only as `lib/mojo/std.mojoc`, and `mojo doc std.mojoc` fails
+  ("could not generate documentation").** There are no standard library sources on
+  disk, so the roadmap's "index `mojo doc` JSON for the standard library" cannot be
+  done from the installed toolchain. What is built instead works on sources:
+- New `src/docs.mojo`: `parse_mojo_doc` (modules, packages, functions with overloads,
+  structs, traits, fields, aliases -> `DocEntry`), Markdown for each (signature block,
+  what and where, summary, description, explained arguments, returns, raises,
+  deprecation; a struct lists fields and methods), `docs_for(name)`.
+- App (`src/app_outline.mojo`): `docs_at_cursor` finds the files that define the name
+  (open windows, the project symbol index of P2-13, and one index per folder of the new
+  setting `tools.docs_paths`), runs `mojo doc` on at most 4 of them (`docs_of_file`,
+  cached per file size and time), and shows the result in the hover window.
+  Help > Topic search (Ctrl-F1, as in Turbo) looks everywhere, falls back to the
+  language server's hover, and says when there is nothing. F1 shows documentation
+  only when it is found at once for the name at the cursor; otherwise the keyboard
+  reference as before.
+- Tests: new `tests/test_docs.mojo` (7): entries from a hand-written JSON incl. a
+  package; exact text for a function with two overloads, a constant, a struct, a field,
+  one name in two types; with the real `mojo doc`: function, method (args / returns),
+  struct; one run per file; F1 before and after the index exists, on an undocumented
+  name, on an empty line; unknown name, no docstring, file changed on disk, file that
+  does not compile; a documentation folder outside the project and the setting's forms.
+  All passed on the first run.
+- Not done / unverified:
+  - Standard library documentation offline (see above). With a checkout of the
+    library's sources in `tools.docs_paths` it should work; not tried - there is none
+    here and nothing is downloaded.
+  - `mojo doc` runs in the foreground (about 0.4 s per file, 20 s limit where `timeout`
+    exists); it reads files from disk, so unsaved docstrings are not seen.
+  - No search by topic or browsing of documentation, only the name at the cursor.
+  - Ctrl-F1 as sent by real terminals is untested; not tried by hand in tmux.
+- Verified: `check.sh` CHECK OK (36 files, 792 tests).
+
+## 2026-11-10 · Phase 2 summary
+
+All 14 tasks are marked done: capability table and restart, document sync,
+diagnostics, completion, hover, signature help, go to definition with a jump list,
+references, rename, code actions, semantic colours and inlay hints, outline, word
+highlights and a project symbol index, offline documentation.
+
+What a user of the real mojo-lsp-server 1.2 gets less than the task names suggest
+(each is recorded in its entry above):
+- rename works for local variables only (the server refuses the rest);
+- code actions: the server answered every probe with an empty list;
+- inlay hints: the server sent none for the code tried;
+- semantic colours: parameters are reported as plain variables;
+- offline documentation: project and configured source folders, not the installed
+  standard library.
+The multi-file rename, quick fixes and inlay hint display are therefore verified
+against the fake server only.
+
+Common gaps: nothing in Phase 2 was looked at in a real terminal emulator - only
+through tests and, for a few early tasks, tmux; key combinations added here (F12,
+Shift-F12, Ctrl-F12, Alt-F12, Shift-F2, Alt-Enter, Alt-, Alt-. Ctrl-F1) are bound and
+tested as key codes, not as bytes sent by particular terminals. Requests have no
+general timeout. The Options menu no longer fits a 20-row screen.

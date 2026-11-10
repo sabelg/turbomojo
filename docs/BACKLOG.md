@@ -68,7 +68,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P2-11 Semantic tokens layered over the lexer; inlay hints (toggle)
 - [x] P2-12 Outline panel: documentSymbol → scanner fallback
 - [x] P2-13 IDE-side: highlight other uses of the word; background workspace symbol index with fuzzy search
-- [ ] P2-14 Offline docs: index `mojo doc` JSON; F1 on symbol shows its docs
+- [x] P2-14 Offline docs: index `mojo doc` JSON; F1 on symbol shows its docs
 
 ## Phase 3: Workspace and project (v1.4)
 

@@ -507,7 +507,11 @@ __extension App:
             d.buttons.append("~C~ancel")
             self.show(d^)
         elif cmd == CM_HELP:
-            self.help_dialog()
+            # F1 on a name that has documentation shows it, as in Turbo; else the reference
+            if not self.docs_at_cursor(False):
+                self.help_dialog()
+        elif cmd == CM_DOCS:
+            _ = self.docs_at_cursor(True)
         elif cmd == CM_ABOUT:
             var d = Dialog(D_ABOUT, "About", 52, 14)
             d.lines.append("")

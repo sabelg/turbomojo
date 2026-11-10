@@ -99,6 +99,7 @@ comptime CM_SEMANTIC = 156
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
+comptime CM_DOCS = 160
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -651,6 +652,7 @@ def build_registry() -> Registry:
     r.cmd(CM_WINLIST, "window.list", "~L~ist...", "Show a list of open windows", [alt(48)])
     # ---- Help / system
     r.cmd(CM_HELP, "help.keyboard", "~K~eyboard reference", "Show the keyboard reference", [fkey(1)])
+    r.cmd(CM_DOCS, "help.topicSearch", "~T~opic search", "Show the documentation of the name at the cursor", [fkey(1) | MOD_CTRL])
     r.cmd(CM_ABOUT, "help.about", "~A~bout...", "Show version and credits")
     r.cmd(CM_REFRESH, "view.repaint", "~R~epaint desktop", "Redraw the whole screen")
 
@@ -784,5 +786,6 @@ def build_registry() -> Registry:
 
     r.menu("~H~elp")
     r.item(CM_HELP)
+    r.item(CM_DOCS)
     r.item(CM_ABOUT)
     return r^

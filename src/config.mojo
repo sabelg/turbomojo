@@ -33,6 +33,8 @@ Example:
     lsp_server = "mojo-lsp-server"
     include_paths = []          # extra -I folders for the compiler and the language server;
                                 # relative ones are taken from the folder of the config file
+    docs_paths = []             # folders with Mojo sources of libraries: their documentation
+                                # is found by Ctrl-F1 too (e.g. a checkout of the standard library)
 
     [keys]
     "file.save" = ["F2", "Ctrl-S"]     # command name = one key or a list of keys
@@ -126,6 +128,7 @@ struct Settings(Copyable, Movable):
     var compiler: String
     var lsp_server: String
     var include_paths: List[String]
+    var docs_paths: List[String]
     var tab_width: Int
     var indent_size: Int
     var large_file_mb: Int
@@ -153,6 +156,7 @@ struct Settings(Copyable, Movable):
         self.compiler = "mojo"
         self.lsp_server = "mojo-lsp-server"
         self.include_paths = List[String]()
+        self.docs_paths = List[String]()
         self.tab_width = 4
         self.indent_size = 4
         self.large_file_mb = 50
@@ -248,6 +252,15 @@ struct Settings(Copyable, Movable):
                 self.include_paths = doc.vals[ii].items.copy()
             else:
                 self.warnings.append("tools.include_paths must be a folder or a list of folders")
+        var di = doc.find("tools.docs_paths")
+        if di >= 0:
+            if doc.vals[di].kind == T_STR and doc.vals[di].s.byte_length() > 0:
+                self.docs_paths = List[String]()
+                self.docs_paths.append(doc.vals[di].s)
+            elif doc.vals[di].kind == T_LIST:
+                self.docs_paths = doc.vals[di].items.copy()
+            else:
+                self.warnings.append("tools.docs_paths must be a folder or a list of folders")
         self.tab_width = self.take_size(doc, "editor.tab_width", self.tab_width)
         self.indent_size = self.take_size(doc, "editor.indent_size", self.indent_size)
         var li = doc.find("editor.large_file_mb")
@@ -265,7 +278,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.keymap", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.include_paths"]:
+        for k in ["ui.theme", "ui.keymap", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.include_paths", "tools.docs_paths"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys."):

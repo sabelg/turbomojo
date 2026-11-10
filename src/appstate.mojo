@@ -30,6 +30,7 @@ from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
 from outline import OutlineItem
 from symindex import SymbolIndex, IndexedSymbol
+from docs import DocEntry
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
 from filestate import *
@@ -158,6 +159,12 @@ struct App(Movable):
     var compiler: String
     var lsp_server: String     # the language server program
     var include_paths: List[String]   # extra -I folders, already made absolute
+    var docs_paths: List[String]     # folders of library sources to find documentation in
+    var doc_idx: List[SymbolIndex]   # one index per docs folder
+    var doc_files: List[String]      # files `mojo doc` has been run on ...
+    var doc_sizes: List[Int]         # ... their size and time then ...
+    var doc_times: List[Int]
+    var doc_entries: List[List[DocEntry]]    # ... and what it said
     var project_dir: String    # folder of the project's .turbomojo.toml ('' if there is none)
     var errs: List[ErrLoc]
     var err_idx: Int
@@ -455,6 +462,12 @@ struct App(Movable):
         self.symidx = SymbolIndex()
         self.ws_list = List[IndexedSymbol]()
         self.ws_building = False
+        self.docs_paths = List[String]()
+        self.doc_idx = List[SymbolIndex]()
+        self.doc_files = List[String]()
+        self.doc_sizes = List[Int]()
+        self.doc_times = List[Int]()
+        self.doc_entries = List[List[DocEntry]]()
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -651,6 +664,12 @@ struct App(Movable):
         self.compiler = env_or("TURBOMOJO_COMPILER", s.compiler)
         self.lsp_server = env_or("TURBOMOJO_LSP", s.lsp_server)
         # relative include folders belong to the project file's folder (or where we run)
+        self.docs_paths = List[String]()
+        self.doc_idx = List[SymbolIndex]()
+        for dp in s.docs_paths:
+            if dp.byte_length() > 0:
+                self.docs_paths.append(abs_path(self.project_dir if self.project_dir.byte_length() > 0 else String(self.cwd), dp))
+                self.doc_idx.append(SymbolIndex())
         self.include_paths = List[String]()
         var base = self.project_dir if self.project_dir.byte_length() > 0 else String(self.cwd)
         for ip in s.include_paths:
