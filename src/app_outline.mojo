@@ -196,7 +196,7 @@ __extension App:
             return
         self.symidx.step(SYMIDX_SLICE_MS)
         if not self.symidx.building:
-            if self.mode == M_DIALOG and self.dlg.kind == D_WSYMBOL and self.ws_building:
+            if self.mode == M_DIALOG and (self.dlg.kind == D_WSYMBOL or (self.dlg.kind == D_PALETTE and self.quick_mode == 3)) and self.ws_building:
                 self.wsymbol_fill()
                 self.say(self.symidx.summary())
 

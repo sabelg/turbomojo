@@ -166,9 +166,7 @@ __extension App:
                 except:
                     self.say("Invalid line number")
         elif kind == D_PALETTE and b == 0:
-            var s = self.dlg.selected_item()
-            if s >= 0:
-                self.exec(self.dlg.item_data[s])
+            self.quick_accept()
         elif kind == D_SYMBOL and b == 0:
             var s = self.dlg.selected_item()
             var ai = self.active_editor()

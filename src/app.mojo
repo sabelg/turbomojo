@@ -91,6 +91,8 @@ __extension App:
             self.prune_history()
 
     def run(mut self) raises:
+        self.frec_path = state_dir() + "/opened"
+        self.frec.decode_text(read_text(self.frec_path))
         self.log_path = state_dir() + "/crash.log"
         self.term.crash_log = self.log_path
         for w in self.config_warnings:
@@ -155,6 +157,7 @@ __extension App:
             self.lsp_tick(now_ns())
             self.outline_tick(now_ns())
             self.symidx_tick()
+            self.quick_tick()
             self.explorer_tick(now_ns())
             self.swap_tick(now_ns())
             self.fsearch_tick(now_ns())

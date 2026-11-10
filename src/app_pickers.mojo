@@ -25,6 +25,9 @@ from appstate import *
 from app_lsp import *
 from lsp import *
 from markdown import *
+from outline import *
+from symindex import *
+from app_outline import SYMIDX_FRESH_MS, SYMIDX_FIRST_MS, SYMIDX_SLICE_MS
 from app_watch import *
 from watch import *
 from app_swap import *
@@ -43,28 +46,226 @@ from app_mouse import *
 from app_draw import *
 
 
+comptime QM_FILES = 0
+comptime QM_COMMANDS = 1
+comptime QM_SYMBOLS = 2
+comptime QM_WSYMBOLS = 3
+comptime QM_LINE = 4
+
+
 __extension App:
-    def palette_dialog(mut self):
-        var d = Dialog(D_PALETTE, "Command Palette", min(66, self.scr.w - 4), min(20, self.desk_h()))
-        d.fields.append(Field(">", ""))
+    # ====================================================== the palette
+    def frec_note(mut self, path: String):
+        """A file is being opened: remember it for the palette's ranking."""
+        self.frec.note(path, unix_time())
+        if self.frec_path.byte_length() > 0:
+            if not path_exists(dirname(self.frec_path)):
+                _ = run_system("mkdir -p " + shell_quote(dirname(self.frec_path)))
+            _ = write_file(self.frec_path, str_bytes(self.frec.encode()))
+
+    def quick_dialog(mut self, start: String):
+        """The palette: one field for going anywhere. What is typed decides what is
+        listed: a file name (files of the project, the ones opened often and lately
+        first), ">" commands, "@" symbols of this file, "#" symbols of the project,
+        ":" a line number. `start` is put into the field (">" for the command palette)."""
+        var now = now_ns()
+        var root = self.symidx_root()
+        if not self.fidx.building and (not self.fidx.built or self.fidx.root != root or now - self.fidx.built_ns > SYMIDX_FRESH_MS * 1000000):
+            self.fidx.start(root)
+            self.fidx.step(SYMIDX_FIRST_MS)
+        var d = Dialog(D_PALETTE, "Go to", min(76, self.scr.w - 4), min(22, self.desk_h()))
+        d.lines.append("file name   >command   @symbol   #project symbol   :line")
+        d.fields.append(Field("~G~o to", start))
         d.list_filter = True
-        var items = List[String]()
-        var data = List[Int]()
-        var seen = List[Int]()
-        for m in self.menus:
-            var title = plain(m.title)
-            if title == "≡":
-                title = "System"
-            for it in m.items:
-                if it.cmd == CM_NONE or it.cmd in seen:
-                    continue
-                seen.append(it.cmd)
-                items.append(pad_right(title + ": " + plain(it.label), 40) + self.reg.all_keys_label(it.cmd))
-                data.append(it.cmd)
-        d.set_items(items^, data^)
-        d.buttons.append("~R~un")
+        d.use_pat = True
+        d.buttons.append("~G~o")
         d.buttons.append("~C~ancel")
         self.show(d^)
+        self.quick_mode = -1
+        self.quick_text = "\x01"                # anything the field cannot hold: forces the first fill
+        self.quick_refresh()
+
+    def quick_parse(self, text: String) -> Tuple[Int, String]:
+        """The mode a text asks for, and the part of it that is matched against the list."""
+        if text.startswith(">"):
+            return (QM_COMMANDS, String(String(text[byte=1:]).strip()))
+        if text.startswith("@"):
+            return (QM_SYMBOLS, String(String(text[byte=1:]).strip()))
+        if text.startswith("#"):
+            return (QM_WSYMBOLS, String(String(text[byte=1:]).strip()))
+        if text.startswith(":"):
+            return (QM_LINE, String(""))
+        # a file name may be followed by :line or :line:column
+        var name = text
+        var cut = text.find(":")
+        if cut > 0:
+            name = String(text[byte=0:cut])
+        return (QM_FILES, String(name.strip()))
+
+    def quick_position(self, text: String) -> Tuple[Int, Int]:
+        """The 1-based line and column a text ends with (":12", ":12:5"); 0 = not given."""
+        var cut = text.find(":")
+        if cut < 0:
+            return (0, 0)
+        var row = 0
+        var col = 0
+        var part = 0
+        for c in decode(String(text[byte=cut + 1:])):
+            if c >= 48 and c <= 57:
+                if part == 0:
+                    row = min(row * 10 + c - 48, 100000000)
+                else:
+                    col = min(col * 10 + c - 48, 100000000)
+            elif (c == 58 or c == 44) and part == 0:
+                part = 1
+            elif c != 32:
+                return (0, 0)
+        return (row, col)
+
+    def quick_fill(mut self, mode: Int):
+        """Put the list of a mode into the open palette."""
+        self.quick_mode = mode
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        var boost = List[Int]()
+        if mode == QM_COMMANDS:
+            var seen = List[Int]()
+            for m in self.menus:
+                var title = plain(m.title)
+                if title == "≡":
+                    title = "System"
+                for it in m.items:
+                    if it.cmd == CM_NONE or it.cmd in seen:
+                        continue
+                    seen.append(it.cmd)
+                    items.append(pad_right(title + ": " + plain(it.label), 40) + self.reg.all_keys_label(it.cmd))
+                    data.append(it.cmd)
+        elif mode == QM_FILES:
+            self.quick_files = self.fidx.files.copy() if self.fidx.built else self.fidx.fresh.copy()
+            self.quick_building = self.fidx.building
+            # open files that the walk does not list (outside the project, ignored)
+            for i in range(len(self.wins)):
+                if self.wins[i].kind == WK_EDITOR and self.wins[i].path.byte_length() > 0 and not (self.wins[i].path in self.quick_files):
+                    self.quick_files.append(self.wins[i].path)
+            var prefix = self.symidx_root() + "/"
+            var now_s = unix_time()
+            for k in range(len(self.quick_files)):
+                var path = self.quick_files[k]
+                var rel = path
+                if rel.startswith(prefix):
+                    rel = slice_str(decode(rel), cp_len(prefix), cp_len(rel))
+                var name = basename(path)
+                var where = dirname(rel) if rel != name else String("")
+                items.append(pad_right(name, 30) + " " + where)
+                keys.append(name + "  " + rel)
+                boost.append(self.frec.score(path, now_s))
+                data.append(k)
+        elif mode == QM_SYMBOLS:
+            var te = self.top_editor()
+            self.quick_syms = scan_outline(self.wins[te].buf) if te >= 0 else List[OutlineItem]()
+            for k in range(len(self.quick_syms)):
+                items.append(pad_right(outline_line(self.quick_syms[k]), 50) + ":" + String(self.quick_syms[k].row + 1))
+                keys.append(self.quick_syms[k].name)
+                data.append(k)
+        elif mode == QM_WSYMBOLS:
+            if not self.symidx.building and not self.symidx.built:
+                self.symidx.start(self.symidx_root())
+                self.symidx.step(SYMIDX_FIRST_MS)
+            self.dlg.keys = keys.copy()
+            self.dlg.boost = boost.copy()
+            self.wsymbol_fill()                 # sets items, data and keys itself
+            return
+        else:
+            items.append("Type a line number")
+            data.append(0)
+        self.dlg.keys = keys^
+        self.dlg.boost = boost^
+        self.dlg.set_items(items^, data^)
+
+    def quick_refresh(mut self):
+        """After every key in the palette: see what the field asks for now."""
+        var text = self.dlg.field_text(0)
+        if text == self.quick_text:
+            return
+        self.quick_text = text
+        var parsed = self.quick_parse(text)
+        var mode = parsed[0]
+        if mode != self.quick_mode:
+            self.quick_fill(mode)
+        self.dlg.pat = parsed[1]
+        if mode == QM_LINE:
+            var pos = self.quick_position(text)
+            var te = self.top_editor()
+            var line = String("Type a line number")
+            if te < 0:
+                line = "There is no file to go to a line of"
+            elif pos[0] > 0:
+                line = "Go to line " + String(pos[0]) + ((", column " + String(pos[1])) if pos[1] > 0 else String("")) + " of " + self.wins[te].title + " (" + String(self.wins[te].buf.count()) + " lines)"
+            var one = List[String]()
+            one.append(line)
+            var zero = List[Int]()
+            zero.append(0)
+            self.dlg.set_items(one^, zero^)
+            return
+        self.dlg.refilter()
+
+    def quick_tick(mut self):
+        """One slice of listing the project's files; a palette opened meanwhile gets
+        the full list when it is ready."""
+        if not self.fidx.building:
+            return
+        self.fidx.step(SYMIDX_SLICE_MS)
+        if not self.fidx.building and self.mode == M_DIALOG and self.dlg.kind == D_PALETTE and self.quick_mode == QM_FILES and self.quick_building:
+            self.quick_fill(QM_FILES)
+
+    def quick_accept(mut self) raises:
+        """Enter in the palette."""
+        var text = self.dlg.field_text(0)
+        var mode = self.quick_mode
+        var s = self.dlg.selected_item()
+        if mode == QM_LINE:
+            var pos = self.quick_position(text)
+            var ai = self.top_editor()
+            if ai < 0 or pos[0] <= 0:
+                self.say("No line number was given")
+                return
+            self.focus(ai)
+            self.jump_mark()
+            var t = self.top()
+            self.wins[t].goto(pos[0] - 1, max(0, pos[1] - 1))
+            return
+        if s < 0:
+            self.say("Nothing in the list matches")
+            return
+        if mode == QM_COMMANDS:
+            self.exec(self.dlg.item_data[s])
+        elif mode == QM_FILES:
+            var k = self.dlg.item_data[s]
+            if k < 0 or k >= len(self.quick_files):
+                return
+            var path = self.quick_files[k]
+            if not (self.find_editor(path) >= 0 or path_exists(path)):
+                self.say(basename(path) + " is no longer there")
+                return
+            self.jump_mark()
+            self.open_path(path)
+            var pos = self.quick_position(text)
+            var t = self.top()
+            if pos[0] > 0 and self.wins[t].kind == WK_EDITOR:
+                self.wins[t].goto(pos[0] - 1, max(0, pos[1] - 1))
+        elif mode == QM_SYMBOLS:
+            var k = self.dlg.item_data[s]
+            var ai = self.top_editor()
+            if ai < 0 or k < 0 or k >= len(self.quick_syms):
+                return
+            var it = self.quick_syms[k].copy()
+            self.focus(ai)
+            self.jump_mark()
+            var t = self.top()
+            self.wins[t].goto(it.row, it.col)
+        elif mode == QM_WSYMBOLS:
+            self.wsymbol_go(s)
 
     def symbol_dialog(mut self):
         var ai = self.active_editor()

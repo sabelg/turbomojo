@@ -112,6 +112,7 @@ comptime CM_PANE_SHRINK = 169
 comptime CM_PROBLEMS = 170
 comptime CM_SEARCHRES = 171
 comptime CM_EXPLORER = 172
+comptime CM_QUICK = 173
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -621,7 +622,8 @@ def build_registry() -> Registry:
     r.cmd(CM_FORWARD, "search.forward", "For~w~ard", "Go forward again after going back", [alt(46)])
     r.cmd(CM_SIGNATURE, "search.parameterInfo", "Parame~t~er info", "Show the parameters of the call the cursor is in", [alt(112)])
     r.cmd(CM_MATCH, "search.matchBracket", "~M~atch bracket", "Jump to the matching bracket", [ctrl(93)])
-    r.cmd(CM_PALETTE, "view.commandPalette", "~C~ommand palette...", "Fuzzy-search every IDE command", [ctrl(112)])
+    r.cmd(CM_PALETTE, "view.commandPalette", "~C~ommand palette...", "Fuzzy-search every IDE command (the palette, starting with >)", [ctrl(112)])
+    r.cmd(CM_QUICK, "file.quickOpen", "~G~o to file...", "The palette: files by name; > commands, @ symbols, # project symbols, : line", [alt(103)])
     # ---- Run
     r.cmd(CM_RUN, "run.run", "~R~un", "Run the current program with `mojo run`", [fkey(9) | MOD_CTRL, fkey(8)])
     r.cmd(CM_TEST, "run.test", "~T~est", "Run this file's TestSuite (std.testing) with `mojo run`")
@@ -694,6 +696,7 @@ def build_registry() -> Registry:
     r.item(CM_SAVEAS)
     r.item(CM_SAVEALL)
     r.sep()
+    r.item(CM_QUICK)
     r.item(CM_CLOSE)
     r.item(CM_SHELL)
     r.item(CM_QUIT)

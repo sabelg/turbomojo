@@ -135,3 +135,60 @@ struct SymbolIndex(Movable):
                 n_files += 1
                 last = s.path
         return String(len(self.syms)) + (" symbol" if len(self.syms) == 1 else " symbols") + " in " + String(n_files) + (" file" if n_files == 1 else " files") + (" (list cut off)" if self.truncated else "")
+
+
+comptime FILES_MAX = 50000
+
+
+struct FileIndex(Movable):
+    """Every file of the project (what the ignore rules let through), listed a slice at
+    a time."""
+    var walk: FileSearch
+    var root: String
+    var building: Bool
+    var built: Bool
+    var built_ns: Int
+    var files: List[String]
+    var fresh: List[String]
+    var truncated: Bool
+
+    def __init__(out self):
+        self.walk = FileSearch()
+        self.root = ""
+        self.building = False
+        self.built = False
+        self.built_ns = 0
+        self.files = List[String]()
+        self.fresh = List[String]()
+        self.truncated = False
+
+    def start(mut self, root: String):
+        self.root = root
+        self.walk.start(root, Search())
+        self.walk.active = False
+        self.fresh.clear()
+        self.truncated = False
+        self.building = True
+
+    def step(mut self, budget_ms: Int):
+        if not self.building:
+            return
+        var t0 = Int(perf_counter_ns())
+        while True:
+            if len(self.walk.files) > 0:
+                var path = self.walk.files.pop()
+                if len(self.fresh) < FILES_MAX:
+                    self.fresh.append(path)
+                else:
+                    self.truncated = True
+            elif len(self.walk.dirs) > 0:
+                self.walk.list_next_dir()
+            else:
+                self.files = self.fresh.copy()
+                self.fresh.clear()
+                self.building = False
+                self.built = True
+                self.built_ns = Int(perf_counter_ns())
+                return
+            if (Int(perf_counter_ns()) - t0) // 1000000 >= budget_ms:
+                return

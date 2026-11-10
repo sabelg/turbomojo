@@ -48,6 +48,8 @@ __extension App:
     # ================================================================ files
     def open_path(mut self, path: String) raises:
         var p = abs_path(self.cwd, path)
+        if path_exists(p) and not is_dir(p):
+            self.frec_note(p)
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].path == p:
                 self.focus(i)

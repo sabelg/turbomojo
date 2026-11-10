@@ -75,7 +75,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P3-01 Layout tree: horizontal/vertical splits with tab groups; classic floating layout kept as an option
 - [x] P3-02 Docked panels (left/bottom) hosting explorer, problems, messages, search results
 - [x] P3-03 File explorer: lazy tree, create/rename/delete (to trash)/move, respects `.gitignore`
-- [ ] P3-04 Unified quick-open palette: files (frecency), `>` commands, `@` symbols, `:` line
+- [x] P3-04 Unified quick-open palette: files (frecency), `>` commands, `@` symbols, `:` line
 - [ ] P3-05 Project model: detect `pixi.toml`, list and run pixi tasks, include paths
 - [ ] P3-06 Run configurations (file, args, env, cwd, pre-launch build) stored per project
 - [ ] P3-07 Sessions: restore files, cursors, layout per project

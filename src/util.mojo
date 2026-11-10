@@ -562,6 +562,11 @@ def list_dir(dir: String) -> List[String]:
     return out^
 
 
+def unix_time() -> Int:
+    """Seconds since 1970."""
+    return external_call["time", Int](Int(0))
+
+
 def clock_hm() -> String:
     var t = List[Int](length=1, fill=0)
     t[0] = external_call["time", Int](Int(0))

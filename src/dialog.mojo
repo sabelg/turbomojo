@@ -67,6 +67,9 @@ struct Dialog(Copyable, Movable):
     var item_data: List[Int]
     var shown: List[Int]
     var keys: List[String]   # if given (one per item): what typing is matched against instead of the item's text
+    var boost: List[Int]     # if given (one per item): added to the score of items that match
+    var use_pat: Bool        # the pattern is `pat` (set by the owner), not the whole field
+    var pat: String
     var list_sel: Int
     var list_top: Int
     var buttons: List[String]
@@ -107,6 +110,9 @@ struct Dialog(Copyable, Movable):
         self.item_data = List[Int]()
         self.shown = List[Int]()
         self.keys = List[String]()
+        self.boost = List[Int]()
+        self.use_pat = False
+        self.pat = ""
         self.list_sel = 0
         self.list_top = 0
         self.buttons = List[String]()
@@ -165,12 +171,16 @@ struct Dialog(Copyable, Movable):
     def refilter(mut self):
         self.shown.clear()
         var pat = String("")
-        if self.list_filter and len(self.fields) > 0:
+        if self.use_pat:
+            pat = self.pat
+        elif self.list_filter and len(self.fields) > 0:
             pat = self.field_text(0)
         var scores = List[Int]()
         for i in range(len(self.items)):
             var s = fuzzy_score(self.keys[i] if len(self.keys) == len(self.items) else self.items[i], pat)
             if s >= 0:
+                if len(self.boost) == len(self.items):
+                    s += self.boost[i]
                 # stable insertion by score (desc)
                 var pos = len(self.shown)
                 while pos > 0 and scores[pos - 1] < s:

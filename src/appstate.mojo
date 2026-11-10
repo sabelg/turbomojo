@@ -29,7 +29,8 @@ from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
 from outline import OutlineItem
-from symindex import SymbolIndex, IndexedSymbol
+from symindex import SymbolIndex, IndexedSymbol, FileIndex
+from frecency import Frecency
 from docs import DocEntry
 from layout import Layout
 from explorer import ExplorerTree, default_trash_dir
@@ -280,6 +281,14 @@ struct App(Movable):
     var ex_op: Int                   # the operation the open explorer dialog is for (EXOP_*)
     var ex_target: String            # ... and the file or folder it is about
     var trash_dir: String            # where deleted files go
+    var fidx: FileIndex              # the project's files, for the palette
+    var frec: Frecency               # which files were opened how often and when
+    var frec_path: String            # where that is kept ('' = not kept)
+    var quick_mode: Int              # what the open palette lists (QM_*)
+    var quick_text: String           # its field when the list was last matched
+    var quick_files: List[String]
+    var quick_syms: List[OutlineItem]
+    var quick_building: Bool
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -518,6 +527,14 @@ struct App(Movable):
         self.ex_op = 0
         self.ex_target = ""
         self.trash_dir = default_trash_dir()
+        self.fidx = FileIndex()
+        self.frec = Frecency()
+        self.frec_path = ""
+        self.quick_mode = -1
+        self.quick_text = ""
+        self.quick_files = List[String]()
+        self.quick_syms = List[OutlineItem]()
+        self.quick_building = False
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -630,7 +647,7 @@ struct App(Movable):
         var t = 3600000 if self.sig.active() else RESIZE_POLL_MS
         if self.job.active:
             t = min(t, SPINNER_MS)
-        if self.symidx.building:
+        if self.symidx.building or self.fidx.building:
             t = min(t, 5)
         if self.fsearch.active:
             t = 1                   # keep searching; input is still handled between steps

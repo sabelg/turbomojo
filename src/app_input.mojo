@@ -63,6 +63,8 @@ __extension App:
         if self.macro_rec and len(self.macro) >= MACRO_MAX:
             self.macro_rec = False
             self.say("Macro recording stopped: too long")
+        if self.mode == M_DIALOG and self.dlg.kind == D_PALETTE:
+            self.quick_refresh()
         if self.mode == M_DIALOG and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE):
             self.find_refresh()
 

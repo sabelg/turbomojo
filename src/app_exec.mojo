@@ -388,7 +388,9 @@ __extension App:
                 else:
                     self.say("No matching bracket")
         elif cmd == CM_PALETTE:
-            self.palette_dialog()
+            self.quick_dialog(">")
+        elif cmd == CM_QUICK:
+            self.quick_dialog("")
         elif cmd == CM_RUN:
             self.run_program(False)
         elif cmd == CM_TEST:

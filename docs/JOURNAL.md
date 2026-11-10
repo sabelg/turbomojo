@@ -1974,3 +1974,43 @@ general timeout. The Options menu no longer fits a 20-row screen.
   - Ctrl-E is taken by the Turbo and Emacs keymaps for cursor movement; there the
     explorer is reached through the menu.
 - Verified: `check.sh` CHECK OK (40 files, 822 tests).
+
+## 2026-11-10 · P3-04 Unified palette: files (frecency), > commands, @ symbols, : line · done
+
+- The command palette became the one palette (`quick_dialog` in
+  `src/app_pickers.mojo`, still dialog kind `D_PALETTE`). The field decides the list:
+  no prefix = files, `>` commands, `@` symbols of the file in front (the outline
+  scan), `#` project symbols (the index of P2-13), `:` line. `quick_refresh` runs
+  after every key and refills the list when the prefix changes; `quick_accept` acts by
+  mode. `name:line[:column]` in file mode opens at that place. Ctrl-P opens it with
+  `>` (so the command palette is as before); new command File > Go to file (Alt-G)
+  opens it empty.
+- Files: new `FileIndex` in `src/symindex.mojo` (the project walk of Find in Files,
+  in slices, 50 000 files at most; rebuilt when older than 20 s; a palette opened
+  during the first pass fills in when it ends). Open files outside the walk are added.
+  Typing is matched against "name  relative/path", so a hit in the name ranks before
+  one in the folders.
+- Frecency: new `src/frecency.mojo` - per file a count and the time of the last
+  opening; score = min(count, 10) x a weight by age (100 within 4 h ... 10 after a
+  month); 500 files kept; text file `<state>/turbomojo/opened`, read at start, written
+  on every opening (`frec_note` from `open_path`). The score is added to the match
+  score (`Dialog.boost`), and orders the list while nothing is typed.
+- `Dialog`: `use_pat` / `pat` (the owner sets what is matched) and `boost`.
+- Tests: new `tests/test_quick.mojo` (7): frecency counting, ageing, text form, damaged
+  lines, the cap; the file index; list matching with pattern and boosts; files by name,
+  Enter + Back, folder match, no match; ranking by use, `name:line:column`, the stored
+  record; `>` commands via Ctrl-P, removing the `>`, `@`, `#`, `:` with its messages.
+  The old palette tests (mouse) pass unchanged.
+- Not done / unverified:
+  - Ctrl-P still means commands, not files as in some editors; files are on Alt-G.
+    Go to symbol (Ctrl-T), Go to line (Ctrl-G) and Open (F3) keep their own dialogs.
+  - The fuzzy match is the simple one used everywhere here (substring first, then
+    letters in order); no highlighting of matched letters, no camel-case matching.
+  - The record of opened files is global, not per project, and is rewritten on every
+    opening; not measured with the full 500 entries.
+  - Not looked at in tmux; Alt-G as sent by real terminals is untested.
+- The first gate run failed in `tests/test_commands.mojo`: two tests look at the File
+  menu by position and my new item had shifted it; the item now sits below the
+  separator. (The gate stops at the first failing file, so the rest ran only on the
+  second run.)
+- Verified: `check.sh` CHECK OK (41 files, 829 tests).
