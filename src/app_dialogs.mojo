@@ -173,6 +173,11 @@ __extension App:
             if s >= 0 and ai >= 0:
                 self.jump_mark()
                 self.wins[ai].goto(self.dlg.item_data[s], self.wins[ai].indent_of(self.dlg.item_data[s]))
+        elif kind == D_TASKS and b == 0:
+            var s = self.dlg.selected_item()
+            if s >= 0 and self.dlg.item_data[s] < len(self.tasks):
+                var chosen = self.tasks[self.dlg.item_data[s]].name
+                self.run_task(chosen)
         elif kind == D_EX_NAME and b == 0:
             self.explorer_apply(self.dlg.field_text(0))
         elif kind == D_EX_DELETE and b == 0:

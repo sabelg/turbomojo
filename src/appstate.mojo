@@ -33,6 +33,7 @@ from symindex import SymbolIndex, IndexedSymbol, FileIndex
 from frecency import Frecency
 from docs import DocEntry
 from layout import Layout
+from project import PixiTask
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
@@ -74,6 +75,7 @@ def now_ns() -> Int:
 
 comptime JOB_BUILD = 1
 comptime JOB_FORMAT = 2
+comptime JOB_TASK = 3                    # a pixi task of the project
 comptime SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
 
@@ -289,6 +291,12 @@ struct App(Movable):
     var quick_files: List[String]
     var quick_syms: List[OutlineItem]
     var quick_building: Bool
+    var pixi_cmd: String             # how pixi is called
+    var pixi_for: String             # the folder pixi_found was looked up for
+    var pixi_found: String           # the folder with pixi.toml at or above it ('' if none)
+    var tasks: List[PixiTask]        # what the open task list offers
+    var last_task: String
+    var msg_base: String             # relative paths in messages start here ('' = where the IDE runs)
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -535,6 +543,12 @@ struct App(Movable):
         self.quick_files = List[String]()
         self.quick_syms = List[OutlineItem]()
         self.quick_building = False
+        self.pixi_cmd = "pixi"
+        self.pixi_for = "\x01"
+        self.pixi_found = ""
+        self.tasks = List[PixiTask]()
+        self.last_task = ""
+        self.msg_base = ""
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False

@@ -41,6 +41,7 @@ from app_explorer import *
 from outline import *
 from symindex import *
 from docs import *
+from project import *
 from watch import file_sig
 from app_input import *
 from app_mouse import *
@@ -187,7 +188,114 @@ __extension App:
 
     # ============================================ symbols of the whole project
     def symidx_root(self) -> String:
-        return self.project_dir if self.project_dir.byte_length() > 0 else String(self.cwd)
+        if self.project_dir.byte_length() > 0:
+            return self.project_dir
+        var px = self.pixi_dir()
+        return px if px.byte_length() > 0 else String(self.cwd)
+
+    def pixi_dir(self) -> String:
+        """The folder of the project's pixi.toml: at or above where the IDE runs
+        ('' if there is none)."""
+        if self.pixi_for == self.cwd:
+            return self.pixi_found
+        return find_up(self.cwd, "pixi.toml")
+
+    def pixi_locate(mut self) -> String:
+        """pixi_dir(), looked up once per folder."""
+        if self.pixi_for != self.cwd:
+            self.pixi_found = find_up(self.cwd, "pixi.toml")
+            self.pixi_for = self.cwd
+        return self.pixi_found
+
+    # ============================================================ pixi tasks
+    def tasks_dialog(mut self):
+        """Run > Pixi tasks: the tasks of the project's pixi.toml in a list; Enter runs
+        the chosen one with `pixi run`, its output goes to the Message page."""
+        var dir = self.pixi_locate()
+        if dir.byte_length() == 0:
+            self.say("No pixi.toml in this folder or above it")
+            return
+        self.tasks = parse_pixi_tasks(read_text(join_path(dir, "pixi.toml")))
+        if len(self.tasks) == 0:
+            self.say("The pixi.toml in " + dir + " defines no tasks")
+            return
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        var first = 0
+        for k in range(len(self.tasks)):
+            var what = self.tasks[k].cmd
+            if len(self.tasks[k].depends) > 0:
+                var deps = String("")
+                for dname in self.tasks[k].depends:
+                    deps += (", " if deps.byte_length() > 0 else "") + dname
+                what = (what + "   " if what.byte_length() > 0 else String("")) + "(after " + deps + ")"
+            if self.tasks[k].description.byte_length() > 0:
+                what = self.tasks[k].description
+            var name = self.tasks[k].name
+            if self.tasks[k].feature.byte_length() > 0:
+                name += " [" + self.tasks[k].feature + "]"
+            items.append(pad_right(name, 18) + " " + what)
+            keys.append(self.tasks[k].name)
+            data.append(k)
+            if self.tasks[k].name == self.last_task:
+                first = k
+        var name = pixi_project_name(read_text(join_path(dir, "pixi.toml")))
+        var d = Dialog(D_TASKS, "Pixi Tasks" + ((" - " + name) if name.byte_length() > 0 else String("")), min(76, self.scr.w - 4), min(20, max(9, len(items) + 7)))
+        d.fields.append(Field("~T~ask", ""))
+        d.list_filter = True
+        d.keys = keys^
+        d.set_items(items^, data^)
+        d.list_sel = first                  # the task run last is the one under Enter
+        d.buttons.append("~R~un")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def run_task(mut self, name: String):
+        if self.job_busy():
+            return
+        var dir = self.pixi_locate()
+        if dir.byte_length() == 0:
+            self.say("No pixi.toml in this folder or above it")
+            return
+        var unsaved = 0
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified and self.wins[i].path.byte_length() > 0:
+                unsaved += 1
+        var cmd = "cd " + shell_quote(dir) + " && exec " + self.pixi_cmd + " run " + shell_quote(name) + " 2>&1 </dev/null"
+        if self.start_job(JOB_TASK, cmd, dir, name):
+            self.last_task = name
+            self.task_output("Running...")
+            self.say("Task " + name + " is running - Ctrl-F2 cancels it" + ((" (" + count_of(unsaved, "file") + " not saved)") if unsaved > 0 else String("")))
+
+    def task_output(mut self, footer: String):
+        """The running (or finished) task's output on the Message page."""
+        self.panel_write(PG_MESSAGE)
+        self.msg_base = self.job.path
+        _ = self.fill_messages(self.job_header(), self.job.data.copy(), footer)
+        self.msg_base = ""
+
+    def finish_task(mut self, status: Int, secs: Float64):
+        var name = self.job.exe
+        var tstr = String(Int(secs * 10) // 10) + "." + String(Int(secs * 10) % 10) + " s"
+        var ok = status == 0 and not self.job.cancelled
+        var result = String("Task " + name + " finished in " + tstr)
+        if self.job.cancelled:
+            result = "Task " + name + " cancelled after " + tstr
+        elif not ok:
+            result = "Task " + name + " failed (exit " + String(status >> 8) + ") after " + tstr
+        self.task_output(result)
+        var mi = self.msg_index()
+        if mi >= 0:
+            # the end of the output is what one wants to see
+            self.wins[mi].cr = self.wins[mi].buf.count() - 1
+            self.wins[mi].follow = True
+            if len(self.errs) > 0:
+                self.err_idx = 0
+                self.wins[mi].cr = self.errs[0].msg_line
+            if not ok and not self.job.cancelled and self.mode == M_NORMAL:
+                self.focus(mi)
+        self.say(result)
 
     def symidx_tick(mut self):
         """One slice of the index pass; called on every pass of the event loop. When a

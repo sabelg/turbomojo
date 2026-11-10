@@ -2014,3 +2014,41 @@ general timeout. The Options menu no longer fits a 20-row screen.
   separator. (The gate stops at the first failing file, so the rest ran only on the
   second run.)
 - Verified: `check.sh` CHECK OK (41 files, 829 tests).
+
+## 2026-11-10 · P3-05 Project model: pixi.toml, pixi tasks, include paths · done
+
+- New `src/project.mojo`: `find_up` (nearest folder at or above with a given file);
+  `parse_pixi_tasks` - a line reader for the task tables of pixi.toml: `name = "cmd"`,
+  inline tables (`cmd` as string or list, `depends-on` / `depends_on` as string, list
+  or list with `{ task = ... }` tables, `description`; other keys skipped),
+  `[tasks.name]` tables, `[feature.X.tasks]`, and the `[tool.pixi...]` forms of a
+  pyproject.toml; `pixi_project_name`. (The IDE's own TOML reader has no inline
+  tables, and asking `pixi task list` would need pixi to resolve the environment.)
+- App: the project root is `.turbomojo.toml`'s folder, else the folder with pixi.toml
+  at or above the start folder (`pixi_locate`, looked up once per folder), else the
+  start folder - used by the explorer, the palette's file list and the symbol index.
+  Run > Pixi tasks (Shift-F9): list with filter, the task run last pre-selected.
+  `run_task` starts `pixi run <task>` in the project folder as a background job
+  (`JOB_TASK`, input from /dev/null); output is shown on the Message page while it
+  runs; at the end the result line, the first error marked, and the panel focused if
+  the task failed. Relative paths in its messages count from the project folder
+  (`msg_base`). Run > Run last task. Ctrl-F2 cancels as for builds.
+- Include paths: nothing new was needed - `tools.include_paths` (P0) already reaches
+  the compiler, the language server and `mojo doc`, with relative entries counted
+  from the project file's folder. Not derived from pixi.toml (it has no such notion).
+- Tests: new `tests/test_project.mojo` (6): `find_up`; tasks in every written form
+  (incl. a dependency table named like a task), odd and empty files, pyproject style,
+  this repository's own pixi.toml; in the app with a stand-in script for pixi: project
+  found from a subfolder / none above / no tasks; list, filter, run, output, run
+  again, busy, pre-selection; a failing task with an error line that Enter jumps to.
+  All passed on the first run.
+- Not done / unverified:
+  - **The real `pixi run` was not exercised by the tests** (it would resolve and
+    possibly download an environment); only the command line is checked, through the
+    stand-in. A real task was not tried by hand either.
+  - Tasks that need a terminal (such as this project's own `run`, which starts the
+    IDE) get no terminal: they run with captured output.
+  - No arguments for tasks, no choice of pixi environment (`-e`), no `mojo precompile`
+    package builds (in the roadmap's table, not in this backlog item).
+  - Multi-line TOML values in task tables are not read.
+- Verified: `check.sh` CHECK OK (42 files, 835 tests).

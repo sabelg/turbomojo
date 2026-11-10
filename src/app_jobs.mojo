@@ -111,7 +111,7 @@ __extension App:
                 var loc = self.parse_loc(l)
                 if loc.row > 0:
                     loc.msg_line = row
-                    loc.path = abs_path(self.cwd, loc.path)
+                    loc.path = abs_path(self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd), loc.path)
                     self.errs.append(loc^)
             for c in l:
                 text.append(c)
@@ -256,6 +256,8 @@ __extension App:
         return Float64(Int(perf_counter_ns()) - self.job.t0) / 1e9
 
     def job_header(self) -> String:
+        if self.job.kind == JOB_TASK:
+            return "pixi run " + self.job.exe + "   (in " + self.job.path + ")"
         if self.job.kind == JOB_BUILD:
             return "Building " + self.job.path + " ..."
         return "Formatting " + self.job.path + " ..."
@@ -296,6 +298,8 @@ __extension App:
         if got and self.job.kind == JOB_BUILD and self.job.pid != 0:
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Compiling...")
+        if got and self.job.kind == JOB_TASK and self.job.pid != 0:
+            self.task_output("Running...")
         if eof:
             self.finish_job()
 
@@ -303,7 +307,9 @@ __extension App:
         var st = Int(external_call["pclose", Int32](self.job.fp))
         self.job.active = False
         var secs = self.job_elapsed()
-        if self.job.kind == JOB_BUILD:
+        if self.job.kind == JOB_TASK:
+            self.finish_task(st, secs)
+        elif self.job.kind == JOB_BUILD:
             self.finish_build(st, secs)
         else:
             self.finish_format(st)

@@ -96,8 +96,12 @@ __extension App:
             var b = List[UInt8]()
             encode_cp(sp[(now_ns() // (SPINNER_MS * 1000000)) % len(sp)], b)
             var what = "Building " if self.job.kind == JOB_BUILD else "Formatting "
+            var subject = basename(self.job.path)
+            if self.job.kind == JOB_TASK:
+                what = "Task "
+                subject = self.job.exe
             var e = self.job_elapsed()
-            right = bytes_to_str(b) + " " + what + basename(self.job.path) + " " + String(Int(e)) + "." + String(Int(e * 10) % 10) + "s  ^F2 cancel  " + right
+            right = bytes_to_str(b) + " " + what + subject + " " + String(Int(e)) + "." + String(Int(e * 10) % 10) + "s  ^F2 cancel  " + right
         var rl = cp_len(right)
         var rx = self.scr.w - rl - 1
         if rx < x:

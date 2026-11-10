@@ -401,6 +401,14 @@ __extension App:
             self.term.wait_byte()
             self.term.enter()
             self.scr.force = True
+        elif cmd == CM_TASKS:
+            self.tasks_dialog()
+        elif cmd == CM_TASK_AGAIN:
+            if self.last_task.byte_length() == 0:
+                self.tasks_dialog()
+            else:
+                var again = self.last_task
+                self.run_task(again)
         elif cmd == CM_ARGS:
             var d = Dialog(D_ARGS, "Program Arguments", 56, 7)
             d.fields.append(Field("~A~rguments", self.run_args))
