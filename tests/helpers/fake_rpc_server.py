@@ -95,7 +95,7 @@ def main():
                 # FAKE_SYNC=2: incremental sync with save notifications
                 "capabilities": {"textDocumentSync": ({"openClose": True, "change": 2, "save": True}
                                                       if os.environ.get("FAKE_SYNC") == "2" else 1),
-                                 "hoverProvider": True, "foldingRangeProvider": False,
+                                 "hoverProvider": True, "foldingRangeProvider": False, "definitionProvider": True,
                                  "signatureHelpProvider": {"triggerCharacters": ["(", ","]},
                                  "completionProvider": {"triggerCharacters": [".", "("], "resolveProvider": True},
                                  "renameProvider": {"prepareProvider": True}},
@@ -200,6 +200,50 @@ def main():
                 send({"jsonrpc": "2.0", "id": mid, "result": {"contents": {"kind": "markdown", "value":
                     "### function `%s`\n\n---\nDoes **important** things with [care](https://example.org).\n\n```mojo\ndef %s(n: Int) -> String\n```" % (word, word)},
                     "range": {"start": {"line": ln, "character": a}, "end": {"line": ln, "character": b}}}})
+            continue
+        if method == "textDocument/definition":
+            uri = params["textDocument"]["uri"]
+            text = DOCS.get(uri, "")
+            main.defs = getattr(main, "defs", 0) + 1
+            lines = text.split("\n")
+            ln = params["position"]["line"]
+            line = lines[ln] if ln < len(lines) else ""
+            at = utf16_index(line, params["position"]["character"])
+            a = at
+            while a > 0 and (line[a - 1].isalnum() or line[a - 1] == "_"):
+                a -= 1
+            b = at
+            while b < len(line) and (line[b].isalnum() or line[b] == "_"):
+                b += 1
+            word = line[a:b]
+            places = []
+            for k, l in enumerate(lines):
+                idx = l.find("def " + word + "(")
+                if word and idx >= 0:
+                    col = len(l[:idx + 4].encode("utf-16-le")) // 2
+                    places.append({"uri": uri, "range": {"start": {"line": k, "character": col},
+                                                           "end": {"line": k, "character": col + len(word)}}})
+            folder = uri.rsplit("/", 1)[0]
+            if "DEFBUSY" in text and main.defs < 3:
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32801, "message": "outdated request"}})
+            elif word == "ext":
+                # a LocationLink into another file: the name is at 2:4, the whole definition starts at 1:0
+                send({"jsonrpc": "2.0", "id": mid, "result": [{
+                    "targetUri": folder + "/other.mojo",
+                    "targetRange": {"start": {"line": 1, "character": 0}, "end": {"line": 4, "character": 0}},
+                    "targetSelectionRange": {"start": {"line": 2, "character": 4}, "end": {"line": 2, "character": 7}}}]})
+            elif word == "gone":
+                send({"jsonrpc": "2.0", "id": mid, "result": {"uri": folder + "/no_such_file.mojo",
+                     "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}}})
+            elif word == "web":
+                send({"jsonrpc": "2.0", "id": mid, "result": [{"uri": "https://example.org/x.mojo",
+                     "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}}]})
+            elif not places:
+                send({"jsonrpc": "2.0", "id": mid, "result": None})
+            elif len(places) == 1:
+                send({"jsonrpc": "2.0", "id": mid, "result": places[0]})      # a single Location, not a list
+            else:
+                send({"jsonrpc": "2.0", "id": mid, "result": places})
             continue
         if method == "textDocument/signatureHelp":
             text = DOCS.get(params["textDocument"]["uri"], "")

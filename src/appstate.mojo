@@ -95,6 +95,14 @@ struct Job(Copyable, Movable):
 
 
 @fieldwise_init
+struct JumpLoc(Copyable, Movable):
+    """A place the cursor was before a jump (0-based row and column)."""
+    var path: String
+    var row: Int
+    var col: Int
+
+
+@fieldwise_init
 struct ErrLoc(Copyable, Movable):
     var path: String
     var row: Int
@@ -189,6 +197,14 @@ struct App(Movable):
     var hover_req_col: Int
     var hover_retries: Int
     var hover_retry_due: Int
+    var jumps: List[JumpLoc]         # places left by jumps, oldest first
+    var jump_at: Int                 # == len(jumps) unless going back through them
+    var def_req_id: Int
+    var def_req_path: String
+    var def_req_row: Int
+    var def_req_col: Int
+    var def_retries: Int
+    var def_retry_due: Int
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -335,6 +351,14 @@ struct App(Movable):
         self.hover_req_col = -1
         self.hover_retries = 0
         self.hover_retry_due = 0
+        self.jumps = List[JumpLoc]()
+        self.jump_at = 0
+        self.def_req_id = -1
+        self.def_req_path = ""
+        self.def_req_row = -1
+        self.def_req_col = -1
+        self.def_retries = 0
+        self.def_retry_due = 0
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -453,6 +477,8 @@ struct App(Movable):
             t = min(t, max(1, (self.hover_retry_due - now) // 1000000 + 1))
         if self.sig_retry_due > 0:
             t = min(t, max(1, (self.sig_retry_due - now) // 1000000 + 1))
+        if self.def_retry_due > 0:
+            t = min(t, max(1, (self.def_retry_due - now) // 1000000 + 1))
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.watch_enabled and not self.watch.active():

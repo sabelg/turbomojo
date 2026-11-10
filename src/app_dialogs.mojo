@@ -32,6 +32,7 @@ from app_files import *
 from app_menus import *
 from app_exec import *
 from app_pickers import *
+from app_nav import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -157,6 +158,7 @@ __extension App:
             if ai >= 0 and t.byte_length() > 0:
                 try:
                     var n = atol(t)
+                    self.jump_mark()
                     self.wins[ai].goto(n - 1, 0)
                 except:
                     self.say("Invalid line number")
@@ -168,6 +170,7 @@ __extension App:
             var s = self.dlg.selected_item()
             var ai = self.active_editor()
             if s >= 0 and ai >= 0:
+                self.jump_mark()
                 self.wins[ai].goto(self.dlg.item_data[s], self.wins[ai].indent_of(self.dlg.item_data[s]))
         elif kind == D_WINLIST and b == 0:
             var s = self.dlg.selected_item()

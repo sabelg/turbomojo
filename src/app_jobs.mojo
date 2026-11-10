@@ -33,6 +33,7 @@ from app_dialogs import *
 from app_menus import *
 from app_exec import *
 from app_pickers import *
+from app_nav import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
@@ -377,6 +378,7 @@ __extension App:
             self.wins[mi].cr = e.msg_line
             self.wins[mi].follow = True
         if e.path.byte_length() > 0 and path_exists(e.path):
+            self.jump_mark()
             self.open_path(e.path)
             var t = self.top()
             self.wins[t].goto(e.row - 1, max(0, e.col - 1))

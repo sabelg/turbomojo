@@ -89,6 +89,9 @@ comptime CM_SCROLL_DOWN = 146
 comptime CM_INSERT_MODE = 147
 comptime CM_HOVER = 148
 comptime CM_SIGNATURE = 149
+comptime CM_DEFINITION = 150
+comptime CM_BACK = 151
+comptime CM_FORWARD = 152
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -589,6 +592,9 @@ def build_registry() -> Registry:
     r.cmd(CM_GOTO, "search.gotoLine", "~G~o to line number...", "Move the cursor to a line number", [ctrl(103)])
     r.cmd(CM_SYMBOL, "search.gotoSymbol", "Go to s~y~mbol...", "Jump to a def / struct / trait in this file", [ctrl(116)])
     r.cmd(CM_HOVER, "search.describeSymbol", "~D~escribe symbol", "Show what the language server knows about the symbol at the cursor", [alt(105)])
+    r.cmd(CM_DEFINITION, "search.goToDefinition", "Go to d~e~finition", "Go to where the symbol at the cursor is defined", [fkey(12)])
+    r.cmd(CM_BACK, "search.back", "~B~ack", "Return to where the cursor was before the last jump", [alt(44)])
+    r.cmd(CM_FORWARD, "search.forward", "For~w~ard", "Go forward again after going back", [alt(46)])
     r.cmd(CM_SIGNATURE, "search.parameterInfo", "Parame~t~er info", "Show the parameters of the call the cursor is in", [alt(112)])
     r.cmd(CM_MATCH, "search.matchBracket", "~M~atch bracket", "Jump to the matching bracket", [ctrl(93)])
     r.cmd(CM_PALETTE, "view.commandPalette", "~C~ommand palette...", "Fuzzy-search every IDE command", [ctrl(112)])
@@ -701,6 +707,9 @@ def build_registry() -> Registry:
     r.item(CM_MATCH)
     r.item(CM_HOVER)
     r.item(CM_SIGNATURE)
+    r.item(CM_DEFINITION)
+    r.item(CM_BACK)
+    r.item(CM_FORWARD)
     r.sep()
     r.item(CM_PREVERR)
     r.item(CM_NEXTERR)

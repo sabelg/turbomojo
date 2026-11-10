@@ -61,7 +61,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P2-04 Completion popup from the server (kinds, detail, docs panel), merged with word completion
 - [x] P2-05 Hover window with Markdown-to-cells rendering
 - [x] P2-06 Signature help
-- [ ] P2-07 Go to definition; back/forward jump list
+- [x] P2-07 Go to definition; back/forward jump list
 - [ ] P2-08 Find references results window
 - [ ] P2-09 Rename with multi-file preview and apply
 - [ ] P2-10 Code actions (quick-fix menu)

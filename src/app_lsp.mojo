@@ -290,6 +290,11 @@ __extension App:
             var hi = self.active_editor()
             if not self.hover_still_wanted() or not self.hover_request(hi):
                 self.hover_req_id = -1
+        if self.def_retry_due > 0 and now >= self.def_retry_due:
+            self.def_retry_due = 0
+            var di = self.active_editor()
+            if not self.definition_still_wanted() or not self.definition_request(di):
+                self.def_req_id = -1
         if self.sig_retry_due > 0 and now >= self.sig_retry_due:
             self.sig_retry_due = 0
             var si = self.active_editor()
@@ -304,6 +309,11 @@ __extension App:
                 self.hover_arrived(m)
             elif m.id == self.sig_req_id:
                 self.sig_arrived(m)
+            elif m.id == self.def_req_id:
+                try:
+                    self.definition_arrived(m)
+                except e:
+                    self.say("Cannot open the definition: " + String(e))
         var i = self.find_editor(self.lsp_path) if self.lsp_path.byte_length() > 0 else -1
         if i < 0 and self.lsp_path.byte_length() > 0:
             # the window whose problems were shown is gone; other files stay in step

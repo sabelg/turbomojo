@@ -32,6 +32,7 @@ from app_files import *
 from app_dialogs import *
 from app_menus import *
 from app_pickers import *
+from app_nav import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -280,6 +281,12 @@ __extension App:
             self.hover_command()
         elif cmd == CM_SIGNATURE:
             self.sig_command()
+        elif cmd == CM_DEFINITION:
+            self.definition_command()
+        elif cmd == CM_BACK:
+            self.jump_back()
+        elif cmd == CM_FORWARD:
+            self.jump_forward()
         elif cmd == CM_MACRO_REC:
             self.macro_toggle_record()
         elif cmd == CM_MACRO_PLAY:

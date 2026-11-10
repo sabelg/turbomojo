@@ -1513,3 +1513,37 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   - The tip is not shown with several cursors, and it may cover the window's title row
     when the cursor is on the first text row.
 - Verified: `check.sh` CHECK OK (33 files, 735 tests).
+
+## 2026-11-10 · P2-07 Go to definition; back/forward jump list · done
+
+- `src/lsp.mojo`: `request_definition`, `LspLocation`, `parse_locations` (a Location, a
+  list, or LocationLinks - the name's own range preferred; non-file URIs and repeats
+  dropped); client capability `definition.linkSupport`.
+- New `src/app_nav.mojo`: `definition_command/_request/_arrived` (retry on "outdated
+  request", answer dropped if the cursor moved, column converted from UTF-16 using the
+  target line), `show_places` (several places listed in the Message window as
+  path:line:column: text, reusing the message list so Next/Previous message and Enter
+  work - meant for references in P2-08 too), and the jump list: `jump_mark` before a
+  jump, `jump_back`, `jump_forward` (browser rules: a new jump forgets the places ahead;
+  one entry per line; 100 entries; files that are gone are skipped; untitled windows are
+  not recorded). Marks are set by go to definition, Go to line, Go to symbol and jumps
+  from the Message window (compiler messages, search hits).
+- Commands: Go to definition (F12), Back (Alt-,), Forward (Alt-.) in the Search menu.
+- Tests (6 new in `tests/test_lsp.mojo`, 62 there): location forms; definition + back +
+  forward + ends of the list + "This is the definition"; another file through a
+  LocationLink and two definitions listed (with a UTF-16 column after a non-BMP
+  character); not found / unopenable file / non-file URI / retry / cursor moved / no
+  feature / no server; jump list rules; and the real mojo-lsp-server (from the call
+  `twice(4)` to `def twice` at 1:5, and back).
+- Mistake on the way: my patch separated `@fieldwise_init` from `ErrLoc` (build error,
+  fixed). The new tests passed on the first run.
+- Not done / unverified:
+  - Not tried by hand in tmux; F12, Alt-, and Alt-. as sent by real terminals are
+    untested (some terminals reserve F12 or Alt-.).
+  - Jump positions are not adjusted when lines are inserted or removed above them.
+  - Match bracket, Find and paging are not recorded as jumps; no Ctrl-click.
+  - `place_line` reads the whole file for each place not open in a window - fine for
+    definitions, to be revisited for long reference lists (P2-08).
+  - Declaration / type definition / implementation requests are not offered (the Mojo
+    server does not advertise them).
+- Verified: `check.sh` CHECK OK (33 files, 741 tests).

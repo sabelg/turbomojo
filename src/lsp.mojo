@@ -457,6 +457,52 @@ def hover_markdown(doc: Json, result: Int) -> String:
     return marked_text(doc, c)
 
 
+@fieldwise_init
+struct LspLocation(Copyable, Movable):
+    """A place in a file as a server names it: 0-based line, column in UTF-16 units."""
+    var path: String
+    var row: Int
+    var col16: Int
+
+
+def parse_locations(doc: Json, result: Int) -> List[LspLocation]:
+    """Read the answer to a definition (or references) request: one Location, a list of
+    them, or a list of LocationLinks. Places that are not files are left out, and so are
+    repeats."""
+    var found = List[LspLocation]()
+    if result < 0 or doc.is_null(result):
+        return found^
+    var nodes = List[Int]()
+    if doc.kind(result) == 4:
+        for k in range(doc.size(result)):
+            nodes.append(doc.at(result, k))
+    else:
+        nodes.append(result)
+    for node in nodes:
+        var uri = doc.get(node, "uri")
+        var rng = doc.get(node, "range")
+        if uri < 0:
+            # a LocationLink: the name itself rather than the whole definition
+            uri = doc.get(node, "targetUri")
+            rng = doc.get(node, "targetSelectionRange")
+            if rng < 0:
+                rng = doc.get(node, "targetRange")
+        if uri < 0 or rng < 0:
+            continue
+        var path = uri_to_path(doc.str(uri))
+        var start = doc.get(rng, "start")
+        if path.byte_length() == 0 or start < 0:
+            continue
+        var loc = LspLocation(path, max(0, doc.int(doc.get(start, "line"), 0)), max(0, doc.int(doc.get(start, "character"), 0)))
+        var seen = False
+        for f in found:
+            if f.path == loc.path and f.row == loc.row and f.col16 == loc.col16:
+                seen = True
+        if not seen:
+            found.append(loc^)
+    return found^
+
+
 struct SigInfo(Copyable, Movable):
     """The signature to show for a call: its text, where the parameter being typed is
     inside that text (character indexes a..b, a == b if unknown), and how many
@@ -687,6 +733,10 @@ struct LspClient(Copyable, Movable):
         w.str("plaintext")
         w.end_arr()
         w.end_obj()
+        w.key("definition")
+        w.begin_obj()
+        w.kv_bool("linkSupport", True)
+        w.end_obj()
         w.key("signatureHelp")
         w.begin_obj()
         w.kv_bool("contextSupport", True)
@@ -894,6 +944,13 @@ struct LspClient(Copyable, Movable):
         if self.state != LSP_READY or not self.table.hover or self.find_doc(uri) < 0:
             return -1
         return self.conn.request("textDocument/hover", self.position_params(uri, line, character) + "}", now)
+
+    def request_definition(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
+        """Ask where the symbol at a position is defined. -1 if the server cannot be
+        asked now."""
+        if self.state != LSP_READY or not self.table.definition or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/definition", self.position_params(uri, line, character) + "}", now)
 
     def request_signature(mut self, uri: String, line: Int, character: Int, trigger: String, again: Bool, now: Int) -> Int:
         """Ask which call the position is inside and which parameter is being typed.

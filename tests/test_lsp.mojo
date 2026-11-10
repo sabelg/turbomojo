@@ -14,7 +14,7 @@ from app import *
 from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER
 from markdown import md_plain
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, build_registry
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
 from term import fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN, KEY_LEFT, KEY_HOME
 from signals import own_pid
 from util import cp_len, decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
@@ -1455,6 +1455,235 @@ def test_parameter_info_command_retries_and_explains_itself() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
+# ------------------------------------------- go to definition, jump list
+def wait_def(mut app: App):
+    var t0 = now()
+    while (app.def_req_id >= 0 or app.def_retry_due > 0) and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+
+
+def at(app: App) -> String:
+    """Where the cursor is: file name:row:col (0-based)."""
+    var t = app.top()
+    return app.wins[t].title + ":" + String(app.wins[t].cr) + ":" + String(app.wins[t].cc)
+
+
+def test_location_results_in_every_form() raises:
+    var one = parse_locations(json_parse("{\"uri\": \"file:///p/a.mojo\", \"range\": {\"start\": {\"line\": 3, \"character\": 7}, \"end\": {\"line\": 3, \"character\": 9}}}"), 0)
+    assert_equal(len(one), 1)
+    assert_equal(one[0].path, "/p/a.mojo")
+    assert_equal(one[0].row, 3)
+    assert_equal(one[0].col16, 7)
+    # a list, with a repeat and a place that is not a file
+    var many = parse_locations(json_parse("[{\"uri\": \"file:///p/a.mojo\", \"range\": {\"start\": {\"line\": 1, \"character\": 0}}}, {\"uri\": \"file:///p/a.mojo\", \"range\": {\"start\": {\"line\": 1, \"character\": 0}}}, {\"uri\": \"untitled:x\", \"range\": {\"start\": {\"line\": 0, \"character\": 0}}}, {\"uri\": \"file:///p/b%20c.mojo\", \"range\": {\"start\": {\"line\": 9, \"character\": 2}}}]"), 0)
+    assert_equal(len(many), 2)
+    assert_equal(many[1].path, "/p/b c.mojo")
+    assert_equal(many[1].row, 9)
+    # links: the name's own range is preferred, the whole range is the fallback
+    var links = parse_locations(json_parse("[{\"targetUri\": \"file:///p/a.mojo\", \"targetRange\": {\"start\": {\"line\": 4, \"character\": 0}}, \"targetSelectionRange\": {\"start\": {\"line\": 5, \"character\": 8}}}, {\"targetUri\": \"file:///p/b.mojo\", \"targetRange\": {\"start\": {\"line\": 6, \"character\": 1}}}]"), 0)
+    assert_equal(len(links), 2)
+    assert_equal(links[0].row, 5)
+    assert_equal(links[0].col16, 8)
+    assert_equal(links[1].row, 6)
+    # nothing
+    assert_equal(len(parse_locations(json_parse("null"), 0)), 0)
+    assert_equal(len(parse_locations(json_parse("[]"), 0)), 0)
+    assert_equal(len(parse_locations(json_parse("[{\"uri\": \"file:///p/a.mojo\"}]"), 0)), 0)
+
+
+def test_go_to_definition_and_back_and_forward() raises:
+    var dir = scratch("def1")
+    var app = comp_app(dir, "def helper():\n    pass\n\nx = helper()\ny = 2\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    var reg = build_registry()
+    assert_equal(reg.find_key(fkey(12)), CM_DEFINITION)
+    assert_equal(reg.find_key(alt(44)), CM_BACK)
+    assert_equal(reg.find_key(alt(46)), CM_FORWARD)
+    app.wins[i].goto(3, 6)
+    app.handle(key_event(fkey(12)))
+    assert_equal(app.status, "Asking the language server...")
+    wait_def(app)
+    assert_equal(at(app), "a.mojo:0:4")                  # on the name, not on "def"
+    assert_equal(app.status, "a.mojo:1")
+    app.handle(key_event(alt(44)))                      # Alt-,
+    assert_equal(at(app), "a.mojo:3:6")
+    app.handle(key_event(alt(46)))                      # Alt-.
+    assert_equal(at(app), "a.mojo:0:4")
+    app.exec(CM_FORWARD)
+    assert_equal(app.status, "No later place to go forward to")
+    assert_equal(at(app), "a.mojo:0:4")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:3:6")
+    app.exec(CM_BACK)
+    assert_equal(app.status, "No earlier place to go back to")
+    assert_equal(at(app), "a.mojo:3:6")
+    # asking on the definition itself stays there and says so
+    app.wins[i].goto(0, 5)
+    app.exec(CM_DEFINITION)
+    wait_def(app)
+    assert_equal(at(app), "a.mojo:0:4")
+    assert_equal(app.status, "This is the definition")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_definition_in_another_file_and_several_definitions() raises:
+    var dir = scratch("def2")
+    with open(dir + "/other.mojo", "w") as f:
+        f.write("# other\n\ndef ext():\n    pass\n")
+    var app = comp_app(dir, "ext()\nmulti()\n\"\U0001F600\"; def multi(): pass\nif x:\n    def multi(a): pass\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(0, 1)
+    app.exec(CM_DEFINITION)
+    wait_def(app)
+    assert_equal(at(app), "other.mojo:2:4")              # opened, cursor on the name
+    assert_equal(app.status, "other.mojo:3")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:0:1")
+    app.exec(CM_FORWARD)
+    assert_equal(at(app), "other.mojo:2:4")
+    app.exec(CM_BACK)
+    # two definitions: listed in the Message window, the first one shown
+    app.wins[app.top()].goto(1, 2)
+    app.exec(CM_DEFINITION)
+    wait_def(app)
+    assert_equal(at(app), "a.mojo:2:9")                  # UTF-16 column 10 is character 9 here
+    assert_true(app.status.find("Definition 1 of 2") == 0, app.status)
+    var mi = app.msg_index()
+    assert_true(mi >= 0)
+    assert_equal(to_str(app.wins[mi].buf.line(0)), "Definitions")
+    assert_equal(to_str(app.wins[mi].buf.line(1)), "a.mojo:3:10: \"\U0001F600\"; def multi(): pass")
+    assert_equal(to_str(app.wins[mi].buf.line(2)), "a.mojo:5:9: def multi(a): pass")
+    assert_equal(to_str(app.wins[mi].buf.line(3)), "2 places")
+    app.exec(CM_NEXTERR)
+    assert_equal(at(app), "a.mojo:4:8")
+    # each of these steps can be undone with Back
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:2:9")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:1:2")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_definition_not_found_retries_and_moved_cursor() raises:
+    var dir = scratch("def3")
+    var app = comp_app(dir, "# DEFBUSY\ndef known(): pass\nknown()\nunknown()\ngone()\nweb()\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(2, 2)
+    app.exec(CM_DEFINITION)
+    wait_def(app)                                       # two refusals, then the answer
+    assert_equal(at(app), "a.mojo:1:4")
+    app.wins[i].goto(3, 2)
+    app.exec(CM_DEFINITION)
+    wait_def(app)
+    assert_equal(app.status, "No definition found for this place")
+    assert_equal(at(app), "a.mojo:3:2")
+    app.wins[i].goto(4, 2)
+    app.exec(CM_DEFINITION)
+    wait_def(app)
+    assert_equal(app.status, "The definition is in a file that cannot be opened")
+    assert_equal(at(app), "a.mojo:4:2")
+    app.wins[i].goto(5, 1)
+    app.exec(CM_DEFINITION)
+    wait_def(app)
+    assert_equal(app.status, "No definition found for this place")
+    # the failures left nothing in the jump list
+    var before = len(app.jumps)
+    assert_equal(before, 1)
+    # the cursor moved before the answer came: stay where the user went
+    app.wins[i].goto(2, 2)
+    app.exec(CM_DEFINITION)
+    app.wins[i].goto(5, 0)
+    run_ticks(app, 400, False)
+    assert_equal(at(app), "a.mojo:5:0")
+    assert_equal(len(app.jumps), before)
+    # a server without the feature, and no server
+    app.lsp.table.definition = False
+    app.exec(CM_DEFINITION)
+    assert_equal(app.status, "This language server does not find definitions")
+    app.lsp_stop()
+    app.exec(CM_DEFINITION)
+    assert_true(app.status.find("Start the language server first") == 0, app.status)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_jump_list_rules() raises:
+    var dir = scratch("jumps")
+    var body = String("")
+    for k in range(300):
+        body += "line " + String(k) + "\n"
+    with open(dir + "/a.mojo", "w") as f:
+        f.write(body)
+    with open(dir + "/b.mojo", "w") as f:
+        f.write(body)
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(dir + "/a.mojo")
+    var i = app.find_editor(dir + "/a.mojo")
+    # Go to line number is a jump
+    app.wins[i].goto(10, 3)
+    app.exec(CM_GOTO)
+    type_text(app, "200")
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(at(app), "a.mojo:199:0")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:10:3")
+    # going somewhere new after going back forgets the places ahead
+    app.jump_mark()
+    app.wins[i].goto(50, 0)
+    app.exec(CM_FORWARD)
+    assert_equal(app.status, "No later place to go forward to")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:10:3")
+    app.exec(CM_FORWARD)
+    assert_equal(at(app), "a.mojo:50:0")
+    # across files, and a file closed in between is opened again
+    app.jump_mark()
+    app.open_path(dir + "/b.mojo")
+    app.wins[app.top()].goto(7, 1)
+    app.jump_mark()
+    app.wins[app.top()].goto(90, 0)
+    app.exec(CM_BACK)
+    assert_equal(at(app), "b.mojo:7:1")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:50:0")
+    app.exec(CM_FORWARD)
+    app.exec(CM_FORWARD)
+    assert_equal(at(app), "b.mojo:90:0")
+    # a file that no longer exists is skipped
+    app.jump_mark()
+    app.open_path(dir + "/a.mojo")
+    app.wins[app.top()].goto(120, 0)
+    var bi = app.find_editor(dir + "/b.mojo")
+    app.focus(bi)
+    app.close_window(app.top(), 0)
+    _ = run_system("rm '" + dir + "/b.mojo'")
+    assert_equal(at(app), "a.mojo:120:0")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "a.mojo:50:0")                 # both b.mojo places were passed over
+    # two marks on one line make one entry; the list is bounded
+    app.jumps.clear()
+    app.jump_at = 0
+    app.wins[app.top()].goto(5, 0)
+    app.jump_mark()
+    app.wins[app.top()].goto(5, 4)
+    app.jump_mark()
+    assert_equal(len(app.jumps), 1)
+    assert_equal(app.jumps[0].col, 4)
+    for k in range(150):
+        app.wins[app.top()].goto(k, 0)
+        app.jump_mark()
+    assert_equal(len(app.jumps), 100)
+    assert_equal(app.jumps[99].row, 149)
+    # an untitled window is never recorded
+    app.exec(CM_NEW)
+    app.jump_mark()
+    assert_equal(len(app.jumps), 100)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
 # ---------------------------------------------------------- document sync
 def server_state(mut app: App) raises -> Json:
     """Ask the fake server what documents it holds (a JSON object: docs, saved, ranged,
@@ -1876,6 +2105,36 @@ def test_real_server_parameter_tip() raises:
     assert_true(app.sig_on)
     assert_true(to_str(app.sigtip.label).find("scale") >= 0)
     assert_true(active_param(app).find("factor") >= 0, active_param(app))
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_real_server_goes_to_a_definition() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realdef")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'def twice(n: Int) -> Int:\\n    return n * 2\\n\\ndef main():\\n    print(twice(4))\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var t0 = now()
+    while app.lsp.state != LSP_READY and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    run_ticks(app, 2000, False)
+    var i = app.find_editor(path)
+    app.wins[i].goto(4, 12)                              # on "twice" in the call
+    app.exec(CM_DEFINITION)
+    t0 = now()
+    while (app.def_req_id >= 0 or app.def_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    print("      real server definition: " + at(app) + "  (" + app.status + ")")
+    assert_equal(at(app), "t.mojo:0:4")
+    app.exec(CM_BACK)
+    assert_equal(at(app), "t.mojo:4:12")
     app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 
