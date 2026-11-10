@@ -47,7 +47,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P1-13 Folding by indentation with fold markers in the gutter
 - [x] P1-14 Rulers; trim trailing whitespace on save; auto-closing pairs; move line up/down; join lines; sort lines; case conversion
 - [x] P1-15 Keymaps: Modern (default), Turbo/WordStar (Ctrl-K/Ctrl-Q chords), Emacs-lite; user key rebinding from config; chord support
-- [ ] P1-16 Kitty keyboard protocol when the probe confirms it (push/pop flags, CSI u parsing, release events ignored)
+- [x] P1-16 Kitty keyboard protocol when the probe confirms it (push/pop flags, CSI u parsing, release events ignored)
 - [ ] P1-17 Keyboard macros: record/replay
 - [ ] P1-18 Encodings: UTF-8 BOM preserved, Latin-1 fallback for invalid UTF-8, mixed-EOL indicator
 - [ ] P1-19 Persistent undo and cursor position across sessions (state dir)

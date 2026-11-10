@@ -1076,3 +1076,34 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
     flow control being off (the IDE's raw mode does that), and Ctrl-/ may arrive as a
     different code on some terminals.
 - Verified: `check.sh` CHECK OK (30 files, 640 tests), run again after these records.
+
+## 2026-11-10 · P1-16 kitty keyboard protocol · done
+
+- `Terminal.set_kitty`: when the start-up probe got a `CSI ? flags u` answer, the IDE
+  pushes keyboard flag 1 ("disambiguate escape codes", `CSI > 1 u`) after entering the
+  alternate screen and pops it (`CSI < u`) before leaving; suspend/resume and the user
+  screen go through the same enter/leave. Only flag 1 is requested, so ordinary typing
+  still arrives as text and key releases are not reported.
+- Parser: CSI parameters may now have `:` sub-fields. Alternate keys and the text field
+  are skipped; the event type of the modifier field is read, releases are dropped (also
+  for arrows and `~` keys), repeats count as presses. `csi_u_key` maps the protocol's
+  numbers (keypad digits and operators, keypad Enter/arrows/Home/End..., lock, modifier
+  and media keys ignored). Caps Lock and Num Lock bits are not modifiers.
+- Normalisation so nothing that worked before stops working: Shift alone with a letter
+  gives the capital, with a symbol or Space the character; Shift-Backspace and Shift-Esc
+  are Backspace and Esc; Shift-Enter and Ctrl-Enter are Enter. With Ctrl or Alt the
+  letter is reported in lower case with Shift as a modifier, matching key names such as
+  "Ctrl-Shift-P".
+- New: Ctrl-Backspace deletes the word to the left (only such terminals report it).
+- Tests: 7 more in `tests/test_term.mojo` (27) fed with the byte sequences the protocol
+  specifies, and one for Ctrl-Backspace in `tests/test_keymap.mojo`.
+- Not done / unverified:
+  - Never run against a terminal that speaks the protocol: tmux here does not answer the
+    query, so the push/pop on a live terminal and the real key reports are untested. The
+    sequences in the tests come from the protocol description, not from a recording.
+  - The crash handler's restore string does not pop the flags. The protocol keeps a
+    separate flag stack for the alternate screen, which the handler leaves, so the shell
+    should get its own flags back; this was not observed.
+  - Super/Hyper/Meta modifiers are ignored. No use is made of the other flags (event
+    types, alternate keys, all keys as escape codes).
+- Verified: `check.sh` CHECK OK (30 files, 648 tests).

@@ -7,7 +7,7 @@ from term import (
     KEY_DELETE, MOD_SHIFT, MOD_ALT, MOD_CTRL, fkey, ctrl, alt, MB_LEFT, MB_RIGHT,
     MB_WHEEL_UP, MB_WHEEL_DOWN,
 )
-from util import str_bytes, to_str
+from util import str_bytes, to_str, bytes_to_str
 
 
 def raw(vals: List[Int]) -> List[UInt8]:
@@ -245,6 +245,105 @@ def test_paste_terminator_split_across_reads() raises:
     assert_equal(len(evs), 1)
     assert_equal(evs[0].kind, EV_PASTE)
     assert_equal(to_str(evs[0].text), "abc")
+
+
+
+# ------------------------------------------------------ kitty keyboard protocol
+def key_of(seq: String) raises -> Int:
+    """The single key a sequence produces (-1 if it produces none, -2 if several)."""
+    var t = Terminal()
+    var evs = t.feed(str_bytes(seq), False)
+    if len(evs) == 0:
+        return -1
+    if len(evs) > 1:
+        return -2
+    assert_equal(evs[0].kind, EV_KEY)
+    return evs[0].key
+
+
+def test_csi_u_keys_with_modifiers() raises:
+    assert_equal(key_of("\x1b[97;5u"), ctrl(97))                       # Ctrl-A
+    assert_equal(key_of("\x1b[102;3u"), alt(102))                      # Alt-F
+    assert_equal(key_of("\x1b[112;6u"), MOD_CTRL | MOD_SHIFT | 112)    # Ctrl-Shift-P
+    assert_equal(key_of("\x1b[80;6u"), MOD_CTRL | MOD_SHIFT | 112)     # the same, sent as "P"
+    assert_equal(key_of("\x1b[97;7u"), MOD_CTRL | MOD_ALT | 97)
+    assert_equal(key_of("\x1b[32;5u"), ctrl(32))                       # Ctrl-Space
+    assert_equal(key_of("\x1b[105;5u"), ctrl(105))                     # Ctrl-I is not Tab any more
+    assert_equal(key_of("\x1b[9u"), KEY_TAB)
+    assert_equal(key_of("\x1b[27u"), KEY_ESC)
+    assert_equal(key_of("\x1b[9;2u"), KEY_TAB | MOD_SHIFT)
+    assert_equal(key_of("\x1b[127;5u"), KEY_BACKSPACE | MOD_CTRL)
+
+
+def test_csi_u_shift_only_types_the_character() raises:
+    assert_equal(key_of("\x1b[97;2u"), 65)                             # Shift-a is "A"
+    assert_equal(key_of("\x1b[97u"), 97)
+    assert_equal(key_of("\x1b[63;2u"), 63)                             # "?" stays "?"
+    assert_equal(key_of("\x1b[32;2u"), 32)                             # Shift-Space is a space
+    assert_equal(key_of("\x1b[233u"), 233)                             # beyond ASCII
+    # Shift held while pressing these keys must not disable them
+    assert_equal(key_of("\x1b[127;2u"), KEY_BACKSPACE)
+    assert_equal(key_of("\x1b[13;2u"), KEY_ENTER)
+    assert_equal(key_of("\x1b[13;5u"), KEY_ENTER)
+    assert_equal(key_of("\x1b[27;2u"), KEY_ESC)
+
+
+def test_lock_keys_do_not_count_as_modifiers() raises:
+    assert_equal(key_of("\x1b[97;69u"), ctrl(97))                      # Ctrl with Caps Lock on
+    assert_equal(key_of("\x1b[97;133u"), ctrl(97))                     # Ctrl with Num Lock on
+    assert_equal(key_of("\x1b[97;129u"), 97)                           # Num Lock alone
+
+
+def test_key_releases_are_ignored_and_repeats_count() raises:
+    assert_equal(key_of("\x1b[97;5:3u"), -1)                           # release
+    assert_equal(key_of("\x1b[97;5:2u"), ctrl(97))                     # repeat
+    assert_equal(key_of("\x1b[97;5:1u"), ctrl(97))                     # press
+    assert_equal(key_of("\x1b[1;5:3A"), -1)                            # arrow released
+    assert_equal(key_of("\x1b[1;5:1A"), KEY_UP | MOD_CTRL)
+    assert_equal(key_of("\x1b[3;1:3~"), -1)                            # Delete released
+    assert_equal(key_of("\x1b[3;1:1~"), KEY_DELETE)
+    # a release must not swallow what follows it
+    var t = Terminal()
+    var evs = t.feed(str_bytes("\x1b[97;5:3ub"), False)
+    assert_equal(len(evs), 1)
+    assert_equal(evs[0].key, 98)
+
+
+def test_alternate_keys_and_text_fields_are_skipped() raises:
+    assert_equal(key_of("\x1b[97:65;6u"), MOD_CTRL | MOD_SHIFT | 97)   # key:shifted
+    assert_equal(key_of("\x1b[97:65:113;5u"), ctrl(97))                # key:shifted:base layout
+    assert_equal(key_of("\x1b[97;5;97u"), ctrl(97))                    # with a text field
+    assert_equal(key_of("\x1b[97::113;5:2u"), ctrl(97))                # empty sub-field
+
+
+def test_keypad_and_special_codes() raises:
+    assert_equal(key_of("\x1b[57414u"), KEY_ENTER)                     # keypad Enter
+    assert_equal(key_of("\x1b[57404u"), 53)                            # keypad 5
+    assert_equal(key_of("\x1b[57413u"), 43)                            # keypad +
+    assert_equal(key_of("\x1b[57417;5u"), KEY_LEFT | MOD_CTRL)
+    assert_equal(key_of("\x1b[57426u"), KEY_DELETE)
+    assert_equal(key_of("\x1b[57441u"), -1)                            # left Shift by itself
+    assert_equal(key_of("\x1b[57358u"), -1)                            # Caps Lock
+    assert_equal(key_of("\x1b[57428u"), -1)                            # a media key
+
+
+def test_kitty_flags_are_pushed_and_popped_once() raises:
+    var t = Terminal()
+    assert_false(t.kitty_on)
+    t.set_kitty(True)
+    t.set_kitty(True)                                                    # no second push
+    assert_equal(bytes_to_str(t.out), "\x1b[>1u")
+    t.out.clear()
+    t.set_kitty(False)
+    t.set_kitty(False)
+    assert_equal(bytes_to_str(t.out), "\x1b[<u")
+    # the probe's answer is what switches it on in the IDE
+    var p = Terminal()
+    _ = p.feed(str_bytes("\x1b[?0u"), False)
+    assert_true(p.caps.kitty_keyboard)
+    var q = Terminal()
+    _ = q.feed(str_bytes("\x1b[?62;4c"), False)                         # only the DA1 reply
+    assert_false(q.caps.kitty_keyboard)
 
 
 def main() raises:

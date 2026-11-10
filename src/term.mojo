@@ -67,6 +67,8 @@ def key_event(k: Int) -> Event:
 
 
 comptime ESC_TIMEOUT_MS = 25
+comptime KITTY_PUSH = "\x1b[>1u"     # push keyboard flags: 1 = disambiguate escape codes
+comptime KITTY_POP = "\x1b[<u"
 
 
 def is_terminal() -> Bool:
@@ -122,6 +124,8 @@ struct Terminal(Movable):
     var crash_log: String      # set before enter() to enable the crash guard
     var crash_header: String
     var grapheme_on: Bool
+    var kitty_on: Bool        # kitty keyboard protocol flags are pushed
+    var event_type: Int       # of the sequence being parsed: 0/1 press, 2 repeat, 3 release
 
     def __init__(out self):
         self.saved = List[UInt8](length=128, fill=0)
@@ -137,6 +141,8 @@ struct Terminal(Movable):
         self.crash_log = ""
         self.crash_header = ""
         self.grapheme_on = False
+        self.kitty_on = False
+        self.event_type = 0
 
     # ------------------------------------------------------------- modes
     def raw(mut self):
@@ -170,7 +176,19 @@ struct Terminal(Movable):
         )
         if self.grapheme_on:
             append_str(self.out, "\x1b[?2027h")
+        if self.kitty_on:
+            append_str(self.out, KITTY_PUSH)
         self.flush()
+
+    def set_kitty(mut self, on: Bool):
+        """Ask for unambiguous key reports (kitty keyboard protocol, "disambiguate" flag):
+        Esc, Ctrl-I / Tab, Ctrl-M / Enter, Ctrl-Shift-letter and friends become distinct.
+        The terminal keeps one flag stack per screen, so this is pushed after entering
+        the alternate screen and popped before leaving it."""
+        if on == self.kitty_on:
+            return
+        self.kitty_on = on
+        append_str(self.out, KITTY_PUSH if on else KITTY_POP)
 
     def set_grapheme(mut self, on: Bool):
         """Turn the terminal's grapheme clustering (mode 2027) on or off. With it on the
@@ -179,6 +197,8 @@ struct Terminal(Movable):
         append_str(self.out, "\x1b[?2027h" if on else "\x1b[?2027l")
 
     def leave(mut self):
+        if self.kitty_on:
+            append_str(self.out, KITTY_POP)
         if self.grapheme_on:
             append_str(self.out, "\x1b[?2027l")
         append_str(
@@ -387,18 +407,36 @@ struct Terminal(Movable):
                 var params = List[Int]()
                 var cur = 0
                 var have = False
+                # "a:b:c" sub-parameters (kitty keyboard protocol): the first value is the
+                # parameter; of the rest only the second parameter's first sub-value is
+                # kept: the event type (1 press, 2 repeat, 3 release)
+                var in_sub = 0
+                var sub = 0
+                var event_type = 0
                 var start = i + 3 if marker != 0 else i + 2
                 for k in range(start, j):
                     var b = Int(self.inbuf[k])
                     if b >= 48 and b <= 57:
-                        cur = cur * 10 + (b - 48)
-                        have = True
+                        if in_sub == 0:
+                            cur = cur * 10 + (b - 48)
+                            have = True
+                        elif in_sub == 1:
+                            sub = sub * 10 + (b - 48)
+                    elif b == 58:
+                        in_sub += 1
                     elif b == 59:
+                        if len(params) == 1 and in_sub >= 1:
+                            event_type = sub
                         params.append(cur)
                         cur = 0
                         have = False
-                if have:
+                        in_sub = 0
+                        sub = 0
+                if have or in_sub > 0:
+                    if len(params) == 1 and in_sub >= 1:
+                        event_type = sub
                     params.append(cur)
+                self.event_type = event_type
                 if private and (final == 77 or final == 109):
                     if len(params) >= 3:
                         var b = params[0]
@@ -472,6 +510,54 @@ struct Terminal(Movable):
         evs.append(key_event(self.plain_key(i, l)))
         return l
 
+    def csi_u_key(self, p: Int) -> Int:
+        """Key code for the number in a "CSI number ; modifiers u" report (0: ignore)."""
+        if p == 13 or p == 57414:
+            return KEY_ENTER
+        if p == 9:
+            return KEY_TAB
+        if p == 27:
+            return KEY_ESC
+        if p == 127 or p == 8:
+            return KEY_BACKSPACE
+        if p >= 57399 and p <= 57408:
+            return 48 + p - 57399       # keypad digits
+        if p == 57409:
+            return 46
+        if p == 57410:
+            return 47
+        if p == 57411:
+            return 42
+        if p == 57412:
+            return 45
+        if p == 57413:
+            return 43
+        if p == 57415:
+            return 61
+        if p == 57417:
+            return KEY_LEFT
+        if p == 57418:
+            return KEY_RIGHT
+        if p == 57419:
+            return KEY_UP
+        if p == 57420:
+            return KEY_DOWN
+        if p == 57421:
+            return KEY_PGUP
+        if p == 57422:
+            return KEY_PGDN
+        if p == 57423:
+            return KEY_HOME
+        if p == 57424:
+            return KEY_END
+        if p == 57425:
+            return KEY_INSERT
+        if p == 57426:
+            return KEY_DELETE
+        if p < 32 or (p >= 57344 and p <= 63743):
+            return 0                    # lock keys, modifier keys, media keys...
+        return p
+
     def terminal_reply(mut self, final: Int, params: List[Int]):
         """Replies to our capability queries ("CSI ? ... final"). They produce no events."""
         if final == 121 and len(params) >= 2:       # DECRPM: CSI ? mode ; value $ y
@@ -482,6 +568,8 @@ struct Terminal(Movable):
             self.caps.answered = True
 
     def csi(mut self, final: Int, params: List[Int], mut evs: List[Event]):
+        if self.event_type == 3:
+            return                      # a key release: only presses and repeats matter
         var mods = 0
         if len(params) >= 2:
             var m = params[1] - 1
@@ -542,19 +630,17 @@ struct Terminal(Movable):
             elif p == 24:
                 k = fkey(12)
         elif final == 117 and len(params) > 0:
-            var p = params[0]
-            if p == 13:
-                k = KEY_ENTER
-            elif p == 9:
-                k = KEY_TAB
-            elif p == 27:
-                k = KEY_ESC
-            elif p == 127:
-                k = KEY_BACKSPACE
-            else:
-                k = p
-                if (mods & MOD_SHIFT) != 0 and k >= 97 and k <= 122:
-                    k -= 32
-                    mods &= ~MOD_SHIFT
+            k = self.csi_u_key(params[0])
+            if k >= 65 and k <= 90 and (mods & (MOD_CTRL | MOD_ALT)) != 0:
+                k += 32                 # Ctrl-Shift-P is Ctrl+Shift+"p", as key names say
+            elif k >= 97 and k <= 122 and mods == MOD_SHIFT:
+                k -= 32                 # Shift alone just types the capital
+                mods = 0
+            elif k >= 32 and k < K_BASE and mods == MOD_SHIFT:
+                mods = 0                # a shifted symbol arrives as the symbol itself
+            elif (k == KEY_BACKSPACE or k == KEY_ESC) and mods == MOD_SHIFT:
+                mods = 0                # Shift held while correcting a capital letter
+            elif k == KEY_ENTER and (mods & MOD_ALT) == 0:
+                mods = 0                # Shift-Enter and Ctrl-Enter are Enter, as before
         if k != 0:
             evs.append(key_event(k | mods))

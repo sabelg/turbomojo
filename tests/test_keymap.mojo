@@ -329,5 +329,19 @@ def test_chord_prefix_only_in_the_editor_not_in_dialogs() raises:
     assert_equal(app.mode, M_NORMAL)
 
 
+
+def test_ctrl_backspace_deletes_the_word_to_the_left() raises:
+    var app = make("alpha beta gamma", 0)
+    var t = app.top()
+    app.wins[t].goto(0, 10)
+    press(app, KEY_BACKSPACE | MOD_CTRL)
+    assert_equal(text(app), "alpha  gamma")
+    assert_equal(pos(app), "0:6")
+    press(app, KEY_BACKSPACE | MOD_CTRL)
+    assert_equal(text(app), " gamma")
+    app.exec(CM_UNDO)
+    assert_equal(text(app), "alpha  gamma")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

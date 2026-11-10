@@ -201,6 +201,13 @@ __extension App:
             self.wins[t].multi(OP_NEWLINE, 0, self.auto_indent, False, none)
         elif k == KEY_BACKSPACE:
             self.wins[t].multi(OP_BACK, 0, False, False, none)
+        elif k == (KEY_BACKSPACE | MOD_CTRL):
+            # delete the word to the left (terminals with the kitty protocol report this key)
+            self.wins[t].collapse()
+            if not self.wins[t].has_sel():
+                self.wins[t].move_left(True, True)
+            _ = self.wins[t].delete_sel(self.wins[t].new_group())
+            self.wins[t].sync_want()
         elif k == KEY_DELETE:
             self.wins[t].multi(OP_DEL, 0, False, False, none)
         elif k == KEY_TAB:
