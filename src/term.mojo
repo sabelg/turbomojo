@@ -154,12 +154,22 @@ struct Terminal(Movable):
 
     # ------------------------------------------------------------- input
     def poll(mut self) -> List[Event]:
+        """Read whatever the terminal sent (waits up to VTIME) and parse it."""
         var tmp = List[UInt8](length=4096, fill=0)
         var n = external_call["read", Int](Int(0), tmp.unsafe_ptr(), Int(4096))
+        var data = List[UInt8]()
         for i in range(n):
-            self.inbuf.append(tmp[i])
+            data.append(tmp[i])
+        return self.feed(data, n <= 0)
+
+    def feed(mut self, data: List[UInt8], stale: Bool) -> List[Event]:
+        """Parse input bytes into events. Needs no terminal, so tests can drive it.
+
+        `stale` means no new bytes arrived for a while: an incomplete sequence still
+        waiting in the buffer (such as a lone ESC) is then resolved instead of kept."""
+        for b in data:
+            self.inbuf.append(b)
         var evs = List[Event]()
-        var stale = n <= 0
         var i = 0
         while i < len(self.inbuf):
             var used = self.parse_one(i, evs, stale)
@@ -228,14 +238,25 @@ struct Terminal(Movable):
                     evs.append(Event(EV_PASTE, 0, 0, 0, 0, False, False, cps^))
                     return j + 6 - i
                 j += 1
-            if stale or n - i > 64:
-                var keep = 5 if not stale else 0
-                var upto = max(i, n - keep)
-                for k in range(i, upto):
-                    self.paste.append(self.inbuf[k])
-                if upto - i > 0:
-                    return upto - i
-            return 0
+            # No terminator yet: take the text, but keep back any tail that could be
+            # the start of the terminator (ESC [ 2 0 1 ~) arriving split across reads.
+            var term = List[UInt8]()
+            for tb in [27, 91, 50, 48, 49, 126]:
+                term.append(UInt8(tb))
+            var keep = min(5, n - i)
+            while keep > 0:
+                var is_prefix = True
+                for q in range(keep):
+                    if self.inbuf[n - keep + q] != term[q]:
+                        is_prefix = False
+                        break
+                if is_prefix:
+                    break
+                keep -= 1
+            var upto = n - keep
+            for k in range(i, upto):
+                self.paste.append(self.inbuf[k])
+            return upto - i
         var c = Int(self.inbuf[i])
         if c == 27:
             if i + 1 >= n:
