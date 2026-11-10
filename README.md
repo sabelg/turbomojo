@@ -111,8 +111,13 @@ Press **F1** inside the IDE for the full keyboard reference.
 | `src/dialog.mojo` | Turbo Vision-style dialogs: input lines, check boxes, list boxes, buttons |
 | `src/palette.mojo` | Colour themes |
 | `src/appstate.mojo` | The `App` struct: all application state and small helpers |
-| `src/app_*.mojo` | `App` behaviour as extensions: files, dialogs, menus, exec (command dispatch), pickers, jobs (build/format/run), input, mouse, draw |
+| `src/app_*.mojo` | `App` behaviour as extensions: files, dialogs, menus, exec (command dispatch), pickers, jobs (build/format/run), input, mouse, draw, swap, watch |
 | `src/app.mojo` | Event loop; `from app import *` gives `App` with all extensions |
+| `src/signals.mojo`, `src/crash.mojo` | Signal handling via an event descriptor; crash guard that restores the terminal |
+| `src/caps.mojo` | Terminal capability detection and colour-depth mapping |
+| `src/toml.mojo`, `src/config.mojo`, `src/editorconfig.mojo` | Config file reader/writer, layered settings, EditorConfig rules |
+| `src/swap.mojo`, `src/watch.mojo` | Swap files for crash recovery; detection of files changed by other programs |
+| `src/json.mojo` | JSON reader and writer (for the language-server, debugger and agent protocols) |
 | `src/util.mojo` | UTF-8, display widths, paths, popen/system, base64 |
 
 ## Testing

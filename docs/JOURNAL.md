@@ -406,3 +406,22 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   Linux-only (macOS port: kqueue or polling, P9-03); network file systems that do not
   deliver inotify events are not covered by the 2 s fallback, which only runs when inotify
   is unavailable altogether.
+
+## 2026-11-10 · P0-17 JSON parser and writer · done
+
+- New `src/json.mojo`. `json_parse` builds a flat node arena (`Json`): kinds, values, member
+  names, first-child/next-sibling links. Accessors take a node index and treat -1 as
+  "missing", so lookups chain without checks (`doc.str(doc.path(0, "a/b/0/c"), "dflt")`).
+  Full RFC 8259 syntax: escapes incl. `\uXXXX` and surrogate pairs (broken surrogates
+  become U+FFFD), integers kept exact up to 18 digits, floats via `atof`, a nesting limit
+  of 256, errors reported with a byte position and never raised.
+- `JsonWriter` builds text incrementally and places commas itself; `json_quote` escapes
+  strings; `Json.dump` re-serialises any node.
+- `tests/test_json.mojo` (20 tests): literals, integers incl. one beyond float precision,
+  floats and exponents, all escapes, surrogates, arrays, objects, path access, safe
+  defaults, nesting limit, 26 malformed documents that must be rejected, error position,
+  writer output, quoting, string round trips, dump round trip, an LSP diagnostics message,
+  a 5000-element array, invalid UTF-8 bytes. All passed on the first run.
+- Measured: a 1.0 MB document (120k nodes) parses in 19 ms and dumps identically in 5 ms.
+- README source table brought up to date with the modules added since P0-09.
+- Verified: `check.sh` CHECK OK (17 files, 359 tests).
