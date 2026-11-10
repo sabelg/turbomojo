@@ -62,3 +62,20 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
 - No highlighter bugs found. One test initially failed because of a wrong expected length
   in the test itself (14 codepoints, not 15); corrected.
 - Verified: 19/19 pass; `check.sh` CHECK OK (4 test files, 84 tests in total).
+
+## 2026-11-10 · P0-05 headless screen snapshots · done
+
+- `Screen.row_text()`, `to_text()`, `fg_at()`, `bg_at()` dump the cell grid as text and
+  expose colours, so UI code can be tested with no terminal.
+- Added `tests/test_screen.mojo` (16 tests). Primitives: text/fill, clipping, out-of-bounds,
+  wide characters (two cells, overwriting either half, clip edge), combining marks,
+  hot-text, frames, shadows, and that a second `render()` emits almost nothing.
+  UI pieces with golden files in `tests/golden/`: menu bar, Options dropdown with a check
+  mark, Find dialog (wide text in the field, cursor position, button hit-testing), an
+  editor window with a tab + CJK + emoji + combining accent, and an inactive editor over an
+  active Message window.
+- The goldens were generated with `UPDATE_GOLDEN=1` and then read by eye before committing;
+  each golden test also asserts specific facts (row widths equal the window width, frame
+  styles, cursor column, colours) so it is not only "whatever the code drew".
+- One test expectation was wrong (space after the check mark); fixed in the test.
+- Verified: 16/16 pass; `check.sh` CHECK OK (5 files, 100 tests).

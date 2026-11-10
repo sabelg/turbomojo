@@ -1,0 +1,16 @@
+  ≡   File   Edit   Search   Run   Compile   Options   Windo
+                                ┌────────────────────────┐
+                                │√Line numbers           │
+                                │ Auto indent            │
+                                │ Highlight line         │
+                                │ Clock                  │
+                                │ Show whitespace        │
+                                │ Indent with tabs       │
+                                │ CRLF line endings      │
+                                ├────────────────────────┤
+                                │ Theme: Turbo Classic   │
+                                │ Theme: Midnight Neon   │
+                                │ Theme: Amber CRT       │
+                                └────────────────────────┘
+
+

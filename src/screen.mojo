@@ -195,6 +195,36 @@ struct Screen(Movable):
                     self.fg[k] = sfg
                     self.bg[k] = sbg
 
+    def row_text(self, y: Int) -> List[Int]:
+        """Codepoints shown on row y (wide-char halves merged, trailing blanks cut)."""
+        var out = List[Int]()
+        for x in range(self.w):
+            var k = y * self.w + x
+            var c = self.ch[k]
+            if c == CONT:
+                continue
+            out.append(c if c >= 32 else 32)
+            if self.cmb[k] != 0:
+                out.append(self.cmb[k])
+        while len(out) > 0 and out[len(out) - 1] == 32:
+            _ = out.pop()
+        return out^
+
+    def to_text(self) -> List[Int]:
+        """The whole screen as plain text, one line per row (for tests and dumps)."""
+        var out = List[Int]()
+        for y in range(self.h):
+            for c in self.row_text(y):
+                out.append(c)
+            out.append(10)
+        return out^
+
+    def fg_at(self, x: Int, y: Int) -> Int:
+        return self.fg[y * self.w + x]
+
+    def bg_at(self, x: Int, y: Int) -> Int:
+        return self.bg[y * self.w + x]
+
     def render(mut self, mut out: List[UInt8]):
         append_str(out, "\x1b[?2026h\x1b[?25l")
         var lastfg = -1
