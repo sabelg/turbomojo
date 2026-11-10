@@ -14,8 +14,8 @@ from app import *
 from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER
 from markdown import md_plain
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, build_registry
-from term import fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, build_registry
+from term import fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN, KEY_LEFT, KEY_HOME
 from signals import own_pid
 from util import cp_len, decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
 from config import load_settings, read_text
@@ -1200,6 +1200,261 @@ def test_hover_retries_and_is_dropped_when_the_cursor_moves() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
+# ------------------------------------------------------------ parameter tip
+def wait_sig(mut app: App):
+    """Until the question about the call has been answered (or given up)."""
+    var t0 = now()
+    while (app.sig_req_id >= 0 or app.sig_retry_due > 0) and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+
+
+def type_text(mut app: App, text: String) raises:
+    for c in decode(text):
+        app.handle(key_event(c))
+
+
+def active_param(app: App) -> String:
+    var cps = List[Int]()
+    for q in range(app.sigtip.a, app.sigtip.b):
+        cps.append(app.sigtip.label[q])
+    return to_str(cps)
+
+
+def test_signature_results_in_every_form() raises:
+    # labels as text; the general activeParameter
+    var d = json_parse("{\"signatures\": [{\"label\": \"f(a: Int, b: Int)\", \"documentation\": \"Adds.\", \"parameters\": [{\"label\": \"a: Int\"}, {\"label\": \"b: Int\", \"documentation\": {\"kind\": \"markdown\", \"value\": \"the *b*\"}}]}], \"activeSignature\": 0, \"activeParameter\": 1}")
+    var s = parse_signature(d, 0)
+    assert_true(s.ok)
+    assert_equal(to_str(s.label), "f(a: Int, b: Int)")
+    assert_equal(s.a, 10)
+    assert_equal(s.b, 16)
+    assert_equal(s.count, 1)
+    assert_equal(s.doc, "the *b*")                       # the parameter's own text wins
+    # two parameters with the same text: the second is found after the first
+    var same = parse_signature(json_parse("{\"signatures\": [{\"label\": \"g(x, x)\", \"parameters\": [{\"label\": \"x\"}, {\"label\": \"x\"}]}], \"activeParameter\": 1}"), 0)
+    assert_equal(same.a, 5)
+    assert_equal(same.b, 6)
+    # offsets count UTF-16 units; the signature's own activeParameter wins
+    var off = parse_signature(json_parse("{\"signatures\": [{\"label\": \"h(a)\"}, {\"label\": \"\\ud83d\\ude00(a, b)\", \"activeParameter\": 1, \"parameters\": [{\"label\": [3, 4]}, {\"label\": [6, 7]}]}], \"activeSignature\": 1, \"activeParameter\": 0}"), 0)
+    assert_equal(off.index, 1)
+    assert_equal(off.count, 2)
+    assert_equal(off.a, 5)
+    assert_equal(off.b, 6)
+    assert_equal(off.label[off.a], 98)                   # "b"
+    # no parameters, or an index past the last one: the signature alone
+    var none_active = parse_signature(json_parse("{\"signatures\": [{\"label\": \"k()\"}], \"activeParameter\": 3}"), 0)
+    assert_true(none_active.ok)
+    assert_equal(none_active.a, none_active.b)
+    # a label over several lines becomes one line; a bad activeSignature falls back to the first
+    var multi = parse_signature(json_parse("{\"signatures\": [{\"label\": \"m(\\n  a\\n)\"}], \"activeSignature\": 7}"), 0)
+    assert_equal(to_str(multi.label), "m(   a )")
+    assert_equal(multi.index, 0)
+    # nothing to show
+    assert_false(parse_signature(json_parse("null"), 0).ok)
+    assert_false(parse_signature(json_parse("{\"signatures\": []}"), 0).ok)
+    assert_false(parse_signature(json_parse("{}"), 0).ok)
+    assert_false(parse_signature(json_parse("{\"signatures\": [{\"label\": \"\"}]}"), 0).ok)
+
+
+def test_parameter_tip_follows_the_typing() raises:
+    var dir = scratch("sig1")
+    var app = comp_app(dir, "first line\nx = compute\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(1, 11)
+    type_text(app, "(")
+    wait_sig(app)
+    assert_true(app.sig_on, "the tip opens after the bracket")
+    # (this server also completes after "(": its popup is open below, the tip above)
+    assert_equal(app.mode, M_COMPLETE)
+    assert_equal(to_str(app.sigtip.label), "compute(n: Int, name: String) -> Bool")
+    assert_equal(active_param(app), "n: Int")
+    # drawn on the row above the cursor, the parameter picked out
+    app.draw()
+    var cell = app.wins[i].cursor_cell()
+    var row = to_str(app.scr.row_text(cell.r - 1))
+    var at = row.find("compute(n: Int, name: String) -> Bool")
+    assert_true(at >= 0, row)
+    var col = cp_len(String(row[byte=0:at]))
+    assert_true(app.scr.ul_at(col + 8, cell.r - 1) != 0, "the parameter is underlined")
+    assert_equal(app.scr.fg_at(col + 8, cell.r - 1), app.pal.doc_bold)
+    assert_equal(app.scr.ul_at(col + 16, cell.r - 1), 0)
+    assert_equal(app.scr.fg_at(col + 16, cell.r - 1), app.pal.doc_fg)
+    assert_true(to_str(app.scr.row_text(cell.r)).find("x = compute(") >= 0)      # the line itself stays visible
+    # the next argument
+    type_text(app, "1")
+    wait_sig(app)
+    assert_equal(active_param(app), "n: Int")
+    type_text(app, ",")
+    wait_sig(app)
+    assert_true(app.sig_on)
+    assert_equal(active_param(app), "name: String")
+    # going back over the comma: the first parameter again
+    app.handle(key_event(KEY_LEFT))
+    wait_sig(app)
+    assert_equal(active_param(app), "n: Int")
+    # what the server was told about each question
+    var st = server_state(app)
+    var ctx = st.get(0, "sig_contexts")
+    assert_equal(st.size(ctx), 4)
+    assert_equal(st.int(st.get(st.at(ctx, 0), "triggerKind"), 0), 2)
+    assert_equal(st.str(st.get(st.at(ctx, 0), "triggerCharacter")), "(")
+    assert_false(st.bool(st.get(st.at(ctx, 0), "isRetrigger")))
+    assert_equal(st.int(st.get(st.at(ctx, 1), "triggerKind"), 0), 3)       # the text changed
+    assert_true(st.bool(st.get(st.at(ctx, 1), "isRetrigger")))
+    assert_equal(st.str(st.get(st.at(ctx, 2), "triggerCharacter")), ",")
+    assert_true(st.bool(st.get(st.at(ctx, 2), "isRetrigger")))
+    # leaving the call closes the tip
+    app.wins[i].goto(1, 13)
+    app.handle(key_event(KEY_HOME))
+    wait_sig(app)
+    assert_false(app.sig_on)
+    app.draw()
+    assert_true(to_str(app.scr.to_text()).find("-> Bool") < 0)
+    # and nothing is asked any more while the cursor moves about
+    app.handle(key_event(KEY_DOWN))
+    app.handle(key_event(KEY_UP))
+    assert_equal(app.sig_req_id, -1)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_parameter_tip_closes_with_the_bracket_and_with_esc() raises:
+    var dir = scratch("sig2")
+    var app = comp_app(dir, "x = compute\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].auto_pairs = False
+    app.wins[i].goto(0, 11)
+    type_text(app, "(1")
+    wait_sig(app)
+    assert_true(app.sig_on)
+    type_text(app, ")")
+    wait_sig(app)
+    assert_false(app.sig_on, "the call is complete")
+    assert_equal(to_str(app.wins[i].buf.line(0)), "x = compute(1)")
+    # Esc takes the tip away and nothing else; the next comma brings it back
+    app.wins[i].goto(0, 13)
+    app.exec(CM_SIGNATURE)
+    wait_sig(app)
+    assert_true(app.sig_on)
+    app.wins[i].ar = 0
+    app.wins[i].ac = 12
+    app.wins[i].sel = True
+    app.sig_col = 13
+    app.handle(key_event(KEY_ESC))
+    assert_false(app.sig_on)
+    assert_true(app.wins[i].sel, "Esc closed the tip, not the selection")
+    app.wins[i].sel = False
+    type_text(app, ",")
+    wait_sig(app)
+    assert_true(app.sig_on)
+    assert_equal(active_param(app), "name: String")
+    # another window in front: no tip there
+    app.exec(CM_NEW)
+    app.draw()
+    assert_true(to_str(app.scr.to_text()).find("-> Bool") < 0)
+    type_text(app, "a")
+    assert_false(app.sig_on)
+    assert_equal(app.sig_req_id, -1)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_parameter_tip_overloads_offsets_documentation_and_long_signatures() raises:
+    var dir = scratch("sig3")
+    var app = comp_app(dir, "\n\n\n\nover\noffsets\nwide\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    assert_equal(build_registry().find_key(alt(112)), CM_SIGNATURE)
+    # two signatures: the server picks one; the count is shown
+    app.wins[i].goto(4, 4)
+    type_text(app, "(")
+    wait_sig(app)
+    assert_equal(app.sigtip.count, 2)
+    assert_equal(app.sigtip.index, 0)
+    app.draw()
+    assert_true(to_str(app.scr.to_text()).find("1/2 over(a: Int)") > 0)
+    type_text(app, "1,")
+    wait_sig(app)
+    assert_equal(app.sigtip.index, 1)
+    assert_equal(active_param(app), "a2: Int")
+    app.draw()
+    var cell = app.wins[i].cursor_cell()
+    # two rows: the signature, then its documentation
+    assert_true(to_str(app.scr.row_text(cell.r - 2)).find("2/2 over(a: Int, a2: Int)") > 0, to_str(app.scr.row_text(cell.r - 2)))
+    assert_true(to_str(app.scr.row_text(cell.r - 1)).find("The two-argument form.") > 0)
+    # offsets given in UTF-16 units, after a character outside the BMP
+    app.wins[i].goto(5, 7)
+    app.handle(key_event(KEY_LEFT))
+    wait_sig(app)
+    assert_false(app.sig_on)
+    app.wins[i].goto(5, 7)
+    type_text(app, "(")
+    wait_sig(app)
+    assert_equal(active_param(app), "first: Int")
+    assert_equal(app.sigtip.doc, "")
+    type_text(app, "2,")
+    wait_sig(app)
+    assert_equal(active_param(app), "second: Int")
+    assert_equal(app.sigtip.doc, "The **second** one.")
+    app.draw()
+    assert_true(to_str(app.scr.to_text()).find("The second one.") > 0)       # rendered, not raw
+    # a signature wider than the screen is shown around the parameter being typed
+    app.wins[i].goto(6, 4)
+    app.handle(key_event(KEY_LEFT))
+    wait_sig(app)
+    app.wins[i].goto(6, 4)
+    type_text(app, "(")
+    wait_sig(app)
+    app.draw()
+    cell = app.wins[i].cursor_cell()
+    var row = to_str(app.scr.row_text(cell.r - 1))
+    assert_true(row.find("wide(argument_number_0: SomeLongTypeName") > 0, row)
+    assert_true(row.find("…") > 0, "cut off on the right")
+    type_text(app, "1,2,3,4,5,")
+    wait_sig(app)
+    assert_equal(active_param(app), "argument_number_5: SomeLongTypeName")
+    app.draw()
+    cell = app.wins[i].cursor_cell()
+    row = to_str(app.scr.row_text(cell.r - 1))
+    assert_true(row.find("argument_number_5: SomeLongTypeName") > 0, row)
+    assert_true(row.find("wide(") < 0, row)
+    var at = cp_len(String(row[byte=0:row.find("argument_number_5")]))
+    assert_true(app.scr.ul_at(at, cell.r - 1) != 0)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_parameter_info_command_retries_and_explains_itself() raises:
+    var dir = scratch("sig4")
+    var app = comp_app(dir, "# SIGBUSY\nrun(1, 2)\nplain\n")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(1, 6)
+    app.handle(key_event(alt(112)))                     # Alt-P
+    wait_sig(app)                                       # two refusals, then the answer
+    assert_true(app.sig_on)
+    assert_equal(active_param(app), "name: String")
+    # outside any call the command says so
+    app.wins[i].goto(2, 3)
+    app.exec(CM_SIGNATURE)
+    wait_sig(app)
+    assert_false(app.sig_on)
+    assert_equal(app.status, "The cursor is not inside a call")
+    # typing a bracket where the server knows nothing stays silent
+    app.say("")
+    app.wins[i].goto(2, 0)
+    type_text(app, "(")
+    wait_sig(app)
+    assert_false(app.sig_on)
+    assert_equal(app.status, "")
+    # a server without the feature, and no server at all
+    app.lsp.table.signature_help = False
+    app.exec(CM_SIGNATURE)
+    assert_equal(app.status, "This language server does not describe parameters")
+    app.lsp_stop()
+    app.exec(CM_SIGNATURE)
+    assert_true(app.status.find("Start the language server first") == 0, app.status)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
 # ---------------------------------------------------------- document sync
 def server_state(mut app: App) raises -> Json:
     """Ask the fake server what documents it holds (a JSON object: docs, saved, ranged,
@@ -1584,6 +1839,43 @@ def test_real_server_describes_a_symbol() raises:
     assert_equal(app.mode, M_HOVER)
     assert_true(t.find("twice") >= 0, t)
     assert_true(t.find("Returns n times two.") >= 0, t)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_real_server_parameter_tip() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realsig")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'def scale(value: Int, factor: Int) -> Int:\\n    return value * factor\\n\\ndef main():\\n    print(scale)\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var t0 = now()
+    while app.lsp.state != LSP_READY and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    run_ticks(app, 2000, False)
+    var trig = String("")
+    for t in app.lsp.table.signature_triggers:
+        trig += t + " "
+    print("      real server signature help: " + ("yes" if app.lsp.table.signature_help else "no") + ", triggers: " + trig)
+    if not app.lsp.table.signature_help:
+        app.lsp_stop()
+        return
+    var i = app.find_editor(path)
+    app.wins[i].goto(4, 15)                              # after "scale"
+    type_text(app, "(3, ")
+    t0 = now()
+    while (app.sig_req_id >= 0 or app.sig_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    print("      real server tip: " + to_str(app.sigtip.label) + "  [" + active_param(app) + "]")
+    assert_true(app.sig_on)
+    assert_true(to_str(app.sigtip.label).find("scale") >= 0)
+    assert_true(active_param(app).find("factor") >= 0, active_param(app))
     app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 

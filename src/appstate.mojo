@@ -28,7 +28,7 @@ from signals import SignalFd, send_signal, own_pid
 from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
-from lsp import LspClient, CompletionItem
+from lsp import LspClient, CompletionItem, SigInfo
 from grep import FileSearch
 from filestate import *
 from markdown import MdLine
@@ -189,6 +189,16 @@ struct App(Movable):
     var hover_req_col: Int
     var hover_retries: Int
     var hover_retry_due: Int
+    var sigtip: SigInfo                # the parameter tip shown above the cursor
+    var sig_on: Bool
+    var sig_asked: Bool              # asked for by command: say so if there is nothing
+    var sig_req_id: Int
+    var sig_path: String             # where the last question was asked
+    var sig_row: Int
+    var sig_col: Int
+    var sig_version: Int
+    var sig_retries: Int
+    var sig_retry_due: Int
     var comp_resolve_label: String
     var st_x0: List[Int]
     var st_x1: List[Int]
@@ -325,6 +335,16 @@ struct App(Movable):
         self.hover_req_col = -1
         self.hover_retries = 0
         self.hover_retry_due = 0
+        self.sigtip = SigInfo()
+        self.sig_on = False
+        self.sig_asked = False
+        self.sig_req_id = -1
+        self.sig_path = ""
+        self.sig_row = -1
+        self.sig_col = -1
+        self.sig_version = -1
+        self.sig_retries = 0
+        self.sig_retry_due = 0
         self.comp_resolve_label = ""
         self.st_x0 = List[Int]()
         self.st_x1 = List[Int]()
@@ -431,6 +451,8 @@ struct App(Movable):
             t = min(t, max(1, (self.comp_retry_due - now) // 1000000 + 1))
         if self.hover_retry_due > 0:
             t = min(t, max(1, (self.hover_retry_due - now) // 1000000 + 1))
+        if self.sig_retry_due > 0:
+            t = min(t, max(1, (self.sig_retry_due - now) // 1000000 + 1))
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.watch_enabled and not self.watch.active():

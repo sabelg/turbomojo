@@ -1473,3 +1473,43 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
     links are shown as plain text. Italic is a colour, not an italic face.
   - The hover range the server returns is ignored (the symbol is not highlighted).
 - Verified: `check.sh` CHECK OK (33 files, 729 tests).
+
+## 2026-11-10 · P2-06 Signature help · done
+
+- `src/lsp.mojo`: `request_signature` (`textDocument/signatureHelp` with context:
+  trigger kind, trigger character, isRetrigger), `SigInfo` + `parse_signature`
+  (activeSignature; the signature's own activeParameter before the general one;
+  parameter labels as text - searched one after the other so equal texts are told
+  apart - or as [start, end) UTF-16 offsets; parameter documentation before the
+  signature's; multi-line labels flattened). Client capability `signatureHelp` declared.
+- App: the tip is not a mode - `sig_on` + `sigtip` live beside normal editing and the
+  completion popup. `maybe_trigger_signature` asks after a trigger character;
+  `sig_follow` (run after every key, paste and click) asks again whenever the cursor or
+  the text moved while a tip is showing or on its way, and the server's "nothing" closes
+  it; "outdated request" is retried as for hover. `draw_signature`: one row above the
+  cursor (below if there is none), "i/n" for overloads, up to three rows of rendered
+  documentation, long signatures scrolled to the active parameter with "…".
+  New command Search > Parameter info (Alt-P, `CM_SIGNATURE`); Esc hides the tip first.
+- Fake server: `signatureHelp` computed from the document text (innermost open call,
+  commas), with forms for offsets, overloads, a very long signature, and SIGBUSY.
+- Tests (6 new in `tests/test_lsp.mojo`, 56 there): result forms; tip opens on "(",
+  moves on "," and on cursor left, the contexts the server received, closes on leaving
+  and then asks nothing more; closes on ")" and on Esc (selection kept), no tip in
+  another window; overloads, UTF-16 offsets after a non-BMP character, documentation
+  rendering, wide signature; command with retries, "not inside a call", silent when
+  typed, server without the feature / no server; and the real mojo-lsp-server
+  (triggers "(", "[", ","; typing `scale(3, ` gives
+  "def scale(value: Int, factor: Int) -> Int" with "factor: Int" active).
+- Mistakes on the way: a field name clashed with the signal handle (`sig`); the long
+  signature was scrolled although its active parameter fitted; hot letter P was taken in
+  the Search menu (now "Parame~t~er info"); one test expected normal mode where the fake
+  server's own "(" completion trigger opens the popup - expectation corrected, and the
+  test now checks that tip and popup show together.
+- Not done / unverified:
+  - Not tried by hand in tmux this time; covered by the app-level tests only.
+  - One request per key while a tip is showing (no debounce); fine with the Mojo server
+    on small files, not measured on large ones.
+  - No keys to step through overloads; the server's choice is shown.
+  - The tip is not shown with several cursors, and it may cover the window's title row
+    when the cursor is on the first text row.
+- Verified: `check.sh` CHECK OK (33 files, 735 tests).

@@ -193,6 +193,8 @@ __extension App:
                 self.scr.cy = cy
                 self.scr.cvis = True
                 self.scr.cblock = not self.insert_mode
+            if self.sig_on and self.mode != M_HOVER and self.wins[t].path == self.sig_path:
+                self.draw_signature(cx, cy)
             if self.mode == M_COMPLETE:
                 self.draw_completion(cx, cy)
             if self.mode == M_HOVER:
@@ -319,6 +321,66 @@ __extension App:
                 if st == MD_LINK and xx > at:
                     self.scr.underline(at, y + r, False, p.doc_fg)
         self.scr.no_clip()
+
+    def draw_signature(mut self, cx: Int, cy: Int):
+        """The parameter tip: the signature of the call being typed on the row above the
+        cursor (below if there is none), the parameter being typed picked out. With
+        several signatures "1/3" stands in front. Documentation of the parameter, if
+        the server sent any, follows on up to three more lines."""
+        var p = self.pal.copy()
+        var head = List[Int]()
+        if self.sigtip.count > 1:
+            head = decode(String(self.sigtip.index + 1) + "/" + String(self.sigtip.count) + " ")
+        var n = len(self.sigtip.label)
+        var room = max(8, self.scr.w - 4 - len(head))        # cells for the signature
+        # a signature too long for the screen is shown around the parameter being typed
+        var first = 0
+        var cols = 0
+        for c in self.sigtip.label:
+            cols += char_width(c)
+        if cols > room and self.sigtip.b > room - 1:
+            first = max(0, min(self.sigtip.a - 4, n - room))
+            if self.sigtip.b - first > room:
+                first = max(0, self.sigtip.a - 4)
+        var docs = List[MdLine]()
+        if self.sigtip.doc.byte_length() > 0:
+            docs = md_render(self.sigtip.doc, max(20, min(60, self.scr.w - 6)), self.hl)
+        var dh = min(3, len(docs))
+        var w = min(cols, room) + len(head) + 2
+        for k in range(dh):
+            var dc = 0
+            for c in docs[k].cps:
+                dc += char_width(c)
+            w = max(w, dc + 2)
+        w = min(w, self.scr.w - 2)
+        var h = 1 + dh
+        var x = max(1, min(cx - 1, self.scr.w - w - 1))
+        var y = cy - h
+        if y < 1:
+            y = cy + 1
+        if dh > 0:
+            self.draw_md(x, y + 1, w, dh, docs, 0)
+        self.scr.fill(x, y, w, 1, 32, p.doc_fg, p.doc_bg)
+        self.scr.clip(x, y, w, 1)
+        var xx = x + 1
+        for c in head:
+            xx = self.scr.draw_cp(xx, y, c, p.doc_dim, p.doc_bg)
+        if first > 0:
+            xx = self.scr.draw_cp(xx, y, 0x2026, p.doc_dim, p.doc_bg)
+            first += 1
+        var q = first
+        while q < n and xx < x + w - 1:
+            var active = q >= self.sigtip.a and q < self.sigtip.b
+            if xx == x + w - 2 and q < n - 1:
+                _ = self.scr.draw_cp(xx, y, 0x2026, p.doc_dim, p.doc_bg)     # more to the right
+                break
+            var at = xx
+            xx = self.scr.draw_cp(xx, y, self.sigtip.label[q], p.doc_bold if active else p.doc_fg, p.doc_bg)
+            if active and xx > at:
+                self.scr.underline(at, y, False, p.doc_bold)
+            q += 1
+        self.scr.no_clip()
+        self.scr.shadow(x, y, w, h, p.shadow_fg, p.shadow_bg)
 
     def draw_hover(mut self, cx: Int, cy: Int):
         """The hover window: below the cursor line if there is room, else above."""

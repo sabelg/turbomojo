@@ -278,6 +278,8 @@ __extension App:
                 self.wins[ai].follow = True
         elif cmd == CM_HOVER:
             self.hover_command()
+        elif cmd == CM_SIGNATURE:
+            self.sig_command()
         elif cmd == CM_MACRO_REC:
             self.macro_toggle_record()
         elif cmd == CM_MACRO_PLAY:

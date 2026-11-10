@@ -511,6 +511,106 @@ __extension App:
         self.mode = M_HOVER
         self.say("")
 
+    # ========================================================== parameter tip
+    def sig_command(mut self):
+        """Search > Parameter info: show the signature of the call the cursor is in."""
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        self.sig_retries = 0
+        if not self.sig_request(ai, "", self.sig_on):
+            if self.lsp.state == LSP_READY and not self.lsp.table.signature_help:
+                self.say("This language server does not describe parameters")
+            else:
+                self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
+            return
+        self.sig_asked = True
+
+    def sig_request(mut self, ai: Int, trigger: String, again: Bool) -> Bool:
+        var path = self.wins[ai].path
+        if path.byte_length() == 0 or self.lsp.state != LSP_READY or not self.lsp.table.signature_help:
+            return False
+        var uri = path_to_uri(path)
+        if self.lsp.find_doc(uri) < 0:
+            return False
+        var now = now_ns()
+        self.lsp_send_changes(ai, now, False)
+        var id = self.lsp.request_signature(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, again, now)
+        if id < 0:
+            return False
+        self.sig_req_id = id
+        self.sig_path = path
+        self.sig_row = self.wins[ai].cr
+        self.sig_col = self.wins[ai].cc
+        self.sig_version = self.wins[ai].buf.version
+        self.sig_retry_due = 0
+        return True
+
+    def sig_close(mut self):
+        self.sig_on = False
+        self.sig_asked = False
+        self.sig_req_id = -1
+        self.sig_retry_due = 0
+
+    def sig_active(self) -> Bool:
+        """A tip is showing or on its way."""
+        return self.sig_on or self.sig_req_id >= 0 or self.sig_retry_due > 0
+
+    def maybe_trigger_signature(mut self, ch: Int):
+        """After a character was typed in the editor: "(" and "," (whatever the server
+        names) bring up the parameter tip."""
+        if self.lsp.state != LSP_READY or len(self.lsp.table.signature_triggers) == 0:
+            return
+        var ai = self.active_editor()
+        if ai < 0 or self.wins[ai].has_multi():
+            return
+        var one = List[Int]()
+        one.append(ch)
+        var s = to_str(one)
+        if not (s in self.lsp.table.signature_triggers):
+            return
+        self.sig_retries = 0
+        self.sig_asked = False
+        _ = self.sig_request(ai, s, self.sig_on)
+
+    def sig_follow(mut self):
+        """After every key and click: while a tip is showing (or on its way) and the
+        cursor or the text moved, ask again - the server says which parameter is now
+        being typed, or that the cursor has left the call."""
+        if not self.sig_active():
+            return
+        var ai = self.active_editor()
+        if ai < 0 or (self.mode != M_NORMAL and self.mode != M_COMPLETE) or self.wins[ai].path != self.sig_path or self.wins[ai].has_multi():
+            self.sig_close()
+            return
+        if self.wins[ai].cr == self.sig_row and self.wins[ai].cc == self.sig_col and self.wins[ai].buf.version == self.sig_version:
+            return
+        self.sig_retries = 0
+        if not self.sig_request(ai, "", self.sig_on):
+            self.sig_close()
+
+    def sig_arrived(mut self, m: RpcMessage):
+        self.sig_req_id = -1
+        var asked = self.sig_asked
+        if m.kind == RPC_ERROR:
+            if retry_later(m) and self.sig_retries < COMP_MAX_RETRIES:
+                self.sig_retries += 1
+                self.sig_retry_due = now_ns() + COMP_RETRY_MS * 1000000
+                return
+            self.sig_close()
+            if asked:
+                self.say("Language server: " + m.error_message())
+            return
+        var info = parse_signature(m.doc, m.result())
+        if not info.ok:
+            self.sig_close()
+            if asked:
+                self.say("The cursor is not inside a call")
+            return
+        self.sigtip = info^
+        self.sig_on = True
+        self.sig_asked = False
+
     def hover_page(self) -> Int:
         """Lines of the hover window that fit on the screen."""
         return max(3, min(14, self.scr.h - 6))

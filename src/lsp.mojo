@@ -457,6 +457,104 @@ def hover_markdown(doc: Json, result: Int) -> String:
     return marked_text(doc, c)
 
 
+struct SigInfo(Copyable, Movable):
+    """The signature to show for a call: its text, where the parameter being typed is
+    inside that text (character indexes a..b, a == b if unknown), and how many
+    signatures (overloads) there are."""
+    var ok: Bool
+    var label: List[Int]
+    var a: Int
+    var b: Int
+    var count: Int
+    var index: Int          # which of them this is, 0-based
+    var doc: String         # documentation of the parameter, else of the signature
+
+    def __init__(out self):
+        self.ok = False
+        self.label = List[Int]()
+        self.a = 0
+        self.b = 0
+        self.count = 0
+        self.index = 0
+        self.doc = ""
+
+
+def find_cps(hay: List[Int], needle: List[Int], start: Int) -> Int:
+    var n = len(needle)
+    if n == 0:
+        return -1
+    var i = max(0, start)
+    while i + n <= len(hay):
+        var same = True
+        for k in range(n):
+            if hay[i + k] != needle[k]:
+                same = False
+                break
+        if same:
+            return i
+        i += 1
+    return -1
+
+
+def parse_signature(doc: Json, result: Int) -> SigInfo:
+    """Read a signatureHelp result. `ok` is False when there is nothing to show."""
+    var info = SigInfo()
+    if result < 0 or doc.is_null(result):
+        return info^
+    var sigs = doc.get(result, "signatures")
+    var n = doc.size(sigs) if sigs >= 0 else 0
+    if n == 0:
+        return info^
+    var which = doc.int(doc.get(result, "activeSignature"), 0)
+    if which < 0 or which >= n:
+        which = 0
+    var sig = doc.at(sigs, which)
+    info.label = decode(doc.str(doc.get(sig, "label")))
+    for q in range(len(info.label)):
+        if info.label[q] < 32:
+            info.label[q] = 32          # a signature written over several lines
+    if len(info.label) == 0:
+        return info^
+    info.count = n
+    info.index = which
+    info.doc = doc_text(doc, doc.get(sig, "documentation"))
+    # the active parameter: the signature's own value wins over the general one
+    var active = doc.int(doc.get(result, "activeParameter"), 0)
+    var own = doc.get(sig, "activeParameter")
+    if own >= 0 and not doc.is_null(own):
+        active = doc.int(own, active)
+    var params = doc.get(sig, "parameters")
+    var np = doc.size(params) if params >= 0 else 0
+    if active >= 0 and active < np:
+        # labels given as text are looked for one after the other, so that two
+        # parameters with similar text are told apart
+        var from_at = 0
+        for k in range(active + 1):
+            var p = doc.at(params, k)
+            var lab = doc.get(p, "label")
+            var a = -1
+            var b = -1
+            if lab >= 0 and doc.kind(lab) == 4 and doc.size(lab) == 2:
+                # [start, end) in UTF-16 units of the signature text
+                a = utf16_to_col(info.label, doc.int(doc.at(lab, 0)))
+                b = utf16_to_col(info.label, doc.int(doc.at(lab, 1)))
+            elif lab >= 0:
+                var want = decode(doc.str(lab))
+                a = find_cps(info.label, want, from_at)
+                if a >= 0:
+                    b = a + len(want)
+            if a >= 0 and b >= a:
+                from_at = b
+                if k == active:
+                    info.a = a
+                    info.b = min(b, len(info.label))
+                    var pd = doc_text(doc, doc.get(p, "documentation"))
+                    if pd.byte_length() > 0:
+                        info.doc = pd
+    info.ok = True
+    return info^
+
+
 def retry_later(m: RpcMessage) -> Bool:
     """Is this error a "not now" answer (the server is re-reading the file after an
     edit, or the request was overtaken) rather than a failure?"""
@@ -588,6 +686,23 @@ struct LspClient(Copyable, Movable):
         w.str("markdown")
         w.str("plaintext")
         w.end_arr()
+        w.end_obj()
+        w.key("signatureHelp")
+        w.begin_obj()
+        w.kv_bool("contextSupport", True)
+        w.key("signatureInformation")
+        w.begin_obj()
+        w.key("documentationFormat")
+        w.begin_arr()
+        w.str("markdown")
+        w.str("plaintext")
+        w.end_arr()
+        w.key("parameterInformation")
+        w.begin_obj()
+        w.kv_bool("labelOffsetSupport", True)
+        w.end_obj()
+        w.kv_bool("activeParameterSupport", True)
+        w.end_obj()
         w.end_obj()
         w.key("completion")
         w.begin_obj()
@@ -779,6 +894,21 @@ struct LspClient(Copyable, Movable):
         if self.state != LSP_READY or not self.table.hover or self.find_doc(uri) < 0:
             return -1
         return self.conn.request("textDocument/hover", self.position_params(uri, line, character) + "}", now)
+
+    def request_signature(mut self, uri: String, line: Int, character: Int, trigger: String, again: Bool, now: Int) -> Int:
+        """Ask which call the position is inside and which parameter is being typed.
+        `trigger` is the character just typed ('' if none); `again` says a signature is
+        already showing. -1 if the server cannot be asked now."""
+        if self.state != LSP_READY or not self.table.signature_help or self.find_doc(uri) < 0:
+            return -1
+        var p = self.position_params(uri, line, character) + ",\"context\":{\"isRetrigger\":" + ("true" if again else "false")
+        if trigger.byte_length() > 0:
+            p += ",\"triggerKind\":2,\"triggerCharacter\":" + json_quote(trigger)
+        elif again:
+            p += ",\"triggerKind\":3"
+        else:
+            p += ",\"triggerKind\":1"
+        return self.conn.request("textDocument/signatureHelp", p + "}}", now)
 
     def request_resolve(mut self, raw_item: String, now: Int) -> Int:
         """Ask for the missing details (documentation) of a completion item."""

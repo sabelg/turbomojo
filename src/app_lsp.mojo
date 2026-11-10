@@ -290,6 +290,11 @@ __extension App:
             var hi = self.active_editor()
             if not self.hover_still_wanted() or not self.hover_request(hi):
                 self.hover_req_id = -1
+        if self.sig_retry_due > 0 and now >= self.sig_retry_due:
+            self.sig_retry_due = 0
+            var si = self.active_editor()
+            if si < 0 or not self.sig_request(si, "", self.sig_on):
+                self.sig_close()
         for m in self.lsp.take_replies():
             if m.id == self.comp_req_id:
                 self.completion_arrived(m)
@@ -297,6 +302,8 @@ __extension App:
                 self.resolve_arrived(m)
             elif m.id == self.hover_req_id:
                 self.hover_arrived(m)
+            elif m.id == self.sig_req_id:
+                self.sig_arrived(m)
         var i = self.find_editor(self.lsp_path) if self.lsp_path.byte_length() > 0 else -1
         if i < 0 and self.lsp_path.byte_length() > 0:
             # the window whose problems were shown is gone; other files stay in step

@@ -50,6 +50,7 @@ __extension App:
         self.macro_key_live = recording
         self.handle_event(e)
         self.macro_key_live = False
+        self.sig_follow()
         if recording and self.mode == M_MENU and len(self.macro) > at:
             # the key opened a menu: what is chosen there is recorded as a command instead
             while len(self.macro) > at:
@@ -90,6 +91,9 @@ __extension App:
         if self.mode == M_HOVER:
             if self.hover_key(k):
                 return
+        if self.mode == M_NORMAL and self.sig_on and k == KEY_ESC and self.chord == 0:
+            self.sig_close()                    # Esc takes the parameter tip away first
+            return
         if self.chord != 0:
             # the second key of a sequence such as Ctrl-K S
             var first = self.chord
@@ -245,6 +249,7 @@ __extension App:
         elif k < K_BASE and k >= 32:
             self.wins[t].multi(OP_TYPE, k, self.insert_mode, False, none)
             self.maybe_trigger_completion(k)
+            self.maybe_trigger_signature(k)
         self.wins[t].follow = True
 
     def window_at(self, x: Int, y: Int) -> Int:

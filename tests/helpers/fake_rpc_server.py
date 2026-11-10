@@ -96,6 +96,7 @@ def main():
                 "capabilities": {"textDocumentSync": ({"openClose": True, "change": 2, "save": True}
                                                       if os.environ.get("FAKE_SYNC") == "2" else 1),
                                  "hoverProvider": True, "foldingRangeProvider": False,
+                                 "signatureHelpProvider": {"triggerCharacters": ["(", ","]},
                                  "completionProvider": {"triggerCharacters": [".", "("], "resolveProvider": True},
                                  "renameProvider": {"prepareProvider": True}},
                 "serverInfo": {"name": "fake-lsp"}}})
@@ -200,6 +201,62 @@ def main():
                     "### function `%s`\n\n---\nDoes **important** things with [care](https://example.org).\n\n```mojo\ndef %s(n: Int) -> String\n```" % (word, word)},
                     "range": {"start": {"line": ln, "character": a}, "end": {"line": ln, "character": b}}}})
             continue
+        if method == "textDocument/signatureHelp":
+            text = DOCS.get(params["textDocument"]["uri"], "")
+            main.sigs = getattr(main, "sigs", 0) + 1
+            main.sig_contexts = getattr(main, "sig_contexts", []) + [params.get("context")]
+            lines = text.split("\n")
+            ln = params["position"]["line"]
+            line = lines[ln] if ln < len(lines) else ""
+            at = utf16_index(line, params["position"]["character"])
+            # the innermost call still open before the cursor, and the commas typed in it
+            depth = 0
+            commas = 0
+            open_at = -1
+            k = at - 1
+            while k >= 0:
+                ch = line[k]
+                if ch == ")":
+                    depth += 1
+                elif ch == "(":
+                    if depth == 0:
+                        open_at = k
+                        break
+                    depth -= 1
+                elif ch == "," and depth == 0:
+                    commas += 1
+                k -= 1
+            a = open_at
+            while a > 0 and (line[a - 1].isalnum() or line[a - 1] == "_"):
+                a -= 1
+            name = line[a:open_at] if open_at >= 0 else ""
+            if "SIGBUSY" in text and main.sigs < 3:
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32801, "message": "outdated request"}})
+            elif not name:
+                send({"jsonrpc": "2.0", "id": mid, "result": None})
+            elif name == "offsets":
+                # labels as [start, end) in UTF-16 units; the text starts with a non-BMP char
+                label = "\U0001F600 offsets(first: Int, second: Int)"
+                send({"jsonrpc": "2.0", "id": mid, "result": {"signatures": [{"label": label, "parameters": [
+                    {"label": [11, 21]}, {"label": [23, 34], "documentation": {"kind": "markdown", "value": "The **second** one."}}]}],
+                    "activeSignature": 0, "activeParameter": commas}})
+            elif name == "over":
+                send({"jsonrpc": "2.0", "id": mid, "result": {"signatures": [
+                    {"label": "over(a: Int)", "parameters": [{"label": "a: Int"}]},
+                    {"label": "over(a: Int, a2: Int)", "documentation": "The two-argument form.",
+                     "parameters": [{"label": "a: Int"}, {"label": "a2: Int"}], "activeParameter": commas}],
+                    "activeSignature": 1 if commas > 0 else 0, "activeParameter": 0}})
+            elif name == "wide":
+                params_ = ["argument_number_%d: SomeLongTypeName" % i for i in range(8)]
+                send({"jsonrpc": "2.0", "id": mid, "result": {"signatures": [
+                    {"label": "wide(" + ", ".join(params_) + ") -> Nothing", "parameters": [{"label": q} for q in params_]}],
+                    "activeParameter": commas}})
+            else:
+                send({"jsonrpc": "2.0", "id": mid, "result": {"signatures": [
+                    {"label": "%s(n: Int, name: String) -> Bool" % name,
+                     "parameters": [{"label": "n: Int"}, {"label": "name: String"}]}],
+                    "activeSignature": 0, "activeParameter": commas}})
+            continue
         if method == "completionItem/resolve":
             item = dict(params)
             item["documentation"] = "Details for %s, fetched on request." % params.get("label")
@@ -211,7 +268,7 @@ def main():
             continue
         if method == "doc_state":        # what this server holds, for the tests
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
+                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
             continue
         if method == "closed_docs":
             send({"jsonrpc": "2.0", "id": mid, "result": getattr(main, "closed", [])})
