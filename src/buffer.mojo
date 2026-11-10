@@ -35,6 +35,9 @@ struct TextBuffer(Copyable, Movable):
     var undos: List[UndoRec]
     var redos: List[UndoRec]
     var modified: Bool
+    var folds: List[Int]      # rows of the folded block headers, ascending
+    var fold_ends: List[Int]  # last hidden row of each fold (as of fold_version)
+    var fold_version: Int
     var large: Bool           # large-file mode: expensive features are off for this buffer
     var version: Int
     var crlf: Bool
@@ -56,6 +59,9 @@ struct TextBuffer(Copyable, Movable):
         self.redos = List[UndoRec]()
         self.modified = False
         self.large = False
+        self.folds = List[Int]()
+        self.fold_ends = List[Int]()
+        self.fold_version = -1
         self.version = 0
         self.crlf = False
         self.use_tabs = False
@@ -175,6 +181,8 @@ struct TextBuffer(Copyable, Movable):
         self.after_load()
 
     def after_load(mut self):
+        self.folds.clear()
+        self.fold_ends.clear()
         self.lstate.clear()
         self.lstate.append(0)
         self.ldirty_from = -1
@@ -183,6 +191,154 @@ struct TextBuffer(Copyable, Movable):
         self.redos.clear()
         self.modified = False
         self.version += 1
+
+    # ------------------------------------------------------------ folding
+    def indent_cols(self, r: Int) -> Int:
+        """Screen columns of the leading blanks of line r; -1 for a blank line."""
+        var b = self.line_bytes(r)
+        var v = 0
+        for x in b:
+            if x == 32:
+                v += 1
+            elif x == 9:
+                v += self.tab_width - v % self.tab_width
+            else:
+                return v
+        return -1
+
+    def block_end(self, r: Int) -> Int:
+        """Last line of the block that belongs to line r: the following lines indented
+        deeper than r (blank lines between them included). r itself if there is none."""
+        var base = self.indent_cols(r)
+        if base < 0:
+            return r
+        var end = r
+        var count = self.rope.line_count()
+        var j = r + 1
+        while j < count:
+            var ind = self.indent_cols(j)
+            if ind >= 0:
+                if ind <= base:
+                    break
+                end = j
+            j += 1
+        return end
+
+    def foldable(self, r: Int) -> Bool:
+        """Does line r start a block? (Looks at most 200 lines ahead for the next line
+        that is not blank.)"""
+        var base = self.indent_cols(r)
+        if base < 0:
+            return False
+        var count = self.rope.line_count()
+        var j = r + 1
+        while j < count and j <= r + 200:
+            var ind = self.indent_cols(j)
+            if ind >= 0:
+                return ind > base
+            j += 1
+        return False
+
+    def sync_folds(mut self):
+        """Bring the fold ranges up to date after edits; folds whose header no longer
+        starts a block disappear."""
+        if self.fold_version == self.version and len(self.fold_ends) == len(self.folds):
+            return
+        var kept = List[Int]()
+        var ends = List[Int]()
+        var count = self.rope.line_count()
+        for f in self.folds:
+            if f < 0 or f >= count or (len(kept) > 0 and kept[len(kept) - 1] >= f):
+                continue
+            var e = self.block_end(f)
+            if e > f:
+                kept.append(f)
+                ends.append(e)
+        self.folds = kept^
+        self.fold_ends = ends^
+        self.fold_version = self.version
+
+    def fold_index(self, r: Int) -> Int:
+        """Index of the fold whose header is line r, or -1."""
+        for i in range(len(self.folds)):
+            if self.folds[i] == r:
+                return i
+            if self.folds[i] > r:
+                break
+        return -1
+
+    def hidden_by(self, r: Int) -> Int:
+        """Header line of the outermost fold that hides line r; -1 if r is visible."""
+        if len(self.fold_ends) != len(self.folds):
+            return -1
+        for i in range(len(self.folds)):
+            if self.folds[i] >= r:
+                break
+            if self.fold_ends[i] >= r:
+                return self.folds[i]
+        return -1
+
+    def next_row(self, r: Int) -> Int:
+        """The next visible line after r (the line count if there is none)."""
+        if len(self.folds) > 0 and len(self.fold_ends) == len(self.folds):
+            var h = self.hidden_by(r)
+            var i = self.fold_index(r if h < 0 else h)
+            if i >= 0:
+                return self.fold_ends[i] + 1
+        return r + 1
+
+    def prev_row(self, r: Int) -> Int:
+        """The visible line before r (-1 if there is none)."""
+        if r <= 0:
+            return -1
+        var h = self.hidden_by(r - 1)
+        return r - 1 if h < 0 else h
+
+    def set_fold(mut self, r: Int, on: Bool) -> Bool:
+        """Fold or unfold the block that starts at line r. False if r starts no block."""
+        self.sync_folds()
+        var i = self.fold_index(r)
+        if not on:
+            if i < 0:
+                return False
+            _ = self.folds.pop(i)
+            self.fold_version = -1
+            self.sync_folds()
+            return True
+        if i >= 0:
+            return True
+        if self.block_end(r) <= r:
+            return False
+        var k = 0
+        while k < len(self.folds) and self.folds[k] < r:
+            k += 1
+        self.folds.insert(k, r)
+        self.fold_version = -1
+        self.sync_folds()
+        return True
+
+    def fold_all(mut self) -> Int:
+        """Fold every block. Returns how many there are."""
+        self.folds.clear()
+        var count = self.rope.line_count()
+        var prev = -1          # the last line that was not blank
+        var prev_ind = 0
+        for r in range(count):
+            var ind = self.indent_cols(r)
+            if ind < 0:
+                continue
+            if prev >= 0 and ind > prev_ind:
+                self.folds.append(prev)
+            prev = r
+            prev_ind = ind
+        self.fold_version = -1
+        self.sync_folds()
+        return len(self.folds)
+
+    def unfold_all(mut self):
+        self.folds.clear()
+        self.fold_ends.clear()
+        self.fold_version = -1
 
     def all_text(self) -> List[Int]:
         """The whole text as codepoints, lines separated by "\n"."""
@@ -297,6 +453,11 @@ struct TextBuffer(Copyable, Movable):
             if ch == 10:
                 breaks += 1
         self.note_edit(rr, 0, breaks)
+        if breaks > 0 and len(self.folds) > 0:
+            # folded headers below the insertion move down with their lines
+            for i in range(len(self.folds)):
+                if self.folds[i] > rr or (self.folds[i] == rr and cc == 0):
+                    self.folds[i] += breaks
         self.modified = True
         self.version += 1
         return self.end_of(rr, cc, text)
@@ -311,6 +472,16 @@ struct TextBuffer(Copyable, Movable):
             out = self.rope.slice(a, b)
             self.rope.delete(a, b)
             self.note_edit(first, breaks, 0)
+            if breaks > 0 and len(self.folds) > 0:
+                # headers on removed lines lose their fold; the ones below move up
+                var kept = List[Int]()
+                for f in self.folds:
+                    if f <= first:
+                        kept.append(f)
+                    elif f > first + breaks:
+                        kept.append(f - breaks)
+                self.folds = kept^
+                self.fold_version = -1
         self.modified = True
         self.version += 1
         return out^

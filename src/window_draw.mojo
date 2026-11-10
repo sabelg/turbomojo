@@ -97,12 +97,20 @@ __extension Window:
                 scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
             if self.gut > 0:
                 var num = String(r + 1) if seg == 0 else String("")
+                var fold_mark = 32
+                if seg == 0 and not is_msg:
+                    if self.buf.fold_index(r) >= 0:
+                        fold_mark = 0x25B8          # folded: points at the hidden block
+                    elif self.buf.foldable(r):
+                        fold_mark = 0x25BE
                 var pad = self.gut - 1 - cp_len(num)
                 var s = String("")
                 for _ in range(pad):
                     s += " "
                 s += num + " "
                 _ = scr.text(self.x + 1, yy, s, pal.frame_act if r == self.cr and active else pal.gutter_fg, pal.gutter_bg)
+                if fold_mark != 32:
+                    scr.put(self.x + self.gut, yy, fold_mark, pal.frame_act if fold_mark == 0x25B8 else pal.gutter_fg, pal.gutter_bg)
             var n = len(ln)
             scr.clip(cx0, self.y + 1, cls, self.h - 2)
             var v = v0
@@ -177,10 +185,18 @@ __extension Window:
             # selection past end of line shows the newline
             if has_sel and sr.r1 <= r and r < sr.r2 and s1 == n and v >= off and v < lim:
                 scr.put(cx0 + v - off, yy, 32, pal.sel_fg, pal.sel_bg)
+            # a folded block: say how much is hidden behind its header
+            var fi = self.buf.fold_index(r) if not is_msg else -1
+            if fi >= 0 and s1 == n and fi < len(self.buf.fold_ends) and v + 2 >= off and v + 2 < lim:
+                var hidden = self.buf.fold_ends[fi] - r
+                _ = scr.text(cx0 + v + 1 - off, yy, " ⋯ " + String(hidden) + (" line " if hidden == 1 else " lines "), pal.gutter_fg, pal.gutter_bg)
             scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
             seg += 1
             if seg >= len(starts):
-                r += 1
+                var nr = self.buf.next_row(r)
+                if nr != r + 1 and nr < self.buf.count():
+                    st = self.lex_state_at(nr)      # lines were skipped: pick up the state there
+                r = nr
                 seg = 0
         scr.no_clip()
 

@@ -961,3 +961,37 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
     drawn but meaningless while wrapping.
   - Column selection with wrap on was not tested beyond compiling.
 - Verified: `check.sh` CHECK OK (27 files, 584 tests).
+
+## 2026-11-10 · P1-13 folding · done
+
+- `TextBuffer`: `folds` (header rows) with cached `fold_ends`, kept in step with edits in
+  `insert_raw`/`delete_raw` (so undo and redo are covered too) and re-validated by
+  `sync_folds` when the text version changes. `indent_cols`, `block_end` (following
+  lines indented deeper, blank lines between them included), `foldable`, `hidden_by`,
+  `next_row`/`prev_row`, `set_fold`, `fold_all`, `unfold_all`.
+- `Window`: the screen-row functions written for soft wrap now also serve folds
+  (`rowwise()`): drawing, scrolling, `ensure_visible`, clicks, cursor position, Up/Down,
+  Left/Right across line ends all step over hidden lines. `toggle_fold` works from the
+  header or from inside the block (cursor moves to the header); `reveal_cursor` opens
+  folds when the cursor lands inside one (go to line, search, errors, typing Enter
+  after a folded header).
+- Drawing: ▾ on a line that starts a block and ▸ on a folded one, in the last gutter
+  column; a folded header ends with "⋯ N lines"; syntax state is picked up again after
+  the skipped lines (a docstring inside a fold does not colour what follows).
+- Commands: Edit > Fold or unfold (Alt--), Fold all, Expand all (Alt-=); click on the
+  marker. Works together with soft wrap.
+- Tests: `tests/test_fold.mojo` (17 tests): blocks, nested folds, fold all, edits above
+  / inside / deleting the header / dedenting the block, undo and redo, drawing, cursor
+  movement, reveal, clicks, colours after a fold, folds with wrap, 400 random steps
+  with "cursor and top line are never hidden, cursor always in view", commands, mouse.
+  One real bug found by a test: folding from a blank line after a block folded the
+  block above it. The editor window golden gained the ▾ marker (reviewed).
+- Tried by hand in tmux on examples/hello.mojo.
+- Not done / unverified:
+  - Folds are per buffer in memory only: not saved, not in swap files, lost on reload.
+  - `sync_folds` re-scans every folded block after each edit; with "Fold all" on a very
+    large file typing may become slow. Not measured.
+  - Deleting or duplicating a folded header line acts on that single line.
+  - No markers without the line-number gutter (the "⋯ N lines" hint still shows).
+  - Indentation only: no folding of brackets, docstrings or comment runs.
+- Verified: `check.sh` CHECK OK (28 files, 601 tests).

@@ -252,6 +252,62 @@ struct Window(Copyable, Movable):
             v += a
             i = e
 
+    def rowwise(self) -> Bool:
+        """Screen rows and lines are not one to one (soft wrap or folded blocks)."""
+        return self.wrap or len(self.buf.folds) > 0
+
+    def reveal_cursor(mut self):
+        """Open any folded block that hides the cursor."""
+        self.buf.sync_folds()
+        var guard = 0
+        while guard < 1000:
+            var h = self.buf.hidden_by(self.cr)
+            if h < 0:
+                break
+            _ = self.buf.set_fold(h, False)
+            guard += 1
+
+    def toggle_fold(mut self, r: Int) -> Bool:
+        """Fold or unfold at line r: a block header toggles its block; any other line
+        folds the block it is in. The cursor moves to the header if it would be hidden."""
+        self.buf.sync_folds()
+        var row = r
+        if self.buf.fold_index(row) >= 0:
+            return self.buf.set_fold(row, False)
+        if not self.buf.foldable(row):
+            # the enclosing block: the nearest line above that is indented less
+            var ind = self.buf.indent_cols(row)
+            if ind < 0:
+                # a blank line counts as indented like the next line that is not blank
+                var j = row + 1
+                while j < self.buf.count() and self.buf.indent_cols(j) < 0:
+                    j += 1
+                if j >= self.buf.count():
+                    return False
+                ind = self.buf.indent_cols(j)
+            var k = row - 1
+            while k >= 0:
+                var ki = self.buf.indent_cols(k)
+                if ki >= 0 and ki < ind and self.buf.foldable(k):
+                    break
+                k -= 1
+            if k < 0 or self.buf.block_end(k) < row:
+                return False
+            row = k
+        if not self.buf.set_fold(row, True):
+            return False
+        self.extra.clear()
+        if self.buf.hidden_by(self.cr) >= 0:
+            self.sel = False
+            self.cr = row
+            self.cc = min(self.cc, self.buf.llen(row))
+            self.sync_want()
+        if self.buf.hidden_by(self.top) >= 0:
+            self.top = self.buf.hidden_by(self.top)
+            self.top_seg = 0
+        self.follow = True
+        return True
+
     def seg_of(self, starts: List[Int], c: Int) -> Int:
         """Which screen row of its line holds character index c."""
         var k = len(starts) - 1
@@ -303,8 +359,8 @@ struct Window(Copyable, Movable):
         while left > 0:
             if self.top_seg + 1 < segs:
                 self.top_seg += 1
-            elif self.top + 1 < count:
-                self.top += 1
+            elif self.buf.next_row(self.top) < count:
+                self.top = self.buf.next_row(self.top)
                 self.top_seg = 0
                 segs = self.row_segs(self.top)
             else:
@@ -313,8 +369,8 @@ struct Window(Copyable, Movable):
         while left < 0:
             if self.top_seg > 0:
                 self.top_seg -= 1
-            elif self.top > 0:
-                self.top -= 1
+            elif self.buf.prev_row(self.top) >= 0:
+                self.top = self.buf.prev_row(self.top)
                 segs = self.row_segs(self.top)
                 self.top_seg = segs - 1
             else:
@@ -324,7 +380,7 @@ struct Window(Copyable, Movable):
     def screen_row_of(self, r: Int, c: Int, limit: Int) -> Int:
         """Screen row (0 = first row of the window) where position (r, c) is shown;
         -1 if it is above the window, `limit` if it is `limit` or more rows down."""
-        if not self.wrap:
+        if not self.rowwise():
             if r < self.top:
                 return -1
             return min(limit, r - self.top)
@@ -337,15 +393,15 @@ struct Window(Copyable, Movable):
         if r == self.top:
             return min(limit, seg - self.top_seg)
         var y = self.row_segs(self.top) - self.top_seg
-        var row = self.top + 1
+        var row = self.buf.next_row(self.top)
         while row < r and y < limit:
             y += self.row_segs(row)
-            row += 1
+            row = self.buf.next_row(row)
         return min(limit, y + seg)
 
     def pos_at_screen_row(self, y: Int) -> Pos:
         """Line and screen-row index within it shown on window row y: Pos(line, index)."""
-        if not self.wrap:
+        if not self.rowwise():
             return Pos(self.top + y, 0)
         var r = self.top
         var seg = self.top_seg
@@ -356,7 +412,7 @@ struct Window(Copyable, Movable):
             if seg + 1 < segs:
                 seg += 1
             else:
-                r += 1
+                r = self.buf.next_row(r)
                 seg = 0
                 if r >= count:
                     break
@@ -366,7 +422,7 @@ struct Window(Copyable, Movable):
     def cursor_cell(self) -> Pos:
         """Screen position of the cursor as Pos(y, x); y = -1 when it is not in view."""
         var rws = self.rows()
-        if not self.wrap:
+        if not self.rowwise():
             var y = self.cr - self.top
             if y < 0 or y >= rws:
                 return Pos(-1, -1)
@@ -378,6 +434,8 @@ struct Window(Copyable, Movable):
         var vs = List[Int]()
         self.wrap_layout(self.buf.line(self.cr), starts, vs)
         var x = self.vcol(self.cr, self.cc) - vs[self.seg_of(starts, self.cc)]
+        if not self.wrap:
+            x -= self.left
         return Pos(self.y + 1 + y, self.x + 1 + self.gut + x)
 
     def set_wrap(mut self, on: Bool):
@@ -454,13 +512,22 @@ struct Window(Copyable, Movable):
     def ensure_visible(mut self):
         var rws = self.rows()
         var cls = self.cols()
-        if self.wrap:
-            self.left = 0
+        self.reveal_cursor()
+        if self.rowwise():
+            if self.wrap:
+                self.left = 0
+            else:
+                self.ensure_h()
             self.top = max(0, min(self.top, self.buf.count() - 1))
+            if self.buf.hidden_by(self.top) >= 0:
+                self.top = self.buf.hidden_by(self.top)
+                self.top_seg = 0
             if self.cr < self.top or self.cr - self.top >= rws:
                 # far away: start near the cursor line, then adjust by screen rows
                 self.top = self.cr if self.cr < self.top else self.cr - rws + 1
                 self.top_seg = 0
+                if self.buf.hidden_by(self.top) >= 0:
+                    self.top = self.buf.hidden_by(self.top)
             var y = self.screen_row_of(self.cr, self.cc, rws)
             if y < 0:
                 var starts = List[Int]()
@@ -479,16 +546,22 @@ struct Window(Copyable, Movable):
             self.top = self.cr
         if self.cr >= self.top + rws:
             self.top = self.cr - rws + 1
+        self.ensure_h()
+        if self.top < 0:
+            self.top = 0
+
+    def ensure_h(mut self):
+        """Scroll sideways until the cursor column is in view."""
+        var cls = self.cols()
         var vc = self.vcol(self.cr, self.cc)
         if vc < self.left:
             self.left = max(0, vc - 4)
         if vc >= self.left + cls - 1:
             self.left = vc - cls + 2
-        if self.top < 0:
-            self.top = 0
 
     def scroll(mut self, d: Int):
-        if self.wrap:
+        self.buf.sync_folds()
+        if self.rowwise():
             self.advance_top(d)
             self.follow = False
             return
@@ -497,12 +570,12 @@ struct Window(Copyable, Movable):
         self.follow = False
 
     def screen_to_pos(self, px: Int, py: Int) -> Pos:
-        if self.wrap:
+        if self.rowwise():
             var at = self.pos_at_screen_row(max(0, py - self.y - 1))
             var wr = max(0, min(at.r, self.buf.count() - 1))
             if at.r >= self.buf.count():
                 return Pos(wr, self.buf.llen(wr))
-            return Pos(wr, self.col_in_seg(wr, at.c, max(0, px - self.x - 1 - self.gut)))
+            return Pos(wr, self.col_in_seg(wr, at.c, max(0, px - self.x - 1 - self.gut) + (0 if self.wrap else self.left)))
         var r = self.top + (py - self.y - 1)
         var v = self.left + (px - self.x - 1 - self.gut)
         r = max(0, min(r, self.buf.count() - 1))
@@ -613,7 +686,8 @@ struct Window(Copyable, Movable):
             else:
                 self.cc = cluster_start(self.buf.line(self.cr), self.cc)
         elif self.cr > 0:
-            self.cr -= 1
+            self.buf.sync_folds()
+            self.cr = max(0, self.buf.prev_row(self.cr))      # skips folded blocks
             self.cc = self.buf.llen(self.cr)
         self.sync_want()
 
@@ -638,13 +712,17 @@ struct Window(Copyable, Movable):
             else:
                 self.cc = cluster_end(self.buf.line(self.cr), self.cc)
         elif self.cr + 1 < self.buf.count():
-            self.cr += 1
-            self.cc = 0
+            self.buf.sync_folds()
+            var nr = self.buf.next_row(self.cr)                # skips folded blocks
+            if nr < self.buf.count():
+                self.cr = nr
+                self.cc = 0
         self.sync_want()
 
     def move_vert(mut self, d: Int, shift: Bool):
         self.begin_move(shift)
-        if self.wrap:
+        self.buf.sync_folds()
+        if self.rowwise():
             # by screen rows, keeping the horizontal offset
             var steps = d if d > 0 else -d
             var count = self.buf.count()
@@ -656,16 +734,16 @@ struct Window(Copyable, Movable):
                 if d > 0:
                     if k + 1 < len(starts):
                         self.cc = self.col_in_seg(self.cr, k + 1, self.want)
-                    elif self.cr + 1 < count:
-                        self.cr += 1
+                    elif self.buf.next_row(self.cr) < count:
+                        self.cr = self.buf.next_row(self.cr)
                         self.cc = self.col_in_seg(self.cr, 0, self.want)
                     else:
                         break
                 else:
                     if k > 0:
                         self.cc = self.col_in_seg(self.cr, k - 1, self.want)
-                    elif self.cr > 0:
-                        self.cr -= 1
+                    elif self.buf.prev_row(self.cr) >= 0:
+                        self.cr = self.buf.prev_row(self.cr)
                         self.cc = self.col_in_seg(self.cr, self.row_segs(self.cr) - 1, self.want)
                     else:
                         break
@@ -675,7 +753,8 @@ struct Window(Copyable, Movable):
 
     def page(mut self, d: Int, shift: Bool):
         var n = self.rows() - 1
-        if self.wrap:
+        self.buf.sync_folds()
+        if self.rowwise():
             self.advance_top(d * n)
         else:
             self.top = max(0, min(self.buf.count() - 1, self.top + d * n))

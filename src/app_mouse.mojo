@@ -217,6 +217,12 @@ __extension App:
                 else:
                     self.wins[t].cr = r
             return
+        if self.wins[t].gut > 0 and x == wx + self.wins[t].gut:
+            # the fold marker in the gutter
+            var fr = self.wins[t].pos_at_screen_row(y - wy - 1).r
+            if fr < self.wins[t].buf.count() and (self.wins[t].buf.fold_index(fr) >= 0 or self.wins[t].buf.foldable(fr)):
+                _ = self.wins[t].toggle_fold(fr)
+                return
         var p = self.wins[t].screen_to_pos(x, y)
         if e.key & MOD_ALT != 0:
             self.wins[t].toggle_cursor_at(p.r, p.c)     # Alt-click: one more cursor

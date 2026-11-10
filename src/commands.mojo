@@ -53,6 +53,9 @@ comptime CM_CANCEL = 75
 comptime CM_LSP = 76
 comptime CM_FINDFILES = 77
 comptime CM_WRAP = 78
+comptime CM_FOLD = 113
+comptime CM_FOLDALL = 114
+comptime CM_UNFOLDALL = 115
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
 comptime CM_CURBELOW = 112
@@ -336,6 +339,9 @@ def build_registry() -> Registry:
     r.cmd(CM_ADDNEXT, "edit.addNextOccurrence", "Add ~n~ext occurrence", "Select the word, then add a cursor at its next occurrence", [alt(100)])
     r.cmd(CM_CURABOVE, "edit.addCursorAbove", "Add cursor a~b~ove", "Add a cursor on the line above", [KEY_UP | MOD_CTRL | MOD_ALT, KEY_UP | MOD_SHIFT | MOD_ALT])
     r.cmd(CM_CURBELOW, "edit.addCursorBelow", "Add cursor b~e~low", "Add a cursor on the line below", [KEY_DOWN | MOD_CTRL | MOD_ALT, KEY_DOWN | MOD_SHIFT | MOD_ALT])
+    r.cmd(CM_FOLD, "edit.toggleFold", "~F~old or unfold", "Hide or show the indented block at the cursor", [alt(45)])
+    r.cmd(CM_FOLDALL, "edit.foldAll", "F~o~ld all", "Hide every indented block")
+    r.cmd(CM_UNFOLDALL, "edit.unfoldAll", "E~x~pand all", "Show all folded blocks", [alt(61)])
     r.cmd(CM_DELLINE, "edit.deleteLine", "Delete l~i~ne", "Delete the current line", [ctrl(107)])
     r.cmd(CM_COMPLETE, "edit.complete", "Complete ~w~ord", "Complete the identifier under the cursor", [ctrl(32)])
     # ---- Search
@@ -422,6 +428,10 @@ def build_registry() -> Registry:
     r.item(CM_ADDNEXT)
     r.item(CM_CURABOVE)
     r.item(CM_CURBELOW)
+    r.sep()
+    r.item(CM_FOLD)
+    r.item(CM_FOLDALL)
+    r.item(CM_UNFOLDALL)
 
     r.menu("~S~earch")
     r.item(CM_FIND)

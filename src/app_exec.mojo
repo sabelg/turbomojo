@@ -140,6 +140,23 @@ __extension App:
         elif cmd == CM_CLEAR:
             if ai >= 0:
                 self.wins[ai].multi(OP_DELSEL, 0, False, False, List[Int]())
+        elif cmd == CM_FOLD:
+            if ai >= 0 and not self.wins[ai].toggle_fold(self.wins[ai].cr):
+                self.say("Nothing to fold here")
+        elif cmd == CM_FOLDALL:
+            if ai >= 0:
+                var n = self.wins[ai].buf.fold_all()
+                var h = self.wins[ai].buf.hidden_by(self.wins[ai].cr)
+                if h >= 0:
+                    self.wins[ai].goto(h, 0)
+                self.wins[ai].top = 0
+                self.wins[ai].top_seg = 0
+                self.wins[ai].follow = True
+                self.say(String(n) + " blocks folded")
+        elif cmd == CM_UNFOLDALL:
+            if ai >= 0:
+                self.wins[ai].buf.unfold_all()
+                self.wins[ai].follow = True
         elif cmd == CM_ADDNEXT:
             if ai >= 0:
                 if not self.wins[ai].add_next_occurrence():

@@ -94,7 +94,12 @@ __extension App:
                 self.wins[i].ensure_visible()
                 self.wins[i].follow = False
             # highlighter states for the visible rows (incremental; see Window.sync_lex)
-            self.wins[i].sync_lex(self.wins[i].top + self.wins[i].rows() + 1)
+            self.wins[i].buf.sync_folds()
+            var last_shown = self.wins[i].top + self.wins[i].rows() + 1
+            if len(self.wins[i].buf.folds) > 0:
+                # folded blocks push later lines into view
+                last_shown = self.wins[i].pos_at_screen_row(self.wins[i].rows()).r + 1
+            self.wins[i].sync_lex(last_shown)
         for i in range(n):
             self.draw_window(i, i == n - 1)
             if i == n - 1 and self.wins[i].w < self.scr.w:
