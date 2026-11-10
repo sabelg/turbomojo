@@ -72,6 +72,7 @@ large_file_mb = 50          # files above this size open in large-file mode
 [tools]
 compiler = "mojo"           # the TURBOMOJO_COMPILER environment variable overrides this
 lsp_server = "mojo-lsp-server"   # TURBOMOJO_LSP overrides this
+debug_adapter = "mojo-lldb-dap"  # TURBOMOJO_DAP overrides this
 include_paths = []          # extra -I folders for build, run and the language server;
                             # relative ones start at the folder of the config file
 docs_paths = []             # folders of library sources whose documentation Ctrl-F1 should find
@@ -141,6 +142,7 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Compile | F9 runs `mojo build` **in the background**: you keep editing while a spinner and timer show progress, output streams into the Message window, and Ctrl-F2 cancels. When it finishes you get the Turbo-style result box. In the Message window, Enter or Alt-F8/F7 jumps to the error's line and column |
 | Language server | **F7** starts live checking of the current file with `mojo-lsp-server`: errors and warnings appear in the Message window about half a second after you stop typing, and Enter or Alt-F8/F7 jumps to them. F7 again stops it. (First slice; completion, hover and go-to-definition come with roadmap phase 2) |
 | Run | Ctrl-F9 / F8 runs `mojo run` on the user screen and then returns. Alt-F5 shows the user screen again. Run ▸ Test runs the file's `std.testing` TestSuite, and program arguments can be set |
+| Debug | Shift-F5 (Run ▸ Debug) builds the current file with full debug information and no optimization (into `build/<name>.debug`) and runs it under Mojo's debugger, `mojo-lldb-dap`, without leaving the IDE: the program's output appears in the Message window as it is written, the status line shows `DEBUG:running` / `DEBUG:stopped`, and when the program ends its exit status is shown. If the program stops (a crash, a signal), the editor goes to the line; Shift-F5 lets it continue. Ctrl-F2 ends the session - the program and the debugger never outlive it, also not when the IDE is closed. Arguments come from Run ▸ Arguments. First step of the debugger: breakpoints, stepping and the variable views are not there yet, and the program cannot read from the keyboard while it is debugged |
 | Format | Alt-F9 runs `mojo format` in the background and reloads the file as one undo step. If you edit the buffer while it runs, the buffer is left alone |
 | Files | Tabs are kept as real tab characters (shown 4 columns wide; Options ▸ Show whitespace marks them). Tab-indented files are detected and the Tab key and auto-indent follow suit. CRLF line endings and a missing final newline are preserved; the status bar shows `LF`/`CRLF` and `Tabs`/`Spaces`, and both can be toggled in Options |
 | Unicode | Full UTF-8 with display widths: CJK and emoji take two columns and combining accents attach to their base letter, so cursor, selection, mouse clicks and the right border stay aligned. The cursor, Delete and selection work on grapheme clusters: an emoji sequence, a flag, a Hangul syllable or a letter with its accents is one step (Backspace removes a single accent first) |

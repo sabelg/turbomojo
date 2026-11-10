@@ -38,6 +38,7 @@ from app_outline import *
 from app_layout import *
 from app_explorer import *
 from app_docs import *
+from app_debug import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
@@ -263,6 +264,8 @@ __extension App:
             return "pixi run " + self.job.exe + "   (in " + self.job.path + ")"
         if self.job.kind == JOB_BUILD:
             return "Building " + self.job.path + " ..."
+        if self.job.kind == JOB_DEBUG:
+            return "Building " + self.job.path + " for debugging (no optimization, full debug information) ..."
         return "Formatting " + self.job.path + " ..."
 
     def poll_job(mut self) raises:
@@ -298,7 +301,7 @@ __extension App:
                 for k in range(nl + 1, len(self.job.data)):
                     rest.append(self.job.data[k])
                 self.job.data = rest^
-        if got and self.job.kind == JOB_BUILD and self.job.pid != 0:
+        if got and (self.job.kind == JOB_BUILD or self.job.kind == JOB_DEBUG) and self.job.pid != 0:
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Compiling...")
         if got and (self.job.kind == JOB_TASK or self.job.kind == JOB_DOCS) and self.job.pid != 0:
@@ -316,6 +319,8 @@ __extension App:
             self.finish_task(st, secs)
         elif self.job.kind == JOB_BUILD:
             self.finish_build(st, secs)
+        elif self.job.kind == JOB_DEBUG:
+            self.finish_debug_build(st, secs)
         else:
             self.finish_format(st)
 

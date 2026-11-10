@@ -120,6 +120,7 @@ comptime CM_TRUST = 177
 comptime CM_MOJODOCS = 178
 comptime CM_DOCFETCH = 179
 comptime CM_DOCFIND = 180
+comptime CM_DEBUG = 181
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -633,6 +634,7 @@ def build_registry() -> Registry:
     r.cmd(CM_QUICK, "file.quickOpen", "~G~o to file...", "The palette: files by name; > commands, @ symbols, # project symbols, : line", [alt(103)])
     # ---- Run
     r.cmd(CM_RUN, "run.run", "~R~un", "Run the current program with `mojo run`", [fkey(9) | MOD_CTRL, fkey(8)])
+    r.cmd(CM_DEBUG, "run.debug", "~D~ebug", "Build with debug information and run under the debugger; continues a stopped program", [fkey(5) | MOD_SHIFT])
     r.cmd(CM_TEST, "run.test", "~T~est", "Run this file's TestSuite (std.testing) with `mojo run`")
     r.cmd(CM_USERSCREEN, "run.userScreen", "~U~ser screen", "View the program's output screen", [fkey(5) | MOD_ALT])
     r.cmd(CM_TASKS, "run.pixiTasks", "Pixi tas~k~s...", "Run a task of the project's pixi.toml", [fkey(9) | MOD_SHIFT])
@@ -777,6 +779,7 @@ def build_registry() -> Registry:
 
     r.menu("~R~un")
     r.item(CM_RUN)
+    r.item(CM_DEBUG)
     r.item(CM_TEST)
     r.item(CM_USERSCREEN)
     r.item(CM_ARGS)

@@ -41,6 +41,7 @@ from layout import *
 from app_layout import *
 from explorer import *
 from app_docs import *
+from app_debug import *
 from outline import *
 from symindex import *
 from docs import *

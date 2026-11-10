@@ -39,6 +39,7 @@ from app_outline import *
 from app_layout import *
 from app_explorer import *
 from app_docs import *
+from app_debug import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -89,6 +90,8 @@ __extension App:
                 right += ("CRLF" if self.wins[ti].buf.crlf else "LF") + "  " + (("Tabs:" + String(self.wins[ti].buf.tab_width)) if self.wins[ti].buf.use_tabs else ("Spaces:" + String(self.wins[ti].buf.indent_size))) + "  "
             if self.lsp.active():
                 right += "LSP  "
+            if self.dbg.active():
+                right += self.debug_badge() + "  "
             right += "INS" if self.insert_mode else "OVR"
         if self.macro_rec:
             right = "● REC  " + right
@@ -96,7 +99,7 @@ __extension App:
             var sp = decode(SPINNER)
             var b = List[UInt8]()
             encode_cp(sp[(now_ns() // (SPINNER_MS * 1000000)) % len(sp)], b)
-            var what = "Building " if self.job.kind == JOB_BUILD else "Formatting "
+            var what = "Building " if (self.job.kind == JOB_BUILD or self.job.kind == JOB_DEBUG) else "Formatting "
             var subject = basename(self.job.path)
             if self.job.kind == JOB_TASK:
                 what = "Task "

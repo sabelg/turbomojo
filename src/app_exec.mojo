@@ -37,6 +37,7 @@ from app_outline import *
 from app_layout import *
 from app_explorer import *
 from app_docs import *
+from app_debug import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -46,7 +47,7 @@ from app_draw import *
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_BUILD or cmd == CM_RUN or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_BUILD or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
@@ -403,6 +404,8 @@ __extension App:
             self.run_program(False)
         elif cmd == CM_TEST:
             self.run_program(True)
+        elif cmd == CM_DEBUG:
+            self.debug_command()
         elif cmd == CM_USERSCREEN:
             self.term.leave()
             self.term.raw()
@@ -488,7 +491,10 @@ __extension App:
                 self.wins[i].buf.modified = True
                 self.say("Line endings: " + ("CRLF" if self.wins[i].buf.crlf else "LF"))
         elif cmd == CM_CANCEL:
-            self.cancel_job()
+            if self.dbg.active() and not self.job.active and not self.fsearch.active:
+                self.debug_end(True)
+            else:
+                self.cancel_job()
         elif cmd == CM_LSP:
             self.lsp_command()
         elif cmd >= CM_THEME0 and cmd < CM_THEME0 + THEME_COUNT:

@@ -33,6 +33,7 @@ Example:
     [tools]
     compiler = "mojo"
     lsp_server = "mojo-lsp-server"
+    debug_adapter = "mojo-lldb-dap"     # Run > Debug; a command with arguments is used as it is
     include_paths = []          # extra -I folders for the compiler and the language server;
                                 # relative ones are taken from the folder of the config file
     docs_paths = []             # folders with Mojo sources of libraries: their documentation
@@ -133,6 +134,7 @@ struct Settings(Copyable, Movable):
     var rulers: List[Int]
     var compiler: String
     var lsp_server: String
+    var debug_adapter: String
     var include_paths: List[String]
     var docs_paths: List[String]
     var docs_home: String
@@ -164,6 +166,7 @@ struct Settings(Copyable, Movable):
         self.rulers = List[Int]()
         self.compiler = "mojo"
         self.lsp_server = "mojo-lsp-server"
+        self.debug_adapter = "mojo-lldb-dap"
         self.include_paths = List[String]()
         self.docs_paths = List[String]()
         self.docs_home = ""
@@ -260,6 +263,12 @@ struct Settings(Copyable, Movable):
                 self.warnings.append("tools.lsp_server must be a non-empty string")
             else:
                 self.lsp_server = doc.vals[si].s
+        var dai = doc.find("tools.debug_adapter")
+        if dai >= 0:
+            if doc.vals[dai].kind != T_STR or doc.vals[dai].s.byte_length() == 0:
+                self.warnings.append("tools.debug_adapter must be a non-empty string")
+            else:
+                self.debug_adapter = doc.vals[dai].s
         var ii = doc.find("tools.include_paths")
         if ii >= 0:
             if doc.vals[ii].kind == T_STR and doc.vals[ii].s.byte_length() > 0:
@@ -296,7 +305,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

@@ -37,6 +37,7 @@ from project import PixiTask
 from runconfig import RunConfig
 from trust import TrustStore
 from doclib import DocLibrary, DocIndex, Found, default_docs_home
+from dap import DebugSession
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
@@ -80,6 +81,7 @@ def now_ns() -> Int:
 comptime JOB_BUILD = 1
 comptime JOB_FORMAT = 2
 comptime JOB_DOCS = 4                    # downloading the documentation
+comptime JOB_DEBUG = 5                   # building a program to debug it
 comptime JOB_TASK = 3                    # a pixi task of the project
 comptime SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -172,6 +174,9 @@ struct App(Movable):
     var run_args: String
     var compiler: String
     var lsp_server: String     # the language server program
+    var debug_adapter: String  # the debug adapter program
+    var dbg: DebugSession      # the program being debugged
+    var dbg_source: String     # its main source file
     var include_paths: List[String]   # extra -I folders, already made absolute
     var docs_paths: List[String]     # folders of library sources to find documentation in
     var doc_idx: List[SymbolIndex]   # one index per docs folder
@@ -452,6 +457,9 @@ struct App(Movable):
         self.run_args = ""
         self.compiler = env_or("TURBOMOJO_COMPILER", "mojo")
         self.lsp_server = env_or("TURBOMOJO_LSP", "mojo-lsp-server")
+        self.debug_adapter = env_or("TURBOMOJO_DAP", "mojo-lldb-dap")
+        self.dbg = DebugSession()
+        self.dbg_source = ""
         self.include_paths = List[String]()
         self.project_dir = ""
         self.errs = List[ErrLoc]()
@@ -764,6 +772,8 @@ struct App(Movable):
             t = min(t, max(1, (self.act_retry_due - now) // 1000000 + 1))
         if self.lsp.conn.wants_write():
             t = min(t, 10)
+        if self.dbg.active() and self.dbg.conn.wants_write():
+            t = min(t, 10)
         if self.watch_enabled and not self.watch.active():
             t = min(t, max(1, (self.watch_due - now) // 1000000 + 1))
         if self.show_clock:
@@ -817,6 +827,7 @@ struct App(Movable):
         # the environment variable still wins over the files for the compiler
         self.compiler = env_or("TURBOMOJO_COMPILER", s.compiler)
         self.lsp_server = env_or("TURBOMOJO_LSP", s.lsp_server)
+        self.debug_adapter = env_or("TURBOMOJO_DAP", s.debug_adapter)
         # relative include folders belong to the project file's folder (or where we run)
         self.docs_paths = List[String]()
         self.doc_idx = List[SymbolIndex]()

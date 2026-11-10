@@ -38,6 +38,7 @@ from app_outline import *
 from app_layout import *
 from app_explorer import *
 from app_docs import *
+from app_debug import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *

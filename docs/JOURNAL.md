@@ -2385,3 +2385,66 @@ as PDF; those are not downloaded - a terminal cannot show them.)
   - The recordings linked from the agendas are YouTube links; the reader shows the
     address, it cannot play them.
 - Verified: `scripts/check.sh` → `CHECK OK`, 46 test files, 875 tests, smoke ok.
+
+## 2026-11-10 · P4-01 DAP client: initialize, launch, configurationDone, events · done
+
+Probed first (a Python script against the real `mojo-lldb-dap`, LLDB 24, on
+`examples/hello.mojo` built with `-g -O0`). What the adapter really does:
+
+- `launch` is answered only after `configurationDone`; the `initialized` event comes
+  right after `launch` was sent. Breakpoints set in between are verified at once.
+- **Without Mojo's LLDB plugin the debugger stops at the right lines but the Locals
+  scope is empty** ("this version of LLDB has no plugin for the language mojo"). The
+  `mojo-lldb-dap` script does not load it; with
+  `--pre-init-command "plugin load <prefix>/lib/libMojoLLDB.so"` the locals appear
+  (`c: Counter`). The script's own two `command script import` lines fail ("This script
+  interpreter does not support importing modules") - harmless.
+- The script needs `CONDA_PREFIX`. Thread ids are Linux thread ids; the main thread's
+  id is the process id. Program output arrives as `output` events with `\r\n`.
+- A breakpoint stop, `next`, `continue`, `exited` (code), `terminated`, `disconnect`
+  all behave as the specification says.
+
+What was built:
+
+- `src/dap.mojo`: `DapConn` (the Content-Length framing and the child process of the
+  JSON-RPC layer, DAP's own message shape: seq / request / response / event, reverse
+  requests), `adapter_command` (CONDA_PREFIX + the plugin, when it is installed),
+  `split_arguments`, and `DebugSession`: initialize → launch → configuration (a list of
+  requests the IDE can fill - breakpoints, next task) → configurationDone; follows
+  output, process, capabilities, stopped (asks for the top stack frame to know the
+  place), continued, exited, terminated; declines reverse requests (runInTerminal);
+  `finish()` asks the adapter to end the program, waits at most half a second, stops
+  the adapter and kills the program if it is still there.
+- `src/app_debug.mojo`: Run ▸ Debug (Shift-F5): build as a background job
+  (`mojo build -g -O0` → `build/<name>.debug`; errors shown like any build), then the
+  session. Output in the Message window (kept at its end), `DEBUG:…` in the status
+  line, the editor goes to a stop's line, Shift-F5 continues, Ctrl-F2 ends, closing the
+  IDE ends it too. Asks for folder trust like Run. Setting `tools.debug_adapter`
+  (`TURBOMOJO_DAP`); the adapter's stderr goes to `dap.log` in the state folder.
+- Tests: `tests/test_dap.mojo` (13) with `tests/helpers/fake_dap_adapter.py`, a scripted
+  adapter that follows the order observed above: message kinds and junk; argument
+  splitting; the adapter command; a run to the end (exact request order, output, exit
+  code, capabilities); stop → located → continue; launch failure and an adapter that
+  dies; **ending a session kills the program even when the adapter ignores the
+  request**; reverse requests; and in the IDE: output and exit status, going to the
+  stop line, Ctrl-F2, the failure dialog, no adapter, trust, the setting.
+- Looked at in tmux with the real adapter: Shift-F5 on `examples/hello.mojo` → trust
+  prompt → output and "Program exited with status 0"; an endless program → output
+  follows, Ctrl-F2 → afterwards no `_mojo-lldb-dap`, `lldb-server` or program process
+  is left (checked with pgrep).
+- A compile error only the full build showed (`self.job.exe` passed to a `mut self`
+  method): the test build did not reach that function. Fixed; noted because it means a
+  test file compiling is not proof that every App method compiles.
+- Not done / unverified:
+  - No breakpoints, stepping or variable views yet (P4-02 … P4-05); so far a program
+    only stops on a crash or signal, and that path was exercised with the fake adapter
+    only, not with a really crashing Mojo program.
+  - The program has no terminal: it cannot read from the keyboard, and output that
+    needs a tty (colours, cursor movement) is shown raw. Planned with the integrated
+    terminal (Phase 5).
+  - Run configurations (other file, environment, folder) are not used by Debug; it
+    debugs the file being edited with Run ▸ Arguments.
+  - stdout and stderr are shown in arrival order in one stream, unmarked.
+  - The gate's tests use the fake adapter only; the real one is covered by the manual
+    check above until P4-07.
+- Verified: `scripts/check.sh` → `CHECK OK`, 47 test files, 888 tests, smoke ok.
