@@ -1,0 +1,69 @@
+# Continuous integration for TurboMojo.
+#
+# `check` runs the full gate (build, every test file, scripted TUI smoke test) on the
+# stable Mojo toolchain for both supported platforms. `canary` runs the same gate on the
+# nightly toolchain once a week and on demand; a failure there is a warning about an
+# upcoming Mojo change, not a broken build, so it does not block pull requests.
+name: CI
+
+on:
+  push:
+    branches: [main, roadmap]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 5 * * 1"   # Mondays 05:00 UTC: weekly canary
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check (${{ matrix.platform }})
+    if: github.event_name != 'schedule'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-64
+            runner: ubuntu-24.04
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tmux (TUI smoke test) and python3 (fake JSON-RPC server)
+        run: sudo apt-get update && sudo apt-get install -y tmux python3
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          cache: true
+      - name: Gate on stable Mojo
+        run: pixi run check
+      - name: Upload crash log and screen on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-${{ matrix.platform }}
+          path: |
+            build/state/
+          if-no-files-found: ignore
+
+  canary:
+    name: canary (nightly Mojo)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y tmux python3
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          cache: false
+          environments: nightly
+      - name: Move the nightly environment to the newest toolchain
+        run: pixi update -e nightly mojo
+      - name: Gate on nightly Mojo
+        run: pixi run canary

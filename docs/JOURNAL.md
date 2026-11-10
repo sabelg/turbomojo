@@ -525,3 +525,35 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   402 tests, smoke test, incl. the real language server of each toolchain).
 - Lesson for later tasks: direct libc calls that the standard library also makes
   (`read`, `write`, `open`, ...) can break on a toolchain update; the canary is the guard.
+
+## 2026-11-10 · P0-21 CI workflow file · done (file only, never run)
+
+- `.github/workflows/ci.yml`: job `check` runs `pixi run check` on `ubuntu-24.04`
+  (linux-64) and `ubuntu-24.04-arm` (linux-aarch64) for pushes and pull requests; job
+  `canary` runs `pixi run canary` after `pixi update -e nightly mojo`, weekly and on
+  demand, with `continue-on-error`. Both install tmux and python3, which the smoke test
+  and the fake JSON-RPC server need.
+- Checked here: the YAML parses, and the pixi tasks it calls exist and pass locally.
+- **Not verified:** the workflow has never run on GitHub (nothing is pushed), so runner
+  labels, the setup-pixi action version and tmux behaviour in CI are untested. Also, the
+  code has only ever been built on linux-aarch64; linux-64 would get its first build in CI.
+  The FFI structures used (termios, statx, sigaction, inotify, eventfd, memfd) have the
+  same layout on x86-64 Linux as far as I know, but that is unconfirmed.
+
+## 2026-11-10 · Phase 0 (Foundations) complete
+
+All of P0-01 .. P0-21 are done (P0-14 was split in two; P1-06 was pulled forward).
+Where the project stands after Phase 0:
+
+- 19 test files, 402 tests, plus a scripted smoke test that drives the real UI in tmux
+  (normal use, two injected crashes, a `kill -9` recovery). One gate: `pixi run check`.
+- Builds on stable Mojo 1.2.0; a nightly canary environment passes too.
+- Robustness: poll-based loop (idle = 0 CPU), signals, crash guard with log, swap files
+  with recovery, external-change detection, terminal capability probe with colour
+  fallbacks, config files, .editorconfig.
+- Groundwork for Phase 2: JSON, non-blocking child processes, JSON-RPC, and a first
+  language-server link (F7) with measured latency.
+- Still open from Phase 0's own notes: keystroke-to-screen latency is unmeasured (P9-02);
+  mouse input has only been tested with synthetic events; macOS is unsupported.
+
+Next: Phase 1 (editor core), starting with P1-01, the rope.
