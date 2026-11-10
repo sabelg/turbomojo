@@ -557,3 +557,30 @@ Where the project stands after Phase 0:
   mouse input has only been tested with synthetic events; macOS is unsupported.
 
 Next: Phase 1 (editor core), starting with P1-01, the rope.
+
+## 2026-11-10 · P1-01 rope · done
+
+- New `src/rope.mojo` (`Rope`): UTF-8 text in leaves of at most 1024 bytes, cut only
+  between characters, under a B-tree (up to 16 children) whose nodes carry summaries of
+  bytes, characters, newlines and UTF-16 units. Nodes live in an arena (parallel lists
+  with a free list), so no recursive types are needed; all leaves are at one depth.
+- Operations: bulk load, insert and delete by character offset (inserts larger than a
+  leaf are split into several leaves and propagated; deletions free whole subtrees, merge
+  small neighbours and shrink the tree from the root), slice, character at, line start /
+  end / length / text, line of an offset, (row, col) to offset, character <-> UTF-16
+  offset, and a structural self-check used by the tests.
+- `tests/test_rope.mojo` (17 tests): every result is compared with a plain list of
+  codepoints. Basics and clamping, multi-byte characters, UTF-16 incl. inside a surrogate
+  pair, final-newline cases, a 200k-character load (depth 3..6), one 120k-character insert
+  into a tiny rope, typing 4,000 characters one by one, deleting 50k characters in random
+  pieces back to a single leaf, arena reuse, a 100k-character single line, and about 7,000
+  random edits over 7 seeds (with pastes and cuts spanning many leaves) where the
+  structure is checked after every step and content plus all queries every 20 steps.
+  All passed on the first run.
+- Measured on 1,000,000 lines / 39 MB (aarch64, compiled): load 124 ms (the current
+  line-list buffer: 422 ms); 100k random `line_start` 68 ms (0.7 us each); 100k line
+  texts 163 ms; 100k random single-character inserts 284 ms (2.8 us each); 100k
+  insertions at one moving point 271 ms; 50k random 3-character deletes 184 ms; 100k
+  `to_utf16` 33 ms; `to_bytes` 80 ms. Depth 5, about 51k leaves.
+- Not yet used by the editor: P1-02 moves `TextBuffer` onto it.
+- Verified: `check.sh` CHECK OK on stable Mojo 1.2.0 (20 files, 419 tests).
