@@ -23,6 +23,7 @@ __extension Window:
         return Range(r, lo, r, hi)
 
     def select_match(mut self, r: Int, s: Int, e: Int):
+        self.extra.clear()
         self.sel = True
         self.ar = r
         self.ac = s

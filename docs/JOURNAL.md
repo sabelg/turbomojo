@@ -854,3 +854,48 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - A Latin-1 file is still shown with U+FFFD marks and saved that way: there is no
     encoding detection or conversion.
 - Verified: `check.sh` CHECK OK (25 files, 533 tests).
+
+## 2026-11-10 · P1-10 multi-cursor · done
+
+- `Window` keeps its ordinary cursor; additional ones live in `extra: List[Cur]`. New
+  `src/window_multi.mojo`: `multi(op, ...)` runs one single-cursor operation at every
+  cursor, last cursor in the text first. Cursors already handled lie after the edit, so
+  they are stored as distances from the end of the text and of their line, which an
+  edit before them cannot change, and converted back afterwards. `forced_group` makes
+  every edit of the step join one undo group. Afterwards cursors at the same place or
+  inside another's selection are merged.
+- Operations at all cursors: typing (insert and overwrite), Backspace, Delete, Enter,
+  Left/Right (also by word), Up/Down, Home/End, with Shift for selections, cut, copy,
+  clear, paste. Copy joins the selections with line breaks; a paste with exactly one
+  line per cursor gives each cursor its line.
+- Adding cursors: `add_next_occurrence` (Alt-D: first selects the word, then the next
+  exact-case occurrence, wrapping, skipping ones already taken), `add_cursor_vert`
+  (Ctrl-Alt-Up/Down, Shift-Alt-Up/Down), `toggle_cursor_at` (Alt-click). The newest
+  cursor becomes the main one so the view follows it. Limit: 2,000 cursors.
+- Everything else (Tab, comment, duplicate/delete line, PgUp/PgDn, Ctrl-Home/End, goto,
+  search, select all, undo/redo, a plain click, reload/format) goes back to one cursor.
+  Esc collapses first, and only then clears the selection and search marks.
+- Terminal: SGR mouse reports now carry Shift/Alt/Ctrl in `Event.key`.
+- Drawing: selections of extra cursors use the selection colours; the extra cursor cells
+  are drawn inverted (the terminal has only one real cursor).
+- Key choice: Ctrl-D stays "Duplicate line" (it was already taken), so add-next is
+  Alt-D rather than the Ctrl-D some editors use. It can be rebound in `[keys]`.
+- Tests: `tests/test_multi.mojo` (23 tests): cursors on one line shifting each other,
+  line breaks and joins moving later cursors, merging, per-cursor wanted column, wide
+  characters, 300 cursors, undo/redo as one step, add-next (wrap, exact case, all
+  taken), above/below, toggle, clipboard dealing, drawing, and the app flow through
+  keys, commands and Alt-click, plus the mouse modifier parsing. One wrong expectation
+  of mine (which cursor is the main one after a toggle).
+- Tried by hand in tmux: Alt-D on a word and Ctrl-Alt-Down twice then typing.
+- A smoke failure during the gate came from a swap file left by that manual session
+  (the recovery dialog covered the menu); `scripts/smoke.sh` now clears old swap files
+  from `build/state` before it starts.
+- Not done / unverified:
+  - After undo there is one cursor, at the place of the last cursor in the text, not
+    the set of cursors that made the edit.
+  - Each step costs time proportional to the square of the number of cursors (300
+    cursors typing one character: a few tens of milliseconds in the test).
+  - Alt-click and Ctrl-Alt-arrows were not tried on a real terminal emulator (tmux
+    passed Ctrl-Alt-Down through; window managers often grab these keys).
+  - No "select all occurrences" command; extra cursors are not kept in swap files.
+- Verified: `check.sh` CHECK OK (26 files, 556 tests).

@@ -14,6 +14,7 @@ from highlight import Highlighter
 from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
+from window_multi import *
 from window_draw import *
 from menu import *
 from commands import *
@@ -56,8 +57,7 @@ __extension App:
             self.mode = M_NORMAL
             var ai = self.active_editor()
             if ai >= 0:
-                self.wins[ai].insert_text(e.text, ACT_OTHER)
-                self.wins[ai].break_group()
+                self.wins[ai].paste_multi(e.text)
             return
         self.handle_key(e.key)
 
@@ -136,14 +136,16 @@ __extension App:
         var shift = (k & MOD_SHIFT) != 0
         var ctl = (k & MOD_CTRL) != 0
         var base = k & ~MOD_SHIFT
+        var none = List[Int]()
+        var word = ctl or (k & MOD_ALT) != 0
         if base == KEY_LEFT or base == (KEY_LEFT | MOD_CTRL) or base == (KEY_LEFT | MOD_ALT):
-            self.wins[t].move_left(shift, ctl or (k & MOD_ALT) != 0)
+            self.wins[t].multi(OP_LEFT, 0, shift, word, none)
         elif base == KEY_RIGHT or base == (KEY_RIGHT | MOD_CTRL) or base == (KEY_RIGHT | MOD_ALT):
-            self.wins[t].move_right(shift, ctl or (k & MOD_ALT) != 0)
+            self.wins[t].multi(OP_RIGHT, 0, shift, word, none)
         elif base == KEY_UP:
-            self.wins[t].move_vert(-1, shift)
+            self.wins[t].multi(OP_VERT, -1, shift, False, none)
         elif base == KEY_DOWN:
-            self.wins[t].move_vert(1, shift)
+            self.wins[t].multi(OP_VERT, 1, shift, False, none)
         elif base == (KEY_UP | MOD_CTRL):
             self.wins[t].scroll(-1)
             return
@@ -151,30 +153,43 @@ __extension App:
             self.wins[t].scroll(1)
             return
         elif base == KEY_PGUP:
+            self.wins[t].collapse()
             self.wins[t].page(-1, shift)
         elif base == KEY_PGDN:
+            self.wins[t].collapse()
             self.wins[t].page(1, shift)
-        elif base == KEY_HOME or base == (KEY_HOME | MOD_CTRL):
-            self.wins[t].home(shift, ctl)
-        elif base == KEY_END or base == (KEY_END | MOD_CTRL):
-            self.wins[t].end(shift, ctl)
+        elif base == KEY_HOME:
+            self.wins[t].multi(OP_HOME, 0, shift, False, none)
+        elif base == KEY_END:
+            self.wins[t].multi(OP_END, 0, shift, False, none)
+        elif base == (KEY_HOME | MOD_CTRL):
+            self.wins[t].collapse()
+            self.wins[t].home(shift, True)
+        elif base == (KEY_END | MOD_CTRL):
+            self.wins[t].collapse()
+            self.wins[t].end(shift, True)
         elif k == KEY_ENTER:
-            self.wins[t].newline(self.auto_indent)
+            self.wins[t].multi(OP_NEWLINE, 0, self.auto_indent, False, none)
         elif k == KEY_BACKSPACE:
-            self.wins[t].backspace()
+            self.wins[t].multi(OP_BACK, 0, False, False, none)
         elif k == KEY_DELETE:
-            self.wins[t].delete_fwd()
+            self.wins[t].multi(OP_DEL, 0, False, False, none)
         elif k == KEY_TAB:
+            self.wins[t].collapse()
             self.wins[t].tab(False)
         elif k == (KEY_TAB | MOD_SHIFT):
+            self.wins[t].collapse()
             self.wins[t].tab(True)
         elif k == KEY_INSERT:
             self.insert_mode = not self.insert_mode
         elif k == KEY_ESC:
-            self.wins[t].sel = False
-            self.wins[t].clear_highlight()
+            if self.wins[t].has_multi():
+                self.wins[t].collapse()         # first Esc: back to one cursor
+            else:
+                self.wins[t].sel = False
+                self.wins[t].clear_highlight()
         elif k < K_BASE and k >= 32:
-            self.wins[t].type_char(k, self.insert_mode)
+            self.wins[t].multi(OP_TYPE, k, self.insert_mode, False, none)
         self.wins[t].follow = True
 
     def window_at(self, x: Int, y: Int) -> Int:

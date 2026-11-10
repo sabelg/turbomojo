@@ -14,6 +14,7 @@ from highlight import Highlighter
 from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
+from window_multi import *
 from window_draw import *
 from menu import *
 from commands import *
@@ -209,6 +210,10 @@ __extension App:
                     self.wins[t].cr = r
             return
         var p = self.wins[t].screen_to_pos(x, y)
+        if e.key & MOD_ALT != 0:
+            self.wins[t].toggle_cursor_at(p.r, p.c)     # Alt-click: one more cursor
+            return
+        self.wins[t].collapse()
         self.wins[t].begin_move(False)
         self.wins[t].cr = p.r
         self.wins[t].cc = p.c

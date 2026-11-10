@@ -32,6 +32,17 @@ struct Range(Copyable, Movable):
     var c2: Int
 
 
+@fieldwise_init
+struct Cur(Copyable, Movable):
+    """An additional cursor (the first one lives in Window.cr/cc/sel/ar/ac/want)."""
+    var r: Int
+    var c: Int
+    var sel: Bool
+    var ar: Int
+    var ac: Int
+    var want: Int
+
+
 struct Window(Copyable, Movable):
     var kind: Int
     var title: String
@@ -60,6 +71,8 @@ struct Window(Copyable, Movable):
     var last_act: Int
     var follow: Bool
     var gut: Int
+    var extra: List[Cur]  # additional cursors (multi-cursor editing)
+    var forced_group: Int # while set, every edit joins this undo group
     var hs: Search        # the search whose matches are highlighted
     var hs_on: Bool
     var scope_on: Bool    # searching is limited to `scope` (Find in selection)
@@ -99,6 +112,8 @@ struct Window(Copyable, Movable):
         self.follow = True
         self.gut = 0
         self.clustered = False
+        self.extra = List[Cur]()
+        self.forced_group = 0
         self.hs = Search()
         self.hs_on = False
         self.scope_on = False
@@ -269,11 +284,16 @@ struct Window(Copyable, Movable):
 
     # ------------------------------------------------------------ groups
     def new_group(mut self) -> Int:
+        if self.forced_group != 0:
+            return self.forced_group
         self.gseq += 1
         self.cur_group = self.gseq
         return self.cur_group
 
     def group_for(mut self, act: Int) -> Int:
+        if self.forced_group != 0:
+            self.last_act = act
+            return self.forced_group
         if act != self.last_act or act == ACT_OTHER or self.cur_group == 0:
             _ = self.new_group()
         self.last_act = act
@@ -321,6 +341,7 @@ struct Window(Copyable, Movable):
         self.follow = True
 
     def select_all(mut self):
+        self.extra.clear()
         self.sel = True
         self.ar = 0
         self.ac = 0
@@ -333,6 +354,7 @@ struct Window(Copyable, Movable):
         self.cc = max(0, min(self.cc, self.buf.llen(self.cr)))
 
     def goto(mut self, r: Int, c: Int):
+        self.extra.clear()
         self.sel = False
         self.cr = r
         self.cc = c
@@ -672,6 +694,7 @@ struct Window(Copyable, Movable):
         return changed
 
     def undo(mut self):
+        self.extra.clear()
         var p = self.buf.undo()
         if p.r >= 0:
             self.sel = False
@@ -683,6 +706,7 @@ struct Window(Copyable, Movable):
         self.follow = True
 
     def redo(mut self):
+        self.extra.clear()
         var p = self.buf.redo()
         if p.r >= 0:
             self.sel = False
@@ -695,6 +719,7 @@ struct Window(Copyable, Movable):
 
     def replace_all_text(mut self, cps: List[Int]):
         """Replace the whole buffer as one undo step (used by the formatter)."""
+        self.extra.clear()
         var g = self.new_group()
         var last = self.buf.count() - 1
         _ = self.buf.delete(0, 0, last, self.buf.llen(last), self.cr, self.cc, g)

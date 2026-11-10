@@ -52,6 +52,9 @@ comptime CM_COMPILER = 74
 comptime CM_CANCEL = 75
 comptime CM_LSP = 76
 comptime CM_FINDFILES = 77
+comptime CM_ADDNEXT = 110
+comptime CM_CURABOVE = 111
+comptime CM_CURBELOW = 112
 comptime CM_LINENUM = 80
 comptime CM_AUTOINDENT = 81
 comptime CM_HLLINE = 82
@@ -329,6 +332,9 @@ def build_registry() -> Registry:
     r.cmd(CM_SELALL, "edit.selectAll", "Select ~a~ll", "Select the entire buffer", [ctrl(97)])
     r.cmd(CM_COMMENT, "edit.toggleComment", "Toggle co~m~ment", "Comment or uncomment the selected lines", [ctrl(47)])
     r.cmd(CM_DUPLINE, "edit.duplicateLine", "~D~uplicate line", "Duplicate the current line", [ctrl(100)])
+    r.cmd(CM_ADDNEXT, "edit.addNextOccurrence", "Add ~n~ext occurrence", "Select the word, then add a cursor at its next occurrence", [alt(100)])
+    r.cmd(CM_CURABOVE, "edit.addCursorAbove", "Add cursor a~b~ove", "Add a cursor on the line above", [KEY_UP | MOD_CTRL | MOD_ALT, KEY_UP | MOD_SHIFT | MOD_ALT])
+    r.cmd(CM_CURBELOW, "edit.addCursorBelow", "Add cursor b~e~low", "Add a cursor on the line below", [KEY_DOWN | MOD_CTRL | MOD_ALT, KEY_DOWN | MOD_SHIFT | MOD_ALT])
     r.cmd(CM_DELLINE, "edit.deleteLine", "Delete l~i~ne", "Delete the current line", [ctrl(107)])
     r.cmd(CM_COMPLETE, "edit.complete", "Complete ~w~ord", "Complete the identifier under the cursor", [ctrl(32)])
     # ---- Search
@@ -410,6 +416,10 @@ def build_registry() -> Registry:
     r.item(CM_DUPLINE)
     r.item(CM_DELLINE)
     r.item(CM_COMPLETE)
+    r.sep()
+    r.item(CM_ADDNEXT)
+    r.item(CM_CURABOVE)
+    r.item(CM_CURBELOW)
 
     r.menu("~S~earch")
     r.item(CM_FIND)

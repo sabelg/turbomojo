@@ -405,8 +405,16 @@ struct Terminal(Movable):
                         var btn = b & 3
                         if b & 64 != 0:
                             btn = MB_WHEEL_UP + (b & 1)
+                        # modifier keys held during the click travel in `key`
+                        var mmods = 0
+                        if b & 4 != 0:
+                            mmods |= MOD_SHIFT
+                        if b & 8 != 0:
+                            mmods |= MOD_ALT
+                        if b & 16 != 0:
+                            mmods |= MOD_CTRL
                         evs.append(
-                            Event(EV_MOUSE, 0, params[1] - 1, params[2] - 1, btn, final == 77, (b & 32) != 0, List[Int]())
+                            Event(EV_MOUSE, mmods, params[1] - 1, params[2] - 1, btn, final == 77, (b & 32) != 0, List[Int]())
                         )
                     return j - i + 1
                 if marker == 63:

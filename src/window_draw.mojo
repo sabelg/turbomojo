@@ -8,6 +8,7 @@ from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_wid
 from grapheme import cluster_end
 from window import *
 from window_search import *
+from window_multi import *
 
 
 __extension Window:
@@ -49,6 +50,7 @@ __extension Window:
         if brk.r >= 0:
             bc = self.cc if self.is_bracket(self.buf.at(self.cr, self.cc)) else self.cc - 1
         var has_sel = self.has_sel()
+        var n_extra = len(self.extra)
         var sr = self.sel_range()
         # find highlighter state at the first visible line
         var st = self.lex_state_at(self.top)
@@ -127,7 +129,7 @@ __extension Window:
                 if mi < len(ms) and c >= ms[mi]:
                     cfg = pal.match_fg
                     cbg = pal.match_bg
-                if self.in_sel(r, c):
+                if self.in_sel(r, c) or (n_extra > 0 and self.in_extra_sel(r, c)):
                     cfg = pal.sel_fg
                     cbg = pal.sel_bg
                 if (r == brk.r and c == brk.c) or (r == self.cr and c == bc):
@@ -148,6 +150,14 @@ __extension Window:
                     scr.put(sx, yy, ch, cfg, cbg)
                     lastx = sx
                 v += a
+            # the additional cursors: the terminal has one real cursor, these are drawn
+            for e in self.extra:
+                if e.r != r:
+                    continue
+                var ev = self.vcol(r, e.c)
+                if ev >= self.left and ev < lim:
+                    scr.set_bg(cx0 + ev - self.left, yy, pal.match_fg if pal.match_fg != rowbg else pal.sel_fg)
+                    scr.set_fg(cx0 + ev - self.left, yy, rowbg)
             # selection past end of line shows the newline
             if has_sel and sr.r1 <= r and r < sr.r2 and v >= self.left and v < lim:
                 scr.put(cx0 + v - self.left, yy, 32, pal.sel_fg, pal.sel_bg)

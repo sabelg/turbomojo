@@ -14,6 +14,7 @@ from highlight import Highlighter
 from buffer import TextBuffer, Pos
 from window import Window, WK_EDITOR, WK_MESSAGE, ACT_OTHER, ACT_TYPE
 from window_search import *
+from window_multi import *
 from window_draw import *
 from menu import *
 from commands import *
@@ -60,6 +61,10 @@ __extension App:
 
     def exec_command(mut self, cmd: Int) raises:
         var ai = self.active_editor()
+        if ai >= 0 and self.wins[ai].has_multi():
+            # only these know about several cursors; everything else works on the main one
+            if not (cmd == CM_ADDNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO):
+                self.wins[ai].collapse()
         if cmd == CM_NEW:
             var name = String("NONAME")
             if self.untitled_n < 10:
@@ -109,7 +114,15 @@ __extension App:
                 self.wins[ai].redo()
         elif cmd == CM_CUT or cmd == CM_COPY:
             var src = ai if ai >= 0 else self.top()
-            if src >= 0 and self.wins[src].has_sel():
+            if src >= 0 and self.wins[src].kind == WK_EDITOR and self.wins[src].has_multi():
+                var all = self.wins[src].selections_text()
+                if len(all) > 0:
+                    self.clipboard = all^
+                    self.osc52(self.clipboard.copy())
+                    if cmd == CM_CUT:
+                        self.wins[src].multi(OP_DELSEL, 0, False, False, List[Int]())
+                    self.say(String(len(self.clipboard)) + " characters copied")
+            elif src >= 0 and self.wins[src].has_sel():
                 self.clipboard = self.wins[src].selected_text()
                 self.osc52(self.clipboard.copy())
                 if cmd == CM_CUT and ai >= 0:
@@ -121,11 +134,20 @@ __extension App:
                 self.osc52(self.clipboard.copy())
         elif cmd == CM_PASTE:
             if ai >= 0 and len(self.clipboard) > 0:
-                self.wins[ai].insert_text(self.clipboard, ACT_OTHER)
-                self.wins[ai].break_group()
+                self.wins[ai].paste_multi(self.clipboard)
         elif cmd == CM_CLEAR:
             if ai >= 0:
-                _ = self.wins[ai].delete_sel(self.wins[ai].new_group())
+                self.wins[ai].multi(OP_DELSEL, 0, False, False, List[Int]())
+        elif cmd == CM_ADDNEXT:
+            if ai >= 0:
+                if not self.wins[ai].add_next_occurrence():
+                    self.say("No more occurrences")
+                elif self.wins[ai].has_multi():
+                    self.say(String(self.wins[ai].cursor_count()) + " cursors")
+        elif cmd == CM_CURABOVE or cmd == CM_CURBELOW:
+            if ai >= 0:
+                if self.wins[ai].add_cursor_vert(-1 if cmd == CM_CURABOVE else 1):
+                    self.say(String(self.wins[ai].cursor_count()) + " cursors")
         elif cmd == CM_SELALL:
             if ai >= 0:
                 self.wins[ai].select_all()

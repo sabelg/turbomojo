@@ -83,6 +83,7 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Desktop | Overlapping windows with drag-to-move (title bar), drag-to-resize (bottom-right corner), zoom (F5), tile/cascade, Alt-1…9 window numbers, a window list (Alt-0) and drop shadows |
 | Editor | Mojo syntax colouring (keywords, types, builtins, strings and docstrings, numbers, decorators, def names), line numbers, current-line highlight, bracket matching, smart Home, auto-indent (indents after `:`), Tab/Shift-Tab block indent, toggle comment, duplicate/delete line, insert/overwrite modes (underline or block cursor) |
 | Undo | Grouped undo/redo. Typing a word undoes as one step, and so does Replace-all or Format |
+| Multiple cursors | Alt-D selects the word under the cursor, then adds a cursor at each next occurrence; Ctrl-Alt-Up/Down (or Shift-Alt-Up/Down) add a cursor on the line above or below; Alt-click adds or removes one. Typing, Backspace, Delete, Enter, arrows, Home/End, selection, cut/copy/paste act at every cursor, and each step is one undo. Copy joins the selections line by line and a paste with one line per cursor deals them out. Esc returns to one cursor |
 | Search | Find and Replace with **search as you type**: the first match is selected, every match is highlighted and the dialog shows "Match 3 of 17" while you type (Esc puts the cursor back). Options: case sensitive, whole words, **regular expressions** (no backtracking, so no pattern can hang the editor; `$1`, `${1}`, `$0`, `\n` in the replacement) and **in selection**. Replace steps through matches one at a time, Change all is one undo step. **Find in files** (Shift-F3) searches the project folder in the background with the same options and lists the hits in the Message window (Enter opens the file at the match, Alt-F8/Alt-F7 step through them, Ctrl-F2 cancels). Search again (Ctrl-L), Go to line, **Go to symbol** (fuzzy list of `def`/`struct`/`trait`/`comptime`) |
 | Command palette | Ctrl-P fuzzy-searches every menu command |
 | Completion | Ctrl-Space completes identifiers from the buffer plus Mojo keywords, types and builtins |
@@ -110,6 +111,7 @@ Press **F1** inside the IDE for the full keyboard reference.
 | `src/buffer.mojo` | Text buffer on the rope: (row, column) editing, grouped undo/redo, per-file settings |
 | `src/highlight.mojo` | Mojo tokenizer with multi-line string state |
 | `src/window.mojo` | Editor/message window state, movement and editing commands |
+| `src/window_multi.mojo` | Multi-cursor editing (extends `Window`) |
 | `src/window_search.mojo`, `src/window_draw.mojo` | Find/replace/bracket matching and window drawing (extend `Window`) |
 | `src/commands.mojo` | Command registry: ids, titles, hints, default keys, menu layout |
 | `src/menu.mojo` | Menu structures and drawing (contents generated from the registry) |
@@ -165,4 +167,5 @@ scripts/tui-test.sh stop
 - Grapheme clusters use built-in tables for common scripts and emoji, not the full Unicode database; Indic conjuncts are split after the virama. Emoji sequences line up only on terminals that report grapheme clustering (mode 2027); elsewhere their parts are laid out side by side. Dialog input fields still step by codepoint.
 - Searching works line by line: a pattern cannot match across a line break, and matches of length zero are skipped. In texts over 50,000 lines the search runs when you press Enter instead of while you type, and matches are not counted.
 - Find in files reads files from disk (unsaved changes are not seen), lists one hit per matching line, and skips hidden files, `node_modules`, `__pycache__`, binary files, files over 5 MB and the simple entries of the folder's `.gitignore` (`name`, `name/`, `*.ext`); other `.gitignore` rules are not applied. It stops after 5,000 hits.
+- With several cursors, commands other than typing, deleting, moving and the clipboard (Tab indent, comment, duplicate line, PgUp/PgDn, Find...) first go back to one cursor. Undo also returns to one cursor. Alt-click needs a terminal that passes Alt with mouse clicks to the program.
 - Ctrl-F9 Run hands the terminal to your program on purpose, the way Turbo's user screen did. Build and Format run in the background.
