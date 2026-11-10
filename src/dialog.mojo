@@ -32,6 +32,8 @@ comptime D_WSYMBOL = 24
 comptime D_EX_NAME = 25
 comptime D_EX_DELETE = 26
 comptime D_TASKS = 27
+comptime D_RUNCFGS = 28
+comptime D_RUNCFG = 29
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

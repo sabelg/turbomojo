@@ -401,6 +401,8 @@ __extension App:
             self.term.wait_byte()
             self.term.enter()
             self.scr.force = True
+        elif cmd == CM_RUNCONFIGS:
+            self.run_configs_dialog()
         elif cmd == CM_TASKS:
             self.tasks_dialog()
         elif cmd == CM_TASK_AGAIN:

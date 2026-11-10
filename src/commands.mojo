@@ -115,6 +115,7 @@ comptime CM_EXPLORER = 172
 comptime CM_QUICK = 173
 comptime CM_TASKS = 174
 comptime CM_TASK_AGAIN = 175
+comptime CM_RUNCONFIGS = 176
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -632,6 +633,7 @@ def build_registry() -> Registry:
     r.cmd(CM_USERSCREEN, "run.userScreen", "~U~ser screen", "View the program's output screen", [fkey(5) | MOD_ALT])
     r.cmd(CM_TASKS, "run.pixiTasks", "Pixi tas~k~s...", "Run a task of the project's pixi.toml", [fkey(9) | MOD_SHIFT])
     r.cmd(CM_TASK_AGAIN, "run.lastTask", "Run ~l~ast task", "Run the pixi task that was run last, again")
+    r.cmd(CM_RUNCONFIGS, "run.configurations", "Run ~c~onfigurations...", "Named ways to run the project: file, arguments, environment, folder, build first")
     r.cmd(CM_ARGS, "run.arguments", "~A~rguments...", "Set command-line arguments for Run")
     # ---- Compile
     r.cmd(CM_BUILD, "compile.build", "~B~uild", "Compile the current file to a native executable", [fkey(9), ctrl(98)])
@@ -770,6 +772,7 @@ def build_registry() -> Registry:
     r.item(CM_TEST)
     r.item(CM_USERSCREEN)
     r.item(CM_ARGS)
+    r.item(CM_RUNCONFIGS)
     r.sep()
     r.item(CM_TASKS)
     r.item(CM_TASK_AGAIN)

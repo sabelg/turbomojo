@@ -2052,3 +2052,44 @@ general timeout. The Options menu no longer fits a 20-row screen.
     package builds (in the roadmap's table, not in this backlog item).
   - Multi-line TOML values in task tables are not read.
 - Verified: `check.sh` CHECK OK (42 files, 835 tests).
+
+## 2026-11-10 · P3-06 Run configurations stored per project · done
+
+- New `src/runconfig.mojo`: `RunConfig` (name, file, args, env, cwd, build);
+  `load_run_configs` / `active_run_config` from the parsed project file;
+  `save_run_config` (writes `[run.<name>]`, replacing one of that name, leaving the
+  rest of the file alone), `remove_table`, `set_active_config`; `config_name_problem`,
+  `parse_env` / `env_text` (NAME=value with quotes); `run_core_command` - cd, exports,
+  then `mojo run file args` or build and run the binary.
+- App (`src/app_outline.mojo`): `run_configs_dialog` (Run > Run configurations: list
+  with the active one marked; Select / Edit / New / Delete), `run_config_edit` (five
+  fields and "Build first"; a new one starts from the file in front),
+  `run_config_save` (checks name, duplicate, environment, that file and folder exist;
+  the first configuration becomes the active one; a renamed active one stays active).
+  `run_core` is what Run executes: the active configuration, else the file in front
+  with the Arguments dialog's text as before. `[run.*]` keys are no longer reported as
+  unknown settings.
+- Stored in `<project>/.turbomojo.toml` (created when the first one is saved).
+- Tests: new `tests/test_runconfig.mojo` (6): write / read back / replace / remove with
+  the rest of the file intact; names and environment; the exact command for the plain
+  and the full case; the command executed for real against a stand-in compiler (folder,
+  environment, arguments with blanks, build-then-run); in the app: default behaviour,
+  New from the file in front, the exact file written, Run using it with another file
+  in front, Test not using it, a second App finding it; refusals, two configurations,
+  select, rename, delete, the fixed first entry.
+- Mistake on the way: one expected string of mine had a separator too few.
+- Not done / unverified:
+  - **Run itself was not executed with a configuration**: Run leaves the screen to the
+    program and waits for a key, which the tests cannot do; they check the command it
+    would run, and run that command separately. Not tried by hand.
+  - Before Run only the file in front is saved; a configuration's file that is open
+    and unsaved in another window is run as it is on disk.
+  - The build of "Build first" happens on the program's screen, not as a background
+    job with the Message page; its errors cannot be jumped to.
+  - No per-user (unshared) configurations, no copying, no pixi task as pre-launch step.
+- Looked at in tmux: the palette's "run conf" opens the list, New shows the edit dialog
+  with five fields, the box and the buttons laid out properly. Its hint line was a
+  little too long for the dialog and was shortened.
+- Verified: `check.sh` CHECK OK (43 files, 841 tests). The hint text was changed after
+  that run; then only the build, `test_runconfig`, `test_screen` and the smoke script
+  were run again (all passed).

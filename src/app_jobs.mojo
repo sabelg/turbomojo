@@ -464,10 +464,15 @@ __extension App:
             # `mojo test` was removed from Mojo; tests are programs that run a TestSuite
             self.info("Test", "No TestSuite here. Add: TestSuite.discover_tests[__functions_in_module()]().run()")
             return
-        var sub = " run "
+        # Run uses the active run configuration, if the project has one; Test and a
+        # project without one run the file being edited
+        var core = self.run_core(test)
+        var label = "mojo run " + basename(path)
+        if not test and self.run_active.byte_length() > 0:
+            label = "configuration " + self.run_active
         var cmd = (
-            "cd " + shell_quote(dirname(path)) + " && clear && printf '\\033[1m$ mojo" + sub + "%s\\033[0m\\n' " + shell_quote(basename(path))
-            + " && " + self.compiler_cmd() + " run" + self.include_flags() + " " + shell_quote(path) + " " + self.run_args
+            "clear && printf '\\033[1m$ %s\\033[0m\\n' " + shell_quote(label)
+            + " && " + core
             + "; printf '\\n\\033[7m Program exited with status %d - press any key to return to TurboMojo \\033[0m' $?"
         )
         self.term.leave()

@@ -290,8 +290,8 @@ struct Settings(Copyable, Movable):
         for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.include_paths", "tools.docs_paths"]:
             known.append(String(k))
         for k in doc.keys:
-            if k.startswith("keys."):
-                continue
+            if k.startswith("keys.") or k.startswith("run."):
+                continue                # [run.<name>] tables are the run configurations
             if not (k in known):
                 var msg = "unknown setting " + k
                 if not (msg in self.warnings):

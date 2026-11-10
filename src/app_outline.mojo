@@ -42,6 +42,8 @@ from outline import *
 from symindex import *
 from docs import *
 from project import *
+from runconfig import *
+from toml import toml_parse
 from watch import file_sig
 from app_input import *
 from app_mouse import *
@@ -484,3 +486,160 @@ __extension App:
         self.mode = M_HOVER
         self.say("")
         return True
+
+    # ==================================================== run configurations
+    def project_file(self) -> String:
+        """The project's settings file (it may not exist yet)."""
+        return join_path(self.symidx_root(), ".turbomojo.toml")
+
+    def run_configs_load(mut self):
+        """Read the configurations and which one is active from the project file."""
+        var doc = toml_parse(read_text(self.project_file()))
+        self.run_cfgs = load_run_configs(doc)
+        var active = active_run_config(doc)
+        self.run_active = ""
+        for c in self.run_cfgs:
+            if c.name == active:
+                self.run_active = active
+
+    def run_core(mut self, test: Bool) -> String:
+        """The command Run (or Test) executes, without the screen handling around it."""
+        var te = self.top_editor()
+        var current = self.wins[te].path if te >= 0 else String("")
+        var cfg = RunConfig("")
+        cfg.args = self.run_args
+        if not test:
+            self.run_configs_load()
+            for c in self.run_cfgs:
+                if c.name == self.run_active:
+                    cfg = c.copy()
+        return run_core_command(cfg, self.symidx_root(), current, self.compiler_cmd(), self.include_flags())
+
+    def run_configs_dialog(mut self):
+        """Run > Run configurations: choose the one Run uses, edit, add, delete."""
+        self.run_configs_load()
+        var items = List[String]()
+        var data = List[Int]()
+        items.append(("• " if self.run_active.byte_length() == 0 else "  ") + "(the file being edited)")
+        data.append(-1)
+        var sel = 0
+        for k in range(len(self.run_cfgs)):
+            var c = self.run_cfgs[k].copy()
+            var what = c.file if c.file.byte_length() > 0 else String("(the file being edited)")
+            if c.args.byte_length() > 0:
+                what += " " + c.args
+            if c.build:
+                what += "   [build first]"
+            items.append(("• " if c.name == self.run_active else "  ") + pad_right(c.name, 16) + " " + what)
+            data.append(k)
+            if c.name == self.run_active:
+                sel = k + 1
+        var d = Dialog(D_RUNCFGS, "Run Configurations", min(76, self.scr.w - 4), min(20, max(10, len(items) + 7)))
+        d.lines.append("Run (" + self.reg.key_label(CM_RUN) + ") uses the one marked with •")
+        d.set_items(items^, data^)
+        d.list_sel = sel
+        d.buttons.append("~S~elect")
+        d.buttons.append("~E~dit")
+        d.buttons.append("~N~ew")
+        d.buttons.append("~D~elete")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def run_configs_button(mut self, b: Int, sel: Int):
+        """A button of the configurations list (0 Select, 1 Edit, 2 New, 3 Delete)."""
+        var k = self.dlg.item_data[sel] if sel >= 0 and sel < len(self.dlg.item_data) else -1
+        var name = self.run_cfgs[k].name if k >= 0 and k < len(self.run_cfgs) else String("")
+        if b == 0:
+            if sel < 0:
+                return
+            var text = set_active_config(read_text(self.project_file()), name)
+            if name.byte_length() == 0 and not path_exists(self.project_file()):
+                self.run_active = ""            # nothing to write: there are no configurations
+            elif not write_file(self.project_file(), str_bytes(text)):
+                self.say("Cannot write " + self.project_file())
+                return
+            self.run_active = name
+            self.say("Run now uses " + (("the configuration " + name) if name.byte_length() > 0 else String("the file being edited")))
+        elif b == 1:
+            if name.byte_length() == 0:
+                self.say("That entry has nothing to edit: it runs whatever file is in front")
+                return
+            self.run_config_edit(name)
+        elif b == 2:
+            self.run_config_edit("")
+        elif b == 3:
+            if name.byte_length() == 0:
+                self.say("That entry cannot be deleted")
+                return
+            var text = remove_table(read_text(self.project_file()), "run." + name)
+            if name == self.run_active:
+                text = set_active_config(text, "")
+            if not write_file(self.project_file(), str_bytes(text)):
+                self.say("Cannot write " + self.project_file())
+                return
+            self.run_configs_load()
+            self.say("Deleted the configuration " + name)
+
+    def run_config_edit(mut self, name: String):
+        """The dialog for one configuration ('' = a new one)."""
+        var c = RunConfig("")
+        for x in self.run_cfgs:
+            if x.name == name and name.byte_length() > 0:
+                c = x.copy()
+        if name.byte_length() == 0:
+            # a new one starts from the file in front
+            var te = self.top_editor()
+            var root = self.symidx_root()
+            if te >= 0 and self.wins[te].path.startswith(root + "/"):
+                c.file = slice_str(decode(self.wins[te].path), cp_len(root) + 1, cp_len(self.wins[te].path))
+                c.name = stem(c.file)
+        self.run_edit_old = name
+        var d = Dialog(D_RUNCFG, "Run Configuration", min(72, self.scr.w - 4), 20)
+        d.lines.append("Paths count from the project folder.")
+        d.fields.append(Field("~N~ame", c.name))
+        d.fields.append(Field("~F~ile (empty: the one in front)", c.file))
+        d.fields.append(Field("~A~rguments", c.args))
+        d.fields.append(Field("~E~nvironment (NAME=value ...)", env_text(c.env)))
+        d.fields.append(Field("~W~orking folder (empty: the file's)", c.cwd))
+        d.checks.append("~B~uild first, then run the program")
+        d.check_vals.append(c.build)
+        d.buttons.append("~O~K")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def run_config_save(mut self):
+        """OK in the configuration dialog: check, write to the project file."""
+        var c = RunConfig(String(self.dlg.field_text(0).strip()))
+        c.file = String(self.dlg.field_text(1).strip())
+        c.args = String(self.dlg.field_text(2).strip())
+        c.cwd = String(self.dlg.field_text(4).strip())
+        c.build = self.dlg.check_vals[0]
+        var why = config_name_problem(c.name)
+        var env = parse_env(self.dlg.field_text(3))
+        if why.byte_length() == 0:
+            why = env[1]
+        var root = self.symidx_root()
+        if why.byte_length() == 0 and c.name != self.run_edit_old:
+            for x in self.run_cfgs:
+                if x.name == c.name:
+                    why = "There is a configuration called " + c.name + " already"
+        if why.byte_length() == 0 and c.file.byte_length() > 0 and not path_exists(abs_path(root, c.file)):
+            why = "The file " + c.file + " does not exist"
+        if why.byte_length() == 0 and c.cwd.byte_length() > 0 and not is_dir(abs_path(root, c.cwd)):
+            why = "The folder " + c.cwd + " does not exist"
+        if why.byte_length() > 0:
+            self.say(why)
+            return
+        c.env = env[0].copy()
+        var text = read_text(self.project_file())
+        if self.run_edit_old.byte_length() > 0 and self.run_edit_old != c.name:
+            text = remove_table(text, "run." + self.run_edit_old)       # renamed
+        text = save_run_config(text, c)
+        var first = len(self.run_cfgs) == 0
+        if first or self.run_active == self.run_edit_old and self.run_edit_old.byte_length() > 0:
+            text = set_active_config(text, c.name)      # the first one is used at once; a renamed active one stays active
+        if not write_file(self.project_file(), str_bytes(text)):
+            self.say("Cannot write " + self.project_file())
+            return
+        self.run_configs_load()
+        self.say("Saved the configuration " + c.name + (" - Run uses it now" if self.run_active == c.name else ""))

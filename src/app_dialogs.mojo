@@ -173,6 +173,10 @@ __extension App:
             if s >= 0 and ai >= 0:
                 self.jump_mark()
                 self.wins[ai].goto(self.dlg.item_data[s], self.wins[ai].indent_of(self.dlg.item_data[s]))
+        elif kind == D_RUNCFGS:
+            self.run_configs_button(b, self.dlg.selected_item())
+        elif kind == D_RUNCFG and b == 0:
+            self.run_config_save()
         elif kind == D_TASKS and b == 0:
             var s = self.dlg.selected_item()
             if s >= 0 and self.dlg.item_data[s] < len(self.tasks):

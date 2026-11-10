@@ -34,6 +34,7 @@ from frecency import Frecency
 from docs import DocEntry
 from layout import Layout
 from project import PixiTask
+from runconfig import RunConfig
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
@@ -297,6 +298,9 @@ struct App(Movable):
     var tasks: List[PixiTask]        # what the open task list offers
     var last_task: String
     var msg_base: String             # relative paths in messages start here ('' = where the IDE runs)
+    var run_cfgs: List[RunConfig]    # the project's run configurations (as last read)
+    var run_active: String           # the one Run uses ('' = the file being edited)
+    var run_edit_old: String         # the configuration the open edit dialog began with ('' = a new one)
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -549,6 +553,9 @@ struct App(Movable):
         self.tasks = List[PixiTask]()
         self.last_task = ""
         self.msg_base = ""
+        self.run_cfgs = List[RunConfig]()
+        self.run_active = ""
+        self.run_edit_old = ""
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
