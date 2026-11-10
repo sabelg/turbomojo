@@ -116,6 +116,7 @@ comptime CM_QUICK = 173
 comptime CM_TASKS = 174
 comptime CM_TASK_AGAIN = 175
 comptime CM_RUNCONFIGS = 176
+comptime CM_TRUST = 177
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -642,6 +643,7 @@ def build_registry() -> Registry:
     r.cmd(CM_PREVERR, "compile.previousMessage", "~P~revious message", "Jump to the previous compiler message", [fkey(7) | MOD_ALT])
     r.cmd(CM_CANCEL, "compile.cancel", "C~a~ncel build", "Stop the running build or format", [fkey(2) | MOD_CTRL])
     r.cmd(CM_LSP, "compile.languageServer", "Check with ~l~anguage server", "Live diagnostics from mojo-lsp-server for this file (again to stop)", [fkey(7)])
+    r.cmd(CM_TRUST, "options.folderTrust", "~F~older trust...", "Say whether commands and code from this project folder may be run")
     r.cmd(CM_COMPILER, "compile.compilerCommand", "~C~ompiler command...", "Choose which mojo executable to use")
     # ---- Options
     r.cmd(CM_LINENUM, "options.lineNumbers", "~L~ine numbers", "Toggle the line number gutter")
@@ -807,6 +809,8 @@ def build_registry() -> Registry:
     r.item(CM_THEME0)
     r.item(CM_THEME1)
     r.item(CM_THEME2)
+    r.sep()
+    r.item(CM_TRUST)
 
     r.menu("~W~indow")
     r.item(CM_ZOOM)

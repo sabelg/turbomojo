@@ -42,6 +42,11 @@ from app_mouse import *
 from app_draw import *
 
 
+
+def trust_needed(cmd: Int) -> Bool:
+    """Commands that run programs or code that the project folder decides on."""
+    return cmd == CM_BUILD or cmd == CM_RUN or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+
 __extension App:
     # ============================================================= commands
     def shortcut(self, k: Int) -> Int:
@@ -172,6 +177,8 @@ __extension App:
         self.say("Macro played (" + String(done) + (" step)" if done == 1 else " steps)"))
 
     def exec(mut self, cmd: Int) raises:
+        if trust_needed(cmd) and not self.trust_gate(cmd):
+            return                      # the question is on screen; the command runs after a yes
         self.exec_command(cmd)
         # Options are remembered across sessions
         if cmd == CM_LINENUM:
@@ -401,6 +408,8 @@ __extension App:
             self.term.wait_byte()
             self.term.enter()
             self.scr.force = True
+        elif cmd == CM_TRUST:
+            self.trust_dialog(0)
         elif cmd == CM_RUNCONFIGS:
             self.run_configs_dialog()
         elif cmd == CM_TASKS:

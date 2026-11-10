@@ -35,6 +35,7 @@ from docs import DocEntry
 from layout import Layout
 from project import PixiTask
 from runconfig import RunConfig
+from trust import TrustStore
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
@@ -306,6 +307,11 @@ struct App(Movable):
     var session_saved: String        # the session as last written
     var session_checked_ns: Int
     var restoring: Bool              # files are being opened for a session, not by the user
+    var trust: TrustStore            # the folders the user trusts
+    var trust_path: String           # where that list is kept
+    var trust_enforced: Bool         # off in tests and wherever nobody could answer the question
+    var trust_cmd: Int               # the command that waits for the answer (0 = none)
+    var trust_held: Bool             # tool commands of the project file are not in use
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -566,6 +572,11 @@ struct App(Movable):
         self.session_saved = ""
         self.session_checked_ns = 0
         self.restoring = False
+        self.trust = TrustStore()
+        self.trust_path = ""
+        self.trust_enforced = False
+        self.trust_cmd = 0
+        self.trust_held = False
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -815,7 +826,18 @@ struct App(Movable):
         self.config_path = user_config_path()
         var project = find_project_config(self.cwd)
         self.project_dir = dirname(project) if project.byte_length() > 0 else String("")
-        self.apply_settings(load_settings(read_text(self.config_path), read_text(project)))
+        var settings = load_settings(read_text(self.config_path), read_text(project))
+        self.trust_held = False
+        if project.byte_length() > 0 and self.trust_enforced and not self.trust.is_trusted(self.project_dir):
+            # a project file may name the programs to run as compiler and language
+            # server: from a folder that is not trusted those two are not taken
+            var own = load_settings(read_text(self.config_path), "")
+            if settings.compiler != own.compiler or settings.lsp_server != own.lsp_server:
+                settings.compiler = own.compiler
+                settings.lsp_server = own.lsp_server
+                settings.warnings.append("this folder is not trusted: its compiler and language server commands are not used (Options > Folder trust)")
+                self.trust_held = True
+        self.apply_settings(settings)
 
     def show_config_warnings(mut self):
         """Put the first config problem in the status line (all of them go to the log)."""

@@ -2133,3 +2133,59 @@ general timeout. The Options menu no longer fits a 20-row screen.
   again: hello.mojo is open with the cursor at 5:3, the explorer is there with
   `examples` open, the status line says "Session restored: 1 file".
 - Verified: `check.sh` CHECK OK (44 files, 849 tests).
+
+## 2026-11-10 · P3-08 Workspace trust prompt · done
+
+- New `src/trust.mojo`: `TrustStore` - trusted folders (a folder covers what is inside
+  it, not its neighbours or parents), kept one per line in `<state>/turbomojo/trusted`.
+- `App.exec` asks before the commands of `trust_needed` (Build, Run, Test, Format,
+  language server, pixi tasks, run last task, Topic search) when the project folder is
+  not trusted: dialog "Do you trust the files in this folder?" with the folder's path;
+  Enter and Esc are "Not now" (nothing runs, nothing is recorded, asked again next
+  time); "Trust this folder" is recorded and the waiting command runs.
+  `docs_of_file` does not run `mojo doc` in an untrusted folder (so F1 falls back to
+  the keyboard reference there).
+- A project's `.turbomojo.toml` cannot choose the programs that get run before it is
+  trusted: `load_config` drops its `tools.compiler` and `tools.lsp_server` (the user's
+  own or the defaults stay) and says so through the config warnings; after a yes the
+  config is read again and they apply. Other project settings apply as before.
+- Options > Folder trust: the question, or for a trusted folder the offer to take the
+  trust back (stops the language server, re-reads the config).
+- Trust is enforced by `main` (`trust_enable`); an `App` that does not call it - every
+  test of the other features - behaves as before.
+- Tests: new `tests/test_trust.mojo` (5): the store (inside / neighbour / above, text
+  form, taking back); which commands wait; the question before a task with Not now,
+  Esc, yes, later starts, a subfolder, another project; nothing started without trust
+  (six commands, no job, no server, no `mojo doc`) while editing, saving and the
+  explorer work; project tool commands held back, applied after a yes, held again
+  after taking the trust back, trust through a folder above. All passed first time.
+- Not done / unverified:
+  - "Agents" from the roadmap's wording: there are none yet (Phase 6); they will have
+    to be added to `trust_needed`.
+  - Run configurations and `tools.include_paths` of an untrusted project file are
+    still read; they only take effect through Run / Build, which ask first.
+  - Opening a file never asks, and a session is restored without asking (it only
+    opens files).
+  - There is no "trust the parent folder" choice and no list of all trusted folders
+    in the IDE (the file can be edited by hand).
+- Tried for real in tmux: F9 in a fresh state shows the question with the folder's
+  path and "Not now" under Enter; Enter gives "Not run: the folder is not trusted" and
+  no trust file is written.
+- Verified: `check.sh` CHECK OK (45 files, 854 tests).
+
+## 2026-11-10 · Phase 3 summary
+
+All 8 tasks are marked done: tiled layout with splits and tabs (classic stays the
+default), bottom panel with pages, file explorer at the left, the unified palette,
+project detection with pixi tasks, run configurations, sessions, folder trust.
+
+What is thinner than the task names suggest (details in the entries above):
+- the tiled layout cannot show one file in two panes and has no mouse dragging;
+- real `pixi run` and Run with a configuration were checked as commands, not executed
+  by the tests;
+- the explorer has no git colours; the docks resize by keys only;
+- the roadmap's "package builds with mojo precompile" and "breakpoints in sessions"
+  are not there (the latter waits for Phase 4).
+Looked at in tmux during this phase: tiled layout, explorer, run configuration
+dialog, session restore across a restart, the trust question. The gate takes about
+ten minutes now (45 test files).

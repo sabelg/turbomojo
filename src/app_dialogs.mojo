@@ -173,6 +173,8 @@ __extension App:
             if s >= 0 and ai >= 0:
                 self.jump_mark()
                 self.wins[ai].goto(self.dlg.item_data[s], self.wins[ai].indent_of(self.dlg.item_data[s]))
+        elif kind == D_TRUST:
+            self.trust_answer(b)
         elif kind == D_RUNCFGS:
             self.run_configs_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFG and b == 0:

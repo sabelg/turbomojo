@@ -43,6 +43,7 @@ from symindex import *
 from docs import *
 from project import *
 from runconfig import *
+from trust import *
 from toml import toml_parse
 from watch import file_sig
 from app_input import *
@@ -419,8 +420,8 @@ __extension App:
     def docs_of_file(mut self, path: String) -> List[DocEntry]:
         """What `mojo doc` says about a file; run once per version of the file on disk."""
         var sig = file_sig(path)
-        if not sig.exists:
-            return List[DocEntry]()
+        if not sig.exists or not self.trust_ok():
+            return List[DocEntry]()         # `mojo doc` compiles the file: not in a folder that is not trusted
         var stamp = sig.mtime_s * 1000000000 + sig.mtime_ns
         for k in range(len(self.doc_files)):
             if self.doc_files[k] == path:
@@ -643,3 +644,87 @@ __extension App:
             return
         self.run_configs_load()
         self.say("Saved the configuration " + c.name + (" - Run uses it now" if self.run_active == c.name else ""))
+
+    # ========================================================== folder trust
+    def trust_enable(mut self, path: String):
+        """Start asking before commands and code of a folder are run; the folders
+        trusted so far are read from `path`."""
+        self.trust_path = path
+        self.trust.decode_text(read_text(path))
+        self.trust_enforced = True
+
+    def trust_ok(self) -> Bool:
+        return not self.trust_enforced or self.trust.is_trusted(self.symidx_root())
+
+    def trust_gate(mut self, cmd: Int) -> Bool:
+        """True if `cmd` may run now. If the folder is not trusted yet the question is
+        put (and the command remembered); the caller does nothing more."""
+        if self.trust_ok():
+            return True
+        self.trust_dialog(cmd)
+        return False
+
+    def trust_dialog(mut self, cmd: Int):
+        """The question (or, for a trusted folder, the offer to take the trust back).
+        `cmd` runs after a yes (0 = nothing)."""
+        var root = self.symidx_root()
+        self.trust_cmd = cmd
+        var d = Dialog(D_TRUST, "Folder Trust", min(72, self.scr.w - 4), 12)
+        if not self.trust_enforced:
+            self.say("Folder trust is not in use here")
+            return
+        if self.trust.is_trusted(root):
+            d.lines.append("This folder is trusted:")
+            d.lines.append("  " + root)
+            d.lines.append("")
+            d.lines.append("Builds, runs, tasks and the language server work without asking.")
+            d.buttons.append("~K~eep")
+            d.buttons.append("~D~o not trust it any more")
+            d.payload = 1
+        else:
+            d.lines.append("Do you trust the files in this folder?")
+            d.lines.append("  " + root)
+            d.lines.append("")
+            d.lines.append("Building, running, tasks and the language server execute")
+            d.lines.append("commands and code from it. Say yes only for folders whose")
+            d.lines.append("content you know.")
+            d.buttons.append("~T~rust this folder")
+            d.buttons.append("~N~ot now")
+            d.payload = 0
+            d.focus = d.button_focus_index(1)   # Enter is the careful answer
+        self.show(d^)
+
+    def trust_save(mut self) -> Bool:
+        if self.trust_path.byte_length() == 0:
+            return True
+        if not path_exists(dirname(self.trust_path)):
+            _ = run_system("mkdir -p " + shell_quote(dirname(self.trust_path)))
+        return write_file(self.trust_path, str_bytes(self.trust.encode()))
+
+    def trust_answer(mut self, b: Int) raises:
+        var root = self.symidx_root()
+        var cmd = self.trust_cmd
+        self.trust_cmd = 0
+        if self.dlg.payload == 1:
+            # a trusted folder: button 1 takes the trust back
+            if b != 1:
+                return
+            if not self.trust.remove(root):
+                self.say("It is trusted through a folder above it; take the trust back there")
+                return
+            _ = self.trust_save()
+            self.lsp_stop()
+            self.load_config()
+            self.say("This folder is not trusted any more")
+            return
+        if b != 0:
+            self.say("Not run: the folder is not trusted (Options > Folder trust)" if cmd != 0 else "The folder stays untrusted")
+            return
+        self.trust.add(root)
+        if not self.trust_save():
+            self.say("Cannot write " + self.trust_path + " - trusted for now only")
+        var held = self.trust_held
+        self.load_config()                  # the project's own tool commands count now
+        self.say("This folder is trusted" + (" - its compiler and server commands are in use" if held else ""))
+        if cmd != 0:
+            self.exec(cmd)

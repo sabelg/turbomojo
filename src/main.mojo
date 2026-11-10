@@ -9,6 +9,7 @@ from util import state_dir
 
 def main() raises:
     var app = App()
+    app.trust_enable(state_dir() + "/trusted")
     app.load_config()
     var args = argv()
     if len(args) == 2 and String(args[1]) == "--caps":
