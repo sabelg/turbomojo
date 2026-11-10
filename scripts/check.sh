@@ -9,6 +9,8 @@ echo "== build"
 pixi run mojo build -I src src/main.mojo -o build/tmide 2> >(grep -v Crashpad >&2)
 
 echo "== tests"
+# tests that talk to the real toolchain (mojo-lsp-server) need it on PATH
+export PATH="$PWD/.pixi/envs/default/bin:$PATH"
 count=0
 for t in tests/test_*.mojo; do
   [ -e "$t" ] || continue

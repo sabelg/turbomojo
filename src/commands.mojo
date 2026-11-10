@@ -50,6 +50,7 @@ comptime CM_NEXTERR = 72
 comptime CM_PREVERR = 73
 comptime CM_COMPILER = 74
 comptime CM_CANCEL = 75
+comptime CM_LSP = 76
 comptime CM_LINENUM = 80
 comptime CM_AUTOINDENT = 81
 comptime CM_HLLINE = 82
@@ -348,6 +349,7 @@ def build_registry() -> Registry:
     r.cmd(CM_NEXTERR, "compile.nextMessage", "~N~ext message", "Jump to the next compiler message", [fkey(8) | MOD_ALT])
     r.cmd(CM_PREVERR, "compile.previousMessage", "~P~revious message", "Jump to the previous compiler message", [fkey(7) | MOD_ALT])
     r.cmd(CM_CANCEL, "compile.cancel", "C~a~ncel build", "Stop the running build or format", [fkey(2) | MOD_CTRL])
+    r.cmd(CM_LSP, "compile.languageServer", "Check with ~l~anguage server", "Live diagnostics from mojo-lsp-server for this file (again to stop)", [fkey(7)])
     r.cmd(CM_COMPILER, "compile.compilerCommand", "~C~ompiler command...", "Choose which mojo executable to use")
     # ---- Options
     r.cmd(CM_LINENUM, "options.lineNumbers", "~L~ine numbers", "Toggle the line number gutter")
@@ -432,6 +434,8 @@ def build_registry() -> Registry:
     r.item(CM_NEXTERR)
     r.item(CM_PREVERR)
     r.item(CM_CANCEL)
+    r.sep()
+    r.item(CM_LSP)
     r.item(CM_COMPILER)
 
     r.menu("~O~ptions")

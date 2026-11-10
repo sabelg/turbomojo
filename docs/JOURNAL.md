@@ -451,3 +451,54 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   behind (a first count of "2" was my own `pgrep -f` matching its own command line).
 - Verified: `check.sh` CHECK OK (18 files, 386 tests).
 - Dependency note: these tests need `python3` on PATH (present here at /usr/bin/python3).
+
+## 2026-11-10 · P0-19 language server spike · done
+
+- New `src/lsp.mojo` (`LspClient`): start + `initialize`/`initialized`, capability lookup
+  (`supports`), `didOpen`/`didChange` (whole text)/`didClose` with documents queued until
+  the server is ready, `publishDiagnostics` stored per document, answers to the server's
+  own requests (null for registerCapability and progress creation, an array of nulls for
+  workspace/configuration, "method not found" for the rest), log messages kept, failure
+  detection when the server exits, polite `shutdown`/`exit`. Also `path_to_uri`,
+  `uri_to_path`, and UTF-16 <-> codepoint column conversion.
+- New `src/app_lsp.mojo`: **F7** (Compile > Check with language server) starts live
+  diagnostics for the current file and F7 again stops them. Edits are sent 300 ms after
+  typing stops. Diagnostics are written to the Message window in compiler format, so the
+  existing Enter / Alt-F8 / Alt-F7 navigation works on them unchanged; focus stays in the
+  editor. The server's descriptor is in the event loop's poll set; its stderr goes to
+  `lsp.log` in the state directory. Closing the tracked window closes the document; a dead
+  server is reported once and cleaned up; quitting stops it (no stray processes found).
+- Finding: Mojo tools need `MODULAR_HOME` to locate the standard library. With only PATH
+  set, `mojo-lsp-server` reports "'std' is required..." on every file. `util.toolchain_env`
+  now derives it from the tool's location (`<prefix>/bin/mojo` -> `<prefix>/share/max`)
+  when it is unset, and both the language server and build/run/format commands use it, so
+  the IDE works when started without `pixi run`. If the std-not-found message still
+  appears, the Message window says how to fix it.
+- Tests: `tests/test_lsp.mojo` (16 tests): URIs, UTF-16 columns (incl. inside a surrogate
+  pair), message formatting, queued opens, diagnostics storage, server requests, failed
+  initialize, a full session and failure cases against the fake server (extended with a
+  minimal language server), the IDE flow (Message window content, error navigation data,
+  debounce, stop, window close, dead server), the toolchain prefix, and the **real
+  mojo-lsp-server** reporting and clearing a type error. Two of my assertions were wrong
+  at first (latency is measured from sending, not from the edit; and I assumed one
+  diagnostic where the mis-configured server returned seven, which led to the
+  MODULAR_HOME finding).
+- **Measured latency** (real server, `build/lat`, this machine, aarch64):
+
+  | File | Lines | Start + first diagnostics | After an edit | After the fix |
+  |---|---|---|---|---|
+  | examples/hello.mojo | 27 | 448 ms | 514 ms | 587 ms |
+  | src/window.mojo | 609 | 513 ms | 575 ms | 658 ms |
+  | src/app_exec.mojo (imports the whole IDE) | 350 | 626 ms | 667 ms | 754 ms |
+  | src/json.mojo | 622 | 580 ms | 644 ms | 715 ms |
+
+  So the server costs roughly 0.5-0.75 s per change, almost independent of file size, and
+  it reports no problems in the IDE's own sources. With the 300 ms debounce, feedback
+  arrives about 0.8-1.0 s after the last keystroke. Consequence for Phase 2: nothing may
+  wait on the server; completion needs the local word list as an instant first answer.
+- Verified live in tmux, with and without `pixi run`: F7 shows the real type error
+  ("server answered in 370 ms"), F9 builds and reports the same single error.
+  `check.sh` CHECK OK (19 files, 402 tests); the gate now puts the pixi environment's
+  `bin` on PATH so the real-server test runs.
+- Not done (Phase 2): incremental sync, more than one tracked file, underlines in the
+  editor, completion, hover, definition, restart policy.

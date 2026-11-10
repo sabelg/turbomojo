@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_lsp import *
+from lsp import *
 from app_watch import *
 from watch import *
 from app_swap import *
@@ -227,7 +229,7 @@ __extension App:
         var path = self.wins[i].path
         var dir = dirname(path)
         var exe = join_path(dir, "build/" + stem(path))
-        var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.compiler + " build " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
+        var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.compiler_cmd() + " build " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
         if self.start_job(JOB_BUILD, cmd, path, exe):
             _ = self.fill_messages(self.job_header(), List[UInt8](), "Compiling...")
             self.say("Building " + basename(path) + " - keep editing, Ctrl-F2 cancels")
@@ -305,7 +307,7 @@ __extension App:
         if i < 0 or not self.ensure_saved(i):
             return
         var path = self.wins[i].path
-        var cmd = "cd " + shell_quote(dirname(path)) + " && exec " + self.compiler + " format -q " + shell_quote(path) + " 2>&1"
+        var cmd = "cd " + shell_quote(dirname(path)) + " && exec " + self.compiler_cmd() + " format -q " + shell_quote(path) + " 2>&1"
         if self.start_job(JOB_FORMAT, cmd, path, ""):
             self.say("Formatting " + basename(path) + "...")
 
@@ -356,7 +358,7 @@ __extension App:
         var sub = " run "
         var cmd = (
             "cd " + shell_quote(dirname(path)) + " && clear && printf '\\033[1m$ mojo" + sub + "%s\\033[0m\\n' " + shell_quote(basename(path))
-            + " && " + self.compiler + sub + shell_quote(path) + " " + self.run_args
+            + " && " + self.compiler_cmd() + sub + shell_quote(path) + " " + self.run_args
             + "; printf '\\n\\033[7m Program exited with status %d - press any key to return to TurboMojo \\033[0m' $?"
         )
         self.term.leave()

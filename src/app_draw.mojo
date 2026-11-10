@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_lsp import *
+from lsp import *
 from app_watch import *
 from watch import *
 from app_swap import *
@@ -58,6 +60,8 @@ __extension App:
             var ti = self.top_editor()
             if ti >= 0:
                 right = ("CRLF" if self.wins[ti].buf.crlf else "LF") + "  " + (("Tabs:" + String(self.wins[ti].buf.tab_width)) if self.wins[ti].buf.use_tabs else ("Spaces:" + String(self.wins[ti].buf.indent_size))) + "  "
+            if self.lsp.active():
+                right += "LSP  "
             right += "INS" if self.insert_mode else "OVR"
         if self.job.active:
             var sp = decode(SPINNER)

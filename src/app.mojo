@@ -21,6 +21,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_lsp import *
+from lsp import *
 from app_watch import *
 from watch import *
 from app_swap import *
@@ -108,6 +110,8 @@ __extension App:
                 fds.append(self.sig.fd)
             if self.watch.active():
                 fds.append(self.watch.fd)
+            if self.lsp.fd() >= 0:
+                fds.append(self.lsp.fd())
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -127,6 +131,7 @@ __extension App:
                     self.mode = M_NORMAL
                     self.log_error(String(err))
                     self.info("Error", String(err))
+            self.lsp_tick(now_ns())
             self.swap_tick(now_ns())
             try:
                 self.watch_tick(now_ns(), self.watch.drain())
@@ -140,6 +145,7 @@ __extension App:
         if self.job.active:
             self.cancel_job()
             _ = external_call["pclose", Int32](self.job.fp)
+        self.lsp_stop()
         self.sig.close()
         self.watch.close()
         self.term.leave()

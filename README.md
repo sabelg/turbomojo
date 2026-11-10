@@ -23,7 +23,8 @@ pixi run build                         # -> build/tmide
 pixi run ./build/tmide examples/hello.mojo
 ```
 
-Start it through `pixi run` so that `mojo` is on `PATH`, because Build, Run, Format and Test call it.
+`pixi run` puts the Mojo toolchain on `PATH`. The IDE also works when started directly, as long
+as `mojo` is on `PATH`: it then works out the toolchain's environment (`MODULAR_HOME`) itself.
 To use a different compiler binary, set `TURBOMOJO_COMPILER` or change it under
 **Compile ▸ Compiler command…**.
 
@@ -85,6 +86,7 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Command palette | Ctrl-P fuzzy-searches every menu command |
 | Completion | Ctrl-Space completes identifiers from the buffer plus Mojo keywords, types and builtins |
 | Compile | F9 runs `mojo build` **in the background**: you keep editing while a spinner and timer show progress, output streams into the Message window, and Ctrl-F2 cancels. When it finishes you get the Turbo-style result box. In the Message window, Enter or Alt-F8/F7 jumps to the error's line and column |
+| Language server | **F7** starts live checking of the current file with `mojo-lsp-server`: errors and warnings appear in the Message window about half a second after you stop typing, and Enter or Alt-F8/F7 jumps to them. F7 again stops it. (First slice; completion, hover and go-to-definition come with roadmap phase 2) |
 | Run | Ctrl-F9 / F8 runs `mojo run` on the user screen and then returns. Alt-F5 shows the user screen again. Run ▸ Test runs the file's `std.testing` TestSuite, and program arguments can be set |
 | Format | Alt-F9 runs `mojo format` in the background and reloads the file as one undo step. If you edit the buffer while it runs, the buffer is left alone |
 | Files | Tabs are kept as real tab characters (shown 4 columns wide; Options ▸ Show whitespace marks them). Tab-indented files are detected and the Tab key and auto-indent follow suit. CRLF line endings and a missing final newline are preserved; the status bar shows `LF`/`CRLF` and `Tabs`/`Spaces`, and both can be toggled in Options |
@@ -111,7 +113,7 @@ Press **F1** inside the IDE for the full keyboard reference.
 | `src/dialog.mojo` | Turbo Vision-style dialogs: input lines, check boxes, list boxes, buttons |
 | `src/palette.mojo` | Colour themes |
 | `src/appstate.mojo` | The `App` struct: all application state and small helpers |
-| `src/app_*.mojo` | `App` behaviour as extensions: files, dialogs, menus, exec (command dispatch), pickers, jobs (build/format/run), input, mouse, draw, swap, watch |
+| `src/app_*.mojo` | `App` behaviour as extensions: files, dialogs, menus, exec (command dispatch), pickers, jobs (build/format/run), input, mouse, draw, swap, watch, lsp |
 | `src/app.mojo` | Event loop; `from app import *` gives `App` with all extensions |
 | `src/signals.mojo`, `src/crash.mojo` | Signal handling via an event descriptor; crash guard that restores the terminal |
 | `src/caps.mojo` | Terminal capability detection and colour-depth mapping |
@@ -119,6 +121,7 @@ Press **F1** inside the IDE for the full keyboard reference.
 | `src/swap.mojo`, `src/watch.mojo` | Swap files for crash recovery; detection of files changed by other programs |
 | `src/json.mojo` | JSON reader and writer (for the language-server, debugger and agent protocols) |
 | `src/proc.mojo`, `src/rpc.mojo` | Two-way non-blocking child processes; JSON-RPC with Content-Length framing |
+| `src/lsp.mojo` | Language Server Protocol client: lifecycle, document sync, diagnostics |
 | `src/util.mojo` | UTF-8, display widths, paths, popen/system, base64 |
 
 ## Testing

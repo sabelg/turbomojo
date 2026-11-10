@@ -25,6 +25,7 @@ from signals import SignalFd, send_signal, own_pid
 from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
+from lsp import LspClient
 from toml import toml_set, toml_quote, toml_bool
 
 comptime M_NORMAL = 0
@@ -132,6 +133,17 @@ struct App(Movable):
     var swap_enabled: Bool     # off until the IDE really runs (tests opt in)
     var swap_due: Int          # time (ns) of the next swap write; 0 = nothing pending
     var pending_swaps: List[String]
+    var tool_env: String       # environment prefix for Mojo tools ('' if none needed)
+    var tool_env_known: Bool
+    var lsp: LspClient
+    var lsp_path: String       # file whose diagnostics are shown ('' = none)
+    var lsp_uri: String
+    var lsp_sent_ns: Int       # when the last change went to the server (0 = answered)
+    var lsp_sent_version: Int
+    var lsp_seen_version: Int
+    var lsp_change_due: Int
+    var lsp_last_latency_ms: Int
+    var lsp_reported_failure: Bool
     var watch: Watcher         # inotify on the directories of open files
     var watch_enabled: Bool    # periodic checking when inotify is unavailable (set by run())
     var watch_due: Int
@@ -193,6 +205,17 @@ struct App(Movable):
         self.swap_enabled = False
         self.swap_due = 0
         self.pending_swaps = List[String]()
+        self.tool_env = ""
+        self.tool_env_known = False
+        self.lsp = LspClient()
+        self.lsp_path = ""
+        self.lsp_uri = ""
+        self.lsp_sent_ns = 0
+        self.lsp_sent_version = -1
+        self.lsp_seen_version = -1
+        self.lsp_change_due = 0
+        self.lsp_last_latency_ms = -1
+        self.lsp_reported_failure = False
         self.watch = Watcher()
         self.watch_enabled = False
         self.watch_due = 0
@@ -252,11 +275,27 @@ struct App(Movable):
             t = min(t, (self.status_until - now) // 1000000 + 1)
         if self.swap_due > now:
             t = min(t, (self.swap_due - now) // 1000000 + 1)
+        if self.lsp_change_due > now:
+            t = min(t, (self.lsp_change_due - now) // 1000000 + 1)
+        if self.lsp.conn.wants_write():
+            t = min(t, 10)
         if self.watch_enabled and not self.watch.active():
             t = min(t, max(1, (self.watch_due - now) // 1000000 + 1))
         if self.show_clock:
             t = min(t, secs_to_minute * 1000 + 50)
         return max(1, t)
+
+    def tool(mut self, command: String) -> String:
+        """A Mojo tool command with the environment it needs (see util.toolchain_env)."""
+        if not self.tool_env_known:
+            self.tool_env_known = True
+            self.tool_env = toolchain_env(env_or("MODULAR_HOME", ""), which(self.compiler))
+        return self.tool_env + command
+
+    def compiler_cmd(mut self) -> String:
+        """The configured compiler command with the environment it needs."""
+        var c = String(self.compiler)
+        return self.tool(c)
 
     def apply_settings(mut self, s: Settings):
         """Take over loaded settings, including custom key bindings."""

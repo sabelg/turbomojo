@@ -45,6 +45,49 @@ def main():
         params = msg.get("params")
         if method == "exit":
             return 0
+        # ---- a minimal language server
+        if method == "initialize":
+            send({"jsonrpc": "2.0", "id": mid, "result": {
+                "capabilities": {"textDocumentSync": 1, "hoverProvider": True, "foldingRangeProvider": False},
+                "serverInfo": {"name": "fake-lsp"}}})
+            continue
+        if method == "initialized":
+            send({"jsonrpc": "2.0", "id": 900, "method": "client/registerCapability", "params": {"registrations": []}})
+            send({"jsonrpc": "2.0", "id": 901, "method": "workspace/configuration", "params": {"items": [{}, {}]}})
+            send({"jsonrpc": "2.0", "id": 902, "method": "window/unknownThing", "params": {}})
+            continue
+        if method is None and mid in (900, 901, 902):
+            main.replies = getattr(main, "replies", {})
+            main.replies[str(mid)] = {"result": msg.get("result", "absent"), "error": msg.get("error")}
+            continue
+        if method == "client_replies":
+            send({"jsonrpc": "2.0", "id": mid, "result": getattr(main, "replies", {})})
+            continue
+        if method in ("textDocument/didOpen", "textDocument/didChange"):
+            doc = params["textDocument"]
+            text = doc["text"] if method.endswith("didOpen") else params["contentChanges"][0]["text"]
+            diags = []
+            for n, line in enumerate(text.split("\n")):
+                for word, sev in (("BUG", 1), ("WARN", 2)):
+                    at = line.find(word)
+                    if at >= 0:
+                        ch = len(line[:at].encode("utf-16-le")) // 2
+                        diags.append({"range": {"start": {"line": n, "character": ch},
+                                                "end": {"line": n, "character": ch + len(word)}},
+                                      "severity": sev, "message": "found %s\nsecond line of detail" % word})
+            send({"jsonrpc": "2.0", "method": "window/logMessage", "params": {"type": 3, "message": "checked v%s" % doc.get("version")}})
+            send({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics",
+                  "params": {"uri": doc["uri"], "version": doc.get("version"), "diagnostics": diags}})
+            continue
+        if method == "textDocument/didClose":
+            main.closed = getattr(main, "closed", []) + [params["textDocument"]["uri"]]
+            continue
+        if method == "closed_docs":
+            send({"jsonrpc": "2.0", "id": mid, "result": getattr(main, "closed", [])})
+            continue
+        if method == "shutdown":
+            send({"jsonrpc": "2.0", "id": mid, "result": None})
+            continue
         if method == "echo":
             send({"jsonrpc": "2.0", "id": mid, "result": params})
         elif method == "add":

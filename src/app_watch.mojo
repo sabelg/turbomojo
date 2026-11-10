@@ -8,6 +8,8 @@ from util import *
 from swap import read_bytes
 from watch import *
 from appstate import *
+from app_lsp import *
+from lsp import *
 from app_files import *
 from app_dialogs import *
 

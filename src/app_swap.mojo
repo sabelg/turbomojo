@@ -7,6 +7,8 @@ from dialog import *
 from util import *
 from swap import *
 from appstate import *
+from app_lsp import *
+from lsp import *
 from app_watch import *
 from watch import *
 from app_files import *

@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_lsp import *
+from lsp import *
 from app_watch import *
 from watch import *
 from app_swap import *
@@ -232,6 +234,8 @@ __extension App:
                 self.say("Line endings: " + ("CRLF" if self.wins[i].buf.crlf else "LF"))
         elif cmd == CM_CANCEL:
             self.cancel_job()
+        elif cmd == CM_LSP:
+            self.lsp_command()
         elif cmd >= CM_THEME0 and cmd < CM_THEME0 + THEME_COUNT:
             self.theme_idx = cmd - CM_THEME0
             self.pal = theme(self.theme_idx)

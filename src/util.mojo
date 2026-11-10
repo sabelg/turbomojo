@@ -319,6 +319,28 @@ def run_system(cmd: String) -> Int:
     return Int(external_call["system", Int32](c.as_c_string_span()))
 
 
+def toolchain_env(modular_home: String, tool_path: String) -> String:
+    """Prefix that gives a Mojo tool its environment when the IDE was not started through
+    `pixi run`: the tools need MODULAR_HOME to find the standard library. If it is unset
+    and the tool lives in <prefix>/bin with <prefix>/share/max next to it, return
+    "env MODULAR_HOME='<prefix>/share/max' ", otherwise ''."""
+    if modular_home.byte_length() > 0 or tool_path.byte_length() == 0:
+        return ""
+    var home = dirname(dirname(tool_path)) + "/share/max"
+    if not path_exists(home):
+        return ""
+    return "env MODULAR_HOME=" + shell_quote(home) + " "
+
+
+def which(program: String) -> String:
+    """Full path of a program on PATH ('' if not found). Only the first word is looked up."""
+    var first = String(program.split(" ")[0])
+    if first.byte_length() == 0:
+        return ""
+    var r = run_capture("command -v " + shell_quote(first) + " 2>/dev/null")
+    return String(bytes_to_str(r.out).strip())
+
+
 def state_dir() -> String:
     """Per-user state directory ($XDG_STATE_HOME/turbomojo or ~/.local/state/turbomojo)."""
     var x = env_or("XDG_STATE_HOME", "")
