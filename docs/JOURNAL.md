@@ -1293,3 +1293,44 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
     building a real two-folder Mojo project.
   - The format command does not get the include flags (it does not need imports).
 - Verified: `check.sh` CHECK OK (32 files, 684 tests).
+
+## 2026-11-10 · P2-02 document sync · done
+
+- Buffer: with `track` on, every raw insert and delete (so also undo and redo) is
+  recorded as a `DocChange`: the replaced range in lines and UTF-16 columns as they were
+  just before the edit (from the rope's UTF-16 summaries), and the new text. More than
+  2,000 changes or a million characters, or loading another text, sets `changes_lost`:
+  the whole text is sent instead. `start_tracking`, `stop_tracking`, `take_changes`.
+- Client: `did_change_ranges` (one `contentChanges` entry per recorded edit),
+  `did_save`, `doc_version`.
+- App (`lsp_sync`, every loop pass while the server is in use): the server's set of
+  open documents is made equal to the open Mojo files (`.mojo`, `.🔥`) plus the file F7
+  was pressed in; untitled and large buffers are left out. New windows are opened on the
+  server, closed or renamed ones are closed, and a restarted server gets them all again.
+  Edits are sent 300 ms after the last one, per window; ranges if the server announced
+  incremental sync and nothing was lost, otherwise the whole text. Saving sends pending
+  edits at once and then `didSave` if the server asked for it. Stopping the server ends
+  the recording.
+- Real fix on the way: the document sent to the server used the save-time form of the
+  text, which appends a final newline when the buffer's policy asks for one. That text
+  could differ from what the editor's positions refer to. The server now gets exactly
+  the buffer's text (`lsp_bytes`): UTF-8, LF between lines, nothing added.
+- The fake server keeps each document, applies ranged changes in UTF-16 units, and
+  reports what it holds (`doc_state`); `FAKE_SYNC=2` makes it announce incremental sync
+  with save notifications.
+- Tests: 6 new in `tests/test_lsp.mojo` (31): several files opened and closed on the
+  server; an edit in a file that is not the checked one arrives after the pause; 180
+  random edits with emoji, CJK, tabs, line breaks, undo and redo in 12 batches, after
+  each of which the server's copy equals the buffer (all sent as ranges); fallback to
+  the whole text after too many edits and after a reload, then ranges again; save
+  flushes and notifies, and does not notify a server that did not ask; restart reopens
+  every file. 2 new in `tests/test_buffer.mojo` for the recorded ranges. One test slip
+  of mine (a wrong command number).
+- Not done / unverified:
+  - Incremental sync was exercised only against the fake server. The real
+    mojo-lsp-server test still passes, but I did not check which sync kind it announces
+    or look at its behaviour under ranged changes.
+  - Problems are still listed only for the F7 file (P2-03).
+  - `willSave` and `willSaveWaitUntil` are not sent. A file changed on disk and
+    reloaded is sent whole.
+- Verified: `check.sh` CHECK OK (32 files, 692 tests); the LSP suite passed three runs.

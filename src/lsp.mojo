@@ -9,6 +9,7 @@ from std.collections import List
 from rpc import *
 from json import Json, JsonWriter, json_quote, json_parse, J_ARR, J_OBJ, J_STR
 from util import decode, to_str, encode_cp, bytes_to_str, str_bytes
+from buffer import DocChange
 
 comptime LSP_STOPPED = 0
 comptime LSP_STARTING = 1      # initialize sent, waiting for the reply
@@ -497,6 +498,57 @@ struct LspClient(Copyable, Movable):
         w.end_obj()
         self.conn.notify("textDocument/didChange", w.text())
         return self.docs[i].version
+
+    def did_change_ranges(mut self, uri: String, changes: List[DocChange]) -> Int:
+        """Send edits as ranges (for servers with incremental sync). Returns the new
+        version, or -1 if the document is not open on a ready server; in that case
+        nothing was sent and the caller should send the whole text instead."""
+        var i = self.find_doc(uri)
+        if i < 0 or not self.docs[i].sent or self.state != LSP_READY or len(changes) == 0:
+            return -1
+        self.docs[i].version += 1
+        var w = JsonWriter()
+        w.begin_obj()
+        w.key("textDocument")
+        w.begin_obj()
+        w.kv_str("uri", uri)
+        w.kv_int("version", self.docs[i].version)
+        w.end_obj()
+        w.key("contentChanges")
+        w.begin_arr()
+        for ch in changes:
+            w.begin_obj()
+            w.key("range")
+            w.begin_obj()
+            w.key("start")
+            w.begin_obj()
+            w.kv_int("line", ch.sl)
+            w.kv_int("character", ch.sc)
+            w.end_obj()
+            w.key("end")
+            w.begin_obj()
+            w.kv_int("line", ch.el)
+            w.kv_int("character", ch.ec)
+            w.end_obj()
+            w.end_obj()
+            w.kv_str("text", to_str(ch.text))
+            w.end_obj()
+        w.end_arr()
+        w.end_obj()
+        self.conn.notify("textDocument/didChange", w.text())
+        return self.docs[i].version
+
+    def did_save(mut self, uri: String) -> Bool:
+        """Tell the server the document was written to disk (if it is open there)."""
+        var i = self.find_doc(uri)
+        if i < 0 or not self.docs[i].sent or self.state != LSP_READY:
+            return False
+        self.conn.notify("textDocument/didSave", "{\"textDocument\":{\"uri\":" + json_quote(uri) + "}}")
+        return True
+
+    def doc_version(self, uri: String) -> Int:
+        var i = self.find_doc(uri)
+        return self.docs[i].version if i >= 0 else -1
 
     def did_close(mut self, uri: String):
         var i = self.find_doc(uri)

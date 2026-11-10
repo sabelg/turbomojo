@@ -13,7 +13,7 @@ from term import wait_readable
 from app import *
 from appstate import App, now_ns, M_NORMAL
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, build_registry
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, build_registry
 from term import fkey
 from signals import own_pid
 from util import decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
@@ -651,6 +651,235 @@ def test_fake_server_receives_the_include_flags() raises:
     app.lsp_stop()
     var first = bytes_to_str(run_capture("head -1 '" + dir + "/starts.log'").out)
     assert_true(first.find("-I " + dir + " -I " + dir) >= 0, first)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+# ---------------------------------------------------------- document sync
+def server_state(mut app: App) raises -> Json:
+    """Ask the fake server what documents it holds (a JSON object: docs, saved, ranged,
+    whole)."""
+    var id = app.lsp.conn.request("doc_state", "")
+    var deadline = now() + 5000 * MS
+    while now() < deadline:
+        for m in app.lsp.conn.poll():
+            if m.id == id:
+                return json_subtree(m.doc, m.result())
+            var one = List[RpcMessage]()
+            one.append(m.copy())
+            app.lsp.handle(one)
+    raise Error("the fake server did not answer doc_state")
+
+
+def sync_app(dir: String, incremental: Bool) raises -> App:
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.lsp_server = ("env FAKE_SYNC=2 " if incremental else String("")) + FAKE
+    return app^
+
+
+def settle(mut app: App):
+    """Long enough for the debounce and for the edits to reach the server."""
+    run_ticks(app, 450, False)
+
+
+def test_every_open_mojo_file_is_opened_and_closed_on_the_server() raises:
+    var dir = scratch("multi")
+    _ = run_system("printf 'a\\n' > '" + dir + "/a.mojo'; printf 'b\\n' > '" + dir + "/b.mojo'; printf 'notes\\n' > '" + dir + "/n.txt'")
+    var app = sync_app(dir, False)
+    app.open_path(dir + "/a.mojo")
+    app.open_path(dir + "/n.txt")
+    app.open_path(dir + "/b.mojo")
+    app.focus(app.find_editor(dir + "/a.mojo"))
+    app.exec(CM_LSP)                                     # started for a.mojo
+    run_ticks(app, 5000, True)
+    var st = server_state(app)
+    assert_equal(st.size(st.get(0, "docs")), 2)          # both Mojo files, not the text file
+    assert_equal(st.str(st.get(st.get(0, "docs"), path_to_uri(dir + "/a.mojo"))), "a\n")
+    assert_equal(st.str(st.get(st.get(0, "docs"), path_to_uri(dir + "/b.mojo"))), "b\n")
+    # a file opened later joins, a closed one leaves
+    _ = run_system("printf 'c\\n' > '" + dir + "/c.mojo'")
+    app.open_path(dir + "/c.mojo")
+    app.remove_window(app.find_editor(dir + "/b.mojo"))
+    settle(app)
+    st = server_state(app)
+    assert_equal(st.size(st.get(0, "docs")), 2)
+    assert_true(st.has(st.get(0, "docs"), path_to_uri(dir + "/c.mojo")))
+    assert_false(st.has(st.get(0, "docs"), path_to_uri(dir + "/b.mojo")))
+    # an untitled window and a large one are left alone
+    app.exec(1)
+    settle(app)
+    assert_equal(len(app.lsp.docs), 2)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_edits_in_any_open_file_reach_the_server_after_the_pause() raises:
+    var dir = scratch("edits")
+    _ = run_system("printf 'one\\n' > '" + dir + "/a.mojo'; printf 'two\\n' > '" + dir + "/b.mojo'")
+    var app = sync_app(dir, False)
+    app.open_path(dir + "/a.mojo")
+    app.open_path(dir + "/b.mojo")
+    app.exec(CM_LSP)                                     # b.mojo is the one being checked
+    run_ticks(app, 5000, True)
+    var ai = app.find_editor(dir + "/a.mojo")
+    app.wins[ai].goto(0, 3)
+    app.wins[ai].type_char(33, True)                     # edit the file that is NOT being checked
+    app.lsp_tick(now_ns())
+    assert_true(app.wins[ai].lsp_due > 0)
+    assert_true(app.lsp_change_due > 0)                  # the loop will wake up for it
+    var st0 = server_state(app)
+    assert_equal(st0.str(st0.get(st0.get(0, "docs"), path_to_uri(dir + "/a.mojo"))), "one\n")   # not yet
+    settle(app)
+    var st = server_state(app)
+    assert_equal(st.str(st.get(st.get(0, "docs"), path_to_uri(dir + "/a.mojo"))), "one!\n")
+    assert_equal(app.wins[ai].lsp_due, 0)
+    assert_equal(app.lsp_change_due, 0)
+    assert_equal(st.int(st.get(0, "whole")), 1)          # this server takes whole documents
+    assert_equal(st.int(st.get(0, "ranged")), 0)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_incremental_sync_keeps_the_server_copy_identical() raises:
+    var dir = scratch("incr")
+    _ = run_system("printf 'def f():\\n    return 1\\n' > '" + dir + "/a.mojo'")
+    var app = sync_app(dir, True)
+    app.open_path(dir + "/a.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    assert_equal(app.lsp.table.sync_kind, SYNC_INCREMENTAL)
+    var uri = path_to_uri(dir + "/a.mojo")
+    var i = app.find_editor(dir + "/a.mojo")
+    assert_true(app.wins[i].buf.track)
+    # many random edits with characters of every width, sent in several batches
+    var pieces: List[String] = ["x", "é", "日本", "🔥", "\n", "  ", "a🔥b\nc", "\t"]
+    var seed = 4242
+    for round in range(12):
+        for _ in range(15):
+            seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+            var r = (seed >> 8) % app.wins[i].buf.count()
+            seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+            var c = (seed >> 8) % (app.wins[i].buf.llen(r) + 1)
+            seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+            var what = (seed >> 8) % 10
+            if what < 6:
+                seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+                _ = app.wins[i].buf.insert(r, c, decode(pieces[(seed >> 8) % len(pieces)]), 0, 0, 0)
+            elif what < 8:
+                var r2 = min(app.wins[i].buf.count() - 1, r + what - 6)
+                var c2 = min(app.wins[i].buf.llen(r2), c + 3)
+                if r2 > r or c2 > c:
+                    _ = app.wins[i].buf.delete(r, c, r2, c2, 0, 0, 0)
+            elif what == 8:
+                _ = app.wins[i].buf.undo()
+            else:
+                _ = app.wins[i].buf.redo()
+        settle(app)
+        var st = server_state(app)
+        var theirs = st.str(st.get(st.get(0, "docs"), uri))
+        assert_equal(theirs, to_str(app.wins[i].buf.all_text()), "after batch " + String(round))
+    var fin = server_state(app)
+    assert_true(fin.int(fin.get(0, "ranged")) > 50, "edits went as ranges")
+    assert_equal(fin.int(fin.get(0, "whole")), 0)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_whole_text_is_sent_when_the_edits_cannot_be_listed() raises:
+    var dir = scratch("lost")
+    _ = run_system("printf 'x\\n' > '" + dir + "/a.mojo'")
+    var app = sync_app(dir, True)
+    app.open_path(dir + "/a.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    var uri = path_to_uri(dir + "/a.mojo")
+    var i = app.find_editor(dir + "/a.mojo")
+    # more single edits than are remembered
+    for k in range(2100):
+        _ = app.wins[i].buf.insert(0, 0, decode("y"), 0, 0, 0)
+    assert_true(app.wins[i].buf.changes_lost)
+    settle(app)
+    var st = server_state(app)
+    assert_equal(st.str(st.get(st.get(0, "docs"), uri)), to_str(app.wins[i].buf.all_text()))
+    assert_equal(st.int(st.get(0, "whole")), 1)
+    assert_false(app.wins[i].buf.changes_lost)           # and recording starts again
+    # a reload replaces the text: also sent whole
+    _ = run_system("printf 'fresh content\\nline 2\\n' > '" + dir + "/a.mojo'")
+    app.reload_from_disk(i)
+    settle(app)
+    st = server_state(app)
+    assert_equal(st.str(st.get(st.get(0, "docs"), uri)), "fresh content\nline 2\n")
+    # ordinary typing afterwards goes as ranges again
+    app.wins[i].goto(0, 0)
+    app.wins[i].type_char(35, True)
+    settle(app)
+    st = server_state(app)
+    assert_equal(st.str(st.get(st.get(0, "docs"), uri)), "#fresh content\nline 2\n")
+    assert_true(st.int(st.get(0, "ranged")) >= 1)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_save_flushes_pending_edits_and_notifies() raises:
+    var dir = scratch("save")
+    _ = run_system("printf 'x\\n' > '" + dir + "/a.mojo'")
+    var app = sync_app(dir, True)
+    app.open_path(dir + "/a.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    var uri = path_to_uri(dir + "/a.mojo")
+    var i = app.find_editor(dir + "/a.mojo")
+    app.wins[i].goto(0, 1)
+    app.wins[i].type_char(121, True)
+    app.exec(CM_SAVE)                                    # before the pause is over
+    var st = server_state(app)
+    assert_equal(st.str(st.get(st.get(0, "docs"), uri)), "xy\n")     # the edit arrived first
+    assert_equal(st.size(st.get(0, "saved")), 1)
+    assert_equal(st.str(st.at(st.get(0, "saved"), 0)), uri)
+    assert_equal(app.wins[i].lsp_due, 0)
+    # a server that did not ask for save notifications gets none
+    app.lsp_stop()
+    var plain = sync_app(dir, False)
+    plain.open_path(dir + "/a.mojo")
+    plain.exec(CM_LSP)
+    run_ticks(plain, 5000, True)
+    plain.wins[plain.top()].type_char(122, True)
+    plain.exec(CM_SAVE)
+    var st2 = server_state(plain)
+    assert_equal(st2.size(st2.get(0, "saved")), 0)
+    assert_equal(st2.str(st2.get(st2.get(0, "docs"), uri)), "zxy\n")
+    plain.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_restart_reopens_every_file() raises:
+    var dir = scratch("reopen")
+    _ = run_system("printf 'a\\n' > '" + dir + "/a.mojo'; printf 'b\\n' > '" + dir + "/b.mojo'")
+    var app = sync_app(dir, True)
+    app.lsp_restart_base_ms = 100
+    app.open_path(dir + "/a.mojo")
+    app.open_path(dir + "/b.mojo")
+    app.exec(CM_LSP)
+    run_ticks(app, 5000, True)
+    var bi = app.find_editor(dir + "/b.mojo")
+    app.wins[bi].type_char(33, True)
+    settle(app)
+    _ = app.lsp.conn.request("die", "")
+    var t0 = now()
+    while not (app.lsp.starts == 2 and app.lsp.state == LSP_READY and len(app.lsp.docs) == 2) and now() - t0 < 8000 * MS:
+        run_ticks(app, 30, False)
+    settle(app)
+    var st = server_state(app)
+    assert_equal(st.size(st.get(0, "docs")), 2)
+    assert_equal(st.str(st.get(st.get(0, "docs"), path_to_uri(dir + "/b.mojo"))), "!b\n")
+    # and edits after the restart are recorded against the new copy
+    app.wins[bi].type_char(63, True)
+    settle(app)
+    st = server_state(app)
+    assert_equal(st.str(st.get(st.get(0, "docs"), path_to_uri(dir + "/b.mojo"))), "!?b\n")
+    app.lsp_stop()
+    assert_false(app.wins[bi].buf.track)
     _ = run_system("rm -rf '" + dir + "'")
 
 

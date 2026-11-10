@@ -35,6 +35,44 @@ def read_message():
     return json.loads(inp.read(length))
 
 
+DOCS = {}          # uri -> current text, as this server understands it
+SAVED = []
+
+
+def utf16_index(line, units):
+    """Index into a Python string for a column counted in UTF-16 code units."""
+    n = 0
+    for i, ch in enumerate(line):
+        if n >= units:
+            return i
+        n += 2 if ord(ch) > 0xFFFF else 1
+    return len(line)
+
+
+def offset_of(text, line, character):
+    start = 0
+    for _ in range(line):
+        nl = text.find("\n", start)
+        if nl < 0:
+            return len(text)
+        start = nl + 1
+    end = text.find("\n", start)
+    if end < 0:
+        end = len(text)
+    return start + utf16_index(text[start:end], character)
+
+
+def apply_changes(text, changes):
+    for ch in changes:
+        if "range" not in ch:
+            text = ch["text"]
+            continue
+        a = offset_of(text, ch["range"]["start"]["line"], ch["range"]["start"]["character"])
+        b = offset_of(text, ch["range"]["end"]["line"], ch["range"]["end"]["character"])
+        text = text[:a] + ch["text"] + text[b:]
+    return text
+
+
 def main():
     # FAKE_START_LOG=path: note every launch (tests count restarts with it)
     import os
@@ -54,7 +92,10 @@ def main():
         # ---- a minimal language server
         if method == "initialize":
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "capabilities": {"textDocumentSync": 1, "hoverProvider": True, "foldingRangeProvider": False,
+                # FAKE_SYNC=2: incremental sync with save notifications
+                "capabilities": {"textDocumentSync": ({"openClose": True, "change": 2, "save": True}
+                                                      if os.environ.get("FAKE_SYNC") == "2" else 1),
+                                 "hoverProvider": True, "foldingRangeProvider": False,
                                  "completionProvider": {"triggerCharacters": [".", "("], "resolveProvider": True},
                                  "renameProvider": {"prepareProvider": True}},
                 "serverInfo": {"name": "fake-lsp"}}})
@@ -73,7 +114,13 @@ def main():
             continue
         if method in ("textDocument/didOpen", "textDocument/didChange"):
             doc = params["textDocument"]
-            text = doc["text"] if method.endswith("didOpen") else params["contentChanges"][0]["text"]
+            if method.endswith("didOpen"):
+                text = doc["text"]
+            else:
+                text = apply_changes(DOCS.get(doc["uri"], ""), params["contentChanges"])
+                main.ranged = getattr(main, "ranged", 0) + sum(1 for c in params["contentChanges"] if "range" in c)
+                main.whole = getattr(main, "whole", 0) + sum(1 for c in params["contentChanges"] if "range" not in c)
+            DOCS[doc["uri"]] = text
             diags = []
             for n, line in enumerate(text.split("\n")):
                 for word, sev in (("BUG", 1), ("WARN", 2)):
@@ -89,6 +136,14 @@ def main():
             continue
         if method == "textDocument/didClose":
             main.closed = getattr(main, "closed", []) + [params["textDocument"]["uri"]]
+            DOCS.pop(params["textDocument"]["uri"], None)
+            continue
+        if method == "textDocument/didSave":
+            SAVED.append(params["textDocument"]["uri"])
+            continue
+        if method == "doc_state":        # what this server holds, for the tests
+            send({"jsonrpc": "2.0", "id": mid, "result": {
+                "docs": DOCS, "saved": SAVED, "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
             continue
         if method == "closed_docs":
             send({"jsonrpc": "2.0", "id": mid, "result": getattr(main, "closed", [])})

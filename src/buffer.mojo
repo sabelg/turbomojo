@@ -30,6 +30,22 @@ struct Pos(Copyable, Movable):
     var c: Int
 
 
+comptime CHANGES_MAX = 2000           # recorded edits kept before giving up on them
+comptime CHANGES_MAX_CHARS = 1000000  # ...and the text they may hold together
+
+
+@fieldwise_init
+struct DocChange(Copyable, Movable):
+    """One edit in the form the language-server protocol uses: the range that was
+    replaced (lines, and columns in UTF-16 units, as they were just before the edit) and
+    the new text. Applying the recorded changes in order to the old text gives the new."""
+    var sl: Int
+    var sc: Int
+    var el: Int
+    var ec: Int
+    var text: List[Int]
+
+
 comptime ENC_UTF8 = 0
 comptime ENC_LATIN1 = 1
 
@@ -42,6 +58,10 @@ struct TextBuffer(Copyable, Movable):
     var folds: List[Int]      # rows of the folded block headers, ascending
     var fold_ends: List[Int]  # last hidden row of each fold (as of fold_version)
     var fold_version: Int
+    var track: Bool           # record edits in `changes` (a language server follows this buffer)
+    var changes: List[DocChange]
+    var changes_lost: Bool    # too much happened, or the text was replaced: send it whole
+    var changes_chars: Int
     var bom: Bool             # the file starts with a UTF-8 byte order mark (kept on save)
     var encoding: Int         # ENC_UTF8 or ENC_LATIN1: how the file's bytes are read and written
     var mixed_eol: Bool       # the file had both LF and CRLF line ends (saving makes them one kind)
@@ -69,6 +89,10 @@ struct TextBuffer(Copyable, Movable):
         self.bom = False
         self.encoding = ENC_UTF8
         self.mixed_eol = False
+        self.track = False
+        self.changes = List[DocChange]()
+        self.changes_lost = False
+        self.changes_chars = 0
         self.folds = List[Int]()
         self.fold_ends = List[Int]()
         self.fold_version = -1
@@ -203,7 +227,48 @@ struct TextBuffer(Copyable, Movable):
         self.rope.load_bytes(clean)
         self.after_load()
 
+    def utf16_col(self, r: Int, c: Int) -> Int:
+        """Column c of line r counted in UTF-16 code units."""
+        var start = self.rope.line_start(r)
+        return self.rope.to_utf16(self.rope.offset(r, c)) - self.rope.to_utf16(start)
+
+    def note_change(mut self, sl: Int, sc: Int, el: Int, ec: Int, text: List[Int]):
+        if not self.track or self.changes_lost:
+            return
+        self.changes_chars += len(text)
+        if len(self.changes) >= CHANGES_MAX or self.changes_chars > CHANGES_MAX_CHARS:
+            self.drop_changes()
+            self.changes_lost = True
+            return
+        self.changes.append(DocChange(sl, sc, el, ec, text.copy()))
+
+    def drop_changes(mut self):
+        self.changes.clear()
+        self.changes_chars = 0
+
+    def start_tracking(mut self):
+        """From now on edits are recorded; the follower has the current text."""
+        self.track = True
+        self.drop_changes()
+        self.changes_lost = False
+
+    def stop_tracking(mut self):
+        self.track = False
+        self.drop_changes()
+        self.changes_lost = False
+
+    def take_changes(mut self) -> List[DocChange]:
+        """The edits since the last call (and forget them). Check `changes_lost` first:
+        when it is set the list is not complete and the whole text has to be sent;
+        clear the flag with start_tracking()."""
+        var out = self.changes.copy()
+        self.drop_changes()
+        return out^
+
     def after_load(mut self):
+        if self.track:
+            self.drop_changes()
+            self.changes_lost = True       # a different text altogether
         self.folds.clear()
         self.fold_ends.clear()
         self.lstate.clear()
@@ -403,6 +468,12 @@ struct TextBuffer(Copyable, Movable):
             return out^
         return text^
 
+    def lsp_bytes(self) -> List[UInt8]:
+        """The text exactly as the editor holds it: UTF-8, "\n" between lines, nothing
+        added. This is the document a language server is given, so that its line and
+        column numbers are the editor's."""
+        return self.rope.to_bytes()
+
     def text_bytes(self) -> List[UInt8]:
         """The text as UTF-8 with the file's line endings and final newline: what tools
         that take UTF-8 (the language server) are given."""
@@ -506,6 +577,9 @@ struct TextBuffer(Copyable, Movable):
         # clamp like the rope does, so the returned end position matches what happened
         var rr = max(0, min(r, self.rope.line_count() - 1))
         var cc = max(0, min(c, self.rope.line_len(rr)))
+        if self.track and len(text) > 0:
+            var u = self.utf16_col(rr, cc)
+            self.note_change(rr, u, rr, u, text)
         self.rope.insert(self.rope.offset(rr, cc), text)
         var breaks = 0
         for ch in text:
@@ -528,6 +602,11 @@ struct TextBuffer(Copyable, Movable):
         if b > a:
             var first = self.rope.line_of(a)
             var breaks = self.rope.line_of(b) - first
+            if self.track:
+                var last = first + breaks
+                var su = self.rope.to_utf16(a) - self.rope.to_utf16(self.rope.line_start(first))
+                var eu = self.rope.to_utf16(b) - self.rope.to_utf16(self.rope.line_start(last))
+                self.note_change(first, su, last, eu, List[Int]())
             out = self.rope.slice(a, b)
             self.rope.delete(a, b)
             self.note_edit(first, breaks, 0)

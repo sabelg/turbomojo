@@ -59,21 +59,106 @@ __extension App:
             if not self.lsp.start(self.lsp_server_command(path), self.cwd, log, own_pid(), now):
                 self.say("Could not start the language server")
                 return
-        if self.lsp_path.byte_length() > 0 and self.lsp_path != path:
-            self.lsp.did_close(self.lsp_uri)
         self.lsp_path = path
         self.lsp_uri = path_to_uri(path)
-        var text = bytes_to_str(self.wins[i].buf.text_bytes())
-        if not self.lsp.did_open(self.lsp_uri, text):
-            _ = self.lsp.did_change(self.lsp_uri, text)
-        self.lsp_sent_version = self.wins[i].buf.version
-        self.lsp_seen_version = self.wins[i].buf.version
+        # the server gets this file now rather than after the usual pause
+        if self.lsp.find_doc(self.lsp_uri) < 0:
+            self.lsp_open_doc(i)
+        else:
+            self.lsp_send_changes(i, now, True)
         self.lsp_sent_ns = now
-        self.lsp_change_due = 0
         self.say("Language server: checking " + basename(path) + "...")
+
+    # ---------------------------------------------------------- document sync
+    def lsp_wants(self, i: Int) -> Bool:
+        """Is window i a file the server should follow? Every open Mojo file, and the
+        file being checked whatever its name; not untitled or very large buffers."""
+        if self.wins[i].kind != WK_EDITOR or self.wins[i].path.byte_length() == 0 or self.wins[i].buf.large:
+            return False
+        var p = self.wins[i].path
+        return p == self.lsp_path or p.endswith(".mojo") or p.endswith(".🔥")
+
+    def lsp_open_doc(mut self, i: Int):
+        """didOpen for window i; from here on its edits are recorded for the server."""
+        var uri = path_to_uri(self.wins[i].path)
+        if self.lsp.did_open(uri, bytes_to_str(self.wins[i].buf.lsp_bytes())):
+            self.wins[i].buf.start_tracking()
+            self.wins[i].lsp_sent_version = self.wins[i].buf.version
+            self.wins[i].lsp_seen_version = self.wins[i].buf.version
+            self.wins[i].lsp_due = 0
+
+    def lsp_send_changes(mut self, i: Int, now: Int, always: Bool):
+        """didChange for window i with what changed since the server was last told: the
+        recorded edits as ranges when the server takes those, otherwise the whole text.
+        `always` sends the text even if nothing changed (to have a file checked again)."""
+        var uri = path_to_uri(self.wins[i].path)
+        self.wins[i].lsp_due = 0
+        if self.lsp.find_doc(uri) < 0:
+            return
+        var v = self.wins[i].buf.version
+        if v == self.wins[i].lsp_sent_version and not always:
+            return
+        var sent = -1
+        if self.lsp.table.sync_kind == SYNC_INCREMENTAL and not self.wins[i].buf.changes_lost and self.wins[i].buf.track:
+            sent = self.lsp.did_change_ranges(uri, self.wins[i].buf.take_changes())
+        if sent < 0:
+            _ = self.lsp.did_change(uri, bytes_to_str(self.wins[i].buf.lsp_bytes()))
+            self.wins[i].buf.start_tracking()
+        self.wins[i].lsp_sent_version = v
+        self.wins[i].lsp_seen_version = v
+        if self.wins[i].path == self.lsp_path:
+            self.lsp_sent_ns = now
+
+    def lsp_note_saved(mut self, i: Int):
+        """After a save: the server gets any pending edits first, then didSave."""
+        if not self.lsp.active() or self.wins[i].path.byte_length() == 0:
+            return
+        var uri = path_to_uri(self.wins[i].path)
+        if self.lsp.find_doc(uri) < 0:
+            return
+        self.lsp_send_changes(i, now_ns(), False)
+        if self.lsp.table.sync_save:
+            _ = self.lsp.did_save(uri)
+
+    def lsp_sync(mut self, now: Int):
+        """Keep the server's set of documents equal to the open files, and send edits
+        LSP_DEBOUNCE_MS after typing stops."""
+        var keep = List[String]()
+        for i in range(len(self.wins)):
+            if self.lsp_wants(i):
+                keep.append(path_to_uri(self.wins[i].path))
+        var k = 0
+        while k < len(self.lsp.docs):
+            var uri = String(self.lsp.docs[k].uri)
+            if uri in keep:
+                k += 1
+            else:
+                self.lsp.did_close(uri)         # closed, or saved under another name
+        var earliest = 0
+        for i in range(len(self.wins)):
+            if not self.lsp_wants(i):
+                if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.track:
+                    self.wins[i].buf.stop_tracking()
+                continue
+            if self.lsp.find_doc(path_to_uri(self.wins[i].path)) < 0:
+                self.lsp_open_doc(i)
+                continue
+            var v = self.wins[i].buf.version
+            if v != self.wins[i].lsp_seen_version:
+                self.wins[i].lsp_seen_version = v
+                self.wins[i].lsp_due = now + LSP_DEBOUNCE_MS * 1000000
+            if self.wins[i].lsp_due > 0 and now >= self.wins[i].lsp_due and self.lsp.state == LSP_READY:
+                self.lsp_send_changes(i, now, False)
+            if self.wins[i].lsp_due > 0 and (earliest == 0 or self.wins[i].lsp_due < earliest):
+                earliest = self.wins[i].lsp_due
+        self.lsp_change_due = earliest
 
     def lsp_stop(mut self):
         self.lsp.stop()
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EDITOR:
+                self.wins[i].buf.stop_tracking()
+                self.wins[i].lsp_due = 0
         self.lsp_restart_due = 0
         self.lsp_restart_path = ""
         self.lsp_path = ""
@@ -157,26 +242,13 @@ __extension App:
                     self.say("Language server: " + self.lsp.last_error)
             return
         var i = self.find_editor(self.lsp_path) if self.lsp_path.byte_length() > 0 else -1
-        if i < 0:
-            if self.lsp_path.byte_length() > 0:
-                # the tracked window was closed
-                self.lsp.did_close(self.lsp_uri)
-                self.lsp_path = ""
-                self.lsp_uri = ""
-            return
-        # debounce: tell the server LSP_DEBOUNCE_MS after typing stops
-        var v = self.wins[i].buf.version
-        if v != self.lsp_seen_version:
-            self.lsp_seen_version = v
-            self.lsp_change_due = now + LSP_DEBOUNCE_MS * 1000000
-        if self.lsp_change_due > 0 and now >= self.lsp_change_due and self.lsp.state == LSP_READY:
-            self.lsp_change_due = 0
-            if v != self.lsp_sent_version:
-                _ = self.lsp.did_change(self.lsp_uri, bytes_to_str(self.wins[i].buf.text_bytes()))
-                self.lsp_sent_version = v
-                self.lsp_sent_ns = now
+        if i < 0 and self.lsp_path.byte_length() > 0:
+            # the window whose problems were shown is gone; other files stay in step
+            self.lsp_path = ""
+            self.lsp_uri = ""
+        self.lsp_sync(now)
         for uri in self.lsp.take_updated():
-            if uri == self.lsp_uri:
+            if uri == self.lsp_uri and i >= 0:
                 var latency = -1
                 if self.lsp_sent_ns > 0:
                     latency = (now - self.lsp_sent_ns) // 1000000

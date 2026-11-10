@@ -126,6 +126,7 @@ __extension App:
         self.wins[i].disk_hash = 0 if self.wins[i].buf.large else content_hash(b)
         self.wins[i].disk_size = -1 if self.wins[i].buf.large else len(b)
         self.store_history(i)
+        self.lsp_note_saved(i)
         self.note_disk_state(i)
         self.drop_swap(i)
         self.say("Saved " + self.wins[i].path + note)

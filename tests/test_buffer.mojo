@@ -1,7 +1,7 @@
 """Tests for src/buffer.mojo: loading/saving, edits, undo/redo, randomised consistency."""
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
-from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
+from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1, CHANGES_MAX
 from swap import write_bytes_atomic
 from util import decode, to_str, bytes_to_str, decode_list, read_file, str_bytes, env_or, run_system
 
@@ -544,6 +544,58 @@ def test_mixed_line_endings_are_noticed() raises:
     assert_false(b.mixed_eol)
     assert_false(b.bom)
     assert_equal(b.encoding, ENC_UTF8)
+
+
+
+# ------------------------------------------------- change recording (for LSP)
+def chg(b: TextBuffer) -> String:
+    """The recorded changes as "sl:sc-el:ec=text" separated by "|"."""
+    var out = String("")
+    for c in b.changes:
+        if out.byte_length() > 0:
+            out += "|"
+        out += String(c.sl) + ":" + String(c.sc) + "-" + String(c.el) + ":" + String(c.ec) + "=" + to_str(c.text)
+    return out
+
+
+def test_edits_are_recorded_as_ranges_in_utf16_units() raises:
+    var b = TextBuffer()
+    b.load(decode("a🔥b\nsecond"))
+    _ = b.insert(0, 1, decode("x"), 0, 0, 0)
+    assert_equal(len(b.changes), 0)                      # nobody is following yet
+    b.start_tracking()
+    _ = b.insert(0, 3, decode("Z"), 0, 0, 0)             # after "ax🔥": the emoji counts as two
+    assert_equal(chg(b), "0:4-0:4=Z")
+    _ = b.delete(0, 2, 0, 3, 0, 0, 0)                    # remove the emoji
+    assert_equal(chg(b), "0:4-0:4=Z|0:2-0:4=")
+    _ = b.delete(0, 3, 1, 2, 0, 0, 0)                    # across the line break
+    assert_equal(chg(b), "0:4-0:4=Z|0:2-0:4=|0:3-1:2=")
+    assert_equal(to_str(b.all_text()), "axZcond")
+    _ = b.undo()                                         # undo is an edit like any other
+    assert_true(chg(b).endswith("|0:3-0:3=b\nse"), chg(b))
+    var taken = b.take_changes()
+    assert_equal(len(taken), 4)
+    assert_equal(len(b.changes), 0)
+    b.stop_tracking()
+    _ = b.insert(0, 0, decode("q"), 0, 0, 0)
+    assert_equal(len(b.changes), 0)
+
+
+def test_recording_gives_up_when_there_is_too_much() raises:
+    var b = TextBuffer()
+    b.load(decode("x"))
+    b.start_tracking()
+    for _ in range(CHANGES_MAX):
+        _ = b.insert(0, 0, decode("y"), 0, 0, 0)
+    assert_false(b.changes_lost)
+    _ = b.insert(0, 0, decode("y"), 0, 0, 0)
+    assert_true(b.changes_lost)
+    assert_equal(len(b.changes), 0)
+    b.start_tracking()
+    assert_false(b.changes_lost)
+    b.load(decode("another text"))                       # loading replaces everything
+    assert_true(b.changes_lost)
+    assert_true(b.track)
 
 
 def main() raises:

@@ -180,8 +180,6 @@ struct App(Movable):
     var lsp_path: String       # file whose diagnostics are shown ('' = none)
     var lsp_uri: String
     var lsp_sent_ns: Int       # when the last change went to the server (0 = answered)
-    var lsp_sent_version: Int
-    var lsp_seen_version: Int
     var lsp_change_due: Int
     var lsp_last_latency_ms: Int
     var lsp_reported_failure: Bool
@@ -289,8 +287,6 @@ struct App(Movable):
         self.lsp_path = ""
         self.lsp_uri = ""
         self.lsp_sent_ns = 0
-        self.lsp_sent_version = -1
-        self.lsp_seen_version = -1
         self.lsp_change_due = 0
         self.lsp_last_latency_ms = -1
         self.lsp_reported_failure = False
