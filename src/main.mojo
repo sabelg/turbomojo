@@ -4,6 +4,7 @@ from std.ffi import external_call
 from app import *
 from term import is_terminal
 from commands import CM_NEW
+from util import state_dir
 
 
 def main() raises:
@@ -28,6 +29,13 @@ def main() raises:
             app.open_path(String(args[i]))
         except e:
             print("cannot open", String(args[i]), ":", String(e))
+    if len(args) == 1 and app.restore_session:
+        # started without a file: go on where this project was left
+        app.session_dir = state_dir() + "/sessions"
+        try:
+            _ = app.session_restore()
+        except e:
+            print("cannot restore the session:", String(e))
     if app.top_editor() < 0:
         app.exec(CM_NEW)
     app.show_config_warnings()

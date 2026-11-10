@@ -10,6 +10,7 @@ Example:
     theme = "midnight"          # classic | midnight | amber
     keymap = "modern"           # modern | turbo (WordStar keys) | emacs
     layout = "classic"          # classic (overlapping windows) | tiled (panes with tabs, splits)
+    restore_session = true      # started without a file: open what was open in this project last time
     line_numbers = true
     highlight_line = true
     clock = true
@@ -114,6 +115,7 @@ struct Settings(Copyable, Movable):
     var theme: Int
     var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var tiled: Bool      # ui.layout = "tiled"
+    var restore_session: Bool
     var line_numbers: Bool
     var auto_indent: Bool
     var highlight_line: Bool
@@ -143,6 +145,7 @@ struct Settings(Copyable, Movable):
         self.theme = 0
         self.keymap = 0
         self.tiled = False
+        self.restore_session = True
         self.line_numbers = True
         self.auto_indent = True
         self.highlight_line = True
@@ -220,6 +223,7 @@ struct Settings(Copyable, Movable):
             else:
                 self.warnings.append("editor.rulers must be a list of column numbers from 1 to 1000")
         self.auto_indent = self.take_bool(doc, "editor.auto_indent", self.auto_indent)
+        self.restore_session = self.take_bool(doc, "ui.restore_session", self.restore_session)
         var lay_i = doc.find("ui.layout")
         if lay_i >= 0:
             if doc.vals[lay_i].kind == T_STR and (doc.vals[lay_i].s == "classic" or doc.vals[lay_i].s == "tiled"):
@@ -287,7 +291,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.include_paths", "tools.docs_paths"]:
+        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.include_paths", "tools.docs_paths"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

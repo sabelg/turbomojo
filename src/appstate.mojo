@@ -301,6 +301,11 @@ struct App(Movable):
     var run_cfgs: List[RunConfig]    # the project's run configurations (as last read)
     var run_active: String           # the one Run uses ('' = the file being edited)
     var run_edit_old: String         # the configuration the open edit dialog began with ('' = a new one)
+    var restore_session: Bool        # ui.restore_session
+    var session_dir: String          # where sessions are kept ('' = they are not)
+    var session_saved: String        # the session as last written
+    var session_checked_ns: Int
+    var restoring: Bool              # files are being opened for a session, not by the user
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -556,6 +561,11 @@ struct App(Movable):
         self.run_cfgs = List[RunConfig]()
         self.run_active = ""
         self.run_edit_old = ""
+        self.restore_session = True
+        self.session_dir = ""
+        self.session_saved = ""
+        self.session_checked_ns = 0
+        self.restoring = False
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -765,6 +775,7 @@ struct App(Movable):
                 self.include_paths.append(abs_path(base, ip))
         self.config_warnings = s.warnings.copy()
         self.keymap = s.keymap
+        self.restore_session = s.restore_session
         if s.tiled != self.tiled:
             self.tiled = s.tiled
             self.lay = Layout()

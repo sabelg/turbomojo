@@ -276,3 +276,105 @@ struct Layout(Copyable, Movable):
                 s += String(self.tabs[n][k]) + ("*" if k == self.active[n] else "")
             return s + "]" + ("!" if n == self.cur else "")
         return "(" + self.describe_node(self.first[n]) + (" | " if self.kind[n] == L_ROW else " / ") + self.describe_node(self.second[n]) + ")"
+
+    # ------------------------------------------------------- as text
+    def encode(self) -> String:
+        """The tree as words, for a session file: a group is "G <count> <active>
+        <ids...>" with "!" in front if it is the current one, a split "R <ratio>" or
+        "C <ratio>" followed by its two children."""
+        return self.encode_node(self.root)
+
+    def encode_node(self, n: Int) -> String:
+        if self.kind[n] == L_GROUP:
+            var s = ("!G " if n == self.cur else "G ") + String(len(self.tabs[n])) + " " + String(self.active[n])
+            for id in self.tabs[n]:
+                s += " " + String(id)
+            return s
+        return ("R " if self.kind[n] == L_ROW else "C ") + String(self.ratio[n]) + " " + self.encode_node(self.first[n]) + " " + self.encode_node(self.second[n])
+
+
+def layout_number(word: String) -> Int:
+    """A non-negative number, or -1 if the word is not one."""
+    var n = 0
+    var any = False
+    for c in word.as_bytes():
+        var d = Int(c) - 48
+        if d < 0 or d > 9:
+            return -1
+        n = min(n * 10 + d, 1000000000)
+        any = True
+    return n if any else -1
+
+
+def decode_node(mut l: Layout, words: List[String], mut at: Int, parent: Int, mut seen: List[Int]) -> Int:
+    """Build the node that starts at words[at]; returns its index, -1 if the text is
+    not a tree. `at` moves past what was read."""
+    if at >= len(words):
+        return -1
+    var w = words[at]
+    at += 1
+    if w == "G" or w == "!G":
+        if at + 1 >= len(words):
+            return -1
+        var count = layout_number(words[at])
+        var active = layout_number(words[at + 1])
+        at += 2
+        if count < 0 or active < 0 or at + count > len(words):
+            return -1
+        var g = l.new_node(L_GROUP, parent)
+        for _ in range(count):
+            var id = layout_number(words[at])
+            at += 1
+            if id < 0 or id in seen:
+                return -1                   # a window can be in one place only
+            seen.append(id)
+            l.tabs[g].append(id)
+        l.active[g] = min(active, max(0, count - 1))
+        if w == "!G":
+            l.cur = g
+        return g
+    if w == "R" or w == "C":
+        if at >= len(words):
+            return -1
+        var ratio = layout_number(words[at])
+        at += 1
+        if ratio < 0:
+            return -1
+        var s = l.new_node(L_ROW if w == "R" else L_COL, parent)
+        l.ratio[s] = max(RATIO_MIN, min(RATIO_MAX, ratio))
+        var a = decode_node(l, words, at, s, seen)
+        if a < 0:
+            return -1
+        var b = decode_node(l, words, at, s, seen)
+        if b < 0:
+            return -1
+        l.first[s] = a
+        l.second[s] = b
+        return s
+    return -1
+
+
+def layout_decode(text: String) -> Layout:
+    """The tree encode() wrote. Anything that is not a whole, well-formed tree gives a
+    fresh layout with one empty group."""
+    var words = List[String]()
+    for w in text.split(" "):
+        if w.byte_length() > 0:
+            words.append(String(w))
+    var l = Layout()
+    # the nodes are built after the initial root; if all goes well the root is replaced
+    var seen = List[Int]()
+    var at = 0
+    l.cur = -1
+    var root = decode_node(l, words, at, -1, seen)
+    if root < 0 or at != len(words):
+        return Layout()
+    l.alive[l.root] = False
+    l.root = root
+    if l.cur < 0 or l.kind[l.cur] != L_GROUP:
+        l.cur = l.first_group_under(root)
+    # groups that came out empty would never be filled: take them out
+    for g in l.groups():
+        if len(l.tabs[g]) == 0 and l.parent[g] >= 0:
+            l.collapse(g)
+    return l^

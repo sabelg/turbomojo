@@ -38,6 +38,8 @@ from app_pickers import *
 from app_nav import *
 from app_outline import *
 from layout import *
+from session import *
+from filestate import content_hash
 from app_explorer import *
 from outline import *
 from symindex import *
@@ -46,6 +48,9 @@ from watch import file_sig
 from app_input import *
 from app_mouse import *
 from app_draw import *
+
+
+comptime SESSION_SAVE_MS = 30000
 
 
 __extension App:
@@ -352,3 +357,164 @@ __extension App:
             if k + 1 < len(names):
                 self.scr.put(x, y, 0x2502, fg, bg)
                 x += 1
+
+    # ============================================================== sessions
+    def session_path(self) -> String:
+        """The session file of this project ('' if sessions are not kept)."""
+        if self.session_dir.byte_length() == 0:
+            return ""
+        var h = content_hash(str_bytes(self.symidx_root()))
+        var digits = "0123456789abcdef"
+        var name = String("")
+        for _ in range(16):
+            name = String(digits[byte=h % 16:h % 16 + 1]) + name
+            h = h // 16
+        return self.session_dir + "/" + name + ".session"
+
+    def session_capture(mut self) -> SessionData:
+        """What is open now: files with a name, back to front, and the arrangement."""
+        self.layout_sync()
+        var d = SessionData()
+        d.root = self.symidx_root()
+        d.tiled = self.tiled
+        var wids = List[Int]()              # wid of each saved file, by position
+        for i in range(len(self.wins)):
+            if self.wins[i].kind != WK_EDITOR or self.wins[i].path.byte_length() == 0:
+                continue
+            var f = SessionFile(self.wins[i].path)
+            f.cr = self.wins[i].cr
+            f.cc = self.wins[i].cc
+            f.top = self.wins[i].top
+            f.x = self.wins[i].x
+            f.y = self.wins[i].y
+            f.w = self.wins[i].w
+            f.h = self.wins[i].h
+            f.zoomed = self.wins[i].zoomed
+            d.files.append(f^)
+            wids.append(self.wins[i].wid)
+        if self.tiled:
+            # the tree with positions in the list instead of window ids
+            var l = self.lay.copy()
+            for id in l.ids():
+                if not (id in wids):
+                    l.remove(id)            # an unnamed window: not part of a session
+            for g in l.groups():
+                for k in range(len(l.tabs[g])):
+                    for q in range(len(wids)):
+                        if wids[q] == l.tabs[g][k]:
+                            l.tabs[g][k] = q
+                            break
+            d.layout = l.encode()
+        var xi = self.explorer_index()
+        if xi >= 0:
+            d.explorer = True
+            d.explorer_w = self.wins[xi].w
+            d.opened = self.ex.opened.copy()
+        d.outline = self.outline_index() >= 0
+        var mi = self.msg_index()
+        if mi >= 0:
+            d.panel = True
+            d.panel_page = self.msg_page
+            d.panel_h = self.wins[mi].h
+        return d^
+
+    def session_save(mut self):
+        """Write the session if sessions are kept and something changed."""
+        var path = self.session_path()
+        if path.byte_length() == 0:
+            return
+        var text = self.session_capture().encode()
+        if text == self.session_saved:
+            return
+        if not path_exists(self.session_dir):
+            _ = run_system("mkdir -p " + shell_quote(self.session_dir))
+        if write_file(path, str_bytes(text)):
+            self.session_saved = text
+
+    def session_tick(mut self, now: Int):
+        """Every half minute the session is written, so that a crash or a closed
+        terminal loses little."""
+        if self.session_dir.byte_length() == 0 or now - self.session_checked_ns < SESSION_SAVE_MS * 1000000:
+            return
+        self.session_checked_ns = now
+        self.session_save()
+
+    def session_restore(mut self) raises -> Bool:
+        """Open what the project's session names. True if at least one file was opened.
+        Files that are gone are left out; a session of another folder, a damaged file,
+        or none at all leave everything as it is."""
+        var path = self.session_path()
+        if path.byte_length() == 0 or not path_exists(path):
+            return False
+        var text = read_text(path)
+        var got = session_decode(text)
+        if not got[1] or got[0].root != self.symidx_root():
+            return False
+        var d = got[0].copy()
+        var wid_of = List[Int]()            # per saved file: the window it got (0 = not opened)
+        var opened = 0
+        self.restoring = True
+        for f in d.files:
+            var wid = 0
+            if path_exists(f.path) and not is_dir(f.path):
+                try:
+                    self.open_path(f.path)
+                    var t = self.top()
+                    if self.wins[t].kind == WK_EDITOR and self.wins[t].path == f.path:
+                        self.wins[t].goto(f.cr, f.cc)
+                        self.wins[t].top = max(0, min(f.top, self.wins[t].buf.count() - 1))
+                        if not d.tiled and not self.tiled and f.w >= 16 and f.h >= 4:
+                            self.wins[t].x = f.x
+                            self.wins[t].y = max(1, f.y)
+                            self.wins[t].w = f.w
+                            self.wins[t].h = f.h
+                            self.wins[t].zoomed = f.zoomed
+                        wid = self.wins[t].wid
+                        opened += 1
+                except e:
+                    wid = 0
+            wid_of.append(wid)
+        self.restoring = False
+        if opened == 0:
+            return False
+        # the arrangement: only if the layout in use is the one the session was saved in
+        if self.tiled and d.tiled and d.layout.byte_length() > 0:
+            var l = layout_decode(d.layout)
+            for id in l.ids():
+                if id >= len(wid_of) or wid_of[id] == 0:
+                    l.remove(id)
+            for g in l.groups():
+                for k in range(len(l.tabs[g])):
+                    l.tabs[g][k] = wid_of[l.tabs[g][k]]
+            self.lay = l^
+            # the window in front is the one the current pane shows
+            var front = self.win_by_wid(self.lay.shown(self.lay.cur))
+            if front >= 0:
+                self.focus(front)
+        var keep = self.top_editor()
+        var keep_path = self.wins[keep].path if keep >= 0 else String("")
+        if d.panel:
+            self.panel_show(max(0, min(d.panel_page, PG_COUNT - 1)))
+            var mi = self.msg_index()
+            if mi >= 0 and d.panel_h >= 4 and d.panel_h <= self.desk_h() - 6:
+                self.wins[mi].y = 1 + self.desk_h() - d.panel_h
+                self.wins[mi].h = d.panel_h
+        if d.outline and self.outline_index() < 0:
+            self.outline_toggle()
+        if d.explorer and self.explorer_index() < 0:
+            self.explorer_toggle()
+            var xi = self.explorer_index()
+            if xi >= 0:
+                if d.explorer_w >= 16 and d.explorer_w <= self.scr.w - 24:
+                    self.wins[xi].w = d.explorer_w
+                for o in d.opened:
+                    if is_dir(o) and not self.ex.is_open(o):
+                        self.ex.opened.append(o)
+                self.explorer_refresh(keep_path)
+        var back = self.find_editor(keep_path)
+        if back >= 0:
+            self.focus(back)
+        self.layout_sync()
+        self.session_saved = self.session_capture().encode()
+        self.say("Session restored: " + count_of(opened, "file"))
+        return True

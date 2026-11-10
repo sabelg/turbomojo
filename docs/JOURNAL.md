@@ -2093,3 +2093,43 @@ general timeout. The Options menu no longer fits a 20-row screen.
 - Verified: `check.sh` CHECK OK (43 files, 841 tests). The hint text was changed after
   that run; then only the build, `test_runconfig`, `test_screen` and the smoke script
   were run again (all passed).
+
+## 2026-11-10 · P3-07 Sessions: files, cursors, layout per project · done
+
+- New `src/session.mojo`: `SessionData` / `SessionFile` and their text form (a version
+  line, one "key<TAB>values" line per fact, paths last on their line, "end" as the
+  mark of a complete file); `session_decode` refuses cut-off files, other versions and
+  non-sessions as a whole and skips single lines that do not fit.
+- `src/layout.mojo`: `encode` and `layout_decode` - the split tree as words; anything
+  that is not one whole well-formed tree gives a fresh layout.
+- App (`src/app_layout.mojo`): `session_capture` (named files back to front with
+  cursor, top line and window place; the tree with positions in that list instead of
+  window ids; explorer with width and open folders; outline; the panel's page and
+  height), `session_save` (only if something changed), `session_tick` (every 30 s),
+  `session_restore` (files that still exist, cursors, classic window places or the
+  panes; the pane arrangement only if the layout in use is the one saved; panels;
+  focus back on the file that had it). One file per project in
+  `<state>/turbomojo/sessions/<hash of the project folder>.session`.
+- `main`: started without arguments and with `ui.restore_session` (default true) the
+  session is restored and from then on saved; started with file names nothing is
+  restored and nothing is saved, so a quick `tmide file` does not replace the
+  project's session. Restoring does not count as opening for the palette's ranking.
+- Tests: `tests/test_session.mojo` (8): layout text round trip and ten malformed
+  texts; session text incl. a tab in a file name; damaged session files; classic
+  session (order, cursors, geometry, panel page, frecency untouched); tiled session
+  with explorer, open folder and outline, and the same session started classic;
+  unnamed windows, a missing file, another project, a damaged file, sessions off, the
+  setting; the half-minute writing. All passed on the first run.
+- Not done / unverified:
+  - Breakpoints and history, which the roadmap's table lists for sessions, are not in
+    it: there are no breakpoints yet (Phase 4), and undo history is kept per file
+    already (P1-19).
+  - Unsaved text is not part of a session (the swap files of P0 cover crashes).
+  - Folds, selections, the search field and the jump list are not restored.
+  - A session written by two IDEs open on one project is the last writer's.
+- Tried for real in tmux (the tests call `session_restore` directly, not `main`):
+  started without arguments, opened examples/hello.mojo through the palette, moved the
+  cursor, opened the explorer, quit with Alt-X; the session file was written; started
+  again: hello.mojo is open with the cursor at 5:3, the explorer is there with
+  `examples` open, the status line says "Session restored: 1 file".
+- Verified: `check.sh` CHECK OK (44 files, 849 tests).

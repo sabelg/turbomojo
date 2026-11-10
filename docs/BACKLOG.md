@@ -78,7 +78,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P3-04 Unified quick-open palette: files (frecency), `>` commands, `@` symbols, `:` line
 - [x] P3-05 Project model: detect `pixi.toml`, list and run pixi tasks, include paths
 - [x] P3-06 Run configurations (file, args, env, cwd, pre-launch build) stored per project
-- [ ] P3-07 Sessions: restore files, cursors, layout per project
+- [x] P3-07 Sessions: restore files, cursors, layout per project
 - [ ] P3-08 Workspace trust prompt
 
 ## Phase 4: Debugger via DAP (v1.5)

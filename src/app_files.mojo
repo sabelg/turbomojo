@@ -48,7 +48,7 @@ __extension App:
     # ================================================================ files
     def open_path(mut self, path: String) raises:
         var p = abs_path(self.cwd, path)
-        if path_exists(p) and not is_dir(p):
+        if path_exists(p) and not is_dir(p) and not self.restoring:
             self.frec_note(p)
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].path == p:
@@ -231,4 +231,5 @@ __extension App:
                 return
         for i in range(len(self.wins)):
             self.store_history(i)
+        self.session_save()
         self.running = False

@@ -159,6 +159,7 @@ __extension App:
             self.symidx_tick()
             self.quick_tick()
             self.explorer_tick(now_ns())
+            self.session_tick(now_ns())
             self.swap_tick(now_ns())
             self.fsearch_tick(now_ns())
             try:
