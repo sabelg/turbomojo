@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_swap import *
+from swap import *
 from app_files import *
 from app_dialogs import *
 from app_menus import *

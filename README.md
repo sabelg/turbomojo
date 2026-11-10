@@ -91,7 +91,7 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Unicode | Full UTF-8 with display widths: CJK and emoji take two columns and combining accents attach to their base letter, so cursor, selection, mouse clicks and the right border stay aligned |
 | Clipboard | Internal clipboard mirrored to the system clipboard via OSC 52. Bracketed paste is supported |
 | Themes | Turbo Classic (CGA), Midnight Neon, Amber CRT |
-| Robustness | Resizing is picked up instantly; `kill`, closing the terminal window or logging out saves every unsaved buffer to `~/.local/state/turbomojo/recovered/` (never over your files) and restores the terminal; `kill -TSTP` / `fg` suspends and resumes cleanly. If the IDE itself crashes, the terminal is restored and a stack trace goes to `~/.local/state/turbomojo/crash.log`. An idle IDE uses no CPU |
+| Robustness | **Unsaved work survives crashes:** every modified buffer is copied to a swap file 2 seconds after a change, and after a crash, `kill -9` or power loss the next start offers to recover it (Recover / Discard / Later). Being killed politely (`kill`, closing the terminal, logging out) keeps the buffers the same way and restores the terminal. Your own files are never written without a save. Resizing is picked up instantly; `kill -TSTP` / `fg` suspends and resumes cleanly. If the IDE itself crashes, the terminal is restored and a stack trace goes to `~/.local/state/turbomojo/crash.log`. An idle IDE uses no CPU |
 | Rendering | Double-buffered diff renderer with 24-bit colour and synchronized output (no tearing) |
 
 Press **F1** inside the IDE for the full keyboard reference.

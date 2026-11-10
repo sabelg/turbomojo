@@ -6,6 +6,7 @@ from term import wait_readable
 from app import *
 from appstate import App, now_ns, RESIZE_POLL_MS
 from commands import CM_NEW
+from swap import list_swap_files, swap_decode, read_bytes
 from util import (
     run_capture, run_system, decode, bytes_to_str, path_exists, env_or, SIGTERM, SIGWINCH,
     SIGHUP, SIGCONT, SIGTSTP,
@@ -130,7 +131,7 @@ def scratch() -> String:
     return env_or("TMPDIR", "/tmp") + "/turbomojo-test-recovery-" + String(own_pid())
 
 
-def test_emergency_save_writes_only_modified_buffers() raises:
+def test_emergency_save_keeps_only_modified_buffers_as_swap_files() raises:
     var app = App()
     app.scr.resize(80, 25)
     app.recovery_dir = scratch()
@@ -143,10 +144,13 @@ def test_emergency_save_writes_only_modified_buffers() raises:
         app.wins[t].type_char(c, True)
     assert_equal(app.emergency_save(), 1)
     assert_equal(app.recovered, 1)
-    var r = run_capture("cat '" + app.recovery_dir + "'/*-notes.mojo")
-    assert_equal(bytes_to_str(r.out), "unsaved work\n")
-    var count = run_capture("ls '" + app.recovery_dir + "' | wc -l")
-    assert_equal(String(bytes_to_str(count.out).strip()), "1")
+    var files = list_swap_files(app.recovery_dir)
+    assert_equal(len(files), 1)
+    var info = swap_decode(read_bytes(files[0]))
+    assert_true(info.ok)
+    assert_equal(info.title, "notes.mojo")
+    assert_equal(info.pid, own_pid())
+    assert_equal(bytes_to_str(info.content), "unsaved work\n")
     _ = run_system("rm -rf '" + app.recovery_dir + "'")
 
 
@@ -156,7 +160,8 @@ def test_emergency_save_with_nothing_modified_creates_nothing() raises:
     app.recovery_dir = scratch() + "-none"
     app.exec(CM_NEW)
     assert_equal(app.emergency_save(), 0)
-    assert_false(path_exists(app.recovery_dir))
+    assert_equal(len(list_swap_files(app.recovery_dir)), 0)
+    _ = run_system("rm -rf '" + app.recovery_dir + "'")
 
 
 def test_terminate_signal_saves_and_stops_the_loop() raises:

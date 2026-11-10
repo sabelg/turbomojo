@@ -30,6 +30,7 @@ def main() raises:
     if app.top_editor() < 0:
         app.exec(CM_NEW)
     app.show_config_warnings()
+    app.offer_recovery()
     try:
         app.run()
     except e:
@@ -40,6 +41,6 @@ def main() raises:
         app.log_error("fatal: " + String(e))
         print("TurboMojo stopped because of an internal error:", String(e))
         if n > 0:
-            print("Unsaved buffers were written to", app.recovery_dir)
+            print("Unsaved buffers were kept and will be offered when you start TurboMojo again.")
         print("Details:", app.log_path)
         external_call["exit", NoneType](Int32(1))

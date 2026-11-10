@@ -51,4 +51,34 @@ $S shot | grep -q "TTY-COOKED" || fail "terminal not back in cooked mode after e
 $S shot | grep -q "EXIT=1" || fail "error exit status is not 1"
 grep -q "fatal: injected failure" "$ST/turbomojo/crash.log" || fail "error not logged"
 rm -rf "$ST"
+
+# ---- swap files: kill -9 must not lose work typed more than ~2 s ago
+swap_start() {
+  $T kill-server 2>/dev/null && sleep 0.5 || true
+  $T new-session -d -s ide -x 100 -y 30 \
+    "XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config pixi run ./build/tmide examples/hello.mojo; sleep 60"
+  sleep 2.5
+}
+swap_start
+$S keys C-End
+$S keys -l "# KILLME-$$"
+sleep 3                                   # longer than the 2 s swap interval
+pid=$(pgrep -n -f "build/tmide examples/hello.mojo") || fail "IDE process not found"
+kill -9 "$pid"
+sleep 0.5
+ls "$ST"/turbomojo/swap/*.swp >/dev/null 2>&1 || fail "no swap file after kill -9"
+grep -q "KILLME-$$" examples/hello.mojo && fail "kill -9 scenario modified the file on disk"
+swap_start
+$S shot | grep -q "Recover unsaved work" || fail "recovery was not offered after kill -9"
+$S shot | grep -q "examples/hello.mojo" || fail "recovery dialog does not name the file"
+$S keys r
+$S keys C-End
+$S shot | grep -q "# KILLME-$$" || fail "recovered buffer does not contain the typed text"
+$S keys M-x                               # quit: recovered buffer counts as unsaved
+$S shot | grep -q "Save?" || fail "recovered buffer is not marked modified"
+$S keys n
+sleep 0.7
+ls "$ST"/turbomojo/swap/*.swp >/dev/null 2>&1 && fail "swap file left behind after a normal quit"
+grep -q "KILLME-$$" examples/hello.mojo && fail "recovery modified the file on disk"
+rm -rf "$ST"
 echo "smoke ok"

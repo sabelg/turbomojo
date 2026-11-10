@@ -21,6 +21,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_swap import *
+from swap import *
 from app_files import *
 from app_dialogs import *
 from app_menus import *
@@ -35,23 +37,9 @@ from app_draw import *
 __extension App:
     # ================================================================= loop
     def emergency_save(mut self) -> Int:
-        """Write every modified buffer to the recovery directory (never over the user's
-        own files). Used when the IDE is told to terminate. Returns the number saved."""
-        var n = 0
-        var stamp = String(external_call["time", Int](Int(0)))
-        for i in range(len(self.wins)):
-            if self.wins[i].kind != WK_EDITOR or not self.wins[i].buf.modified:
-                continue
-            if n == 0:
-                _ = run_system("mkdir -p " + shell_quote(self.recovery_dir))
-            var name = basename(self.wins[i].path) if self.wins[i].path.byte_length() > 0 else self.wins[i].title
-            var target = self.recovery_dir + "/" + stamp + "-" + String(i) + "-" + name
-            try:
-                with open(target, "w") as f:
-                    f.write(bytes_to_str(self.wins[i].buf.to_bytes()))
-                n += 1
-            except:
-                pass
+        """Keep every modified buffer as a swap file (never touching the user's own
+        files). Used when the IDE is told to terminate. Returns the number kept."""
+        var n = self.write_all_swaps()
         self.recovered += n
         return n
 
@@ -90,6 +78,7 @@ __extension App:
         for w in self.config_warnings:
             self.log_error("config: " + w)
         self.term.crash_header = "TurboMojo " + VERSION + "  pid " + String(own_pid()) + "  started " + timestamp()
+        self.swap_enabled = True
         self.term.enter()
         var caps = self.term.probe(CAPS_TIMEOUT_MS)
         self.scr.color_mode = caps.color
@@ -132,6 +121,7 @@ __extension App:
                     self.mode = M_NORMAL
                     self.log_error(String(err))
                     self.info("Error", String(err))
+            self.swap_tick(now_ns())
             try:
                 self.poll_job()
             except err:
@@ -143,4 +133,6 @@ __extension App:
         self.sig.close()
         self.term.leave()
         if self.recovered > 0:
-            print("TurboMojo: saved", self.recovered, "unsaved buffer(s) to", self.recovery_dir)
+            print("TurboMojo: kept", self.recovered, "unsaved buffer(s); they will be offered when you start it again.")
+        else:
+            self.clean_swaps_on_exit()

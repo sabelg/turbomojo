@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_swap import *
+from swap import *
 from app_dialogs import *
 from app_menus import *
 from app_exec import *
@@ -96,10 +98,12 @@ __extension App:
         with open(self.wins[i].path, "w") as f:
             f.write(bytes_to_str(b))
         self.wins[i].buf.modified = False
+        self.drop_swap(i)
         self.say("Saved " + self.wins[i].path)
         return True
 
     def remove_window(mut self, i: Int):
+        self.drop_swap(i)       # closing is a decision: nothing left to recover
         _ = self.wins.pop(i)
 
     def close_window(mut self, i: Int, next: Int):

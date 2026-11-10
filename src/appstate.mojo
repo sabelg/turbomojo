@@ -127,7 +127,10 @@ struct App(Movable):
     var job: Job
     var sig: SignalFd
     var recovered: Int
-    var recovery_dir: String
+    var recovery_dir: String   # where swap files live
+    var swap_enabled: Bool     # off until the IDE really runs (tests opt in)
+    var swap_due: Int          # time (ns) of the next swap write; 0 = nothing pending
+    var pending_swaps: List[String]
     var tab_width: Int         # defaults for new buffers (user config)
     var indent_size: Int
     var config_path: String    # user config file; empty until load_config() (tests stay hermetic)
@@ -181,7 +184,10 @@ struct App(Movable):
         self.job = Job()
         self.sig = SignalFd()
         self.recovered = 0
-        self.recovery_dir = state_dir() + "/recovered"
+        self.recovery_dir = state_dir() + "/swap"
+        self.swap_enabled = False
+        self.swap_due = 0
+        self.pending_swaps = List[String]()
         self.log_path = ""
         self.config_path = ""
         self.tab_width = 4
@@ -235,6 +241,8 @@ struct App(Movable):
             t = min(t, ESC_TIMEOUT_MS)
         if self.status_until > now:
             t = min(t, (self.status_until - now) // 1000000 + 1)
+        if self.swap_due > now:
+            t = min(t, (self.swap_due - now) // 1000000 + 1)
         if self.show_clock:
             t = min(t, secs_to_minute * 1000 + 50)
         return max(1, t)

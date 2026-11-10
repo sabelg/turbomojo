@@ -20,6 +20,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_swap import *
+from swap import *
 from app_files import *
 from app_menus import *
 from app_exec import *
@@ -175,6 +177,13 @@ __extension App:
                 self.focus(self.dlg.item_data[s])
         elif kind == D_ARGS and b == 0:
             self.run_args = self.dlg.field_text(0)
+        elif kind == D_RECOVER:
+            if b == 0:
+                _ = self.recover_swaps()
+            elif b == 1:
+                self.discard_swaps()
+            else:
+                self.pending_swaps.clear()      # "Later": ask again next time
         elif kind == D_COMPILER and b == 0:
             var c = self.dlg.field_text(0)
             if c.byte_length() > 0:

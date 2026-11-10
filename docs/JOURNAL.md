@@ -347,3 +347,34 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   `check.sh` CHECK OK (14 files, 302 tests).
 - Not supported: `end_of_line = cr`, `charset`, `max_line_length` (read and ignored).
 - Phase 0 status: P0-15 .. P0-21 remain.
+
+## 2026-11-10 · P0-15 swap files and recovery · done
+
+- New `src/swap.mojo` (format, atomic write via temp file + rename, byte-exact read,
+  owner-pid liveness check, directory listing) and `src/app_swap.mojo` (extension of App).
+- Each modified editor buffer is written to `$XDG_STATE_HOME/turbomojo/swap/` two seconds
+  after the first change that is not yet in its swap file; the event loop's timeout
+  includes that deadline. A saved file's swap name is derived from its path, an untitled
+  buffer gets `untitled-<pid>-<n>.swp` and keeps it.
+- Swap files are removed when the buffer is saved, when its window is closed (the user
+  chose to discard), and for all own buffers on a normal quit. They stay after a crash or
+  `kill -9`. SIGTERM/SIGHUP now also keep work as swap files (the earlier separate
+  `recovered/` copies are gone), so there is one recovery path.
+- At startup, swap files whose owner process no longer exists are offered in a dialog:
+  Recover (opened as modified buffers, into an already-open window for that path or the
+  empty startup window if there is one; the file on disk is not touched), Discard, Later
+  (Esc counts as Later). Swap files of a running IDE are ignored.
+- Swapping is off until `run()` enables it, so tests never write to the real state dir.
+- `tests/test_swap.mojo` (20 tests) and updated `tests/test_signals.mojo`. One test
+  expectation of mine was wrong (the 250 ms resize fallback in tests is shorter than the
+  swap deadline); the test now checks the running-IDE case with the signal descriptor open.
+- `scripts/smoke.sh` now runs the real scenario in tmux: type, wait 3 s, `kill -9`, check
+  the swap file exists, restart, see the dialog naming the file, Recover, see the typed
+  text, quit without saving, check no swap file is left and the file on disk is unchanged.
+  Looked at the dialog by eye once as well.
+- Found in the live check and fixed: recovery left the empty startup window underneath.
+- Limits: work typed in the last 2 seconds before a hard kill is lost (by design); after
+  `kill -9` the terminal itself is left in raw mode (nothing can run then; `reset` fixes
+  it); whole buffers are rewritten each time, which will need a size cap for very large
+  files (P1-05).
+- Verified: `check.sh` CHECK OK (15 files, 322 tests, smoke incl. crash and kill -9).

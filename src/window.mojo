@@ -55,6 +55,8 @@ struct Window(Copyable, Movable):
     var last_act: Int
     var follow: Bool
     var gut: Int
+    var swap_file: String    # path of this buffer's swap file ('' if none written)
+    var swap_version: Int    # buffer version the swap file holds (-1 if none)
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
         self.kind = kind
@@ -84,6 +86,8 @@ struct Window(Copyable, Movable):
         self.last_act = ACT_NONE
         self.follow = True
         self.gut = 0
+        self.swap_file = ""
+        self.swap_version = -1
 
     # ------------------------------------------------------------ geometry
     def contains(self, px: Int, py: Int) -> Bool:
