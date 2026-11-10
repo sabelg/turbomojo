@@ -43,6 +43,65 @@ from app_draw import *
 comptime JUMPS_MAX = 100
 
 
+struct PlanEdit(Copyable, Movable):
+    """A text edit checked against the file: character columns, and its new text."""
+    var r1: Int
+    var c1: Int
+    var r2: Int
+    var c2: Int
+    var text: List[Int]
+
+    def __init__(out self, r1: Int, c1: Int, r2: Int, c2: Int, text: List[Int]):
+        self.r1 = r1
+        self.c1 = c1
+        self.r2 = r2
+        self.c2 = c2
+        self.text = text.copy()
+
+
+def plan_edits(lines: List[List[Int]], edits: List[LspEdit]) raises -> List[PlanEdit]:
+    """Check a file's edits against its lines and return them with character columns,
+    last one first (so that applying one does not move those still to do). Raises if an
+    edit lies outside the text or two of them overlap."""
+    var plan = List[PlanEdit]()
+    var n = len(lines)
+    for e in edits:
+        var r1 = e.r1
+        var r2 = e.r2
+        if r1 > n or r2 > n or (r1 == n and e.c1 > 0) or (r2 == n and e.c2 > 0):
+            raise Error("an edit lies beyond the end of the text")
+        var c1 = 0
+        var c2 = 0
+        if r1 == n:
+            # "line after the last one, column 0" is the very end of the text
+            r1 = n - 1
+            c1 = len(lines[r1])
+        else:
+            c1 = utf16_to_col(lines[r1], e.c1)
+        if r2 == n:
+            r2 = n - 1
+            c2 = len(lines[r2])
+        else:
+            c2 = utf16_to_col(lines[r2], e.c2)
+        var text = List[Int]()
+        for c in decode(e.text):
+            if c != 13:
+                text.append(c)
+        plan.append(PlanEdit(r1, c1, r2, c2, text))
+    for a in range(1, len(plan)):
+        var b = a
+        while b > 0 and (plan[b].r1 > plan[b - 1].r1 or (plan[b].r1 == plan[b - 1].r1 and plan[b].c1 > plan[b - 1].c1)):
+            var tmp = plan[b].copy()
+            plan[b] = plan[b - 1].copy()
+            plan[b - 1] = tmp^
+            b -= 1
+    for k in range(1, len(plan)):
+        # plan[k] starts before plan[k - 1]; it must also end before that one starts
+        if plan[k].r2 > plan[k - 1].r1 or (plan[k].r2 == plan[k - 1].r1 and plan[k].c2 > plan[k - 1].c1):
+            raise Error("two edits overlap")
+    return plan^
+
+
 def is_word_cp(c: Int) -> Bool:
     return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 or c >= 128
 
@@ -319,6 +378,244 @@ __extension App:
             self.wins[mi].follow = True
         var summary = to_str(self.wins[mi].buf.line(n + 1)) if mi >= 0 else String("")
         self.say(summary + " - " + self.reg.key_label(CM_NEXTERR) + " / " + self.reg.key_label(CM_PREVERR) + " step through them")
+
+    # ================================================================ rename
+    def rename_command(mut self):
+        """Rename symbol: ask the language server whether the symbol at the cursor can
+        be renamed, ask the user for the new name, then for the edits (rename_reply)."""
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        var path = self.wins[ai].path
+        if self.lsp.state != LSP_READY or path.byte_length() == 0 or self.lsp.find_doc(path_to_uri(path)) < 0:
+            self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
+            return
+        if not self.lsp.table.rename:
+            self.say("This language server does not rename symbols")
+            return
+        self.wins[ai].collapse()
+        self.ren_path = path
+        self.ren_row = self.wins[ai].cr
+        self.ren_col = self.wins[ai].cc
+        self.ren_retries = 0
+        self.ren_stage = 0
+        if self.lsp.table.prepare_rename:
+            self.ren_stage = 1
+            self.rename_resend()
+            if self.ren_stage == 1:
+                self.say("Asking the language server...")
+            return
+        self.rename_ask(self.word_under(ai))
+
+    def rename_resend(mut self):
+        """Send (again) the question of the current stage."""
+        var ai = self.active_editor()
+        if ai < 0 or self.ren_stage == 0 or self.wins[ai].path != self.ren_path or self.wins[ai].cr != self.ren_row or self.wins[ai].cc != self.ren_col:
+            self.ren_stage = 0
+            self.ren_req_id = -1
+            return
+        var now = now_ns()
+        self.lsp_send_changes(ai, now, False)
+        var uri = path_to_uri(self.ren_path)
+        var c16 = self.wins[ai].buf.utf16_col(self.ren_row, self.ren_col)
+        if self.ren_stage == 1:
+            self.ren_req_id = self.lsp.request_prepare_rename(uri, self.ren_row, c16, now)
+        else:
+            self.ren_vpaths.clear()
+            self.ren_versions.clear()
+            for k in range(len(self.wins)):
+                if self.wins[k].kind == WK_EDITOR and self.wins[k].path.byte_length() > 0:
+                    self.ren_vpaths.append(self.wins[k].path)
+                    self.ren_versions.append(self.wins[k].buf.version)
+            self.ren_req_id = self.lsp.request_rename(uri, self.ren_row, c16, self.ren_new, now)
+        if self.ren_req_id < 0:
+            self.ren_stage = 0
+            self.say("The language server cannot be asked now")
+
+    def rename_ask(mut self, name: String):
+        self.ren_stage = 0
+        if name.byte_length() == 0:
+            self.say("There is no name at the cursor to rename")
+            return
+        self.ren_old = name
+        var d = Dialog(D_RENAME, "Rename Symbol", max(44, min(self.scr.w - 4, cp_len(name) + 24)), 8)
+        d.lines.append("Rename " + name + " everywhere it is used")
+        d.fields.append(Field("~N~ew name", name))
+        d.fields[0].fresh = True
+        d.buttons.append("~O~K")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def rename_accept(mut self, typed: String):
+        """The new name was entered."""
+        var name = String(typed.strip())
+        if name.byte_length() == 0 or name == self.ren_old:
+            self.say("The name was not changed")
+            return
+        self.ren_new = name
+        self.ren_stage = 2
+        self.ren_retries = 0
+        self.rename_resend()
+        if self.ren_stage == 2:
+            self.say("Asking the language server...")
+
+    def rename_reply(mut self, m: RpcMessage):
+        self.ren_req_id = -1
+        var stage = self.ren_stage
+        var ai = self.active_editor()
+        if stage == 0 or ai < 0 or self.mode != M_NORMAL or self.wins[ai].path != self.ren_path or self.wins[ai].cr != self.ren_row or self.wins[ai].cc != self.ren_col:
+            self.ren_stage = 0
+            return
+        if m.kind == RPC_ERROR:
+            if retry_later(m) and self.ren_retries < COMP_MAX_RETRIES:
+                self.ren_retries += 1
+                self.ren_retry_due = now_ns() + COMP_RETRY_MS * 1000000
+                return
+            self.ren_stage = 0
+            self.say("Language server: " + m.error_message())
+            return
+        if stage == 1:
+            var rs = parse_prepare_rename(m.doc, m.result())
+            if not rs.ok:
+                self.ren_stage = 0
+                self.say("This cannot be renamed")
+                return
+            var name = rs.placeholder
+            if name.byte_length() == 0 and rs.known and rs.row < self.wins[ai].buf.count():
+                var line = self.wins[ai].buf.line(rs.row)
+                var cps = List[Int]()
+                for q in range(utf16_to_col(line, rs.c1), utf16_to_col(line, rs.c2)):
+                    cps.append(line[q])
+                name = to_str(cps)
+            if name.byte_length() == 0:
+                name = self.word_under(ai)
+            self.rename_ask(name)
+            return
+        # ---- the edits
+        self.ren_stage = 0
+        var we = parse_workspace_edit(m.doc, m.result())
+        if we.problem.byte_length() > 0:
+            self.info("Rename", "The server's answer cannot be applied: " + we.problem)
+            return
+        if we.count() == 0:
+            self.say("The server found nothing to rename")
+            return
+        for k in range(len(self.ren_vpaths)):
+            var wi = self.find_editor(self.ren_vpaths[k])
+            if wi < 0 or self.wins[wi].buf.version != self.ren_versions[k]:
+                self.say("The text changed while the server was working - rename again")
+                return
+        try:
+            for f in we.files:
+                _ = plan_edits(self.lines_of(f.path), f.edits)
+        except e:
+            self.info("Rename", "The server's answer cannot be applied: " + String(e))
+            return
+        # ---- preview: every place in the Message window
+        var locs = List[LspLocation]()
+        for f in we.files:
+            for ed in f.edits:
+                locs.append(LspLocation(f.path, ed.r1, ed.c1))
+        for a in range(1, len(locs)):
+            var b = a
+            while b > 0 and place_before(locs[b], locs[b - 1], self.ren_path):
+                var tmp = locs[b].copy()
+                locs[b] = locs[b - 1].copy()
+                locs[b - 1] = tmp^
+                b -= 1
+        self.show_places("Rename " + self.ren_old + " to " + self.ren_new, locs)
+        var others = 0
+        var unopened = 0
+        for f in we.files:
+            if f.path != self.ren_path:
+                others += 1
+            if self.find_editor(f.path) < 0:
+                unopened += 1
+        self.ren_edit = we^
+        if others == 0:
+            self.rename_apply()             # this file only: one undo step takes it back
+            return
+        var d = Dialog(D_RENAME_APPLY, "Rename Symbol", min(self.scr.w - 4, 64), 9)
+        d.lines.append("Rename " + self.ren_old + " to " + self.ren_new + ":")
+        d.lines.append(count_of(self.ren_edit.count(), "change") + " in " + count_of(len(self.ren_edit.files), "file") + " (listed in the Message window)")
+        if unopened > 0:
+            d.lines.append(count_of(unopened, "file") + " will be opened; nothing is saved until you save")
+        d.buttons.append("~A~pply")
+        d.buttons.append("~C~ancel")
+        d.focus = d.button_focus_index(0)
+        self.show(d^)
+
+    def lines_of(self, path: String) raises -> List[List[Int]]:
+        """The lines of a file as they are now: from its window, else from disk."""
+        var wi = self.find_editor(path)
+        if wi >= 0:
+            var lines = List[List[Int]]()
+            for r in range(self.wins[wi].buf.count()):
+                lines.append(self.wins[wi].buf.line(r))
+            return lines^
+        if not path_exists(path):
+            raise Error(basename(path) + " does not exist")
+        return self.file_lines(path)
+
+    def rename_apply(mut self):
+        var n = self.ren_edit.count()
+        var files = len(self.ren_edit.files)
+        var problem = self.apply_workspace_edit()
+        self.ren_edit = WorkspaceEdit()
+        if problem.byte_length() > 0:
+            self.info("Rename", "Nothing was changed: " + problem)
+            return
+        self.say("Renamed " + self.ren_old + " to " + self.ren_new + ": " + count_of(n, "change") + " in " + count_of(files, "file") + (" - not saved yet" if files > 1 else ""))
+
+    def apply_workspace_edit(mut self) -> String:
+        """Apply self.ren_edit: every file is checked first, then each is changed in one
+        undo step (files that are not open are opened, and left unsaved). Returns ''
+        or why nothing was changed."""
+        var plans = List[List[PlanEdit]]()
+        try:
+            for f in self.ren_edit.files:
+                plans.append(plan_edits(self.lines_of(f.path), f.edits))
+        except e:
+            return String(e)
+        var back = self.active_editor()
+        var back_path = self.wins[back].path if back >= 0 else String("")
+        for k in range(len(plans)):
+            var path = self.ren_edit.files[k].path
+            if self.find_editor(path) < 0:
+                try:
+                    self.open_path(path)
+                except e:
+                    return "cannot open " + basename(path) + " (the files before it were changed; use Undo there)"
+            var wi = self.find_editor(path)
+            if wi < 0:
+                return "cannot open " + basename(path) + " (the files before it were changed; use Undo there)"
+            self.wins[wi].collapse()
+            self.wins[wi].sel = False
+            var cr = self.wins[wi].cr
+            var cc = self.wins[wi].cc
+            var g = self.wins[wi].new_group()
+            # where the cursor ends up: edits before it on its line move it
+            var shift = 0
+            for p in plans[k]:
+                if p.r1 == cr and p.r2 == cr and not (10 in p.text):
+                    if p.c2 <= cc:
+                        shift += len(p.text) - (p.c2 - p.c1)
+                    elif p.c1 < cc:
+                        shift += min(cc - p.c1, len(p.text)) - (cc - p.c1)
+            for p in plans[k]:
+                if p.r1 != p.r2 or p.c1 != p.c2:
+                    _ = self.wins[wi].buf.delete(p.r1, p.c1, p.r2, p.c2, cr, cc, g)
+                if len(p.text) > 0:
+                    _ = self.wins[wi].buf.insert(p.r1, p.c1, p.text, cr, cc, g)
+            self.wins[wi].cc = max(0, cc + shift)
+            self.wins[wi].clamp()
+            self.wins[wi].sync_want()
+            self.wins[wi].break_group()
+        if back_path.byte_length() > 0:
+            var bi = self.find_editor(back_path)
+            if bi >= 0:
+                self.focus(bi)
+        return ""
 
     # ====================================================== go to definition
     def definition_command(mut self):

@@ -28,7 +28,7 @@ from signals import SignalFd, send_signal, own_pid
 from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
-from lsp import LspClient, CompletionItem, SigInfo
+from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit
 from grep import FileSearch
 from filestate import *
 from markdown import MdLine
@@ -211,6 +211,18 @@ struct App(Movable):
     var ref_req_col: Int
     var ref_retries: Int
     var ref_retry_due: Int
+    var ren_stage: Int               # 0 idle, 1 asked whether it can be renamed, 2 asked for the edits
+    var ren_req_id: Int
+    var ren_path: String
+    var ren_row: Int
+    var ren_col: Int
+    var ren_old: String
+    var ren_new: String
+    var ren_retries: Int
+    var ren_retry_due: Int
+    var ren_vpaths: List[String]     # the open files and their versions when the edits were asked for
+    var ren_versions: List[Int]
+    var ren_edit: WorkspaceEdit      # waiting for the user's go-ahead
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -371,6 +383,18 @@ struct App(Movable):
         self.ref_req_col = -1
         self.ref_retries = 0
         self.ref_retry_due = 0
+        self.ren_stage = 0
+        self.ren_req_id = -1
+        self.ren_path = ""
+        self.ren_row = -1
+        self.ren_col = -1
+        self.ren_old = ""
+        self.ren_new = ""
+        self.ren_retries = 0
+        self.ren_retry_due = 0
+        self.ren_vpaths = List[String]()
+        self.ren_versions = List[Int]()
+        self.ren_edit = WorkspaceEdit()
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -493,6 +517,8 @@ struct App(Movable):
             t = min(t, max(1, (self.def_retry_due - now) // 1000000 + 1))
         if self.ref_retry_due > 0:
             t = min(t, max(1, (self.ref_retry_due - now) // 1000000 + 1))
+        if self.ren_retry_due > 0:
+            t = min(t, max(1, (self.ren_retry_due - now) // 1000000 + 1))
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.watch_enabled and not self.watch.active():

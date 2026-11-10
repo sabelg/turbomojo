@@ -1573,3 +1573,44 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   - The list is a snapshot: it is not updated when the files are edited afterwards.
   - Very long lists are not capped or measured (one Message line per place).
 - Verified: `check.sh` CHECK OK (33 files, 745 tests).
+
+## 2026-11-10 · P2-09 Rename with multi-file preview and apply · done
+
+- `src/lsp.mojo`: `request_prepare_rename`, `request_rename`; `parse_prepare_rename`
+  (bare range, range + placeholder, defaultBehavior, null); `WorkspaceEdit` /
+  `FileEdits` / `LspEdit` and `parse_workspace_edit` (`documentChanges` before
+  `changes`; create/rename/delete of files, non-file URIs and impossible ranges make
+  the whole answer unusable - `problem`). Client capabilities `rename.prepareSupport`
+  and `workspace.workspaceEdit.documentChanges`.
+- `src/app_nav.mojo`: `rename_command` -> (prepareRename if the server has it) ->
+  dialog "Rename Symbol" with the present name pre-filled -> `textDocument/rename` ->
+  `rename_reply`. `plan_edits` checks every edit against the text (inside the file,
+  no overlaps), converts UTF-16 columns and orders them last-first. The places are
+  listed in the Message window; edits confined to the current file are applied at
+  once, otherwise a dialog asks (Apply / Cancel) and says how many files will be
+  opened. `apply_workspace_edit`: all files are checked before any is touched; each
+  file is changed in one undo group; files not open are opened and left unsaved; focus
+  returns to the starting window; the cursor moves with the text on its line. The
+  answer is dropped if any open file changed while the server was working.
+- Command: Rename symbol (Shift-F2), Search menu.
+- Tests (8 new in `tests/test_lsp.mojo`, 74 there): answer forms; edit checking and
+  ordering; one file = one undo step, server told, cursor follows; two files with the
+  question, Cancel and Apply, disk untouched, undo per file; refusals and unusable
+  answers change nothing (9 cases) plus no-prepare / no-feature / no-server; placeholder
+  + documentChanges + retries; text changed meanwhile; and the real mojo-lsp-server.
+- Found with the real server (Mojo 1.2):
+  - it keys `changes` by plain path ("/dir/t.mojo"), not by URI - my parser first
+    refused that as "not a file"; plain absolute paths are now accepted (unit test);
+  - it does not offer prepareRename, so the word at the cursor is offered;
+  - it renames local variables only: renaming a function answers "renaming is only
+    available for local variables", which the IDE shows. So real multi-file renames
+    cannot happen with this server; that path is verified against the fake server only.
+- Not done / unverified:
+  - Not tried by hand in tmux; Shift-F2 as sent by real terminals is untested.
+  - File operations in an answer (create/rename/delete) are refused, not carried out.
+  - If opening a later file fails after earlier files were changed, the earlier ones
+    stay changed (the message says to use Undo there); not exercised by a test.
+  - Document versions in `documentChanges` are not compared; the IDE's own "changed
+    meanwhile" check is used instead.
+  - The preview lists the old lines; it does not show the new text side by side.
+- Verified: `check.sh` CHECK OK (33 files, 753 tests).

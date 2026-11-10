@@ -285,6 +285,8 @@ __extension App:
             self.definition_command()
         elif cmd == CM_REFERENCES:
             self.references_command()
+        elif cmd == CM_RENAME:
+            self.rename_command()
         elif cmd == CM_BACK:
             self.jump_back()
         elif cmd == CM_FORWARD:

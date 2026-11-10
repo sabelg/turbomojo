@@ -283,6 +283,80 @@ def main():
             else:
                 send({"jsonrpc": "2.0", "id": mid, "result": places})
             continue
+        if method in ("textDocument/prepareRename", "textDocument/rename"):
+            import re
+            uri = params["textDocument"]["uri"]
+            text = DOCS.get(uri, "")
+            lines = text.split("\n")
+            ln = params["position"]["line"]
+            line = lines[ln] if ln < len(lines) else ""
+            at = utf16_index(line, params["position"]["character"])
+            a = at
+            while a > 0 and (line[a - 1].isalnum() or line[a - 1] == "_"):
+                a -= 1
+            b = at
+            while b < len(line) and (line[b].isalnum() or line[b] == "_"):
+                b += 1
+            word = line[a:b]
+            u16 = lambda s: len(s.encode("utf-16-le")) // 2
+            rng = {"start": {"line": ln, "character": u16(line[:a])}, "end": {"line": ln, "character": u16(line[:b])}}
+            if method == "textDocument/prepareRename":
+                if not word or word == "fixed":
+                    send({"jsonrpc": "2.0", "id": mid, "result": None})
+                elif word == "bad":
+                    send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "cannot rename this"}})
+                elif word == "plain":
+                    send({"jsonrpc": "2.0", "id": mid, "result": {"defaultBehavior": True}})
+                elif word == "ph":
+                    send({"jsonrpc": "2.0", "id": mid, "result": {"range": rng, "placeholder": "placeholder_name"}})
+                else:
+                    send({"jsonrpc": "2.0", "id": mid, "result": rng})
+                continue
+            new = params["newName"]
+            main.renames = getattr(main, "renames", []) + [new]
+            sources = [(uri, text)]
+            if word == "shared":
+                other = uri.rsplit("/", 1)[0] + "/other.mojo"
+                if other in DOCS:
+                    sources.append((other, DOCS[other]))
+                else:
+                    with open(other[len("file://"):], encoding="utf-8") as fh:
+                        sources.append((other, fh.read()))
+            changes = {}
+            for u, t in sources:
+                for k, l in enumerate(t.split("\n")):
+                    for mm in re.finditer(r"\b%s\b" % re.escape(word), l):
+                        changes.setdefault(u, []).append({"range": {
+                            "start": {"line": k, "character": u16(l[:mm.start()])},
+                            "end": {"line": k, "character": u16(l[:mm.end()])}}, "newText": new})
+            if "RENBUSY" in text and len(main.renames) < 3:
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32801, "message": "outdated request"}})
+            elif "RENSLOW" in text:
+                main.held = {"jsonrpc": "2.0", "id": mid, "result": {"changes": changes}}     # answered on "release"
+            elif new == "1bad":
+                send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "invalid name"}})
+            elif word == "nothing":
+                send({"jsonrpc": "2.0", "id": mid, "result": {"changes": {}}})
+            elif word == "mover":
+                send({"jsonrpc": "2.0", "id": mid, "result": {"documentChanges": [
+                    {"textDocument": {"uri": uri, "version": 1}, "edits": changes[uri]},
+                    {"kind": "rename", "oldUri": uri, "newUri": uri + ".new"}]}})
+            elif word == "clash":
+                send({"jsonrpc": "2.0", "id": mid, "result": {"changes": {uri: [
+                    {"range": {"start": {"line": ln, "character": 0}, "end": {"line": ln, "character": 4}}, "newText": "x"},
+                    {"range": {"start": {"line": ln, "character": 2}, "end": {"line": ln, "character": 5}}, "newText": "y"}]}}})
+            elif word == "far":
+                send({"jsonrpc": "2.0", "id": mid, "result": {"changes": {uri: [
+                    {"range": {"start": {"line": 999, "character": 0}, "end": {"line": 999, "character": 1}}, "newText": "x"}]}}})
+            elif "DOCCHANGES" in text:
+                send({"jsonrpc": "2.0", "id": mid, "result": {"documentChanges": [
+                    {"textDocument": {"uri": u, "version": None}, "edits": list(reversed(e))} for u, e in changes.items()]}})
+            else:
+                send({"jsonrpc": "2.0", "id": mid, "result": {"changes": changes}})
+            continue
+        if method == "release":             # send the answer that was held back
+            send(main.held)
+            continue
         if method == "textDocument/signatureHelp":
             text = DOCS.get(params["textDocument"]["uri"], "")
             main.sigs = getattr(main, "sigs", 0) + 1
@@ -350,7 +424,7 @@ def main():
             continue
         if method == "doc_state":        # what this server holds, for the tests
             send({"jsonrpc": "2.0", "id": mid, "result": {
-                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
+                "docs": DOCS, "saved": SAVED, "asked": getattr(main, "asked", []), "sig_contexts": getattr(main, "sig_contexts", []), "ref_contexts": getattr(main, "ref_contexts", []), "renames": getattr(main, "renames", []), "resolved": getattr(main, "resolved", []), "ranged": getattr(main, "ranged", 0), "whole": getattr(main, "whole", 0)}})
             continue
         if method == "closed_docs":
             send({"jsonrpc": "2.0", "id": mid, "result": getattr(main, "closed", [])})

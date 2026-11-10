@@ -11,10 +11,12 @@ from rpc import *
 from json import json_parse
 from term import wait_readable
 from app import *
-from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER
+from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER, M_DIALOG
+from dialog import D_RENAME, D_RENAME_APPLY, D_INFO
+from app_nav import plan_edits
 from markdown import md_plain
 from window import WK_MESSAGE
-from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_REFERENCES, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
+from commands import CM_LSP, CM_NONE, CM_SAVE, CM_NEW, CM_NEXTERR, CM_PREVERR, CM_COMPLETE, CM_UNDO, CM_HOVER, CM_SIGNATURE, CM_DEFINITION, CM_REFERENCES, CM_RENAME, CM_BACK, CM_FORWARD, CM_GOTO, build_registry
 from term import MOD_SHIFT, fkey, alt, key_event, KEY_ENTER, KEY_TAB, KEY_UP, KEY_DOWN, KEY_ESC, KEY_PGDN, KEY_LEFT, KEY_HOME
 from signals import own_pid
 from util import cp_len, decode, to_str, str_bytes, bytes_to_str, env_or, run_system, run_capture, getcwd, toolchain_env, which
@@ -1794,6 +1796,309 @@ def test_references_none_retries_and_moved_cursor() raises:
     _ = run_system("rm -rf '" + dir + "'")
 
 
+# ------------------------------------------------------------------ rename
+def wait_ren(mut app: App):
+    var t0 = now()
+    while (app.ren_req_id >= 0 or app.ren_retry_due > 0) and now() - t0 < 5000 * MS:
+        run_ticks(app, 20, False)
+
+
+def buf_text(app: App, path: String) -> String:
+    """A window's text, lines joined with " | "."""
+    var wi = app.find_editor(path)
+    if wi < 0:
+        return "(not open)"
+    var s = String("")
+    for r in range(app.wins[wi].buf.count()):
+        if r > 0:
+            s += " | "
+        s += to_str(app.wins[wi].buf.line(r))
+    return s
+
+
+def rename_to(mut app: App, name: String) raises:
+    """Run the command, type the new name into the dialog, press Enter, wait."""
+    app.exec(CM_RENAME)
+    wait_ren(app)
+    assert_equal(app.mode, M_DIALOG, app.status)
+    assert_equal(app.dlg.kind, D_RENAME)
+    type_text(app, name)
+    app.handle(key_event(KEY_ENTER))
+    wait_ren(app)
+
+
+def test_workspace_edit_and_prepare_rename_forms() raises:
+    var a = parse_workspace_edit(json_parse("{\"changes\": {\"file:///p/a.mojo\": [{\"range\": {\"start\": {\"line\": 1, \"character\": 2}, \"end\": {\"line\": 1, \"character\": 5}}, \"newText\": \"xy\"}, {\"range\": {\"start\": {\"line\": 0, \"character\": 0}, \"end\": {\"line\": 0, \"character\": 0}}, \"newText\": \"\"}], \"file:///p/b.mojo\": [{\"range\": {\"start\": {\"line\": 7, \"character\": 0}, \"end\": {\"line\": 8, \"character\": 1}}, \"newText\": \"q\"}]}}"), 0)
+    assert_equal(a.problem, "")
+    assert_equal(len(a.files), 2)
+    assert_equal(a.count(), 3)
+    assert_equal(a.files[0].path, "/p/a.mojo")
+    assert_equal(a.files[0].edits[0].c2, 5)
+    assert_equal(a.files[0].edits[0].text, "xy")
+    assert_equal(a.files[1].edits[0].r2, 8)
+    # documentChanges wins over changes; two entries for one file are put together
+    var d = parse_workspace_edit(json_parse("{\"changes\": {\"file:///p/zzz.mojo\": []}, \"documentChanges\": [{\"textDocument\": {\"uri\": \"file:///p/a.mojo\", \"version\": 4}, \"edits\": [{\"range\": {\"start\": {\"line\": 1, \"character\": 2}, \"end\": {\"line\": 1, \"character\": 5}}, \"newText\": \"n\"}]}, {\"textDocument\": {\"uri\": \"file:///p/a.mojo\", \"version\": 4}, \"edits\": [{\"range\": {\"start\": {\"line\": 3, \"character\": 0}, \"end\": {\"line\": 3, \"character\": 1}}, \"newText\": \"m\"}]}]}"), 0)
+    assert_equal(d.problem, "")
+    assert_equal(len(d.files), 1)
+    assert_equal(len(d.files[0].edits), 2)
+    # what is not done is refused as a whole
+    var ops = parse_workspace_edit(json_parse("{\"documentChanges\": [{\"kind\": \"create\", \"uri\": \"file:///p/new.mojo\"}]}"), 0)
+    assert_equal(ops.problem, "it wants to create a file")
+    var odd = parse_workspace_edit(json_parse("{\"changes\": {\"untitled:1\": [{\"range\": {\"start\": {\"line\": 0, \"character\": 0}, \"end\": {\"line\": 0, \"character\": 0}}, \"newText\": \"x\"}]}}"), 0)
+    assert_true(odd.problem.find("not a file") > 0, odd.problem)
+    var back = parse_workspace_edit(json_parse("{\"changes\": {\"file:///p/a.mojo\": [{\"range\": {\"start\": {\"line\": 2, \"character\": 5}, \"end\": {\"line\": 2, \"character\": 1}}, \"newText\": \"x\"}]}}"), 0)
+    assert_true(back.problem.find("impossible range") > 0, back.problem)
+    assert_equal(parse_workspace_edit(json_parse("null"), 0).count(), 0)
+    # the Mojo server keys `changes` by plain path instead of URI: taken as the file it means
+    var bare = parse_workspace_edit(json_parse("{\"changes\": {\"/p/a b.mojo\": [{\"range\": {\"start\": {\"line\": 0, \"character\": 0}, \"end\": {\"line\": 0, \"character\": 1}}, \"newText\": \"x\"}]}}"), 0)
+    assert_equal(bare.problem, "")
+    assert_equal(bare.files[0].path, "/p/a b.mojo")
+    assert_equal(parse_workspace_edit(json_parse("{}"), 0).count(), 0)
+    # prepareRename: a range, a range with a placeholder, "do it yourself", no
+    var r1 = parse_prepare_rename(json_parse("{\"start\": {\"line\": 2, \"character\": 4}, \"end\": {\"line\": 2, \"character\": 9}}"), 0)
+    assert_true(r1.ok and r1.known)
+    assert_equal(r1.c1, 4)
+    assert_equal(r1.c2, 9)
+    var r2 = parse_prepare_rename(json_parse("{\"range\": {\"start\": {\"line\": 2, \"character\": 4}, \"end\": {\"line\": 2, \"character\": 9}}, \"placeholder\": \"abc\"}"), 0)
+    assert_true(r2.ok and r2.known)
+    assert_equal(r2.placeholder, "abc")
+    var r3 = parse_prepare_rename(json_parse("{\"defaultBehavior\": true}"), 0)
+    assert_true(r3.ok)
+    assert_false(r3.known)
+    assert_false(parse_prepare_rename(json_parse("null"), 0).ok)
+
+
+def test_edits_are_checked_and_ordered() raises:
+    var lines = List[List[Int]]()
+    lines.append(decode("ab \U0001F600 cd"))
+    lines.append(decode("second"))
+    var edits = List[LspEdit]()
+    edits.append(LspEdit(0, 0, 0, 2, "X"))
+    edits.append(LspEdit(1, 0, 1, 6, "Y\r\nZ"))
+    edits.append(LspEdit(0, 6, 0, 8, "W"))               # "cd": UTF-16 6..8 is characters 5..7
+    edits.append(LspEdit(2, 0, 2, 0, "end"))             # the line after the last: the very end
+    var plan = plan_edits(lines, edits)
+    assert_equal(len(plan), 4)
+    assert_equal(plan[0].r1, 1)                          # last place first
+    assert_equal(plan[0].c1, 6)
+    assert_equal(to_str(plan[0].text), "end")
+    assert_equal(to_str(plan[1].text), "Y\nZ")           # CR dropped
+    assert_equal(plan[2].c1, 5)
+    assert_equal(plan[2].c2, 7)
+    assert_equal(plan[3].c2, 2)
+    # touching edits are fine, overlapping ones are not
+    var touch = List[LspEdit]()
+    touch.append(LspEdit(0, 0, 0, 2, "X"))
+    touch.append(LspEdit(0, 2, 0, 3, "Y"))
+    assert_equal(len(plan_edits(lines, touch)), 2)
+    var over = List[LspEdit]()
+    over.append(LspEdit(0, 0, 0, 2, "X"))
+    over.append(LspEdit(0, 1, 0, 3, "Y"))
+    var said = String("")
+    try:
+        _ = plan_edits(lines, over)
+    except e:
+        said = String(e)
+    assert_equal(said, "two edits overlap")
+    var far = List[LspEdit]()
+    far.append(LspEdit(2, 1, 2, 2, "X"))
+    said = ""
+    try:
+        _ = plan_edits(lines, far)
+    except e:
+        said = String(e)
+    assert_equal(said, "an edit lies beyond the end of the text")
+
+
+def test_rename_in_one_file_is_one_undo_step() raises:
+    var dir = scratch("ren1")
+    var app = comp_app(dir, "def helper():\n    pass\nx = helper() + helper()\n")
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    assert_equal(build_registry().find_key(fkey(2) | MOD_SHIFT), CM_RENAME)
+    app.wins[i].goto(2, 6)
+    app.handle(key_event(fkey(2) | MOD_SHIFT))
+    assert_equal(app.status, "Asking the language server...")
+    wait_ren(app)
+    assert_equal(app.mode, M_DIALOG)
+    assert_equal(app.dlg.kind, D_RENAME)
+    assert_equal(app.dlg.field_text(0), "helper")        # the present name is offered
+    type_text(app, "assist")                            # typing replaces it
+    app.handle(key_event(KEY_ENTER))
+    wait_ren(app)
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(buf_text(app, path), "def assist(): |     pass | x = assist() + assist() | ")
+    assert_equal(app.status, "Renamed helper to assist: 3 changes in 1 file")
+    assert_equal(at(app), "a.mojo:2:6")                  # still on the name
+    assert_true(app.wins[i].buf.modified)
+    assert_equal(msg_lines(app), "Rename helper to assist | a.mojo:1:5: def helper(): | a.mojo:3:5: x = helper() + helper() | a.mojo:3:16: x = helper() + helper() | 3 places in 1 file")
+    # the server is told about the new text
+    run_ticks(app, 600, False)
+    var st = server_state(app)
+    assert_true(st.str(st.get(st.get(0, "docs"), path_to_uri(path))).find("x = assist() + assist()") > 0)
+    # one Undo takes all of it back
+    app.exec(CM_UNDO)
+    assert_equal(buf_text(app, path), "def helper(): |     pass | x = helper() + helper() | ")
+    # a shorter name before the cursor on its line moves the cursor with the text
+    app.wins[i].goto(2, 21)                              # in the second helper()
+    rename_to(app, "h")
+    assert_equal(buf_text(app, path), "def h(): |     pass | x = h() + h() | ")
+    assert_equal(at(app), "a.mojo:2:11")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_rename_across_files_asks_first() raises:
+    var dir = scratch("ren2")
+    with open(dir + "/other.mojo", "w") as f:
+        f.write("# other\nshared(1)\nz = shared(shared(2))\n")
+    var app = comp_app(dir, "pass\ndef shared(n): pass\n")
+    var path = dir + "/a.mojo"
+    var other = dir + "/other.mojo"
+    var i = app.find_editor(path)
+    app.wins[i].goto(1, 6)
+    rename_to(app, "common")
+    # nothing is changed before the answer to the question
+    assert_equal(app.mode, M_DIALOG)
+    assert_equal(app.dlg.kind, D_RENAME_APPLY)
+    assert_equal(app.dlg.lines[0], "Rename shared to common:")
+    assert_equal(app.dlg.lines[1], "4 changes in 2 files (listed in the Message window)")
+    assert_equal(app.dlg.lines[2], "1 file will be opened; nothing is saved until you save")
+    assert_equal(buf_text(app, path), "pass | def shared(n): pass | ")
+    assert_equal(app.find_editor(other), -1)
+    assert_true(msg_lines(app).find("Rename shared to common | a.mojo:2:5: def shared(n): pass | other.mojo:2:1: shared(1) | ") == 0, msg_lines(app))
+    # Cancel (Esc): still nothing
+    app.handle(key_event(KEY_ESC))
+    assert_equal(app.status, "Rename cancelled - nothing was changed")
+    assert_equal(buf_text(app, path), "pass | def shared(n): pass | ")
+    assert_equal(app.find_editor(other), -1)
+    # again, and Apply
+    rename_to(app, "common")
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(app.status, "Renamed shared to common: 4 changes in 2 files - not saved yet")
+    assert_equal(buf_text(app, path), "pass | def common(n): pass | ")
+    assert_equal(buf_text(app, other), "# other | common(1) | z = common(common(2)) | ")
+    assert_equal(at(app), "a.mojo:1:6")                  # back in the window the rename started in
+    assert_true(app.wins[app.find_editor(other)].buf.modified)
+    assert_equal(read_text(other), "# other\nshared(1)\nz = shared(shared(2))\n")       # the disk is untouched
+    # each file has its own undo step
+    app.focus(app.find_editor(other))
+    app.exec(CM_UNDO)
+    assert_equal(buf_text(app, other), "# other | shared(1) | z = shared(shared(2)) | ")
+    assert_equal(buf_text(app, path), "pass | def common(n): pass | ")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_rename_refusals_and_bad_answers_change_nothing() raises:
+    var dir = scratch("ren3")
+    var body = "fixed = 1\nbad = 2\nvalue = 3\nmover = 4\nclash = 5\nfar = 6\nnothing = 7\n   \n"
+    var app = comp_app(dir, body)
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    var before = buf_text(app, path)
+    app.wins[i].goto(0, 2)
+    app.exec(CM_RENAME)
+    wait_ren(app)
+    assert_equal(app.status, "This cannot be renamed")
+    assert_equal(app.mode, M_NORMAL)
+    app.wins[i].goto(7, 1)
+    app.exec(CM_RENAME)
+    wait_ren(app)
+    assert_equal(app.status, "This cannot be renamed")
+    app.wins[i].goto(1, 1)
+    app.exec(CM_RENAME)
+    wait_ren(app)
+    assert_equal(app.status, "Language server: cannot rename this")
+    # the same name, an empty name, a name the server refuses
+    app.wins[i].goto(2, 1)
+    rename_to(app, "value")
+    assert_equal(app.status, "The name was not changed")
+    rename_to(app, "  ")
+    assert_equal(app.status, "The name was not changed")
+    rename_to(app, "1bad")
+    assert_equal(app.status, "Language server: invalid name")
+    # answers that cannot be applied
+    app.wins[i].goto(3, 1)
+    rename_to(app, "m2")
+    assert_equal(app.mode, M_DIALOG)
+    assert_equal(app.dlg.kind, D_INFO)
+    assert_equal(app.dlg.lines[0], "The server's answer cannot be applied: it wants to rename a file")
+    app.handle(key_event(KEY_ENTER))
+    app.wins[i].goto(4, 1)
+    rename_to(app, "c2")
+    assert_equal(app.dlg.lines[0], "The server's answer cannot be applied: two edits overlap")
+    app.handle(key_event(KEY_ENTER))
+    app.wins[i].goto(5, 1)
+    rename_to(app, "f2")
+    assert_equal(app.dlg.lines[0], "The server's answer cannot be applied: an edit lies beyond the end of the text")
+    app.handle(key_event(KEY_ENTER))
+    app.wins[i].goto(6, 1)
+    rename_to(app, "n2")
+    assert_equal(app.status, "The server found nothing to rename")
+    assert_equal(buf_text(app, path), before)
+    assert_false(app.wins[i].buf.modified)
+    # a server that renames but does not answer "can this be renamed": the word at the cursor
+    app.lsp.table.prepare_rename = False
+    app.wins[i].goto(2, 5)                               # right after "value"
+    app.exec(CM_RENAME)
+    assert_equal(app.mode, M_DIALOG)
+    assert_equal(app.dlg.field_text(0), "value")
+    app.handle(key_event(KEY_ESC))
+    app.wins[i].goto(7, 1)
+    app.exec(CM_RENAME)
+    assert_equal(app.status, "There is no name at the cursor to rename")
+    app.lsp.table.rename = False
+    app.exec(CM_RENAME)
+    assert_equal(app.status, "This language server does not rename symbols")
+    app.lsp_stop()
+    app.exec(CM_RENAME)
+    assert_true(app.status.find("Start the language server first") == 0, app.status)
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_rename_placeholder_document_changes_and_retries() raises:
+    var dir = scratch("ren4")
+    var app = comp_app(dir, "# DOCCHANGES RENBUSY\nph = 1\nprint(ph, \"\U0001F600\", ph)\n")
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    app.wins[i].goto(1, 0)
+    app.exec(CM_RENAME)
+    wait_ren(app)
+    assert_equal(app.dlg.field_text(0), "placeholder_name")      # what the server proposes
+    type_text(app, "q")
+    app.handle(key_event(KEY_ENTER))
+    wait_ren(app)                                       # refused twice, then answered
+    assert_equal(buf_text(app, path), "# DOCCHANGES RENBUSY | q = 1 | print(q, \"\U0001F600\", q) | ")
+    var st = server_state(app)
+    assert_equal(st.size(st.get(0, "renames")), 3)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_rename_is_dropped_when_the_text_changed_meanwhile() raises:
+    var dir = scratch("ren5")
+    var app = comp_app(dir, "# RENSLOW\nname = 1\nprint(name)\n")
+    var path = dir + "/a.mojo"
+    var i = app.find_editor(path)
+    app.wins[i].goto(1, 2)
+    app.exec(CM_RENAME)
+    wait_ren(app)
+    type_text(app, "label")
+    app.handle(key_event(KEY_ENTER))
+    run_ticks(app, 200, False)
+    assert_true(app.ren_req_id >= 0, "the server is still thinking")
+    # an edit far from the cursor while waiting
+    _ = app.wins[i].buf.insert(2, 0, decode("# "), 1, 2, app.wins[i].new_group())
+    _ = app.lsp.conn.request("release", "")
+    wait_ren(app)
+    assert_equal(app.status, "The text changed while the server was working - rename again")
+    assert_equal(buf_text(app, path), "# RENSLOW | name = 1 | # print(name) | ")
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
 # ---------------------------------------------------------- document sync
 def server_state(mut app: App) raises -> Json:
     """Ask the fake server what documents it holds (a JSON object: docs, saved, ranged,
@@ -2275,6 +2580,60 @@ def test_real_server_finds_references() raises:
     assert_true(msg_lines(app).find("References to twice | ") == 0, app.status)
     assert_true(msg_lines(app).find("t.mojo:5:11: print(twice(4))") > 0)
     assert_true(msg_lines(app).find("t.mojo:6:11: print(twice(5))") > 0)
+    app.lsp_stop()
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_real_server_renames_a_local_variable() raises:
+    if not have_real_server():
+        print("      (skipped: mojo-lsp-server is not on PATH)")
+        return
+    var dir = scratch("realren")
+    var path = dir + "/t.mojo"
+    _ = run_system("printf 'def twice(n: Int) -> Int:\\n    var total = n * 2\\n    return total\\n\\ndef main():\\n    print(twice(4))\\n' > '" + path + "'")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.cwd = dir
+    app.open_path(path)
+    app.exec(CM_LSP)
+    var t0 = now()
+    while app.lsp.state != LSP_READY and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    run_ticks(app, 2000, False)
+    print("      real server rename: " + ("yes" if app.lsp.table.rename else "no") + ", asks first: " + ("yes" if app.lsp.table.prepare_rename else "no"))
+    var i = app.find_editor(path)
+    app.wins[i].goto(2, 13)                              # on "total" in the return
+    app.exec(CM_RENAME)
+    t0 = now()
+    while (app.ren_req_id >= 0 or app.ren_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    assert_equal(app.mode, M_DIALOG, app.status)
+    assert_equal(app.dlg.field_text(0), "total")
+    type_text(app, "result")
+    app.handle(key_event(KEY_ENTER))
+    t0 = now()
+    while (app.ren_req_id >= 0 or app.ren_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    print("      real server rename result: " + app.status)
+    assert_equal(buf_text(app, path), "def twice(n: Int) -> Int: |     var result = n * 2 |     return result |  | def main(): |     print(twice(4)) | ")
+    # this server (Mojo 1.2) renames local variables only; a function is refused with
+    # its own message and nothing changes
+    var before = buf_text(app, path)
+    run_ticks(app, 1500, False)
+    app.wins[i].goto(5, 12)                              # on "twice" in the call
+    app.exec(CM_RENAME)
+    type_text(app, "double")
+    app.handle(key_event(KEY_ENTER))
+    t0 = now()
+    while (app.ren_req_id >= 0 or app.ren_retry_due > 0) and now() - t0 < 30000 * MS:
+        run_ticks(app, 50, False)
+    print("      real server on renaming a function: " + app.status)
+    assert_equal(app.mode, M_NORMAL)
+    if buf_text(app, path) == before:
+        assert_true(app.status.find("Language server: ") == 0, app.status)
+    else:
+        # a newer server that can do it: every use must have changed
+        assert_true(buf_text(app, path).find("twice") < 0, buf_text(app, path))
     app.lsp_stop()
     _ = run_system("rm -rf '" + dir + "'")
 

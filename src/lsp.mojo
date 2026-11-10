@@ -503,6 +503,136 @@ def parse_locations(doc: Json, result: Int) -> List[LspLocation]:
     return found^
 
 
+@fieldwise_init
+struct LspEdit(Copyable, Movable):
+    """Replace the text from (r1, c1) to (r2, c2) - columns in UTF-16 units - by `text`."""
+    var r1: Int
+    var c1: Int
+    var r2: Int
+    var c2: Int
+    var text: String
+
+
+struct FileEdits(Copyable, Movable):
+    var path: String
+    var edits: List[LspEdit]
+
+    def __init__(out self, path: String):
+        self.path = path
+        self.edits = List[LspEdit]()
+
+
+struct WorkspaceEdit(Movable):
+    """The changes a server asks for, file by file. `problem` is set when the answer
+    asks for something this editor does not do; nothing must be applied then."""
+    var files: List[FileEdits]
+    var problem: String
+
+    def __init__(out self):
+        self.files = List[FileEdits]()
+        self.problem = ""
+
+    def count(self) -> Int:
+        var n = 0
+        for f in self.files:
+            n += len(f.edits)
+        return n
+
+    def add(mut self, path: String, e: LspEdit):
+        for k in range(len(self.files)):
+            if self.files[k].path == path:
+                self.files[k].edits.append(e.copy())
+                return
+        var f = FileEdits(path)
+        f.edits.append(e.copy())
+        self.files.append(f^)
+
+
+def read_text_edits(doc: Json, uri: String, edits: Int, mut we: WorkspaceEdit):
+    var path = uri_to_path(uri)
+    if path.byte_length() == 0 and uri.startswith("/"):
+        path = uri                  # mojo-lsp-server 1.2 names files by plain path here
+    if path.byte_length() == 0:
+        we.problem = "it changes something that is not a file (" + uri + ")"
+        return
+    for e in doc.children(edits):
+        var s = doc.path(e, "range/start")
+        var t = doc.path(e, "range/end")
+        var text = doc.get(e, "newText")
+        if s < 0 or t < 0 or text < 0:
+            we.problem = "it contains an edit without a range or text"
+            return
+        var ed = LspEdit(doc.int(doc.get(s, "line"), 0), doc.int(doc.get(s, "character"), 0), doc.int(doc.get(t, "line"), 0), doc.int(doc.get(t, "character"), 0), doc.str(text))
+        if ed.r1 < 0 or ed.c1 < 0 or ed.r2 < ed.r1 or (ed.r2 == ed.r1 and ed.c2 < ed.c1):
+            we.problem = "it contains an edit with an impossible range"
+            return
+        we.add(path, ed)
+
+
+def parse_workspace_edit(doc: Json, result: Int) -> WorkspaceEdit:
+    """Read a WorkspaceEdit: `documentChanges` (text edits per document) if present,
+    else `changes` (edits by URI). Creating, renaming and deleting files is not done."""
+    var we = WorkspaceEdit()
+    if result < 0 or doc.is_null(result):
+        return we^
+    var dc = doc.get(result, "documentChanges")
+    if dc >= 0 and doc.kind(dc) == 4:
+        for ch in doc.children(dc):
+            if doc.get(ch, "kind") >= 0:
+                we.problem = "it wants to " + doc.str(doc.get(ch, "kind")) + " a file"
+                return we^
+            read_text_edits(doc, doc.str(doc.path(ch, "textDocument/uri")), doc.get(ch, "edits"), we)
+            if we.problem.byte_length() > 0:
+                return we^
+        return we^
+    var changes = doc.get(result, "changes")
+    if changes >= 0:
+        for ch in doc.children(changes):
+            read_text_edits(doc, doc.key_of(ch), ch, we)
+            if we.problem.byte_length() > 0:
+                return we^
+    return we^
+
+
+struct RenameStart(Movable):
+    """Answer to prepareRename: may the symbol be renamed, and what is its name now
+    (`known` False: the server left finding the name to the editor)."""
+    var ok: Bool
+    var known: Bool
+    var row: Int
+    var c1: Int             # UTF-16 units
+    var c2: Int
+    var placeholder: String
+
+    def __init__(out self):
+        self.ok = False
+        self.known = False
+        self.row = 0
+        self.c1 = 0
+        self.c2 = 0
+        self.placeholder = ""
+
+
+def parse_prepare_rename(doc: Json, result: Int) -> RenameStart:
+    var rs = RenameStart()
+    if result < 0 or doc.is_null(result):
+        return rs^
+    rs.ok = True
+    var rng = doc.get(result, "range")
+    if rng < 0 and doc.get(result, "start") >= 0:
+        rng = result                        # a bare Range
+    if rng >= 0:
+        var s = doc.get(rng, "start")
+        var e = doc.get(rng, "end")
+        if s >= 0 and e >= 0 and doc.int(doc.get(s, "line"), 0) == doc.int(doc.get(e, "line"), -1):
+            rs.known = True
+            rs.row = doc.int(doc.get(s, "line"), 0)
+            rs.c1 = doc.int(doc.get(s, "character"), 0)
+            rs.c2 = doc.int(doc.get(e, "character"), 0)
+    rs.placeholder = doc.str(doc.get(result, "placeholder"))
+    return rs^
+
+
 struct SigInfo(Copyable, Movable):
     """The signature to show for a call: its text, where the parameter being typed is
     inside that text (character indexes a..b, a == b if unknown), and how many
@@ -712,6 +842,13 @@ struct LspClient(Copyable, Movable):
         # send things nobody handles
         w.key("capabilities")
         w.begin_obj()
+        w.key("workspace")
+        w.begin_obj()
+        w.key("workspaceEdit")
+        w.begin_obj()
+        w.kv_bool("documentChanges", True)
+        w.end_obj()
+        w.end_obj()
         w.key("general")
         w.begin_obj()
         w.key("positionEncodings")
@@ -732,6 +869,10 @@ struct LspClient(Copyable, Movable):
         w.str("markdown")
         w.str("plaintext")
         w.end_arr()
+        w.end_obj()
+        w.key("rename")
+        w.begin_obj()
+        w.kv_bool("prepareSupport", True)
         w.end_obj()
         w.key("definition")
         w.begin_obj()
@@ -958,6 +1099,20 @@ struct LspClient(Copyable, Movable):
         if self.state != LSP_READY or not self.table.references or self.find_doc(uri) < 0:
             return -1
         return self.conn.request("textDocument/references", self.position_params(uri, line, character) + ",\"context\":{\"includeDeclaration\":true}}", now)
+
+    def request_prepare_rename(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
+        """Ask whether the symbol at a position can be renamed. -1 if the server cannot
+        be asked (or does not answer this question)."""
+        if self.state != LSP_READY or not self.table.prepare_rename or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/prepareRename", self.position_params(uri, line, character) + "}", now)
+
+    def request_rename(mut self, uri: String, line: Int, character: Int, new_name: String, now: Int) -> Int:
+        """Ask for the edits that rename the symbol at a position. -1 if the server
+        cannot be asked now."""
+        if self.state != LSP_READY or not self.table.rename or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/rename", self.position_params(uri, line, character) + ",\"newName\":" + json_quote(new_name) + "}", now)
 
     def request_signature(mut self, uri: String, line: Int, character: Int, trigger: String, again: Bool, now: Int) -> Int:
         """Ask which call the position is inside and which parameter is being typed.

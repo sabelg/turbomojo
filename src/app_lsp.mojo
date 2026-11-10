@@ -300,6 +300,9 @@ __extension App:
             var ri = self.active_editor()
             if not self.references_still_wanted() or not self.references_request(ri):
                 self.ref_req_id = -1
+        if self.ren_retry_due > 0 and now >= self.ren_retry_due:
+            self.ren_retry_due = 0
+            self.rename_resend()
         if self.sig_retry_due > 0 and now >= self.sig_retry_due:
             self.sig_retry_due = 0
             var si = self.active_editor()
@@ -314,6 +317,8 @@ __extension App:
                 self.hover_arrived(m)
             elif m.id == self.sig_req_id:
                 self.sig_arrived(m)
+            elif m.id == self.ren_req_id:
+                self.rename_reply(m)
             elif m.id == self.ref_req_id:
                 self.references_arrived(m)
             elif m.id == self.def_req_id:

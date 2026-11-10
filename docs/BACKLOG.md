@@ -63,7 +63,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P2-06 Signature help
 - [x] P2-07 Go to definition; back/forward jump list
 - [x] P2-08 Find references results window
-- [ ] P2-09 Rename with multi-file preview and apply
+- [x] P2-09 Rename with multi-file preview and apply
 - [ ] P2-10 Code actions (quick-fix menu)
 - [ ] P2-11 Semantic tokens layered over the lexer; inlay hints (toggle)
 - [ ] P2-12 Outline panel: documentSymbol → scanner fallback

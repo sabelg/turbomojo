@@ -93,6 +93,7 @@ comptime CM_DEFINITION = 150
 comptime CM_BACK = 151
 comptime CM_FORWARD = 152
 comptime CM_REFERENCES = 153
+comptime CM_RENAME = 154
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -595,6 +596,7 @@ def build_registry() -> Registry:
     r.cmd(CM_HOVER, "search.describeSymbol", "~D~escribe symbol", "Show what the language server knows about the symbol at the cursor", [alt(105)])
     r.cmd(CM_DEFINITION, "search.goToDefinition", "Go to d~e~finition", "Go to where the symbol at the cursor is defined", [fkey(12)])
     r.cmd(CM_REFERENCES, "search.findReferences", "Find referen~c~es", "List every use of the symbol at the cursor", [fkey(12) | MOD_SHIFT])
+    r.cmd(CM_RENAME, "edit.renameSymbol", "Ren~a~me symbol...", "Rename the symbol at the cursor everywhere it is used", [fkey(2) | MOD_SHIFT])
     r.cmd(CM_BACK, "search.back", "~B~ack", "Return to where the cursor was before the last jump", [alt(44)])
     r.cmd(CM_FORWARD, "search.forward", "For~w~ard", "Go forward again after going back", [alt(46)])
     r.cmd(CM_SIGNATURE, "search.parameterInfo", "Parame~t~er info", "Show the parameters of the call the cursor is in", [alt(112)])
@@ -711,6 +713,7 @@ def build_registry() -> Registry:
     r.item(CM_SIGNATURE)
     r.item(CM_DEFINITION)
     r.item(CM_REFERENCES)
+    r.item(CM_RENAME)
     r.item(CM_BACK)
     r.item(CM_FORWARD)
     r.sep()
