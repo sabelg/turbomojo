@@ -1738,3 +1738,47 @@ emulator: mode 2027, the kitty protocol, Alt-click and several modifier combinat
   - The scanner does not know multi-line strings that are not triple-quoted docstrings
     starting a line, nor `def` inside brackets continued over lines.
 - Verified: `check.sh` CHECK OK (34 files, 777 tests).
+
+## 2026-11-10 · P2-13 Word highlights; workspace symbol index with fuzzy search · done
+
+- Other uses of the word: `word_at` / `word_spans` in `src/window_draw.mojo`; the
+  active editor gives every whole-word use of the identifier at the cursor the new
+  palette colour `word_bg` (all three themes). Not for one-letter names, numbers,
+  large files, with a selection or several cursors, or while a search highlight is on.
+  Setting `editor.highlight_word` (default true), `Window.word_hl`.
+- New `src/symindex.mojo`: `SymbolIndex` walks the project with the file search's
+  walker (same ignore rules), scans every `.mojo` / `.🔥` file with `scan_outline`,
+  in slices (`step(budget_ms)`); the finished index stays in use while a new pass runs;
+  `replace_file` after a save; owners (the struct or trait a method is in); caps of
+  50 000 symbols and 2 MB per file.
+- Picker: Search > Go to symbol in project (Alt-F12), `wsymbol_dialog` in
+  `src/app_outline.mojo`. Open files are read from their windows (unsaved changes
+  count). The index is started on first use, rebuilt when older than 20 s, driven by
+  `symidx_tick` from the event loop; a dialog opened during a pass fills in when it
+  ends and keeps what was typed. `Dialog.keys`: typing is matched against name + owner,
+  not against the whole line.
+- Tests: new `tests/test_symbols.mojo` (8): index contents, order and what is passed
+  over; slices, second pass, `replace_file`, missing folder; owners and file kinds;
+  the picker (items, narrowing, Enter + Back, Esc); unsaved and saved changes, a file
+  removed meanwhile; filling in after a slow pass; `word_at` / `word_spans`; the
+  highlight on screen (other uses, not substrings, selection, search highlight,
+  inactive window, setting).
+- Found by the gate: the word highlight coloured cells while a search highlight was
+  on (two `tests/test_find.mojo` tests failed). Rule added: none while search matches
+  are shown. One of those tests checks plain background after the search highlight is
+  cleared with the cursor on a word; it now turns `word_hl` off for that check, since
+  marking that word is the new intended behaviour.
+- Mistakes on the way: the first picker matched letters of file paths (typing "lit"
+  listed symbols of main.mojo), hence `Dialog.keys`; three expectations of mine about
+  fuzzy matching were wrong ("fn_3" also matches fn_13).
+- Not done / unverified:
+  - No server `workspace/symbol` (the Mojo server does not offer it); the index knows
+    what the scanner knows: no variables or fields, no imports resolution.
+  - The index is not updated by changes made outside the IDE until the next rebuild
+    (on use, when older than 20 s); not measured on a large project (the standard
+    library would be a fair test).
+  - Word highlight is textual: it does not know scopes (the server's
+    documentHighlight is not offered by the Mojo server). No delay before it shows.
+  - Not looked at by hand in tmux: the three `word_bg` colours are untested by eye;
+    Alt-F12 as sent by real terminals is untested.
+- Verified: `check.sh` CHECK OK (35 files, 785 tests).

@@ -152,6 +152,7 @@ __extension App:
                     self.info("Error", String(err))
             self.lsp_tick(now_ns())
             self.outline_tick(now_ns())
+            self.symidx_tick()
             self.swap_tick(now_ns())
             self.fsearch_tick(now_ns())
             try:

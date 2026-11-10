@@ -173,6 +173,8 @@ __extension App:
             if s >= 0 and ai >= 0:
                 self.jump_mark()
                 self.wins[ai].goto(self.dlg.item_data[s], self.wins[ai].indent_of(self.dlg.item_data[s]))
+        elif kind == D_WSYMBOL and b == 0:
+            self.wsymbol_go(self.dlg.selected_item())
         elif kind == D_WINLIST and b == 0:
             var s = self.dlg.selected_item()
             if s >= 0:

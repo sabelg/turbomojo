@@ -371,6 +371,8 @@ __extension App:
                 self.show(d^)
         elif cmd == CM_SYMBOL:
             self.symbol_dialog()
+        elif cmd == CM_WSYMBOL:
+            self.wsymbol_dialog()
         elif cmd == CM_MATCH:
             if ai >= 0:
                 var p = self.wins[ai].match_bracket()

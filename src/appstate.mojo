@@ -29,6 +29,7 @@ from config import *
 from editorconfig import EcProps, ec_for_file
 from watch import Watcher, FileSig, file_sig, WATCH_POLL_MS
 from outline import OutlineItem
+from symindex import SymbolIndex, IndexedSymbol
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
 from filestate import *
@@ -244,6 +245,9 @@ struct App(Movable):
     var outline_asked_version: Int
     var outline_req_id: Int
     var outline_req_ns: Int
+    var symidx: SymbolIndex          # symbols of the project's Mojo files
+    var ws_list: List[IndexedSymbol] # what the open project-symbol dialog lists
+    var ws_building: Bool            # the dialog shows a list made while the index was being built
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -311,6 +315,7 @@ struct App(Movable):
     var hint_req_ns: Int
     var decor_wait_until: Int        # after a refusal: not before this time
     var auto_pairs: Bool
+    var word_hl: Bool                # editor.highlight_word
     var trim_trailing: Bool
     var rulers: List[Int]
 
@@ -447,6 +452,9 @@ struct App(Movable):
         self.outline_asked_version = -1
         self.outline_req_id = -1
         self.outline_req_ns = 0
+        self.symidx = SymbolIndex()
+        self.ws_list = List[IndexedSymbol]()
+        self.ws_building = False
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -514,6 +522,7 @@ struct App(Movable):
         self.hint_req_ns = 0
         self.decor_wait_until = 0
         self.auto_pairs = True
+        self.word_hl = True
         self.trim_trailing = False
         self.rulers = List[Int]()
 
@@ -558,6 +567,8 @@ struct App(Movable):
         var t = 3600000 if self.sig.active() else RESIZE_POLL_MS
         if self.job.active:
             t = min(t, SPINNER_MS)
+        if self.symidx.building:
+            t = min(t, 5)
         if self.fsearch.active:
             t = 1                   # keep searching; input is still handled between steps
         if input_pending:
@@ -624,6 +635,9 @@ struct App(Movable):
         self.semantic_on = s.semantic_colors
         self.hints_on = s.inlay_hints
         self.auto_pairs = s.auto_pairs
+        self.word_hl = s.highlight_word
+        for i in range(len(self.wins)):
+            self.wins[i].word_hl = self.word_hl
         self.persistent_undo = s.persistent_undo
         self.trim_trailing = s.trim_trailing
         self.rulers = s.rulers.copy()
@@ -736,6 +750,7 @@ struct App(Movable):
         win.buf.indent_size = self.indent_size
         win.wrap = self.soft_wrap
         win.auto_pairs = self.auto_pairs
+        win.word_hl = self.word_hl
         win.rulers = self.rulers.copy()
         var oi = self.outline_index()
         if oi >= 0 and win.x + win.w > self.wins[oi].x and self.wins[oi].x - win.x >= 20:

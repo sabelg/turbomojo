@@ -37,9 +37,15 @@ from app_jobs import *
 from app_pickers import *
 from app_nav import *
 from outline import *
+from symindex import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
+
+
+comptime SYMIDX_SLICE_MS = 8          # work per pass of the event loop
+comptime SYMIDX_FIRST_MS = 40         # ... and when the dialog opens
+comptime SYMIDX_FRESH_MS = 20000      # an index older than this is rebuilt on the next use
 
 
 __extension App:
@@ -173,3 +179,93 @@ __extension App:
         var t = self.top()
         self.wins[t].goto(it.row, it.col)
         self.say(it.name)
+
+    # ============================================ symbols of the whole project
+    def symidx_root(self) -> String:
+        return self.project_dir if self.project_dir.byte_length() > 0 else String(self.cwd)
+
+    def symidx_tick(mut self):
+        """One slice of the index pass; called on every pass of the event loop. When a
+        pass finishes while the dialog is open, its list is completed."""
+        if not self.symidx.building:
+            return
+        self.symidx.step(SYMIDX_SLICE_MS)
+        if not self.symidx.building:
+            if self.mode == M_DIALOG and self.dlg.kind == D_WSYMBOL and self.ws_building:
+                self.wsymbol_fill()
+                self.say(self.symidx.summary())
+
+    def wsymbol_items(mut self) -> List[IndexedSymbol]:
+        """The index as it stands, with open files taken from their windows (they may
+        have unsaved changes) and files of this pass not yet reached left as they were."""
+        var all = List[IndexedSymbol]()
+        var open_paths = List[String]()
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EDITOR and is_mojo_file(self.wins[i].path) and not self.wins[i].buf.large:
+                open_paths.append(self.wins[i].path)
+                self.symidx.add_items(self.wins[i].path, scan_outline(self.wins[i].buf), all)
+        var source = self.symidx.syms.copy()
+        if not self.symidx.built:
+            source = self.symidx.fresh.copy()       # the first pass: what it has so far
+        for s in source:
+            if not (s.path in open_paths):
+                all.append(s.copy())
+        return all^
+
+    def wsymbol_fill(mut self):
+        """(Re)fill the open dialog's list, keeping what was typed."""
+        self.ws_list = self.wsymbol_items()
+        self.ws_building = self.symidx.building
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()           # typing matches names, not file paths
+        var prefix = self.symidx_root() + "/"
+        for k in range(len(self.ws_list)):
+            var shown = self.ws_list[k].path
+            if shown.startswith(prefix):
+                shown = slice_str(decode(shown), cp_len(prefix), cp_len(shown))
+            var name = outline_tag(self.ws_list[k].kind) + " " + self.ws_list[k].name
+            if self.ws_list[k].owner.byte_length() > 0:
+                name += "  (" + self.ws_list[k].owner + ")"
+            items.append(pad_right(name, 34) + " " + shown + ":" + String(self.ws_list[k].row + 1))
+            data.append(k)
+            keys.append(self.ws_list[k].name + " " + self.ws_list[k].owner)
+        self.dlg.keys = keys^
+        self.dlg.set_items(items^, data^)
+
+    def wsymbol_dialog(mut self):
+        """Search > Go to symbol in project: a list of every def / struct / trait of the
+        project's Mojo files, narrowed by typing. The index is (re)built in the
+        background; the list fills in when it is ready."""
+        var now = now_ns()
+        if not self.symidx.building and (not self.symidx.built or self.symidx.root != self.symidx_root() or now - self.symidx.built_ns > SYMIDX_FRESH_MS * 1000000):
+            self.symidx.start(self.symidx_root())
+            self.symidx.step(SYMIDX_FIRST_MS)       # small projects are done at once
+        var d = Dialog(D_WSYMBOL, "Go to Symbol in Project", min(76, self.scr.w - 4), min(22, self.desk_h()))
+        d.fields.append(Field("~S~ymbol", ""))
+        d.list_filter = True
+        d.buttons.append("~G~o")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+        self.wsymbol_fill()
+        if self.symidx.building:
+            self.say("Reading the project's files...")
+        else:
+            self.say(self.symidx.summary())
+
+    def wsymbol_go(mut self, k: Int) raises:
+        if k < 0 or k >= len(self.dlg.item_data):
+            return
+        var idx = self.dlg.item_data[k]
+        if idx < 0 or idx >= len(self.ws_list):
+            return
+        var s = self.ws_list[idx].copy()
+        if not (self.find_editor(s.path) >= 0 or path_exists(s.path)):
+            self.say(basename(s.path) + " is no longer there")
+            return
+        self.jump_mark()
+        self.open_path(s.path)
+        var t = self.top()
+        if self.wins[t].kind == WK_EDITOR and self.wins[t].path == s.path:
+            self.wins[t].goto(s.row, s.col)
+            self.say(s.name)

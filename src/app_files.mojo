@@ -22,6 +22,8 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from symindex import *
+from outline import scan_outline
 from app_lsp import *
 from lsp import *
 from app_watch import *
@@ -129,6 +131,8 @@ __extension App:
         self.wins[i].disk_size = -1 if self.wins[i].buf.large else len(b)
         self.store_history(i)
         self.lsp_note_saved(i)
+        if self.symidx.built and is_mojo_file(self.wins[i].path):
+            self.symidx.replace_file(self.wins[i].path, scan_outline(self.wins[i].buf))
         self.note_disk_state(i)
         self.drop_swap(i)
         self.say("Saved " + self.wins[i].path + note)

@@ -98,6 +98,7 @@ comptime CM_ACTIONS = 155
 comptime CM_SEMANTIC = 156
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
+comptime CM_WSYMBOL = 159
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -597,6 +598,7 @@ def build_registry() -> Registry:
     r.cmd(CM_FINDFILES, "search.findInFiles", "Find in f~i~les...", "Search every file of the project folder", [fkey(3) | MOD_SHIFT])
     r.cmd(CM_GOTO, "search.gotoLine", "~G~o to line number...", "Move the cursor to a line number", [ctrl(103)])
     r.cmd(CM_SYMBOL, "search.gotoSymbol", "Go to s~y~mbol...", "Jump to a def / struct / trait in this file", [ctrl(116)])
+    r.cmd(CM_WSYMBOL, "search.gotoProjectSymbol", "Go to symbol in pro~j~ect...", "Jump to a def / struct / trait in any Mojo file of the project", [fkey(12) | MOD_ALT])
     r.cmd(CM_HOVER, "search.describeSymbol", "~D~escribe symbol", "Show what the language server knows about the symbol at the cursor", [alt(105)])
     r.cmd(CM_DEFINITION, "search.goToDefinition", "Go to d~e~finition", "Go to where the symbol at the cursor is defined", [fkey(12)])
     r.cmd(CM_REFERENCES, "search.findReferences", "Find referen~c~es", "List every use of the symbol at the cursor", [fkey(12) | MOD_SHIFT])
@@ -716,6 +718,7 @@ def build_registry() -> Registry:
     r.sep()
     r.item(CM_GOTO)
     r.item(CM_SYMBOL)
+    r.item(CM_WSYMBOL)
     r.item(CM_MATCH)
     r.item(CM_HOVER)
     r.item(CM_SIGNATURE)

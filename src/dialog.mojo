@@ -28,6 +28,7 @@ comptime D_FINDFILES = 20
 comptime D_RENAME = 21
 comptime D_RENAME_APPLY = 22
 comptime D_ACTIONS = 23
+comptime D_WSYMBOL = 24
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1
@@ -63,6 +64,7 @@ struct Dialog(Copyable, Movable):
     var items: List[String]
     var item_data: List[Int]
     var shown: List[Int]
+    var keys: List[String]   # if given (one per item): what typing is matched against instead of the item's text
     var list_sel: Int
     var list_top: Int
     var buttons: List[String]
@@ -102,6 +104,7 @@ struct Dialog(Copyable, Movable):
         self.items = List[String]()
         self.item_data = List[Int]()
         self.shown = List[Int]()
+        self.keys = List[String]()
         self.list_sel = 0
         self.list_top = 0
         self.buttons = List[String]()
@@ -164,7 +167,7 @@ struct Dialog(Copyable, Movable):
             pat = self.field_text(0)
         var scores = List[Int]()
         for i in range(len(self.items)):
-            var s = fuzzy_score(self.items[i], pat)
+            var s = fuzzy_score(self.keys[i] if len(self.keys) == len(self.items) else self.items[i], pat)
             if s >= 0:
                 # stable insertion by score (desc)
                 var pos = len(self.shown)

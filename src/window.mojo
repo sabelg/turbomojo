@@ -83,6 +83,7 @@ struct Window(Copyable, Movable):
     var forced_group: Int # while set, every edit joins this undo group
     var hs: Search        # the search whose matches are highlighted
     var hs_on: Bool
+    var word_hl: Bool           # show the other uses of the word at the cursor
     var scope_on: Bool    # searching is limited to `scope` (Find in selection)
     var scope: Range
     var auto_pairs: Bool  # typing an opening bracket or quote also inserts its partner
@@ -149,6 +150,7 @@ struct Window(Copyable, Movable):
         self.forced_group = 0
         self.hs = Search()
         self.hs_on = False
+        self.word_hl = True
         self.scope_on = False
         self.scope = Range(0, 0, 0, 0)
         self.swap_file = ""

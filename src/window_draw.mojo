@@ -12,6 +12,51 @@ from window_multi import *
 from window_lines import *
 
 
+
+def wordish(c: Int) -> Bool:
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 or c >= 128
+
+
+def word_at(line: List[Int], col: Int) -> List[Int]:
+    """The identifier at column `col` of a line (the cursor on it or right after it);
+    empty if there is none, or it is a single character, a number, or very long."""
+    var a = max(0, min(col, len(line)))
+    var b = a
+    while a > 0 and wordish(line[a - 1]):
+        a -= 1
+    while b < len(line) and wordish(line[b]):
+        b += 1
+    var w = List[Int]()
+    if b - a < 2 or b - a > 80 or (line[a] >= 48 and line[a] <= 57):
+        return w^
+    for q in range(a, b):
+        w.append(line[q])
+    return w^
+
+
+def word_spans(line: List[Int], word: List[Int]) -> List[Int]:
+    """Where `word` stands as a whole word in a line: start, end, start, end, ..."""
+    var out = List[Int]()
+    var n = len(line)
+    var m = len(word)
+    if m == 0:
+        return out^
+    var i = 0
+    while i + m <= n:
+        if line[i] == word[0] and (i == 0 or not wordish(line[i - 1])) and (i + m == n or not wordish(line[i + m])):
+            var same = True
+            for k in range(1, m):
+                if line[i + k] != word[k]:
+                    same = False
+                    break
+            if same:
+                out.append(i)
+                out.append(i + m)
+                i += m
+                continue
+        i += 1
+    return out^
+
 __extension Window:
     # --------------------------------------------------------------- draw
     def draw(
@@ -52,6 +97,11 @@ __extension Window:
             bc = self.cc if self.is_bracket(self.buf.at(self.cr, self.cc)) else self.cc - 1
         var has_sel = self.has_sel()
         var n_extra = len(self.extra)
+        # the word the cursor is on: its other uses on screen get a quiet background
+        # (not while the matches of a search are shown: one kind of marking at a time)
+        var wword = List[Int]()
+        if active and not is_msg and self.word_hl and not self.hs_on and not has_sel and n_extra == 0 and not self.buf.large:
+            wword = word_at(self.buf.line(self.cr), self.cc)
         var sr = self.sel_range()
         # find highlighter state at the first visible line
         var st = self.lex_state_at(self.top)
@@ -134,6 +184,10 @@ __extension Window:
             if self.hs_on and not is_msg and n > 0 and n <= 20000:
                 var mcols = self.scope_cols(r, n)
                 ms = self.hs.all_in(ln, mcols.c1, mcols.c2)
+            var ws = List[Int]()
+            var wi = 0
+            if len(wword) > 0 and n >= len(wword) and n <= 20000:
+                ws = word_spans(ln, wword)
             for c in range(s0, s1):
                 if v >= lim:
                     break
@@ -157,6 +211,10 @@ __extension Window:
                 var cbg = rowbg
                 if not plain:
                     cfg = pal.syn[classes[c]]
+                while wi + 1 < len(ws) and c >= ws[wi + 1]:
+                    wi += 2
+                if wi < len(ws) and c >= ws[wi]:
+                    cbg = pal.word_bg
                 while mi + 1 < len(ms) and c >= ms[mi + 1]:
                     mi += 2
                 if mi < len(ms) and c >= ms[mi]:

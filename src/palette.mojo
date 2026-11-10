@@ -59,6 +59,7 @@ struct Palette(Copyable, Movable):
     var diag_warn: Int
     var diag_note: Int
     var ruler_bg: Int       # the column guides (editor.rulers)
+    var word_bg: Int        # other uses of the word at the cursor
     var icon_fg: Int
     var scroll_fg: Int
     var scroll_bg: Int
@@ -120,6 +121,7 @@ struct Palette(Copyable, Movable):
         self.match_fg = BLACK
         self.match_bg = BROWN
         self.ruler_bg = 0x000080
+        self.word_bg = 0x005F87
         self.diag_err = LRED
         self.doc_fg = BLACK
         self.doc_bg = CYAN
@@ -195,6 +197,7 @@ def theme(n: Int) -> Palette:
         p.match_fg = 0xC0CAF5
         p.match_bg = 0x5A4A1E
         p.ruler_bg = 0x24283B
+        p.word_bg = 0x33395A
         p.diag_err = 0xF7768E
         p.doc_fg = 0xC0CAF5
         p.doc_bg = 0x24283B
@@ -269,6 +272,7 @@ def theme(n: Int) -> Palette:
         p.match_fg = bk
         p.match_bg = lo
         p.ruler_bg = 0x241800
+        p.word_bg = 0x4A3200
         p.diag_err = 0xFF5533
         p.doc_fg = md
         p.doc_bg = 0x241800

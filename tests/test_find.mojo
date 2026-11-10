@@ -259,6 +259,7 @@ def test_all_matches_are_highlighted() raises:
     assert_equal(scr.bg_at(1, 2), p.ed_bg)
     w.clear_highlight()
     w.sel = False
+    w.word_hl = False                    # (the cursor is on "ab": its uses would be marked instead)
     w.draw(scr, p, h, True, False, True, False)
     assert_equal(scr.bg_at(7, 1), p.ed_bg)
     assert_equal(scr.bg_at(1, 1), p.ed_bg)
