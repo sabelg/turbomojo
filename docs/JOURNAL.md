@@ -727,3 +727,43 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - Opening happens on the UI thread: a multi-GB file would freeze the UI while loading.
   - Timings are from one machine with a warm page cache; a cold disk will be slower.
 - Verified: `check.sh` CHECK OK (22 files, 468 tests); the nightly toolchain builds.
+
+## 2026-11-10 · P1-07 regex engine · done
+
+- New `src/regex.mojo`: recursive-descent parser to a syntax tree, compiler to a small
+  instruction set (char, any, class, split, jmp, save, assertions, match) and a Pike VM
+  that runs all alternatives side by side with capture slots. Time is bounded by program
+  size times text length. API: `regex_compile(pattern, ignore_case)` -> `Regex` with
+  `ok`/`error`/`error_at`/`groups`, `search(text, start)`, `match_at(text, start)`,
+  `expand(template, text, caps)` for replacements ($1, ${1}, $0, $&, $$, \n, \t).
+- Syntax: literals and escapes (\xHH, \uHHHH, \U........), `.`, sets with ranges,
+  negation and \d \w \s inside, \d \w \s \D \W \S, groups (capturing, `(?:`, named),
+  `|`, `* + ? {n} {n,} {n,m}` and their lazy forms, `^ $ \b \B`, `(?i)` at the start.
+  Rejected with a message and a position: backreferences, lookaround, possessive
+  quantifiers, \p{..}, counts above 1000, programs above 50,000 instructions.
+- Case-insensitive matching folds ASCII, Latin-1, Greek and Cyrillic only.
+- Small speed-ups: skip ahead to the first literal character when the pattern starts
+  with one; a leading `^` stops the scan after position 0.
+- Tests (`tests/test_regex.mojo`, 18 tests): 5,258 pattern/text pairs whose expected
+  spans and groups were recorded from Python 3.12 `re` (hand-picked cases plus 2,500
+  random patterns, `tests/helpers/gen_regex_cases.py` -> `tests/data/regex_cases.txt`);
+  errors with positions; offsets, anchored matching, walking all matches; replacement
+  templates; ignore case; patterns that are exponential for backtracking engines on
+  3,000 characters; a 200,000-character line.
+- Bugs found by the reference comparison (88 of 5,259 cases at first): the "already on
+  the list" marks were reused across text positions when no thread was alive, so `$`,
+  `\b` and `\B` could only match at the first position tried. Fixed.
+- Known differences from Python, both documented in the module: `\B` matches in an
+  empty text (Python before 3.14 says no; that case is left out of the reference), and
+  a group that can match empty inside a `*`/`+` loop, as in `(a*)*`, may be reported as
+  unset (the overall match is the same). The random generator avoids the second kind.
+- Not done / unverified:
+  - Not connected to Find/Replace yet (P1-08).
+  - `^`/`$` are text start/end only (the editor searches line by line); no multi-line
+    mode, so a pattern cannot match across lines.
+  - Each search allocates its thread lists; searching a million lines one by one has
+    not been measured.
+  - The generator's first version hung because two hand-picked patterns are exponential
+    for Python itself; they are tried on short texts in the reference and on long ones
+    in the Mojo-only test.
+- Verified: `check.sh` CHECK OK (23 files, 486 tests).

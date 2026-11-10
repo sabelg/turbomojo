@@ -122,6 +122,8 @@ Press **F1** inside the IDE for the full keyboard reference.
 | `src/caps.mojo` | Terminal capability detection and colour-depth mapping |
 | `src/toml.mojo`, `src/config.mojo`, `src/editorconfig.mojo` | Config file reader/writer, layered settings, EditorConfig rules |
 | `src/swap.mojo`, `src/watch.mojo` | Swap files for crash recovery; detection of files changed by other programs |
+| `src/grapheme.mojo` | Grapheme cluster boundaries (UAX #29) and cluster widths |
+| `src/regex.mojo` | Regular expressions: parser, compiler and a Pike VM (no backtracking, captures, lazy quantifiers); not yet wired into the Find dialog |
 | `src/json.mojo` | JSON reader and writer (for the language-server, debugger and agent protocols) |
 | `src/proc.mojo`, `src/rpc.mojo` | Two-way non-blocking child processes; JSON-RPC with Content-Length framing |
 | `src/lsp.mojo` | Language Server Protocol client: lifecycle, document sync, diagnostics |
