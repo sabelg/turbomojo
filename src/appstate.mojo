@@ -21,6 +21,7 @@ from menu import *
 from commands import *
 from dialog import *
 from util import *
+from signals import SignalFd, send_signal, own_pid
 
 comptime M_NORMAL = 0
 comptime M_MENU = 1
@@ -120,6 +121,9 @@ struct App(Movable):
     var st_cmd: List[Int]
     var last_click_item: Int
     var job: Job
+    var sig: SignalFd
+    var recovered: Int
+    var recovery_dir: String
     var show_ws: Bool
 
     def __init__(out self):
@@ -165,6 +169,9 @@ struct App(Movable):
         self.st_cmd = List[Int]()
         self.last_click_item = -1
         self.job = Job()
+        self.sig = SignalFd()
+        self.recovered = 0
+        self.recovery_dir = state_dir() + "/recovered"
         self.show_ws = False
 
     # =================================================================== utils
@@ -203,7 +210,9 @@ struct App(Movable):
 
     def next_timeout_ms(self, now: Int, input_pending: Bool, secs_to_minute: Int) -> Int:
         """How long the event loop may sleep before something on screen must change."""
-        var t = RESIZE_POLL_MS
+        # With signals on a descriptor a resize wakes the loop by itself; without it
+        # (tests, or signalfd unavailable) fall back to checking the size periodically.
+        var t = 3600000 if self.sig.active() else RESIZE_POLL_MS
         if self.job.active:
             t = min(t, SPINNER_MS)
         if input_pending:

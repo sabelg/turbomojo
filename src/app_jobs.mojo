@@ -114,8 +114,7 @@ __extension App:
     def start_job(mut self, kind: Int, cmd: String, path: String, exe: String) -> Bool:
         """Start `cmd` through popen with a non-blocking pipe; the main loop polls it."""
         var c = "echo __PID__$$ && " + cmd
-        var mode = String("r")
-        var fp = external_call["popen", Int](c.as_c_string_span(), mode.as_c_string_span())
+        var fp = popen_read(c)
         if fp == 0:
             self.info("Error", "Could not start: " + cmd)
             return False

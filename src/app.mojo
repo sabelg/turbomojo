@@ -34,8 +34,49 @@ from app_draw import *
 
 __extension App:
     # ================================================================= loop
+    def emergency_save(mut self) -> Int:
+        """Write every modified buffer to the recovery directory (never over the user's
+        own files). Used when the IDE is told to terminate. Returns the number saved."""
+        var n = 0
+        var stamp = String(external_call["time", Int](Int(0)))
+        for i in range(len(self.wins)):
+            if self.wins[i].kind != WK_EDITOR or not self.wins[i].buf.modified:
+                continue
+            if n == 0:
+                _ = run_system("mkdir -p " + shell_quote(self.recovery_dir))
+            var name = basename(self.wins[i].path) if self.wins[i].path.byte_length() > 0 else self.wins[i].title
+            var target = self.recovery_dir + "/" + stamp + "-" + String(i) + "-" + name
+            try:
+                with open(target, "w") as f:
+                    f.write(bytes_to_str(self.wins[i].buf.to_bytes()))
+                n += 1
+            except:
+                pass
+        self.recovered += n
+        return n
+
+    def on_signal(mut self, sig: Int):
+        if sig == SIGTERM or sig == SIGHUP or sig == SIGINT:
+            _ = self.emergency_save()
+            self.running = False
+        elif sig == SIGTSTP:
+            self.suspend()
+        elif sig == SIGCONT:
+            # resumed after an external stop: the terminal may have been changed meanwhile
+            self.term.enter()
+            self.scr.force = True
+        # SIGWINCH needs no action here: the loop re-reads the size on every pass
+
+    def suspend(mut self):
+        """Give the terminal back, stop like any other job, and repaint on resume."""
+        self.term.leave()
+        send_signal(own_pid(), SIGSTOP)
+        self.term.enter()
+        self.scr.force = True
+
     def run(mut self) raises:
         self.term.enter()
+        _ = self.sig.open()
         while self.running:
             var sz = self.term.size()
             if sz[0] != self.scr.w or sz[1] != self.scr.h:
@@ -49,7 +90,13 @@ __extension App:
             fds.append(0)
             if self.job.active:
                 fds.append(self.job.fd)
+            if self.sig.active():
+                fds.append(self.sig.fd)
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
+            for sg in self.sig.read_all():
+                self.on_signal(sg)
+            if not self.running:
+                break
             var evs = self.term.poll()
             for k in range(len(evs)):
                 try:
@@ -64,4 +111,7 @@ __extension App:
         if self.job.active:
             self.cancel_job()
             _ = external_call["pclose", Int32](self.job.fp)
+        self.sig.close()
         self.term.leave()
+        if self.recovered > 0:
+            print("TurboMojo: saved", self.recovered, "unsaved buffer(s) to", self.recovery_dir)

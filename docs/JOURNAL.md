@@ -191,3 +191,39 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   tmux: Esc closes a menu within 150 ms, F9 builds in the background and shows the result
   box, Alt-F5 user screen returns on a key, cursor keys work.
 - Not measured: keystroke-to-screen latency (needs instrumentation; planned in P9-02).
+
+## 2026-11-10 · P0-11 signals · done
+
+- First attempt (signalfd with the signals blocked) was wrong and is not in the tree: the
+  Mojo runtime starts 20 worker threads before `main()`, each with an empty signal mask, so
+  a process-directed signal was usually delivered to a worker and killed the process. A
+  standalone script died 26 times in 30. Verified by listing `/proc/<pid>/task/*`.
+- Probed and confirmed that a Mojo `def` can be passed as a C callback to `signal(2)`
+  (handler ran, process survived, 40/40).
+- Final design (`src/signals.mojo`): a minimal handler `on_signal_c` whose only action is
+  `eventfd_write` to a fixed descriptor (250); each signal has its own byte of the counter.
+  The event loop polls that descriptor. Nothing is blocked, so child processes start with
+  default signal handling (tested via /proc: not blocked, not ignored, no handler).
+  `close()` restores SIG_DFL through `sigaction`.
+- Behaviour: SIGWINCH wakes the loop (the 250 ms size polling is gone when the descriptor
+  is active); SIGTERM/SIGHUP/SIGINT write every modified buffer to
+  `$XDG_STATE_HOME/turbomojo/recovered/<time>-<n>-<name>` (never over the user's file),
+  restore the terminal and exit with a message; SIGTSTP gives the terminal back and stops,
+  SIGCONT re-enters and repaints.
+- Mistake caught on the way: a search-and-replace also rewrote the SIGTSTP branch of
+  `on_signal`, so a terminate signal stopped the process; found because the test processes
+  showed up as "Stopped". Fixed, and suspend is now its own method.
+- Also fixed: at widths under ~74 columns the menu-bar clock overdrew the Help menu; the
+  clock is now hidden when it does not fit (test added).
+- `tests/test_signals.mojo` (12 tests) incl. 300 alternating signals per run that must all
+  be seen; the suite passed 30/30 consecutive runs. Note for later: the offer-to-recover
+  flow on next start belongs to P0-15.
+- Measured (`scripts/idle-cpu.sh`, 10 s): 0 ms CPU, 1 wakeup (was 20 ms / 40 after P0-10,
+  50 ms / 96 before).
+- Verified live in tmux: resize to 70x20 redraws at once; `kill -TERM` with unsaved text
+  exits cleanly, recovery file holds the text, original file untouched; `kill -TSTP` puts
+  the process in state T and returns the terminal, `kill -CONT` resumes and typing works;
+  closing the pane (SIGHUP) ends the process and saves; Ctrl-F2 still kills a running
+  compiler. `check.sh` CHECK OK (10 files, 221 tests).
+- Unverified: macOS (no signalfd was needed in the end, but `eventfd` is Linux-only; the
+  macOS port in P9-03 must use a pipe instead).

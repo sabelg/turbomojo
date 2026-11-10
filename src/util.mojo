@@ -279,11 +279,26 @@ struct CmdResult(Movable):
         self.status = status
 
 
-def run_capture(cmd: String) -> CmdResult:
-    """Run a shell command, capturing stdout (callers add 2>&1)."""
+# ------------------------------------------------------------------ signals
+comptime SIGHUP = 1
+comptime SIGINT = 2
+comptime SIGTERM = 15
+comptime SIGCONT = 18
+comptime SIGSTOP = 19
+comptime SIGTSTP = 20
+comptime SIGWINCH = 28
+
+
+def popen_read(cmd: String) -> Int:
+    """popen(cmd, "r"); returns the FILE* as an integer (0 on failure)."""
     var c = String(cmd)
     var mode = String("r")
-    var fp = external_call["popen", Int](c.as_c_string_span(), mode.as_c_string_span())
+    return external_call["popen", Int](c.as_c_string_span(), mode.as_c_string_span())
+
+
+def run_capture(cmd: String) -> CmdResult:
+    """Run a shell command, capturing stdout (callers add 2>&1)."""
+    var fp = popen_read(cmd)
     var data = List[UInt8]()
     if fp == 0:
         append_str(data, "failed to start: " + cmd)
@@ -302,6 +317,14 @@ def run_capture(cmd: String) -> CmdResult:
 def run_system(cmd: String) -> Int:
     var c = String(cmd)
     return Int(external_call["system", Int32](c.as_c_string_span()))
+
+
+def state_dir() -> String:
+    """Per-user state directory ($XDG_STATE_HOME/turbomojo or ~/.local/state/turbomojo)."""
+    var x = env_or("XDG_STATE_HOME", "")
+    if x.byte_length() > 0:
+        return x + "/turbomojo"
+    return env_or("HOME", "/tmp") + "/.local/state/turbomojo"
 
 
 def getcwd() -> String:

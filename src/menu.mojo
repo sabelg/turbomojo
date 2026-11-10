@@ -65,8 +65,13 @@ def draw_menubar(mut scr: Screen, pal: Palette, menus: List[Menu], open_idx: Int
         var w = cp_len(menus[i].title) - 2 + 2
         scr.fill(menus[i].x, 0, w, 1, 32, fg, bg)
         _ = scr.hot_text(menus[i].x + 1, 0, menus[i].title, fg, pal.menu_hot if not sel else fg, bg)
-    if clock.byte_length() > 0:
-        _ = scr.text(scr.w - cp_len(clock) - 1, 0, clock, pal.menu_fg, pal.menu_bg)
+    if clock.byte_length() > 0 and len(menus) > 0:
+        # only when it fits to the right of the last menu title
+        var li = len(menus) - 1
+        var menus_end = menus[li].x + cp_len(menus[li].title)
+        var cx = scr.w - cp_len(clock) - 1
+        if cx > menus_end:
+            _ = scr.text(cx, 0, clock, pal.menu_fg, pal.menu_bg)
 
 
 def draw_dropdown(mut scr: Screen, pal: Palette, m: Menu, sel: Int, checks: List[Int]):

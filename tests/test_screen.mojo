@@ -171,6 +171,19 @@ def test_menubar_golden() raises:
     check_golden("menubar", s)
 
 
+def test_clock_is_hidden_when_it_would_cover_a_menu() raises:
+    var p = theme(0)
+    var narrow = Screen(70, 1)
+    narrow.fill(0, 0, 70, 1, 32, 0, 0)
+    draw_menubar(narrow, p, build_menus(build_registry()), -1, "12:34")
+    assert_true(row(narrow, 0).endswith("Help"), "Help must stay visible")
+    var wide = Screen(76, 1)
+    wide.fill(0, 0, 76, 1, 32, 0, 0)
+    draw_menubar(wide, p, build_menus(build_registry()), -1, "12:34")
+    assert_true(row(wide, 0).endswith("12:34"))
+    assert_true(row(wide, 0).find("Help") > 0)
+
+
 def test_dropdown_golden() raises:
     var s = Screen(60, 16)
     var p = theme(0)

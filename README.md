@@ -47,6 +47,7 @@ It needs a terminal with truecolor and SGR mouse support. Almost every modern te
 | Unicode | Full UTF-8 with display widths: CJK and emoji take two columns and combining accents attach to their base letter, so cursor, selection, mouse clicks and the right border stay aligned |
 | Clipboard | Internal clipboard mirrored to the system clipboard via OSC 52. Bracketed paste is supported |
 | Themes | Turbo Classic (CGA), Midnight Neon, Amber CRT |
+| Robustness | Resizing is picked up instantly; `kill`, closing the terminal window or logging out saves every unsaved buffer to `~/.local/state/turbomojo/recovered/` (never over your files) and restores the terminal; `kill -TSTP` / `fg` suspends and resumes cleanly. An idle IDE uses no CPU |
 | Rendering | Double-buffered diff renderer with 24-bit colour and synchronized output (no tearing) |
 
 Press **F1** inside the IDE for the full keyboard reference.
