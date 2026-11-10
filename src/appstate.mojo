@@ -22,6 +22,8 @@ from commands import *
 from dialog import *
 from util import *
 from signals import SignalFd, send_signal, own_pid
+from config import *
+from toml import toml_set, toml_quote, toml_bool
 
 comptime M_NORMAL = 0
 comptime M_MENU = 1
@@ -125,6 +127,8 @@ struct App(Movable):
     var sig: SignalFd
     var recovered: Int
     var recovery_dir: String
+    var config_path: String    # user config file; empty until load_config() (tests stay hermetic)
+    var config_warnings: List[String]
     var log_path: String       # empty until run(): tests never write to the state dir
     var fault: String          # fault injection for crash tests (TURBOMOJO_FAULT)
     var show_ws: Bool
@@ -176,6 +180,8 @@ struct App(Movable):
         self.recovered = 0
         self.recovery_dir = state_dir() + "/recovered"
         self.log_path = ""
+        self.config_path = ""
+        self.config_warnings = List[String]()
         self.fault = env_or("TURBOMOJO_FAULT", "")
         self.show_ws = False
 
@@ -227,6 +233,61 @@ struct App(Movable):
         if self.show_clock:
             t = min(t, secs_to_minute * 1000 + 50)
         return max(1, t)
+
+    def apply_settings(mut self, s: Settings):
+        """Take over loaded settings, including custom key bindings."""
+        self.theme_idx = s.theme
+        self.pal = theme(s.theme)
+        self.line_numbers = s.line_numbers
+        self.auto_indent = s.auto_indent
+        self.hl_line = s.highlight_line
+        self.show_clock = s.clock
+        self.show_ws = s.show_whitespace
+        # the environment variable still wins over the files for the compiler
+        self.compiler = env_or("TURBOMOJO_COMPILER", s.compiler)
+        self.config_warnings = s.warnings.copy()
+        for i in range(len(s.key_commands)):
+            var keys = List[Int]()
+            var bad = False
+            for name in s.key_names[i]:
+                var k = parse_key(name)
+                if k == 0:
+                    self.config_warnings.append("keys." + s.key_commands[i] + ": unknown key \"" + name + "\"")
+                    bad = True
+                else:
+                    keys.append(k)
+            if bad:
+                continue
+            if not self.reg.rebind(s.key_commands[i], keys^):
+                self.config_warnings.append("keys: unknown command \"" + s.key_commands[i] + "\"")
+        self.menus = build_menus(self.reg)
+
+    def load_config(mut self):
+        """Read the user and project config files and apply them."""
+        self.config_path = user_config_path()
+        var project = find_project_config(self.cwd)
+        self.apply_settings(load_settings(read_text(self.config_path), read_text(project)))
+
+    def show_config_warnings(mut self):
+        """Put the first config problem in the status line (all of them go to the log)."""
+        if len(self.config_warnings) > 0:
+            var more = len(self.config_warnings) - 1
+            self.say("Config: " + self.config_warnings[0] + (" (+" + String(more) + " more, see crash.log)" if more > 0 else ""))
+
+    def persist_option(mut self, table: String, key: String, literal: String):
+        """Write one setting to the user config file, leaving the rest of it untouched.
+        Only the changed option is written, so values that came from a project file or
+        from the defaults are not copied into the user's file."""
+        if self.config_path.byte_length() == 0:
+            return
+        var text = toml_set(read_text(self.config_path), table, key, literal)
+        if not path_exists(dirname(self.config_path)):
+            _ = run_system("mkdir -p " + shell_quote(dirname(self.config_path)))
+        try:
+            with open(self.config_path, "w") as f:
+                f.write(text)
+        except:
+            self.say("Could not write " + self.config_path)
 
     def log_error(self, msg: String):
         """Record a problem in the crash log (only once the IDE is really running)."""

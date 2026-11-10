@@ -143,6 +143,77 @@ def key_name(k: Int) -> String:
     return s + bytes_to_str(bytes)
 
 
+def strip_prefix_ci(cps: List[Int], start: Int, prefix: String) -> Int:
+    """If cps[start:] begins with prefix (ignoring case) return the index after it, else -1."""
+    var pc = decode(prefix)
+    if start + len(pc) > len(cps):
+        return -1
+    for i in range(len(pc)):
+        var a = cps[start + i]
+        if a >= 65 and a <= 90:
+            a += 32
+        if a != pc[i]:
+            return -1
+    return start + len(pc)
+
+
+def parse_key(name: String) -> Int:
+    """Inverse of key_name(): 'Ctrl-Shift-F5' -> key code. Returns 0 if not understood."""
+    var cps = decode(name)
+    var i = 0
+    var mods = 0
+    while True:
+        var n = strip_prefix_ci(cps, i, "ctrl-")
+        if n >= 0 and n < len(cps):
+            mods |= MOD_CTRL
+            i = n
+            continue
+        n = strip_prefix_ci(cps, i, "alt-")
+        if n >= 0 and n < len(cps):
+            mods |= MOD_ALT
+            i = n
+            continue
+        n = strip_prefix_ci(cps, i, "shift-")
+        if n >= 0 and n < len(cps):
+            mods |= MOD_SHIFT
+            i = n
+            continue
+        break
+    var rest = List[Int]()
+    for k in range(i, len(cps)):
+        var c = cps[k]
+        if c >= 65 and c <= 90:
+            c += 32
+        rest.append(c)
+    var word = to_str(rest)
+    if len(rest) == 0:
+        return 0
+    if len(rest) == 1:
+        if rest[0] < 33 or rest[0] == 127:
+            return 0
+        return mods | rest[0]
+    if rest[0] == 102:   # f1..f12
+        var num = 0
+        var ok = True
+        for k in range(1, len(rest)):
+            if rest[k] < 48 or rest[k] > 57:
+                ok = False
+                break
+            num = num * 10 + rest[k] - 48
+        if ok and num >= 1 and num <= 12:
+            return mods | fkey(num)
+    var names = List[String]()
+    var codes = List[Int]()
+    for nm in ["esc", "escape", "enter", "return", "tab", "bksp", "backspace", "up", "down", "left", "right", "home", "end", "pgup", "pageup", "pgdn", "pagedown", "ins", "insert", "del", "delete", "space"]:
+        names.append(String(nm))
+    for cd in [KEY_ESC, KEY_ESC, KEY_ENTER, KEY_ENTER, KEY_TAB, KEY_BACKSPACE, KEY_BACKSPACE, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_PGUP, KEY_PGUP, KEY_PGDN, KEY_PGDN, KEY_INSERT, KEY_INSERT, KEY_DELETE, KEY_DELETE, 32]:
+        codes.append(cd)
+    for k in range(len(names)):
+        if names[k] == word:
+            return mods | codes[k]
+    return 0
+
+
 struct Command(Copyable, Movable):
     var id: Int
     var name: String     # stable identifier, e.g. "file.open" (for config and plugins)

@@ -37,6 +37,35 @@ GNOME Terminal, Windows Terminal and others). Colour depth is taken from `$COLOR
 pixi run ./build/tmide --caps
 ```
 
+## Configuration
+
+Settings are read from `~/.config/turbomojo/config.toml`, then from a `.turbomojo.toml` in the
+working directory or the nearest parent folder (the project file wins):
+
+```toml
+[ui]
+theme = "midnight"          # classic | midnight | amber
+line_numbers = true
+highlight_line = true
+clock = true
+show_whitespace = false
+
+[editor]
+auto_indent = true
+
+[tools]
+compiler = "mojo"           # the TURBOMOJO_COMPILER environment variable overrides this
+
+[keys]                      # command name = one key or a list of keys
+"file.save" = ["F2", "Ctrl-S"]
+"edit.duplicateLine" = "Alt-D"
+```
+
+Changing something in the Options menu writes just that setting back to your user file and
+leaves the rest of the file, including comments, alone. Command names for `[keys]` are listed in
+`src/commands.mojo` (`file.open`, `compile.build`, `search.find`, ...). Mistakes in a config file
+are shown in the status line at startup and written to the log; the IDE still starts.
+
 ## Features
 
 | Area | What you get |

@@ -8,6 +8,7 @@ from commands import CM_NEW
 
 def main() raises:
     var app = App()
+    app.load_config()
     var args = argv()
     if len(args) == 2 and String(args[1]) == "--caps":
         # diagnostics: show what this terminal reports, then exit
@@ -28,6 +29,7 @@ def main() raises:
             print("cannot open", String(args[i]), ":", String(e))
     if app.top_editor() < 0:
         app.exec(CM_NEW)
+    app.show_config_warnings()
     try:
         app.run()
     except e:

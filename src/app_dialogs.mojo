@@ -178,6 +178,7 @@ __extension App:
             var c = self.dlg.field_text(0)
             if c.byte_length() > 0:
                 self.compiler = c
+                self.persist_option("tools", "compiler", toml_quote(c))
                 self.say("Compiler: " + c)
 
     def dialog_key(mut self, k: Int) raises:

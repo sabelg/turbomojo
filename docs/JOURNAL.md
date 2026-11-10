@@ -291,3 +291,34 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   `check.sh` CHECK OK (12 files, 250 tests).
 - Unverified: replies from terminals other than tmux (kitty, WezTerm, Ghostty, iTerm2 are
   not available here); the parsing is tested against the documented reply formats only.
+
+## 2026-11-10 · P0-14 split; P0-14a config files · done
+
+- P0-14 was split into P0-14a (config) and P0-14b (.editorconfig) in the backlog.
+- New `src/toml.mojo`: a TOML subset reader (tables, strings with escapes, literal strings,
+  integers, booleans, one-line arrays, quoted keys, comments) that reports problems with
+  line numbers and never fails, plus `toml_set`, which changes one value in existing text
+  and leaves comments, order and other keys alone.
+- New `src/config.mojo`: `Settings` with defaults, layering (user file, then the nearest
+  `.turbomojo.toml` at or above the working directory), validation with warnings for wrong
+  types, unknown themes and unknown setting names.
+- `commands.parse_key()` (inverse of `key_name`) and `[keys]` rebinding through the
+  registry; menus show the rebound keys.
+- Options menu changes and the compiler dialog write the one changed setting back to the
+  user file. First version wrote all options, which copied project-file values into the
+  user file; found in the live check, fixed, test added.
+- Config is loaded by `main`, not by `App()`, so tests never read or write the user's real
+  config. `scripts/tui-test.sh` and the smoke test point `XDG_CONFIG_HOME` at an empty
+  location. Checked that `~/.config/turbomojo` and `~/.local/state/turbomojo` do not exist
+  after all runs.
+- Config warnings are shown in the status line after files are opened (the first version
+  was overwritten by the "Loaded" message) and logged.
+- `tests/test_config.mojo` (29 tests): parser, error reporting, layering, writer round
+  trips and in-place edits, settings validation, key-name parsing incl. a round trip of
+  every default binding, applying settings to the app, single-option persistence,
+  comment preservation, project-file lookup.
+- Verified live in tmux with a user file (theme, custom Save key, a typo) and a project
+  file (line numbers off): all applied, toggle persisted alone, comment kept, typo shown
+  and logged. `check.sh` CHECK OK (13 files, 279 tests).
+- Not done here: `.editorconfig` (P0-14b); a trailing comment on a line that `toml_set`
+  rewrites is dropped (documented in the function).

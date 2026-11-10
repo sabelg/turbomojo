@@ -87,6 +87,8 @@ __extension App:
     def run(mut self) raises:
         self.log_path = state_dir() + "/crash.log"
         self.term.crash_log = self.log_path
+        for w in self.config_warnings:
+            self.log_error("config: " + w)
         self.term.crash_header = "TurboMojo " + VERSION + "  pid " + String(own_pid()) + "  started " + timestamp()
         self.term.enter()
         var caps = self.term.probe(CAPS_TIMEOUT_MS)

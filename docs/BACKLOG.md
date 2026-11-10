@@ -20,7 +20,8 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P0-11 Signals through a self-pipe: SIGWINCH resize, SIGTERM/SIGHUP save-and-exit, SIGTSTP/SIGCONT suspend and restore
 - [x] P0-12 Crash safety: terminal always restored on error paths; crash log under `~/.local/state/turbomojo/`
 - [x] P0-13 Terminal capability probe (`Caps`): kitty keyboard, modes 2026/2027/2031/2048 via DECRQM, truecolor detection with 256/16-colour fallback rendering
-- [ ] P0-14 Config: TOML subset parser; `~/.config/turbomojo/config.toml` and project `.turbomojo.toml`; all Options persist; honour `.editorconfig` (indent style/size, EOL, final newline, trim)
+- [x] P0-14a Config: TOML subset parser; `~/.config/turbomojo/config.toml` and project `.turbomojo.toml`; all Options persist; key rebinding from config
+- [ ] P0-14b Honour `.editorconfig` (indent style/size, EOL, final newline, trim trailing whitespace)
 - [ ] P0-15 Swap files and crash recovery (write every 2 s when dirty; offer recovery on open)
 - [ ] P0-16 External change detection (inotify via FFI, or mtime polling fallback): reload clean buffers, ask for modified ones
 - [ ] P0-17 JSON parser/writer module with tests (objects, arrays, strings with escapes and \u, numbers, bool, null)

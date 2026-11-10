@@ -37,6 +37,22 @@ __extension App:
         return self.reg.find_key(k)
 
     def exec(mut self, cmd: Int) raises:
+        self.exec_command(cmd)
+        # Options are remembered across sessions
+        if cmd == CM_LINENUM:
+            self.persist_option("ui", "line_numbers", toml_bool(self.line_numbers))
+        elif cmd == CM_HLLINE:
+            self.persist_option("ui", "highlight_line", toml_bool(self.hl_line))
+        elif cmd == CM_CLOCK:
+            self.persist_option("ui", "clock", toml_bool(self.show_clock))
+        elif cmd == CM_SHOWWS:
+            self.persist_option("ui", "show_whitespace", toml_bool(self.show_ws))
+        elif cmd == CM_AUTOINDENT:
+            self.persist_option("editor", "auto_indent", toml_bool(self.auto_indent))
+        elif cmd >= CM_THEME0 and cmd < CM_THEME0 + THEME_COUNT:
+            self.persist_option("ui", "theme", toml_quote(theme_name(self.theme_idx)))
+
+    def exec_command(mut self, cmd: Int) raises:
         var ai = self.active_editor()
         if cmd == CM_NEW:
             var name = String("NONAME")

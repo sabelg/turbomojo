@@ -33,7 +33,7 @@ crash_run() {   # $1 = fault kind
   $T kill-server 2>/dev/null && sleep 0.5 || true
   rm -rf "$ST"
   $T new-session -d -s ide -x 100 -y 30 \
-    "XDG_STATE_HOME=$ST TURBOMOJO_FAULT=$1 pixi run ./build/tmide examples/hello.mojo; echo EXIT=\$?; stty -a | grep -q ' icanon' && echo TTY-COOKED; sleep 60"
+    "XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config TURBOMOJO_FAULT=$1 pixi run ./build/tmide examples/hello.mojo; echo EXIT=\$?; stty -a | grep -q ' icanon' && echo TTY-COOKED; sleep 60"
   sleep 3
 }
 crash_run index
