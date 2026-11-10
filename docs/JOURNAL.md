@@ -2339,3 +2339,49 @@ found no repository for it.
 
 Verified (the three entries above together): `scripts/check.sh` → `CHECK OK`,
 46 test files, 872 tests, smoke ok.
+
+## 2026-11-10 · Mojo 101 workshop as a course with runnable lessons (asked for by the user) · done
+
+The user pointed to `modular/devrel-extras` → `workshops/Mojo-101` and did not see how
+it could work inside the IDE. The workshop is four session folders, each an
+`agenda.md` and 4-8 small `.mojo` programs (28 in all), plus a README whose folder
+tree says, per file, what it shows. (The repository also holds about 100 MB of slide decks
+as PDF; those are not downloaded - a terminal cannot show them.)
+
+- `scripts/fetch-docs.sh` (+ `src/docfetch.mojo`): sparse checkout of
+  `devrel-extras` - `/workshops/**`, README, LICENSE.
+- `src/doclib.mojo`: `tree_notes` reads the README's tree (file → note, in teaching
+  order); `DocLibrary.add_workshop` makes a book per workshop folder: "About this
+  workshop", then per session a chapter named by its agenda's title with "Agenda" and
+  the lessons, ordered as the README teaches them and titled "hello.mojo - Entry point
+  and two run modes"; files the README does not mention follow by name. The book is
+  "Course: Mojo 101"; the finder indexes it (`in:101`).
+- "Try it": **O** on a program page (any book: lessons, examples, puzzles) no longer
+  opens the downloaded file but the reader's own copy - `practice_path`: next to the
+  download, `…/turbomojo/practice/<same folders>`. The first time the lesson's folder
+  (plain files, not sub-folders) is copied; afterwards the existing copy opens, with
+  the reader's changes. So a new download never overwrites work, and a lesson that
+  imports a neighbour still builds. The hint line says "O Try it" on programs.
+- Tests (`tests/test_docs_reader.mojo`, now 21): the README tree; the course outline
+  on a made-up workshop (order, notes, unmentioned file, session without agenda, empty
+  folders dropped); the finder; the practice path; opening a lesson makes the copy
+  with its neighbours and nothing else, a changed copy is kept when the lesson is
+  opened again and when the download changes; O on a page still opens the page. The
+  docs fixture moved into a folder of its own so that practice copies stay in the
+  test's scratch folder (my first run wrote one to /tmp/practice; removed).
+- Looked at in tmux on the real download: finder "value semantics in:101" → the lesson
+  rendered with colours, the book open in the contents; O → the copy in the editor.
+- Not done / unverified:
+  - **I did not build or run any of the 28 lessons**: running code downloaded from the
+    network was not permitted in this session. The workshop says it targets Mojo
+    1.0.0b2; whether every lesson compiles with the installed 1.2 is unknown. Two
+    lessons (static_typing, uninitialized_variable) are meant not to compile.
+  - Session 4 (GPU: device, matrix_add, …) needs a supported GPU; `python_interop`
+    needs a Python the Mojo runtime can load.
+  - The README's tree does not list session 4, so its lessons have plain file names
+    and alphabetical order.
+  - Only plain files beside a lesson are copied, not sub-folders - enough for this
+    workshop; a multi-folder example (some GPU puzzles) may miss a part.
+  - The recordings linked from the agendas are YouTube links; the reader shows the
+    address, it cannot play them.
+- Verified: `scripts/check.sh` → `CHECK OK`, 46 test files, 875 tests, smoke ok.

@@ -61,7 +61,7 @@ comptime DOC_TEXT_MAX = 96          # the widest a page's text is laid out
 def doc_welcome(home: String, have: Bool) -> String:
     """What the page pane shows before a page is chosen."""
     if have:
-        return "# Mojo documentation\n\nChoose a book and a page in the contents on the left.\n\n- **Enter** opens what is marked; on a book it shows or hides its chapters\n- **Tab** moves between the contents and the page; on a page it steps through the links, **Enter** follows one\n- **/** opens the finder: words, phrases in quotes, @names of the standard library, #headings\n- **N** and **P** go to the next and the previous page, **Backspace** goes back\n- **O** opens the page's file in the editor - examples can be run from there\n- **Esc** returns to the editor\n\nThe documentation is Modular's, downloaded from their public repositories into\n\n`" + home + "`\n\nHelp > Download documentation updates it."
+        return "# Mojo documentation\n\nChoose a book and a page in the contents on the left.\n\n- **Enter** opens what is marked; on a book it shows or hides its chapters\n- **Tab** moves between the contents and the page; on a page it steps through the links, **Enter** follows one\n- **/** opens the finder: words, phrases in quotes, @names of the standard library, #headings\n- **N** and **P** go to the next and the previous page, **Backspace** goes back\n- **O** on a lesson or an example opens your own copy of it in the editor: change it, **Ctrl-F9** runs it\n- **Esc** returns to the editor\n\nThe documentation is Modular's, downloaded from their public repositories into\n\n`" + home + "`\n\nHelp > Download documentation updates it."
     return "# Mojo documentation\n\nThe documentation has not been downloaded yet.\n\nPress **D** to download it now, or choose Help > Download documentation. This fetches, from Modular's public repositories on github.com/modular:\n\n- the Mojo manual, the language reference and the cheat sheets\n- the standard library reference (made from the library's sources)\n- the Mojo examples\n- the MAX documentation\n- the courses: Mojo GPU Puzzles, Build an LLM from Scratch, and the workshops\n\nIt needs `git` and about 100 MB, and goes into\n\n`" + home + "`\n\nNothing about you or your project is sent."
 
 
@@ -418,6 +418,34 @@ __extension App:
         self.docs_find_dialog("@" + name)
         return True
 
+    def docs_try(mut self, file: String) raises -> Bool:
+        """Open a program of the documentation - a lesson, an example - as the reader's
+        own copy, to change and run: it is copied (with the files beside it) into the
+        practice folder next to the download the first time; later the copy that is
+        there opens, with whatever was changed in it. False if no copy could be made."""
+        var home = self.doc_home
+        var mine = practice_path(home, file)
+        if mine.byte_length() == 0:
+            return False
+        var fresh = not path_exists(mine)
+        if fresh:
+            _ = run_system("mkdir -p " + shell_quote(dirname(mine)))
+            for n in list_dir(dirname(file)):
+                if n.endswith("/"):
+                    continue
+                var to = join_path(dirname(mine), n)
+                if not path_exists(to):
+                    _ = write_file(to, read_file(join_path(dirname(file), n)))
+            if not path_exists(mine):
+                return False
+        self.mode = M_NORMAL
+        self.open_path(mine)
+        if fresh:
+            self.say("Your own copy of " + basename(mine) + " - change it, Ctrl-F9 runs it")
+        else:
+            self.say("Your copy of " + basename(mine) + ", as you left it - Ctrl-F9 runs it")
+        return True
+
     # --------------------------------------------------------------- keys
     def docs_hints(self) -> List[String]:
         var out = List[String]()
@@ -430,7 +458,10 @@ __extension App:
             out.append("~←~ Contents")
             out.append("~N~/~P~ Next/Prev")
             out.append("~Bksp~ Back")
-            out.append("~O~ Open file")
+            if is_source_path(self.doc_path):
+                out.append("~O~ Try it")
+            else:
+                out.append("~O~ Open file")
         out.append("~/~ Find")
         out.append("~Esc~ Close")
         return out^
@@ -460,8 +491,10 @@ __extension App:
             self.docs_step(-1)
             return
         if (k == 111 or k == 79) and self.doc_path.byte_length() > 0 and path_exists(self.doc_path):
-            self.mode = M_NORMAL
             var file = self.doc_path
+            if is_source_path(file) and self.docs_try(file):
+                return
+            self.mode = M_NORMAL
             self.open_path(file)
             self.say("Opened " + basename(file) + " from the documentation - save changes under another name")
             return

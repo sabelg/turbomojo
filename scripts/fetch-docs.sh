@@ -61,6 +61,9 @@ for course in mojo-gpu-puzzles max-llm-book workshops; do
   B=$(default_branch "$course")
   if [ -n "$B" ]; then fetch "$course" "$B"; else echo "== $course: not reachable"; FAILED=$((FAILED + 1)); fi
 done
+# the developer relations workshops (Mojo 101): the lessons only, not the slide decks
+B=$(default_branch devrel-extras)
+if [ -n "$B" ]; then fetch devrel-extras "$B" '/workshops/**' '/README.md' '/LICENSE'; else echo "== devrel-extras: not reachable"; FAILED=$((FAILED + 1)); fi
 
 # Advent of Mojo: a book that exists only as a web site (made with mdBook). Its contents
 # page lists the chapters; each is saved as it is, with the puzzle inputs it links to.

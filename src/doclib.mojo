@@ -65,6 +65,45 @@ def unquoted(s: String) -> String:
     return t
 
 
+def is_source_path(path: String) -> Bool:
+    """A program of the documentation (an example, a lesson) rather than a page."""
+    return path.endswith(".mojo") or path.endswith(".🔥") or path.endswith(".py")
+
+
+def practice_path(home: String, path: String) -> String:
+    """Where the reader's own copy of a program of the documentation lives: next to the
+    download, in practice/, under the same folders ('' for a file outside the download)."""
+    if home.byte_length() == 0 or not path.startswith(home + "/"):
+        return ""
+    return join_path(join_path(dirname(home), "practice"), cut(path, home.byte_length() + 1, -1))
+
+
+def tree_notes(readme: String) -> List[String]:
+    """What a workshop's README says about its files, from the folder tree it draws
+    (lines like "├── hello.mojo   # Entry point"): pairs of "folder/file" and note, in
+    the order of the tree - which is the order the lessons are taught in."""
+    var out = List[String]()
+    var folder = String("")
+    for l in text_lines(readme):
+        var at = l.find("── ")
+        if at < 0:
+            continue
+        var rest = String(cut(l, at + "── ".byte_length(), -1).strip())
+        var note = String("")
+        var hash = rest.find("#")
+        if hash >= 0:
+            note = String(cut(rest, hash + 1, -1).strip())
+            rest = String(cut(rest, 0, hash).strip())
+        if rest.byte_length() == 0 or rest.find(" ") >= 0:
+            continue
+        if rest.endswith("/"):
+            folder = rest
+            continue
+        out.append(folder + rest)
+        out.append(note)
+    return out^
+
+
 def nice_name(file_name: String) -> String:
     """A title made from a file name: "get-started.mdx" -> "Get started"."""
     var name = file_name
@@ -841,6 +880,61 @@ struct DocLibrary(Copyable, Movable):
             if len(self.pages) == before + 1:
                 _ = self.pages.pop()        # nothing in it
 
+    def add_workshop(mut self, title: String, dir: String):
+        """A workshop as a course: what it is about, then every session with its agenda
+        and its lessons - the programs, in the order they are taught, each with the
+        note the workshop gives it."""
+        if not is_dir(dir):
+            return
+        self.book(title)
+        var notes = List[String]()
+        var readme = join_path(dir, "README.md")
+        if path_exists(readme):
+            notes = tree_notes(file_text(readme))
+            self.add_page(readme, 1, "About this workshop")
+        for n in list_dir(dir):
+            if not n.endswith("/") or n == "../" or n.startswith(".") or n.startswith("_"):
+                continue
+            var d = String(n[byte=0:n.byte_length() - 1])
+            var folder = join_path(dir, d)
+            var agenda = join_path(folder, "agenda.md")
+            var before = len(self.pages)
+            if path_exists(agenda):
+                self.pages.append(DocPage(page_title(agenda), "", 1, DK_HEADING))
+                self.add_page(agenda, 2, "Agenda")
+            else:
+                self.pages.append(DocPage(nice_name(d), "", 1, DK_HEADING))
+            var files = List[String]()
+            var order = List[Int]()
+            var titles = List[String]()
+            for f in list_dir(folder):
+                if f.endswith("/") or f.startswith(".") or f == "agenda.md":
+                    continue
+                if not (is_source_path(f) or f.endswith(".md")):
+                    continue
+                var pos = 9999
+                var t = String("")
+                var key = d + "/" + f
+                var k = 0
+                while k + 1 < len(notes):
+                    if notes[k] == key:
+                        pos = k
+                        if notes[k + 1].byte_length() > 0:
+                            t = f + " - " + notes[k + 1]
+                        break
+                    k += 2
+                var at = len(files)
+                while at > 0 and order[at - 1] > pos:
+                    at -= 1
+                files.insert(at, join_path(folder, f))
+                order.insert(at, pos)
+                titles.insert(at, t)
+            for k in range(len(files)):
+                self.add_page(files[k], 2, titles[k])
+            if len(self.pages) == before + 1:
+                _ = self.pages.pop()
+        self.drop_empty_book()
+
     def add_sidebar_items(mut self, doc: Json, items: Int, site: String, depth: Int):
         for it in doc.children(items):
             if doc.kind(it) == 3:
@@ -999,6 +1093,13 @@ struct DocLibrary(Copyable, Movable):
         self.add_summary("Course: Mojo GPU Puzzles", home + "/mojo-gpu-puzzles/book/src/SUMMARY.md")
         self.add_summary("Course: Build an LLM from Scratch", home + "/max-llm-book/book/src/SUMMARY.md")
         self.add_site("Course: Advent of Mojo", home + "/advent-of-mojo")
+        # the developer relations workshops: each one a course of its own
+        var extras = home + "/devrel-extras/workshops"
+        for n in list_dir(extras):
+            if n.endswith("/") and n != "../" and not n.startswith("."):
+                var d = String(n[byte=0:n.byte_length() - 1])
+                var name = nice_name(d)
+                self.add_workshop("Course: " + name, join_path(extras, d))
         if is_dir(home + "/workshops"):
             self.book("Workshops")
             self.add_folder(home + "/workshops", 1, True)
