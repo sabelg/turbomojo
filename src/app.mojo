@@ -67,6 +67,16 @@ __extension App:
             self.scr.force = True
         # SIGWINCH needs no action here: the loop re-reads the size on every pass
 
+    def inject_fault(mut self) raises:
+        """Deliberate failures for the crash tests (TURBOMOJO_FAULT=index|raise)."""
+        var kind = self.fault
+        self.fault = ""
+        if kind == "index":
+            var empty = List[Int]()
+            self.status = String(empty[len(self.wins) + 3])   # out of bounds -> trap
+        elif kind == "raise":
+            raise Error("injected failure")
+
     def suspend(mut self):
         """Give the terminal back, stop like any other job, and repaint on resume."""
         self.term.leave()
@@ -75,6 +85,9 @@ __extension App:
         self.scr.force = True
 
     def run(mut self) raises:
+        self.log_path = state_dir() + "/crash.log"
+        self.term.crash_log = self.log_path
+        self.term.crash_header = "TurboMojo " + VERSION + "  pid " + String(own_pid()) + "  started " + timestamp()
         self.term.enter()
         _ = self.sig.open()
         while self.running:
@@ -85,6 +98,8 @@ __extension App:
             self.draw()
             self.scr.render(self.term.out)
             self.term.flush()
+            if self.fault.byte_length() > 0:
+                self.inject_fault()
             # sleep until input, compiler output or the next timer
             var fds = List[Int]()
             fds.append(0)
@@ -103,10 +118,12 @@ __extension App:
                     self.handle(evs[k])
                 except err:
                     self.mode = M_NORMAL
+                    self.log_error(String(err))
                     self.info("Error", String(err))
             try:
                 self.poll_job()
             except err:
+                self.log_error(String(err))
                 self.info("Error", String(err))
         if self.job.active:
             self.cancel_job()

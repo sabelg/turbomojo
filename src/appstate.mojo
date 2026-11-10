@@ -124,6 +124,8 @@ struct App(Movable):
     var sig: SignalFd
     var recovered: Int
     var recovery_dir: String
+    var log_path: String       # empty until run(): tests never write to the state dir
+    var fault: String          # fault injection for crash tests (TURBOMOJO_FAULT)
     var show_ws: Bool
 
     def __init__(out self):
@@ -172,6 +174,8 @@ struct App(Movable):
         self.sig = SignalFd()
         self.recovered = 0
         self.recovery_dir = state_dir() + "/recovered"
+        self.log_path = ""
+        self.fault = env_or("TURBOMOJO_FAULT", "")
         self.show_ws = False
 
     # =================================================================== utils
@@ -222,6 +226,11 @@ struct App(Movable):
         if self.show_clock:
             t = min(t, secs_to_minute * 1000 + 50)
         return max(1, t)
+
+    def log_error(self, msg: String):
+        """Record a problem in the crash log (only once the IDE is really running)."""
+        if self.log_path.byte_length() > 0:
+            _ = append_line(self.log_path, timestamp() + "  error: " + msg)
 
     def say(mut self, msg: String):
         self.status = msg

@@ -459,6 +459,38 @@ def clock_hm() -> String:
     return s
 
 
+def timestamp() -> String:
+    """Local time as YYYY-MM-DD HH:MM:SS."""
+    var t = List[Int](length=1, fill=0)
+    t[0] = external_call["time", Int](Int(0))
+    var tm = List[Int32](length=32, fill=0)
+    _ = external_call["localtime_r", Int](t.unsafe_ptr(), tm.unsafe_ptr())
+    var vals = List[Int]()
+    for v in [Int(tm[5]) + 1900, Int(tm[4]) + 1, Int(tm[3]), Int(tm[2]), Int(tm[1]), Int(tm[0])]:
+        vals.append(v)
+    var seps = List[String]()
+    for sp in ["-", "-", " ", ":", ":", ""]:
+        seps.append(String(sp))
+    var s = String("")
+    for i in range(6):
+        if vals[i] < 10:
+            s += "0"
+        s += String(vals[i]) + seps[i]
+    return s
+
+
+def append_line(path: String, line: String) -> Bool:
+    """Append one line to a text file, creating it (and its directory) if needed."""
+    if not path_exists(dirname(path)):
+        _ = run_system("mkdir -p " + shell_quote(dirname(path)))
+    try:
+        with open(path, "a") as f:
+            f.write(line + "\n")
+        return True
+    except:
+        return False
+
+
 def secs_to_next_minute() -> Int:
     """Seconds until the wall clock shows a new minute (1..60)."""
     var t = external_call["time", Int](Int(0))

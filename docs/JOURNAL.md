@@ -227,3 +227,37 @@ Newest entries at the bottom. One entry per finished, blocked or reverted task.
   compiler. `check.sh` CHECK OK (10 files, 221 tests).
 - Unverified: macOS (no signalfd was needed in the end, but `eventfd` is Linux-only; the
   macOS port in P9-03 must use a pipe instead).
+
+## 2026-11-10 · P0-12 crash safety and crash log · done
+
+- Probed: a failed bounds check prints "Assert Error ... out of bounds" and dies with
+  SIGTRAP after the Mojo runtime's own handler prints a stack dump; the terminal is left on
+  the alternate screen with mouse reporting on (confirmed: `alternate_on=1 mouse=1`).
+- New `src/crash.mojo` (`CrashGuard`): a handler for SIGSEGV/SIGBUS/SIGILL/SIGFPE/SIGABRT/
+  SIGTRAP that restores the terminal (escape sequences + saved termios), prints a notice
+  with the log path on the real terminal, writes a session header to the crash log, then
+  re-installs the runtime's handler and re-raises so the stack trace is still produced.
+  The handler uses only system calls; its data sits behind fixed descriptors: a memfd page
+  (251: termios, saved sigactions, header), the log (252) and the original stderr (253).
+- While the full-screen UI is up, stderr is redirected to the crash log, so the runtime's
+  stack trace lands there instead of on the screen. `Terminal.enter()/leave()` switch it.
+- Errors that are caught in the event loop are now appended to the same log with a
+  timestamp (`App.log_error`). An error that escapes the loop makes `main` save unsaved
+  buffers to the recovery directory, restore the terminal, log, print where things are and
+  exit with status 1.
+- Fault injection for tests: `TURBOMOJO_FAULT=index` (out-of-bounds trap) or `raise`.
+- `scripts/smoke.sh` now runs both faults in tmux and checks: alternate screen and mouse
+  mode off, tty back in cooked mode, notice shown, non-zero exit status, crash log has the
+  header and a stack trace naming `App::run`. Counter-check done once by hand: with the
+  guard unable to install (unwritable state dir) the same crash leaves
+  `alternate_on=1 mouse=1`.
+- `tests/test_crash.mojo` (9 tests): slots, install/uninstall and descriptor hygiene,
+  stderr redirection only while the UI is up, re-install, timestamp format, `append_line`,
+  `log_error` silent before `run()`, no guard without a log path.
+- `scripts/tui-test.sh` now sets `XDG_STATE_HOME=build/state` so test runs never write to
+  the user's home directory (checked: `~/.local/state/turbomojo` does not exist).
+- Known limit: the one-line "Assert Error: index N is out of bounds" text is printed by
+  the runtime to stdout before the trap and is lost with the alternate screen; the log has
+  the stack trace (function names) but not that line.
+- Unverified: macOS (`memfd_create` and `dup3` are Linux-specific).
+- Verified: `check.sh` CHECK OK (11 files, 230 tests, smoke incl. crash scenarios).

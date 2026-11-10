@@ -3,6 +3,7 @@ from std.ffi import external_call
 from std.collections import List
 from std.time import perf_counter_ns
 from util import decode_list, append_str
+from crash import CrashGuard
 
 comptime K_BASE = 0x110000
 comptime KEY_ESC = K_BASE + 1
@@ -109,6 +110,9 @@ struct Terminal(Movable):
     var in_paste: Bool
     var paste: List[UInt8]
     var last_input_ns: Int
+    var guard: CrashGuard
+    var crash_log: String      # set before enter() to enable the crash guard
+    var crash_header: String
 
     def __init__(out self):
         self.saved = List[UInt8](length=128, fill=0)
@@ -118,6 +122,9 @@ struct Terminal(Movable):
         self.in_paste = False
         self.paste = List[UInt8]()
         self.last_input_ns = 0
+        self.guard = CrashGuard()
+        self.crash_log = ""
+        self.crash_header = ""
 
     # ------------------------------------------------------------- modes
     def raw(mut self):
@@ -142,6 +149,9 @@ struct Terminal(Movable):
 
     def enter(mut self):
         self.raw()
+        if not self.guard.installed and self.crash_log.byte_length() > 0 and self.have_saved:
+            _ = self.guard.install(self.saved, self.crash_log, self.crash_header)
+        self.guard.set_tui(True)
         append_str(
             self.out,
             "\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[?25l\x1b[H\x1b[2J",
@@ -155,6 +165,7 @@ struct Terminal(Movable):
         )
         self.flush()
         self.cooked()
+        self.guard.set_tui(False)
 
     def size(self) -> Tuple[Int, Int]:
         var ws = List[UInt16](length=4, fill=0)
