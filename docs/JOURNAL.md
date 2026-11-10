@@ -1894,3 +1894,41 @@ general timeout. The Options menu no longer fits a 20-row screen.
   regenerated (a closed box with ▼ instead of a cut-off one). This also settles the
   Options-menu note of P2-11. Not looked at in a terminal.
 - Verified: `check.sh` CHECK OK (38 files, 807 tests).
+
+## 2026-11-10 · P3-02 Docked panels: bottom panel with pages · done (left dock comes with the explorer)
+
+- Before: compiler output, search results, lists of places and the Problems list all
+  wrote into the one Message window and replaced each other.
+- Now the bottom panel has pages `PG_MESSAGE`, `PG_SEARCH`, `PG_PROBLEMS`
+  (`src/appstate.mojo`); `panel_page` (in `src/app_layout.mojo`) keeps the text, the
+  places (`errs`), the place last gone to and the marked line of the page that leaves
+  and brings back the other's, so Enter and Next / Previous message always work on the
+  page that shows. Writers choose their page with `panel_write` (builds and formatting:
+  Message; Find in Files, references, definitions, rename lists: Search). The Problems
+  page is filled on every report; it comes to the front only while no other page has
+  been chosen (`panel_pinned`), otherwise it is updated behind the page that shows.
+  Closing the panel keeps the page; reopening shows it again.
+- Tabs " Message │ Search │ Problems " in the panel's top border (`draw_pages`),
+  clickable. In the panel: Left / Right and Next / Previous tab switch pages.
+  Window > Message, Search results, Problems list.
+- Docks can be resized from the keyboard: Grow / Shrink pane with the bottom panel
+  focused changes its height by two rows (4 rows .. all but 6), with the Outline window
+  focused its width by four columns. In the tiled layout the panes follow at once.
+- Tests: new `tests/test_panel.mojo` (5): pages keep content and places through a
+  search, a problem report behind it, switching by key and command, Enter and Next
+  message per page, the empty-page texts; problems to the front or not; tabs drawn,
+  mouse, tab keys; close and reopen; resizing both docks and the panes following.
+  `test_problems_of_all_files...` in test_lsp now checks the page instead of the
+  window title "Problems" (the title is gone; the tab says it).
+- Not done / unverified:
+  - **No left dock yet.** The task names "left/bottom"; the bottom panel is done, the
+    Outline window stays at the right as built in P2-12. The left panel is built with
+    the file explorer (P3-03), which is what it is for.
+  - In the classic layout the docks are still ordinary windows at an edge: editors
+    make room when a dock opens, but not when it is resized.
+  - Program output of Run goes to the user screen as before, not to a page.
+  - No drag with the mouse on the panel's upper edge; no hiding with one key (Close
+    does it, the Window menu brings it back).
+  - Not looked at in tmux: the tabs' colours and the look at narrow widths (below 40
+    columns the plain title stays).
+- Verified: `check.sh` CHECK OK (39 files, 812 tests).

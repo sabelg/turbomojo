@@ -492,9 +492,9 @@ __extension App:
             if len(self.wins) > 1:
                 var w = self.wins.pop()
                 self.wins.insert(0, w^)
-        elif cmd == CM_MESSAGE:
-            var mi = self.ensure_msg()
-            self.focus(mi)
+        elif cmd == CM_MESSAGE or cmd == CM_SEARCHRES or cmd == CM_PROBLEMS:
+            self.panel_show(PG_MESSAGE if cmd == CM_MESSAGE else (PG_SEARCH if cmd == CM_SEARCHRES else PG_PROBLEMS))
+            self.focus(self.msg_index())
         elif cmd == CM_OUTLINE:
             self.outline_toggle()
         elif cmd == CM_WINLIST:

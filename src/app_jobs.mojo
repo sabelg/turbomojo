@@ -76,8 +76,9 @@ __extension App:
         return ErrLoc("", -1, -1, -1)
 
     def fill_messages(mut self, header: String, data: List[UInt8], footer: String) -> Tuple[Int, Int]:
+        """Put compiler-style output into the page of the bottom panel that is showing
+        (the caller chooses the page with panel_page first)."""
         var mi = self.ensure_msg()
-        self.wins[mi].title = "Message"
         var all = decode_list(data)
         var text = decode(header)
         text.append(10)
@@ -178,6 +179,7 @@ __extension App:
     def show_search_results(mut self):
         """Put the hits found so far into the Message window, one per line as
         path:line:column: text, and make each of them a place Enter jumps to."""
+        self.panel_write(PG_SEARCH)
         var mi = self.ensure_msg()
         var keep_cr = self.wins[mi].cr
         var keep_top = self.wins[mi].top
@@ -291,6 +293,7 @@ __extension App:
                     rest.append(self.job.data[k])
                 self.job.data = rest^
         if got and self.job.kind == JOB_BUILD and self.job.pid != 0:
+            self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Compiling...")
         if eof:
             self.finish_job()
@@ -318,6 +321,7 @@ __extension App:
         var exe = join_path(dir, "build/" + stem(path))
         var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.compiler_cmd() + " build" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
         if self.start_job(JOB_BUILD, cmd, path, exe):
+            self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_header(), List[UInt8](), "Compiling...")
             self.say("Building " + basename(path) + " - keep editing, Ctrl-F2 cancels")
 
@@ -332,6 +336,7 @@ __extension App:
             footer = "Build succeeded: " + self.job.exe
         else:
             footer = "Build failed (exit " + String(status >> 8) + ")"
+        self.panel_write(PG_MESSAGE)
         var counts = self.fill_messages(self.job_header(), self.job.data.copy(), footer)
         var ei = self.find_editor(path)
         var nlines = self.wins[ei].buf.count() if ei >= 0 else 0
@@ -410,6 +415,7 @@ __extension App:
             self.say("Format cancelled")
             return
         if status != 0:
+            self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Format failed")
             self.say("mojo format failed - see the Message window")
             return

@@ -160,6 +160,9 @@ __extension App:
             self.wins[t].cr = 0
         elif k == KEY_END or k == (KEY_END | MOD_CTRL):
             self.wins[t].cr = n - 1
+        elif (k == KEY_LEFT or k == KEY_RIGHT) and self.wins[t].kind == WK_MESSAGE:
+            self.panel_show((self.msg_page + (1 if k == KEY_RIGHT else PG_COUNT - 1)) % PG_COUNT)
+            return
         elif (k == KEY_ENTER or k == 32) and self.wins[t].kind == WK_OUTLINE:
             self.outline_go(self.wins[t].cr)
             return

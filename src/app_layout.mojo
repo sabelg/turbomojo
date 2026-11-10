@@ -116,6 +116,10 @@ __extension App:
         self.layout_sync()
 
     def layout_command(mut self, cmd: Int):
+        var t0 = self.top()
+        if t0 >= 0 and self.wins[t0].kind != WK_EDITOR and (cmd == CM_PANE_GROW or cmd == CM_PANE_SHRINK or cmd == CM_NEXT_TAB or cmd == CM_PREV_TAB):
+            self.panel_command(cmd)             # the bottom panel or the Outline window has the keyboard
+            return
         if cmd == CM_TILED:
             self.tiled = not self.tiled
             self.lay = Layout()
@@ -225,5 +229,114 @@ __extension App:
             self.tab_y.append(y)
             self.tab_wid.append(self.lay.tabs[g][k])
             if k + 1 < len(labels) and x < x1 - 1:
+                self.scr.put(x, y, 0x2502, fg, bg)
+                x += 1
+
+    # ============================================== the bottom panel's pages
+    def panel_keep(mut self):
+        """Remember what the page that is showing holds."""
+        var mi = self.msg_index()
+        if mi < 0:
+            return
+        var p = self.msg_page
+        self.pg_text[p] = self.wins[mi].buf.all_text()
+        self.pg_errs[p] = self.errs.copy()
+        self.pg_idx[p] = self.err_idx
+        self.pg_cr[p] = self.wins[mi].cr
+        self.pg_search[p] = self.errs_from_search
+
+    def panel_page(mut self, page: Int):
+        """Turn the bottom panel to a page: what the present page holds is kept, the
+        other page's text and places come back. (Opens the panel if it is closed.)"""
+        var mi = self.ensure_msg()
+        if page == self.msg_page or page < 0 or page >= PG_COUNT:
+            return
+        self.panel_keep()
+        self.msg_page = page
+        self.wins[mi].buf.load(self.pg_text[page])
+        self.wins[mi].buf.modified = False
+        self.errs = self.pg_errs[page].copy()
+        self.err_idx = self.pg_idx[page]
+        self.errs_from_search = self.pg_search[page]
+        self.wins[mi].cr = max(0, min(self.pg_cr[page], self.wins[mi].buf.count() - 1))
+        self.wins[mi].top = 0
+        self.wins[mi].cc = 0
+        self.wins[mi].follow = True
+
+    def panel_write(mut self, page: Int):
+        """A build, a search or a list of places is about to fill `page`: show it, and
+        keep it showing when problems are reported meanwhile."""
+        self.panel_page(page)
+        self.panel_pinned = True
+
+    def panel_show(mut self, page: Int):
+        """The user asks for a page."""
+        self.panel_page(page)
+        self.panel_pinned = page != PG_PROBLEMS
+        var mi = self.msg_index()
+        if mi >= 0 and self.wins[mi].buf.count() == 1 and self.wins[mi].buf.llen(0) == 0:
+            var what = String("No compiler or program output yet")
+            if page == PG_SEARCH:
+                what = "No search results yet (" + self.reg.key_label(CM_FINDFILES) + " searches the project)"
+            elif page == PG_PROBLEMS:
+                what = "No problems reported (" + self.reg.key_label(CM_LSP) + " starts the language server)"
+            self.wins[mi].buf.load(decode(what))
+            self.wins[mi].buf.modified = False
+
+    def panel_command(mut self, cmd: Int):
+        """Next / previous tab and grow / shrink while the bottom panel or the Outline
+        window has the keyboard."""
+        var t = self.top()
+        if cmd == CM_NEXT_TAB or cmd == CM_PREV_TAB:
+            if self.wins[t].kind == WK_MESSAGE:
+                self.panel_show((self.msg_page + (1 if cmd == CM_NEXT_TAB else PG_COUNT - 1)) % PG_COUNT)
+            return
+        var grow = cmd == CM_PANE_GROW
+        if self.wins[t].kind == WK_MESSAGE:
+            var h = self.wins[t].h + (2 if grow else -2)
+            h = max(4, min(h, self.desk_h() - 6))
+            if h == self.wins[t].h:
+                self.say("The panel cannot be made " + ("higher" if grow else "lower"))
+                return
+            self.wins[t].y = 1 + self.desk_h() - h
+            self.wins[t].h = h
+        else:
+            var w = self.wins[t].w + (4 if grow else -4)
+            w = max(16, min(w, self.scr.w - 24))
+            if w == self.wins[t].w:
+                self.say("The panel cannot be made " + ("wider" if grow else "narrower"))
+                return
+            self.wins[t].x = self.scr.w - w
+            self.wins[t].w = w
+        self.layout_sync()
+
+    def draw_pages(mut self, i: Int, active: Bool):
+        """The bottom panel's pages as tabs in its top border."""
+        var p = self.pal.copy()
+        var fg = p.msg_frame if active else p.frame_inact
+        var bg = p.msg_bg
+        var y = self.wins[i].y
+        var names = ["Message", "Search", "Problems"]
+        var total = 0
+        for nm in names:
+            total += cp_len(nm) + 3
+        var x0 = self.wins[i].x + 6
+        var x1 = self.wins[i].x + self.wins[i].w - 6
+        if x1 - x0 < total:
+            return                              # too narrow: the plain title stays
+        for x in range(x0, x1):
+            self.scr.put(x, y, 0x2550 if active else 0x2500, fg, bg)
+        var x = x0 + max(0, (x1 - x0 - total) // 2)
+        for k in range(len(names)):
+            var a = x
+            if k == self.msg_page:
+                x = self.scr.text(x, y, " " + names[k] + " ", bg, fg)
+            else:
+                x = self.scr.text(x, y, " " + names[k] + " ", fg, bg)
+            self.tab_x0.append(a)
+            self.tab_x1.append(x)
+            self.tab_y.append(y)
+            self.tab_wid.append(-(k + 1))
+            if k + 1 < len(names):
                 self.scr.put(x, y, 0x2502, fg, bg)
                 x += 1

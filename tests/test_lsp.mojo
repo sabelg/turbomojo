@@ -11,7 +11,7 @@ from rpc import *
 from json import json_parse
 from term import wait_readable
 from app import *
-from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER, M_DIALOG
+from appstate import App, now_ns, M_NORMAL, M_COMPLETE, M_HOVER, M_DIALOG, PG_PROBLEMS
 from dialog import D_RENAME, D_RENAME_APPLY, D_INFO, D_ACTIONS
 from app_nav import plan_edits
 from app_lsp import semantic_class
@@ -691,7 +691,7 @@ def test_problems_of_all_files_are_listed_and_marked_in_the_editors() raises:
     var b_err = text.find(dir + "/b.mojo:3:1: error: found BUG")
     assert_true(a_at > 0 and b_warn > a_at and b_err > b_warn, text)
     assert_true(text.find("3 problem(s) in 2 files") > 0, text)
-    assert_equal(app.wins[app.msg_index()].title, "Problems")
+    assert_equal(app.msg_page, PG_PROBLEMS)             # the Problems page of the bottom panel
     assert_equal(len(app.errs), 3)
     # the windows know their problems
     var ai = app.find_editor(dir + "/a.mojo")

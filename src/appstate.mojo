@@ -42,6 +42,10 @@ comptime M_NORMAL = 0
 comptime M_MENU = 1
 comptime M_DIALOG = 2
 comptime M_COMPLETE = 3
+comptime PG_MESSAGE = 0                 # pages of the bottom panel: compiler and program output,
+comptime PG_SEARCH = 1                  # search results and lists of places,
+comptime PG_PROBLEMS = 2                # what the language server reports
+comptime PG_COUNT = 3
 comptime M_HOVER = 4                    # a hover window is open over the editor
 
 comptime VERSION = "1.0"
@@ -263,6 +267,13 @@ struct App(Movable):
     var tab_x1: List[Int]
     var tab_y: List[Int]
     var tab_wid: List[Int]
+    var msg_page: Int                # which page the bottom panel shows (PG_*)
+    var pg_text: List[List[Int]]     # the pages that are not showing: their text ...
+    var pg_errs: List[List[ErrLoc]]  # ... the places their lines stand for ...
+    var pg_idx: List[Int]            # ... the place last gone to ...
+    var pg_cr: List[Int]             # ... and the marked line
+    var pg_search: List[Bool]
+    var panel_pinned: Bool           # the user (or a build, a search) chose the page: problems update behind it
     var sigtip: SigInfo                # the parameter tip shown above the cursor
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
@@ -483,6 +494,19 @@ struct App(Movable):
         self.tab_x1 = List[Int]()
         self.tab_y = List[Int]()
         self.tab_wid = List[Int]()
+        self.msg_page = PG_MESSAGE
+        self.pg_text = List[List[Int]]()
+        self.pg_errs = List[List[ErrLoc]]()
+        self.pg_idx = List[Int]()
+        self.pg_cr = List[Int]()
+        self.pg_search = List[Bool]()
+        for _ in range(PG_COUNT):
+            self.pg_text.append(List[Int]())
+            self.pg_errs.append(List[ErrLoc]())
+            self.pg_idx.append(-1)
+            self.pg_cr.append(0)
+            self.pg_search.append(False)
+        self.panel_pinned = False
         self.sigtip = SigInfo()
         self.sig_on = False
         self.sig_asked = False
@@ -812,6 +836,11 @@ struct App(Movable):
         var h = max(5, min(10, self.desk_h() // 3))
         var y = 1 + self.desk_h() - h
         var win = Window(WK_MESSAGE, "Message", "", 0, y, self.scr.w, h, self.free_number())
+        if len(self.pg_text[self.msg_page]) > 0:
+            # closed and opened again: the page is as it was
+            win.buf.load(self.pg_text[self.msg_page])
+            win.buf.modified = False
+            win.cr = self.pg_cr[self.msg_page]
         # shrink full-height editors so the message window does not cover them
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].y + self.wins[i].h > y and y - self.wins[i].y >= 6:

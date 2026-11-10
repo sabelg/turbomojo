@@ -185,6 +185,10 @@ __extension App:
         # ---- windows
         for k in range(len(self.tab_wid)):
             if y == self.tab_y[k] and x >= self.tab_x0[k] and x < self.tab_x1[k]:
+                if self.tab_wid[k] < 0:
+                    self.panel_show(-self.tab_wid[k] - 1)   # a page of the bottom panel
+                    self.focus(self.msg_index())
+                    return
                 var ti = self.win_by_wid(self.tab_wid[k])
                 if ti >= 0:
                     self.focus(ti)              # a tab of a pane: show that file

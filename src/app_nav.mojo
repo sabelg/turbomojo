@@ -243,6 +243,7 @@ __extension App:
     def show_places(mut self, title: String, locs: List[LspLocation]):
         """List places in the Message window, one per line as path:line:column: text;
         Enter there, Next message and Previous message go to them."""
+        self.panel_write(PG_SEARCH)
         var mi = self.ensure_msg()
         var text = decode(title)
         text.append(10)

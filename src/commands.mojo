@@ -109,6 +109,8 @@ comptime CM_PREV_TAB = 166
 comptime CM_MOVE_TAB = 167
 comptime CM_PANE_GROW = 168
 comptime CM_PANE_SHRINK = 169
+comptime CM_PROBLEMS = 170
+comptime CM_SEARCHRES = 171
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -656,7 +658,9 @@ def build_registry() -> Registry:
     r.cmd(CM_NEXTWIN, "window.next", "~N~ext", "Make the next window active", [fkey(6)])
     r.cmd(CM_PREVWIN, "window.previous", "~P~revious", "Make the previous window active", [fkey(6) | MOD_SHIFT])
     r.cmd(CM_CLOSEALL, "window.closeAll", "Clos~e~ all", "Close all windows")
-    r.cmd(CM_MESSAGE, "window.message", "~M~essage", "Open the compiler message window")
+    r.cmd(CM_MESSAGE, "window.message", "~M~essage", "Open the bottom panel on the compiler's and the program's output")
+    r.cmd(CM_SEARCHRES, "window.searchResults", "Sea~r~ch results", "Open the bottom panel on the last search results or list of places")
+    r.cmd(CM_PROBLEMS, "window.problems", "Problems l~i~st", "Open the bottom panel on the problems the language server reports")
     r.cmd(CM_TILED, "window.tiledLayout", "Tiled la~y~out", "Panes with tabs that share the screen, instead of overlapping windows")
     r.cmd(CM_SPLIT_RIGHT, "window.splitRight", "Split ri~g~ht", "Move this file into a new pane to the right", [alt(92)])
     r.cmd(CM_SPLIT_DOWN, "window.splitDown", "Split ~d~own", "Move this file into a new pane below", [alt(124)])
@@ -799,6 +803,8 @@ def build_registry() -> Registry:
     r.item(CM_CLOSEALL)
     r.sep()
     r.item(CM_MESSAGE)
+    r.item(CM_SEARCHRES)
+    r.item(CM_PROBLEMS)
     r.sep()
     r.item(CM_TILED)
     r.item(CM_SPLIT_RIGHT)

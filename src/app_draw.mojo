@@ -138,6 +138,8 @@ __extension App:
             if self.wins[i].hidden:
                 continue
             self.draw_window(i, i == n - 1)
+            if self.wins[i].kind == WK_MESSAGE:
+                self.draw_pages(i, i == n - 1)
             if self.tiled and self.wins[i].kind == WK_EDITOR:
                 self.draw_tabs(i, i == n - 1)
                 continue                        # panes lie side by side: no shadow

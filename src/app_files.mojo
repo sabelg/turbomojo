@@ -197,6 +197,8 @@ __extension App:
         _ = run_system("cd " + d + " && ls -1t | tail -n +501 | while IFS= read -r f; do rm -f -- \"$f\"; done")
 
     def remove_window(mut self, i: Int):
+        if self.wins[i].kind == WK_MESSAGE:
+            self.panel_keep()       # the panel's page is there again when it is reopened
         self.store_history(i)   # remembers the cursor position (if the file is unchanged)
         self.drop_swap(i)       # closing is a decision: nothing left to recover
         _ = self.wins.pop(i)

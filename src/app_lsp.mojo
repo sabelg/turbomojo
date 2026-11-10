@@ -367,10 +367,14 @@ __extension App:
             footer += "  (server answered in " + String(latency_ms) + " ms)"
         if text.find("'std' is required") >= 0:
             footer += "\nThe Mojo standard library was not found: start TurboMojo with `pixi run`."
+        # the Problems page comes to the front unless another page was chosen (by the
+        # user, a build or a search): then it is brought up to date behind that page
+        var back = self.msg_page
+        var behind = self.panel_pinned and back != PG_PROBLEMS and self.msg_index() >= 0
+        self.panel_page(PG_PROBLEMS)
         _ = self.fill_messages("Problems reported by the language server", str_bytes(text), footer)
-        var mi = self.msg_index()
-        if mi >= 0:
-            self.wins[mi].title = "Problems"
+        if behind:
+            self.panel_page(back)
 
     def lsp_tick(mut self, now: Int):
         """Called on every pass of the event loop while a language server is in use."""
