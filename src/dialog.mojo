@@ -36,12 +36,14 @@ struct Field(Copyable, Movable):
     var text: List[Int]
     var cur: Int
     var scroll: Int
+    var fresh: Bool      # the pre-filled text is "selected": typing replaces it
 
     def __init__(out self, label: String, text: String):
         self.label = label
         self.text = decode(text)
         self.cur = len(self.text)
         self.scroll = 0
+        self.fresh = False
 
 
 struct Dialog(Copyable, Movable):
@@ -186,7 +188,21 @@ struct Dialog(Copyable, Movable):
             self.list_top = self.list_sel - h + 1
 
     # ------------------------------------------------------------- edit
+    def field_take_fresh(mut self, i: Int) -> Bool:
+        """If the field still shows its pre-filled text as selected, remove that text.
+        True if there was something to remove."""
+        if not self.fields[i].fresh:
+            return False
+        self.fields[i].fresh = False
+        if len(self.fields[i].text) == 0:
+            return False
+        self.fields[i].text.clear()
+        self.fields[i].cur = 0
+        self.fields[i].scroll = 0
+        return True
+
     def field_key_insert(mut self, i: Int, cps: List[Int]):
+        _ = self.field_take_fresh(i)
         for c in cps:
             if c >= 32:
                 self.fields[i].text.insert(self.fields[i].cur, c)
@@ -195,6 +211,10 @@ struct Dialog(Copyable, Movable):
             self.refilter()
 
     def field_backspace(mut self, i: Int):
+        if self.field_take_fresh(i):
+            if self.list_filter and i == 0:
+                self.refilter()
+            return
         if self.fields[i].cur > 0:
             _ = self.fields[i].text.pop(self.fields[i].cur - 1)
             self.fields[i].cur -= 1
@@ -202,6 +222,10 @@ struct Dialog(Copyable, Movable):
                 self.refilter()
 
     def field_delete(mut self, i: Int):
+        if self.field_take_fresh(i):
+            if self.list_filter and i == 0:
+                self.refilter()
+            return
         if self.fields[i].cur < len(self.fields[i].text):
             _ = self.fields[i].text.pop(self.fields[i].cur)
             if self.list_filter and i == 0:
@@ -262,7 +286,8 @@ struct Dialog(Copyable, Movable):
             for k in range(sc, len(self.fields[i].text)):
                 if xx >= fx + fw:
                     break
-                xx = scr.draw_cp(xx, yy, self.fields[i].text[k], pal.in_fg, pal.in_bg)
+                # pre-filled text that typing would replace is shown as selected
+                xx = scr.draw_cp(xx, yy, self.fields[i].text[k], pal.in_bg if self.fields[i].fresh else pal.in_fg, pal.in_fg if self.fields[i].fresh else pal.in_bg)
             scr.no_clip()
             if sc > 0:
                 scr.put(fx, yy, 0x25C4, pal.dlg_hot, pal.in_bg)

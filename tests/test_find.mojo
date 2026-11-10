@@ -14,7 +14,7 @@ from app import *
 from appstate import App, M_NORMAL, M_DIALOG
 from dialog import D_FIND, D_REPLACE, D_INFO
 from commands import CM_NEW, CM_FIND, CM_REPLACE, CM_AGAIN, CM_UNDO
-from term import key_event, KEY_ESC, KEY_ENTER, KEY_BACKSPACE, KEY_TAB, alt, ctrl
+from term import key_event, KEY_ESC, KEY_ENTER, KEY_BACKSPACE, KEY_TAB, KEY_END, alt, ctrl
 from util import decode, to_str
 
 
@@ -530,6 +530,32 @@ def test_match_is_scrolled_clear_of_the_dialog() raises:
     assert_true(row_y > app.wins[e].y)
     app.handle(key_event(KEY_ESC))
     assert_equal(app.wins[e].top, 0)                   # the view goes back too
+
+
+
+def test_remembered_search_text_is_replaced_by_typing() raises:
+    var app = make("alpha beta alpha")
+    app.exec(CM_FIND)
+    keys(app, "alpha")
+    app.handle(key_event(KEY_ENTER))
+    app.exec(CM_FIND)                                   # opens with "alpha" filled in
+    assert_equal(to_str(app.dlg.fields[0].text), "alpha")
+    assert_true(app.dlg.fields[0].fresh)
+    keys(app, "b")                                      # typing starts a new text
+    assert_equal(to_str(app.dlg.fields[0].text), "b")
+    keys(app, "eta")
+    assert_equal(to_str(app.dlg.fields[0].text), "beta")
+    app.handle(key_event(KEY_ESC))
+    app.find_text = decode("alpha")
+    app.exec(CM_FIND)
+    app.handle(key_event(KEY_END))                      # a cursor key keeps it for editing
+    keys(app, "s")
+    assert_equal(to_str(app.dlg.fields[0].text), "alphas")
+    app.handle(key_event(KEY_ESC))
+    app.exec(CM_FIND)
+    app.handle(key_event(KEY_BACKSPACE))                # Backspace clears it at once
+    assert_equal(to_str(app.dlg.fields[0].text), "")
+    app.handle(key_event(KEY_ESC))
 
 
 def main() raises:

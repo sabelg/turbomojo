@@ -79,6 +79,7 @@ __extension App:
         elif k == KEY_ENTER:
             var cmd = self.menus[self.menu_idx].items[self.menu_item].cmd
             self.mode = M_NORMAL
+            self.macro_note_cmd(cmd)
             self.exec(cmd)
         elif (k & MOD_ALT) != 0:
             var m = self.menu_for_letter(lower(k & KEY_MASK))
@@ -93,12 +94,14 @@ __extension App:
                 if hot_char(self.menus[self.menu_idx].items[i].label) == lk:
                     var cmd = self.menus[self.menu_idx].items[i].cmd
                     self.mode = M_NORMAL
+                    self.macro_note_cmd(cmd)
                     self.exec(cmd)
                     return
         else:
             var cmd = self.shortcut(k)
             if cmd != CM_NONE:
                 self.mode = M_NORMAL
+                self.macro_note_cmd(cmd)
                 self.exec(cmd)
 
     def checked(self) -> List[Int]:

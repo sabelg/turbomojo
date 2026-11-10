@@ -225,8 +225,10 @@ __extension App:
         var seed = to_str(sel) if len(sel) > 0 and not multi else to_str(self.find_text)
         var d = Dialog(D_REPLACE if replace else D_FIND, "Replace" if replace else "Find", 60, 14 if replace else 12)
         d.fields.append(Field("~T~ext to find", seed))
+        d.fields[0].fresh = True               # typing replaces the remembered text
         if replace:
             d.fields.append(Field("~N~ew text", to_str(self.replace_text)))
+            d.fields[1].fresh = True
             d.buttons.append("~R~eplace")
             d.buttons.append("Change ~a~ll")
         else:
@@ -263,6 +265,7 @@ __extension App:
         var d = Dialog(D_FINDFILES, "Find in Files", 64, 12)
         d.lines.append("Folder: " + self.cwd)
         d.fields.append(Field("~T~ext to find", seed))
+        d.fields[0].fresh = True
         d.buttons.append("~S~earch")
         d.buttons.append("~C~ancel")
         d.checks.append("Case sens~i~tive")
@@ -483,6 +486,8 @@ __extension App:
                 self.dlg.focus = (self.dlg.focus + (1 if k == KEY_DOWN else nf - 1)) % nf
             return
         if fi >= 0:
+            if k == KEY_LEFT or k == KEY_RIGHT or k == KEY_HOME or k == KEY_END:
+                self.dlg.fields[fi].fresh = False       # moving the cursor keeps the text
             if k == KEY_LEFT:
                 self.dlg.fields[fi].cur = max(0, self.dlg.fields[fi].cur - 1)
             elif k == KEY_RIGHT:

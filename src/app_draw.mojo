@@ -64,6 +64,8 @@ __extension App:
                 right = ("CRLF" if self.wins[ti].buf.crlf else "LF") + "  " + (("Tabs:" + String(self.wins[ti].buf.tab_width)) if self.wins[ti].buf.use_tabs else ("Spaces:" + String(self.wins[ti].buf.indent_size))) + "  "
             if self.lsp.active():
                 right += "LSP  "
+        if self.macro_rec:
+            right = "● REC  " + right
             right += "INS" if self.insert_mode else "OVR"
         if self.job.active:
             var sp = decode(SPINNER)

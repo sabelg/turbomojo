@@ -117,6 +117,7 @@ __extension App:
             for i in range(len(self.dlg.field_y)):
                 if y == self.dlg.field_y[i] and x >= self.dlg.field_x:
                     self.dlg.focus = i
+                    self.dlg.fields[i].fresh = False
                     self.dlg.fields[i].cur = max(0, min(len(self.dlg.fields[i].text), x - self.dlg.field_x - 1 + self.dlg.fields[i].scroll))
                     return
             for i in range(len(self.dlg.check_y)):
@@ -148,6 +149,7 @@ __extension App:
                 var it = y - 2
                 if m.items[it].cmd != CM_NONE:
                     self.mode = M_NORMAL
+                    self.macro_note_cmd(m.items[it].cmd)
                     self.exec(m.items[it].cmd)
                 return
             if y != 0:
@@ -170,6 +172,7 @@ __extension App:
                     if self.st_cmd[i] == -1:
                         self.open_menu(1)
                     else:
+                        self.macro_note_cmd(self.st_cmd[i])
                         self.exec(self.st_cmd[i])
                     return
             return

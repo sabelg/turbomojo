@@ -62,6 +62,8 @@ comptime CM_JOIN = 118
 comptime CM_SORT = 119
 comptime CM_UPPER = 120
 comptime CM_LOWER = 121
+comptime CM_MACRO_REC = 122
+comptime CM_MACRO_PLAY = 123
 comptime CM_KEYMAP0 = 124          # modern, turbo, emacs: three consecutive ids
 comptime CM_KEYMAP1 = 125
 comptime CM_KEYMAP2 = 126
@@ -567,6 +569,8 @@ def build_registry() -> Registry:
     r.cmd(CM_UNFOLDALL, "edit.unfoldAll", "E~x~pand all", "Show all folded blocks", [alt(61)])
     r.cmd(CM_INDENT, "text.indentLines", "~I~ndent lines", "Indent the current line or the selected lines one level")
     r.cmd(CM_UNINDENT, "text.unindentLines", "U~n~indent lines", "Remove one level of indentation from the current or selected lines")
+    r.cmd(CM_MACRO_REC, "macro.record", "~R~ecord macro / stop", "Start recording keystrokes, or stop and keep them", [fkey(5) | MOD_CTRL])
+    r.cmd(CM_MACRO_PLAY, "macro.play", "Pla~y~ macro", "Repeat the recorded keystrokes", [fkey(6) | MOD_CTRL])
     r.cmd(CM_LINEUP, "text.moveLineUp", "Move line ~u~p", "Move the current line or the selected lines up", [KEY_UP | MOD_ALT])
     r.cmd(CM_LINEDOWN, "text.moveLineDown", "Move line ~d~own", "Move the current line or the selected lines down", [KEY_DOWN | MOD_ALT])
     r.cmd(CM_JOIN, "text.joinLines", "~J~oin lines", "Join the next line (or the selected lines) onto this one", [alt(106)])
@@ -678,6 +682,9 @@ def build_registry() -> Registry:
     r.sep()
     r.item(CM_UPPER)
     r.item(CM_LOWER)
+    r.sep()
+    r.item(CM_MACRO_REC)
+    r.item(CM_MACRO_PLAY)
 
     r.menu("~S~earch")
     r.item(CM_FIND)

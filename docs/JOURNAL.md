@@ -1107,3 +1107,35 @@ Next: Phase 1 (editor core), starting with P1-01, the rope.
   - Super/Hyper/Meta modifiers are ignored. No use is made of the other flags (event
     types, alternate keys, all keys as escape codes).
 - Verified: `check.sh` CHECK OK (30 files, 648 tests).
+
+## 2026-11-10 · P1-17 keyboard macros · done
+
+- `App.macro` is a list of events: keys, pastes, and `EV_COMMAND` steps for commands
+  picked from a menu or the status line (the keys that walk a menu are not recorded;
+  the command is). Recording happens in `App.handle`; the key or two-key sequence that
+  stops the recording is removed from the macro. Replay feeds the steps back through
+  `handle`/`exec` with `macro_playing` set, so nothing is recorded or nested meanwhile.
+- Commands: Text > Record macro / stop (Ctrl-F5), Play macro (Ctrl-F6); "● REC" in the
+  status line while recording; messages for "nothing recorded", "stop recording first"
+  and the step count. Recording stops by itself at 100,000 steps.
+- Found while testing a Replace macro: the Find/Replace dialogs open with the previous
+  text filled in and typing was appended to it, so a replayed macro searched for
+  "foofoo". Pre-filled text in the Find, Replace and Find in Files dialogs is now shown
+  as selected: typing or pasting replaces it, Backspace/Delete clears it, a cursor key
+  or a click keeps it for editing (`Field.fresh`). This also changes ordinary use of
+  those dialogs.
+- Tests: `tests/test_macro.mojo` (9 tests): record and play on each line, refusals, a
+  new recording replacing the old, a Replace dialog with a paste inside a macro, a menu
+  command recorded as a command, stopping from the menu, two-key bindings inside a
+  macro and as the stop key, mouse not recorded, the indicator, several cursors and
+  undo. One more in `tests/test_find.mojo` for the pre-filled text. One wrong
+  expectation of mine (where the cursor is after a sort).
+- Not done / unverified:
+  - One macro, in memory only: no names, no saving, no repeat count.
+  - Mouse actions are not recorded. A macro replays keys, so it depends on the same
+    state (keymap, dialog options such as "Regular expression").
+  - Each step is its own undo step; a played macro is not undone as a whole.
+  - Not tried by hand in tmux; Ctrl-F5/Ctrl-F6 were not checked on a real terminal.
+  - The last full gate run was before the extra test in `test_find`; that file was then
+    built and run on its own (32 passed).
+- Verified: `check.sh` CHECK OK (31 files, 657 tests) + the one added test.

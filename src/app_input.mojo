@@ -41,7 +41,22 @@ from app_draw import *
 __extension App:
     # ================================================================ input
     def handle(mut self, e: Event) raises:
+        var recording = self.macro_rec and not self.macro_playing and e.kind != EV_MOUSE and self.mode != M_MENU
+        var at = len(self.macro)
+        if recording:
+            if self.chord == 0:
+                self.macro_cmd_start = at       # a new key, or the first key of a sequence
+            self.macro.append(e.copy())
+        self.macro_key_live = recording
         self.handle_event(e)
+        self.macro_key_live = False
+        if recording and self.mode == M_MENU and len(self.macro) > at:
+            # the key opened a menu: what is chosen there is recorded as a command instead
+            while len(self.macro) > at:
+                _ = self.macro.pop()
+        if self.macro_rec and len(self.macro) >= MACRO_MAX:
+            self.macro_rec = False
+            self.say("Macro recording stopped: too long")
         if self.mode == M_DIALOG and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE):
             self.find_refresh()
 

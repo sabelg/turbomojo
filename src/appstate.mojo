@@ -43,6 +43,8 @@ comptime COUNT_LINE_LIMIT = 50000     # matches are counted in at most this many
 comptime PREVIEW_LINE_LIMIT = 50000   # no search-as-you-type in longer texts
 comptime FSEARCH_SLICE_MS = 8          # work per loop pass while searching files
 comptime FSEARCH_REDRAW_MS = 150       # how often new hits are shown while it runs
+comptime EV_COMMAND = 100               # a macro step that runs a command (Event.key holds its id)
+comptime MACRO_MAX = 100000            # recording stops by itself at this many steps
 comptime STATUS_MS = 4000        # how long a status-line message stays
 comptime RESIZE_POLL_MS = 250    # until SIGWINCH handling lands (P0-11)
 comptime SPINNER_MS = 100
@@ -102,6 +104,11 @@ struct App(Movable):
     var wins: List[Window]
     var reg: Registry
     var keymap: Int            # 0 modern, 1 turbo / WordStar, 2 emacs
+    var macro: List[Event]     # the recorded macro: keys, pastes, and commands picked from menus
+    var macro_rec: Bool        # recording now
+    var macro_playing: Bool
+    var macro_key_live: Bool   # the key being handled right now was recorded
+    var macro_cmd_start: Int   # where the keys of the command being typed begin in `macro`
     var chord: Int             # first key of a two-key binding, waiting for the second
     var user_key_cmds: List[String]         # [keys] from the config files
     var user_key_names: List[List[String]]
@@ -197,6 +204,11 @@ struct App(Movable):
         self.wins = List[Window]()
         self.reg = build_registry()
         self.keymap = 0
+        self.macro = List[Event]()
+        self.macro_rec = False
+        self.macro_playing = False
+        self.macro_cmd_start = 0
+        self.macro_key_live = False
         self.chord = 0
         self.user_key_cmds = List[String]()
         self.user_key_names = List[List[String]]()

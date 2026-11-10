@@ -117,6 +117,56 @@ __extension App:
             self.wins[t].sync_want()
             self.wins[t].follow = True
 
+    # ---------------------------------------------------------------- macros
+    def macro_note_cmd(mut self, cmd: Int):
+        """A command was picked from a menu or the status line while recording."""
+        if self.macro_rec and not self.macro_playing and cmd != CM_MACRO_REC and cmd != CM_MACRO_PLAY and cmd > CM_NONE:
+            self.macro.append(Event(EV_COMMAND, cmd, 0, 0, 0, False, False, List[Int]()))
+
+    def macro_toggle_record(mut self):
+        if self.macro_playing:
+            return
+        if not self.macro_rec:
+            self.macro.clear()
+            self.macro_cmd_start = 0
+            self.macro_rec = True
+            self.say("Recording a macro - " + self.reg.key_label(CM_MACRO_REC) + " stops")
+            return
+        self.macro_rec = False
+        # the key (or key sequence) that stopped the recording is not part of the macro
+        while self.macro_key_live and len(self.macro) > self.macro_cmd_start:
+            _ = self.macro.pop()
+        self.say("Macro recorded: " + String(len(self.macro)) + (" step" if len(self.macro) == 1 else " steps") + " - " + self.reg.key_label(CM_MACRO_PLAY) + " plays it")
+
+    def macro_play(mut self) raises:
+        if self.macro_playing:
+            return
+        if self.macro_rec:
+            # asked for while recording: not recorded, and not run
+            while self.macro_key_live and len(self.macro) > self.macro_cmd_start:
+                _ = self.macro.pop()
+            self.say("Stop recording first")
+            return
+        if len(self.macro) == 0:
+            self.say("No macro recorded")
+            return
+        self.macro_playing = True
+        var steps = len(self.macro)
+        var done = 0
+        try:
+            for i in range(steps):
+                var e = self.macro[i].copy()
+                if e.kind == EV_COMMAND:
+                    self.exec(e.key)
+                else:
+                    self.handle(e)
+                done += 1
+        except err:
+            self.macro_playing = False
+            raise err
+        self.macro_playing = False
+        self.say("Macro played (" + String(done) + (" step)" if done == 1 else " steps)"))
+
     def exec(mut self, cmd: Int) raises:
         self.exec_command(cmd)
         # Options are remembered across sessions
@@ -141,7 +191,7 @@ __extension App:
         var ai = self.active_editor()
         if ai >= 0 and self.wins[ai].has_multi():
             # only these know about several cursors; everything else works on the main one
-            if not (cmd == CM_ADDNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO or (cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE)):
+            if not (cmd == CM_ADDNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO or cmd == CM_MACRO_REC or cmd == CM_MACRO_PLAY or (cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE)):
                 self.wins[ai].collapse()
         if cmd == CM_NEW:
             var name = String("NONAME")
@@ -226,6 +276,10 @@ __extension App:
             if ai >= 0:
                 self.wins[ai].indent_lines(1 if cmd == CM_INDENT else -1)
                 self.wins[ai].follow = True
+        elif cmd == CM_MACRO_REC:
+            self.macro_toggle_record()
+        elif cmd == CM_MACRO_PLAY:
+            self.macro_play()
         elif cmd == CM_LINEUP or cmd == CM_LINEDOWN:
             if ai >= 0:
                 _ = self.wins[ai].move_lines(-1 if cmd == CM_LINEUP else 1)
