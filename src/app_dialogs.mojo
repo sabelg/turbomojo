@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_problems import *
 from app_lsp import *
 from lsp import *
 from app_watch import *
@@ -207,6 +208,8 @@ __extension App:
             self.run_configs_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFG and b == 0:
             self.run_config_save()
+        elif kind == D_PANEL_FILTER and b == 0:
+            self.panel_filter_set(String(self.dlg.field_text(0).strip()))
         elif kind == D_GIT_COMMIT and b == 0:
             self.git_commit(self.dlg.field_text(0), self.dlg.field_text(1), self.dlg.check_vals[0], self.dlg.check_vals[1])
         elif kind == D_GIT_BRANCH:

@@ -44,6 +44,7 @@ from termsession import TermSession
 from testexp import TestFile
 from git import GitStatus, BlameLine
 from gitdiff import DiffRow
+from problems import Problem, ProblemFilter
 from linediff import Hunk
 from proc import Proc
 from breakpoints import Breakpoints
@@ -231,6 +232,11 @@ struct App(Movable):
     var git_branches: List[String]  # the branch dialog's branches
     var blame_path: String     # the blame window's file
     var blame_rows: List[BlameLine]
+    var prob_build: List[Problem]   # the last build's errors and warnings (Problems page)
+    var prob_filter: ProblemFilter  # what the Problems page shows
+    var out_filter: String          # the Message page shows only lines with this
+    var out_filtered: Bool
+    var out_full: List[String]      # the Message page's lines before filtering
     var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
@@ -577,6 +583,11 @@ struct App(Movable):
         self.git_branches = List[String]()
         self.blame_path = ""
         self.blame_rows = List[BlameLine]()
+        self.prob_build = List[Problem]()
+        self.prob_filter = ProblemFilter()
+        self.out_filter = ""
+        self.out_filtered = False
+        self.out_full = List[String]()
         self.test_rows_file = List[Int]()
         self.test_rows_test = List[Int]()
         self.test_target_file = -1

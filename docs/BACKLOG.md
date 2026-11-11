@@ -101,7 +101,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P5-06 Git gutter markers and status in explorer
 - [x] P5-07 Git: diff view, stage/unstage/revert hunk
 - [x] P5-08 Git: commit dialog, branch switch, blame
-- [ ] P5-09 Unified Problems/Output panels with filters
+- [x] P5-09 Unified Problems/Output panels with filters
 
 ## Phase 6: Coding agents via ACP (v1.7)
 

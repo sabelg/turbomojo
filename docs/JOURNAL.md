@@ -3198,3 +3198,68 @@ went on with P5-06.
     the commit's diff.
   - Conflict resolution (named in the roadmap's Git row) is not in any P5 task yet.
 - Verified: `scripts/check.sh` → `CHECK OK`, 58 test files, 962 tests, smoke ok.
+
+## 2026-11-11 · P5-09 Unified Problems/Output panels with filters · done
+
+- `src/problems.mojo`: a Problem (source: server, build or test; severity; place;
+  message and its further lines); `parse_compiler_output` (the `path:line:col:
+  error|warning|note:` lines of a compiler's output, relative paths from the base,
+  the source line and caret skipped); the order (current file first, then files as
+  they first appear, by line and column within a file, a place+kind+message reported
+  by two sources shown once); `ProblemFilter` (kinds, this file only, a text, any case)
+  with the line that describes it; `view_problems` (the rows, which problem each row
+  is, counts of everything).
+- `src/app_problems.mojo`: the Problems page made from all three sources: the language
+  server's diagnostics (columns from UTF-16 as before), the last build's output
+  (`finish_build` keeps it; a passing build empties it) and the test explorer's failed
+  tests (at the failing assertion, else the test's def; the "At path:l:c:" prefix of the
+  message dropped). A server update brings it to the front as before (unless another
+  page was chosen); a build or test run updates it behind the page it writes. Turning
+  to the page makes it again. Keys E W N F / C, with hints in the status line; the
+  footer says how many are shown and hidden. The rows stay in compiler format, so
+  Enter and Alt-F8 / Alt-F7 work as on the Message page.
+- Message page: / filters the output's lines by a text (the header stays, a closing
+  line says "n of m lines contain ..."), the places to jump to are worked out from the
+  shown lines, C shows everything, and new output (fill_messages) arrives unfiltered.
+- `lsp_show` now just calls `problems_show(True)`; the header still starts with
+  "Problems reported by the language server" and the footer keeps its wording, so
+  `test_lsp` passes unchanged (85 tests run separately before the gate).
+- Tests (`tests/test_problems.mojo`, 4): real-looking compiler output; order, repeats,
+  every filter, counts, further message lines; in the IDE: a real `mojo build` of a
+  file with an error puts it on the Problems page marked [build], beside a failed test
+  marked [test] at its assertion; Enter goes there; F, E (nothing left: the footer
+  says how many are hidden), C, / with a text in any case; a passing build empties the
+  build's part; the Message page filter, Enter from a filtered line, C, and new output
+  unfiltered.
+- Looked at in tmux: F9 on a file with an error, Right Right to Problems: the
+  `[build]` row with the filter line and status-line hints; E hid it ("1 hidden by the
+  filter"), C brought it back, Enter went to bad.mojo line 2.
+- The first gate run failed in `tests/test_panel.mojo` (2 tests): the page now has a
+  filter line, so a problem's row is one lower, and the empty page no longer said
+  which key starts the language server. The footer says it again ("No problems
+  reported (F7 starts the language server)") when there are none and no server runs;
+  the two tests now expect the new layout.
+- Not done / unverified:
+  - Only the last build's problems are kept (one file is built at a time); a pixi
+    task's compiler errors stay on the Message page only.
+  - The filters are not saved in the session.
+- Verified: `scripts/check.sh` → `CHECK OK`, 59 test files, 966 tests, smoke ok.
+
+## 2026-11-11 · Phase 5 summary
+
+All 9 tasks are marked done: pty support, terminal emulation on libghostty-vt,
+integrated terminals (shell, Run in a window, the Mojo REPL with Ctrl-F10), the test
+explorer, git markers in the gutter and status in the explorer, the diff view with
+stage / unstage / revert of one change, commit, branches and blame, and one Problems
+page for the language server, the build and the tests, with filters on it and on the
+Message page.
+
+What is thinner than the task names suggest: git never touches remotes (no fetch,
+pull, push); no conflict resolution yet (the roadmap's Git row names it; no P5 task
+did); no staging of single lines; blame is not live; only the last build's problems
+are kept. git runs only for repositories in trusted folders, because a repository's
+own configuration can make git run commands. The terminal still depends on
+libghostty-vt (static, glibc 2.34); a pure-Mojo emulator was proposed to the user and
+recommended for after Phase 5 (no answer yet). The gate takes about 20 minutes now
+(59 test files).
+- Verified: the P5-09 gate above is the phase's last.

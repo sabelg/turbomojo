@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_problems import *
 from app_lsp import *
 from lsp import *
 from app_watch import *
@@ -100,6 +101,9 @@ __extension App:
         self.errs.clear()
         self.err_idx = -1
         self.errs_from_search = False
+        if self.msg_page == PG_MESSAGE:
+            self.out_filtered = False       # new output: unfiltered
+            self.out_filter = ""
         var errors = 0
         var warnings = 0
         var row = 1
@@ -363,6 +367,10 @@ __extension App:
             footer = "Build failed (exit " + String(status >> 8) + ")"
         self.panel_write(PG_MESSAGE)
         var counts = self.fill_messages(self.job_header(), self.job.data.copy(), footer)
+        if not self.job.cancelled:
+            # the Problems page shows the build's errors too (behind this page)
+            self.prob_build = parse_compiler_output(bytes_to_str(self.job.data), self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd))
+            self.problems_show(False)
         var ei = self.find_editor(path)
         var nlines = self.wins[ei].buf.count() if ei >= 0 else 0
         var tstr = String(Int(secs * 10) // 10) + "." + String(Int(secs * 10) % 10) + " s"

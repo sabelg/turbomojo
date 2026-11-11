@@ -23,6 +23,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_problems import *
 from app_lsp import *
 from lsp import *
 from markdown import *
@@ -392,5 +393,6 @@ __extension App:
             footer = "Stopped"
         var header = self.job.exe
         _ = self.fill_messages(header, self.job.data.copy(), footer)
+        self.problems_show(False)           # failed tests are problems too
         self.say(footer)
 

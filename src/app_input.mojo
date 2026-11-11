@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_problems import *
 from app_lsp import *
 from lsp import *
 from app_watch import *
@@ -172,6 +173,8 @@ __extension App:
         if self.wins[t].kind == WK_BLAME and self.git_blame_key(k):
             return
         if self.wins[t].kind == WK_EXPLORER and self.explorer_key(k):
+            return
+        if self.wins[t].kind == WK_MESSAGE and self.panel_filter_key(k):
             return
         var n = self.wins[t].buf.count()
         if k == KEY_UP:

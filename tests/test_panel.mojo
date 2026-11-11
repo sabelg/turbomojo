@@ -97,8 +97,8 @@ def test_pages_keep_their_own_content() raises:
     assert_equal(app.msg_page, PG_PROBLEMS)
     assert_true(panel(app).find("a.mojo:2:5: error: found BUG") > 0, panel(app))
     assert_equal(len(app.errs), 1)
-    # Enter there goes to the problem
-    app.wins[app.top()].cr = 1
+    # Enter there goes to the problem (row 0 says what the page is, row 1 its filter)
+    app.wins[app.top()].cr = 2
     app.handle(key_event(KEY_ENTER))
     assert_equal(at(app), "a.mojo:1:4")
     # back to the search results: untouched, and their places work
@@ -178,7 +178,7 @@ def test_tabs_in_the_border_mouse_and_keys() raises:
     app.handle(Event(EV_MOUSE, 0, col_p + 2, y, MB_LEFT, False, False, List[Int]()))
     assert_equal(app.msg_page, PG_PROBLEMS)
     assert_equal(app.wins[app.top()].kind, WK_MESSAGE)
-    assert_true(panel(app).find("No problems reported") == 0, panel(app))
+    assert_true(panel(app).find("No problems reported (F7 starts the language server)") > 0, panel(app))
     app.draw()
     assert_true(app.scr.bg_at(col_p, y) != app.pal.msg_bg)
     # the tab keys work in the panel too

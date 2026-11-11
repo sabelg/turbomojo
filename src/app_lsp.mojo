@@ -11,6 +11,7 @@ from lsp import *
 from buffer import Mark, Hint
 from highlight import C_PARAM, C_DEF, C_PROP, C_TYPE, C_NS, C_SELF
 from appstate import *
+from app_problems import *
 from app_files import *
 from app_dialogs import *
 from app_jobs import *
@@ -320,61 +321,9 @@ __extension App:
             self.wins[i].buf.marks.append(Mark(l1, c1, l2, c2, d.severity, d.message))
 
     def lsp_show(mut self, latency_ms: Int):
-        """The Problems list: every problem the server has reported, for all files, in
-        the Message window in compiler format, so Enter and Alt-F8/F7 jump to them. The
-        active file comes first."""
-        var order = List[Int]()
-        var top_uri = String("")
-        var te = self.top_editor()
-        if te >= 0 and self.wins[te].path.byte_length() > 0:
-            top_uri = path_to_uri(self.wins[te].path)
-        for k in range(len(self.lsp.diags)):
-            if self.lsp.diags[k].uri == top_uri:
-                order.append(k)
-        for k in range(len(self.lsp.diags)):
-            if self.lsp.diags[k].uri != top_uri:
-                order.append(k)
-        var text = String("")
-        var total = 0
-        var files = 0
-        for k in order:
-            if len(self.lsp.diags[k].items) == 0:
-                continue
-            files += 1
-            var path = uri_to_path(self.lsp.diags[k].uri)
-            var wi = self.find_editor(path)
-            for d in self.lsp.diags[k].items:
-                total += 1
-                var line_text = List[Int]()
-                if wi >= 0 and d.line >= 0 and d.line < self.wins[wi].buf.count():
-                    line_text = self.wins[wi].buf.line(d.line)
-                elif wi < 0:
-                    # not open: the column is shown in the server's units
-                    for _ in range(d.ch):
-                        line_text.append(32)
-                text += diagnostic_line(path, line_text, d) + "\n"
-                # remaining lines of a multi-line message, indented
-                var first = True
-                for part in d.message.split("\n"):
-                    if first:
-                        first = False
-                        continue
-                    text += "    " + String(part) + "\n"
-        var footer = String("No problems found")
-        if total > 0:
-            footer = String(total) + " problem(s)" + (" in " + String(files) + " files" if files > 1 else "")
-        if latency_ms >= 0:
-            footer += "  (server answered in " + String(latency_ms) + " ms)"
-        if text.find("'std' is required") >= 0:
-            footer += "\nThe Mojo standard library was not found: start TurboMojo with `pixi run`."
-        # the Problems page comes to the front unless another page was chosen (by the
-        # user, a build or a search): then it is brought up to date behind that page
-        var back = self.msg_page
-        var behind = self.panel_pinned and back != PG_PROBLEMS and self.msg_index() >= 0
-        self.panel_page(PG_PROBLEMS)
-        _ = self.fill_messages("Problems reported by the language server", str_bytes(text), footer)
-        if behind:
-            self.panel_page(back)
+        """New problems from the server: the Problems page (app_problems) with them,
+        at the front unless another page was chosen."""
+        self.problems_show(True)
 
     def lsp_tick(mut self, now: Int):
         """Called on every pass of the event loop while a language server is in use."""

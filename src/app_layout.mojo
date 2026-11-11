@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_problems import *
 from app_lsp import *
 from lsp import *
 from markdown import *
@@ -287,6 +288,9 @@ __extension App:
         """The user asks for a page."""
         self.panel_page(page)
         self.panel_pinned = page != PG_PROBLEMS
+        if page == PG_PROBLEMS:
+            self.problems_show(False)       # always current: server, build and tests
+            return
         var mi = self.msg_index()
         if mi >= 0 and self.wins[mi].buf.count() == 1 and self.wins[mi].buf.llen(0) == 0:
             var what = String("No compiler or program output yet")

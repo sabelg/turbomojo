@@ -46,6 +46,7 @@ comptime D_EVALUATE = 38        # evaluate an expression or run a debugger comma
 comptime D_MEMADDR = 39         # the CPU window's memory: an address or a variable
 comptime D_GIT_COMMIT = 40      # the commit message
 comptime D_GIT_BRANCH = 41      # switch to (or make) a branch
+comptime D_PANEL_FILTER = 42    # the text the Problems or Message page's lines must contain
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

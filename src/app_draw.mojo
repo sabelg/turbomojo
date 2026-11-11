@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_problems import *
 from app_lsp import *
 from lsp import *
 from markdown import *
@@ -211,6 +212,16 @@ __extension App:
             if t >= 0 and self.wins[t].kind == WK_CPU:
                 for h in ["~F7~/~F8~ Step instruction", "~G~ Memory at", "~+~/~-~ Next/prev memory"]:
                     items.append(h)
+                    cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_MESSAGE and self.msg_page == PG_PROBLEMS:
+                for h in ["~E~/~W~/~N~ Errors/warnings/notes", "~F~ This file", "~/~ Filter", "~C~ All"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_MESSAGE and self.msg_page == PG_MESSAGE:
+                items.append("~/~ Filter")
+                cmds.append(CM_NONE)
+                if self.out_filtered:
+                    items.append("~C~ All")
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_BLAME:
                 for h in ["~Enter~ Go to", "~Esc~ Close", self.git_blame_summary()]:
