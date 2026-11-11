@@ -3100,3 +3100,56 @@ went on with P5-06.
     narrow explorer.
   - Only tried on Linux with git 2.43.
 - Verified: `scripts/check.sh` → `CHECK OK`, 56 test files, 946 tests, smoke ok.
+
+## 2026-11-11 · P5-07 Git: diff view, stage/unstage/revert hunk · done
+
+- `src/gitdiff.mojo`: a file side as lines plus "ends with a line feed" (`Side`), the
+  hunks between two sides (a difference only in the final line feed counts as a change
+  of the last line), the unified diff rows (`@@` headers counted as git does, context
+  shared between close hunks and not shown twice; each row knows its hunk and its line
+  of the new side), `with_hunk` (stage: the old side with one change made) and
+  `without_hunk` (unstage / revert: the new side with one change undone),
+  `hunk_at_line`, and the shell script that puts a text into the index.
+- Staging does not build a patch: the index's new text is worked out here and given to
+  git whole: `hash-object -w --path=<file>` (the clean filters apply) and
+  `update-index --add --cacheinfo <mode>,<sha>,<file>` (the mode kept from
+  `ls-files -s`). A new file whose only staged change is unstaged leaves the index
+  (`git rm --cached`). The text goes through a file in $TMPDIR that the script
+  removes. Revert is an edit of the buffer: only the characters that differ are
+  replaced, as one undo step, so breakpoints, folds and marks elsewhere stay put.
+- `src/app_gitdiff.mojo`: the diff view (window kind WK_DIFF), opened on the editor's
+  place by File ▸ Diff of this file. "Changes" = index against the buffer (the same
+  comparison as the gutter, so unsaved edits are included), "Staged" (Tab) = HEAD
+  (`cat-file --filters HEAD:<file>`, asked when needed and again when the index
+  changes) against the index. Keys S, U, R, Enter, Tab, Esc, with hints in the status
+  line. The rows are made again before drawing when the buffer, the index or HEAD
+  changed. git commands now queue behind the one running (staging and HEAD go before
+  the periodic status).
+- Editor commands in the File menu (Alt-G is Go to file and no letter of "Git" is free
+  in the menu bar, so no Git menu): Diff of this file, Stage change, Revert change,
+  Next change (Alt-N), Previous change (Alt-B); and a hidden "Diff of staged changes"
+  for the palette. They say why when there is nothing to do (not saved, untracked, not
+  in a repository or not trusted, no change at the cursor).
+- Tests (`tests/test_gitdiff.mojo`, 9): sides and final line feeds; the rows of a
+  three-change diff; hunk_at_line; 200 random edits: staging every change one by one
+  gives the new text, undoing every change gives the old, staging one leaves the
+  others; 25 random diffs written as a patch that `git apply` must apply to give the
+  new text (this checks the headers); in the IDE on a real repository: S stages only
+  the change under the cursor (`git diff --cached` shows it, the gutter and the view
+  then show only the other, the file on disk untouched), Tab and U unstage it, Esc
+  closes; Next / Previous change; Revert of one change and Undo; Stage from the editor;
+  unstaging a new file's only change takes it out of the index; Enter goes to the line;
+  an untracked file opens no view.
+- Looked at in tmux on a scratch repository: the palette's "Diff of this file", S
+  (`git diff --cached` had only that change), Tab, U (nothing staged), Esc, Alt-N,
+  Revert change, Undo. This found a delay: when a git command finished, the next
+  queued one only started at the loop's next wake-up (up to 2 s), so after S the view
+  said "asking git" for a while and a Tab pressed meanwhile was refused. git_tick now
+  starts the next command at once, and Tab switches sides even while git answers.
+- Not done / unverified:
+  - No staging of single lines inside a change, and no staging of a whole file (git add
+    in the terminal does that).
+  - The staged side cannot be edited and Enter from it does not move the cursor (its
+    lines are the index's, which can differ from the buffer's).
+  - A file whose index entry is a conflict (several stages) is not handled specially.
+- Verified: `scripts/check.sh` → `CHECK OK`, 57 test files, 955 tests, smoke ok.

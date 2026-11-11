@@ -143,6 +143,13 @@ __extension Window:
                     rowfg = pal.msg_warn
                 elif str_contains(lt, "note:"):
                     rowfg = pal.msg_note
+                if self.kind == WK_DIFF and len(ln) > 0:
+                    if ln[0] == 43:             # +
+                        rowfg = pal.msg_ok
+                    elif ln[0] == 45:           # -
+                        rowfg = pal.msg_err
+                    elif ln[0] == 64:           # @@
+                        rowfg = pal.msg_note
                 if r < len(self.git_rows) and self.git_rows[r] != GS_NONE:
                     var gc = self.git_rows[r]
                     if gc == GS_CONFLICT or gc == GS_DELETED:

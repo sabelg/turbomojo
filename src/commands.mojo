@@ -143,6 +143,12 @@ comptime CM_TESTEXP = 200
 comptime CM_TEST_RUN = 201
 comptime CM_TEST_RUN_ALL = 202
 comptime CM_TEST_LIST = 203
+comptime CM_GIT_DIFF = 204          # the diff view of this file's changes
+comptime CM_GIT_STAGE = 205         # stage the change at the cursor
+comptime CM_GIT_REVERT = 206        # undo the change at the cursor (back to the index's text)
+comptime CM_GIT_NEXT = 207          # to the next changed block
+comptime CM_GIT_PREV = 208
+comptime CM_GIT_STAGED = 209        # the diff view of what is staged
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -702,6 +708,12 @@ def build_registry() -> Registry:
     r.hide(CM_TEST_RUN, "tests.run", "Run tests", "Run the test file or the test marked in the test explorer")
     r.hide(CM_TEST_RUN_ALL, "tests.runAll", "Run all tests", "Run every test file of the project")
     r.hide(CM_TEST_LIST, "tests.list", "List tests", "Ask the test programs for their tests (--skip-all)")
+    r.cmd(CM_GIT_DIFF, "git.diff", "~D~iff of this file", "This file's changes against git's index: stage, revert (and unstage, on the staged side) one change at a time")
+    r.cmd(CM_GIT_STAGE, "git.stageChange", "S~t~age change", "Put the changed block at the cursor into git's index (git add, for just that block)")
+    r.cmd(CM_GIT_REVERT, "git.revertChange", "~R~evert change", "Make the changed block at the cursor as it is in git's index again (Undo brings it back)")
+    r.cmd(CM_GIT_NEXT, "git.nextChange", "Ne~x~t change", "To the next block that differs from git's index", [alt(110)])
+    r.cmd(CM_GIT_PREV, "git.previousChange", "Pre~v~ious change", "To the previous block that differs from git's index", [alt(98)])
+    r.hide(CM_GIT_STAGED, "git.diffStaged", "Diff of staged changes", "What is staged of this file: its index against HEAD")
     r.cmd(CM_TEST, "run.test", "~T~est", "Run this file's TestSuite (std.testing) with `mojo run`")
     r.cmd(CM_USERSCREEN, "run.userScreen", "~U~ser screen", "View the program's output screen", [fkey(5) | MOD_ALT])
     r.cmd(CM_TASKS, "run.pixiTasks", "Pixi tas~k~s...", "Run a task of the project's pixi.toml", [fkey(9) | MOD_SHIFT])
@@ -784,6 +796,13 @@ def build_registry() -> Registry:
     r.item(CM_CLOSE)
     r.item(CM_TERMINAL)
     r.item(CM_SHELL)
+    r.sep()
+    r.item(CM_GIT_DIFF)
+    r.item(CM_GIT_STAGE)
+    r.item(CM_GIT_REVERT)
+    r.item(CM_GIT_NEXT)
+    r.item(CM_GIT_PREV)
+    r.sep()
     r.item(CM_QUIT)
 
     r.menu("~E~dit")

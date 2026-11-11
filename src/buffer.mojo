@@ -91,6 +91,7 @@ struct TextBuffer(Copyable, Movable):
     var git_state: Int        # GB_*: what is known of the file's version in git's index
     var git_path: String      # the path git_base was asked for
     var git_base: List[UInt64]  # line hashes of that version (GB_KNOWN)
+    var git_base_text: String   # and the version itself
     var git_ver: Int          # `version` git_marks were worked out for (-1: not yet)
     var git_marks: List[UInt8]  # LM_* per line: added, changed, removed lines
     var sem: List[Int]        # semantic colours from the language server: row, c1, c2, class
@@ -135,6 +136,7 @@ struct TextBuffer(Copyable, Movable):
         self.git_state = 0
         self.git_path = ""
         self.git_base = List[UInt64]()
+        self.git_base_text = ""
         self.git_ver = -1
         self.git_marks = List[UInt8]()
         self.sem = List[Int]()

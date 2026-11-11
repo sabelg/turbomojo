@@ -43,6 +43,8 @@ from cpuview import CpuView
 from termsession import TermSession
 from testexp import TestFile
 from git import GitStatus
+from gitdiff import DiffRow
+from linediff import Hunk
 from proc import Proc
 from breakpoints import Breakpoints
 from explorer import ExplorerTree, default_trash_dir
@@ -214,6 +216,18 @@ struct App(Movable):
     var git_index: FileSig     # the index file as it was when last looked at
     var git_checked_ns: Int    # when the index was last looked at
     var git_ok: Bool           # git may run for the project's repository (folder trust)
+    var git_q_req: List[Int]   # git commands waiting for git_proc: GQ_*, the command, the file
+    var git_q_cmd: List[String]
+    var git_q_path: List[String]
+    var git_stamp: Int         # counts what came from git (the diff view compares it)
+    var gd_path: String        # the diff view's file ('' when it is not open)
+    var gd_staged: Bool        # it shows the index against HEAD (else the buffer against the index)
+    var gd_head: String        # the file as in HEAD (gd_head_state GB_KNOWN)
+    var gd_head_state: Int     # GB_*: GB_NONE = not in HEAD (a new file)
+    var gd_rows: List[DiffRow] # what the view shows, row by row
+    var gd_hunks: List[Hunk]
+    var gd_stamp: Int          # the state the rows were made for
+    var git_tmp_n: Int         # numbers the files staged text is written to
     var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
@@ -545,6 +559,18 @@ struct App(Movable):
         self.git_index = FileSig()
         self.git_checked_ns = 0
         self.git_ok = False
+        self.git_q_req = List[Int]()
+        self.git_q_cmd = List[String]()
+        self.git_q_path = List[String]()
+        self.git_stamp = 0
+        self.gd_path = ""
+        self.gd_staged = False
+        self.gd_head = ""
+        self.gd_head_state = 0
+        self.gd_rows = List[DiffRow]()
+        self.gd_hunks = List[Hunk]()
+        self.gd_stamp = -1
+        self.git_tmp_n = 0
         self.test_rows_file = List[Int]()
         self.test_rows_test = List[Int]()
         self.test_target_file = -1

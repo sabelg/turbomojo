@@ -42,6 +42,7 @@ from app_docs import *
 from app_debug import *
 from app_terminal import *
 from app_tests import *
+from app_gitdiff import *
 from app_git import *
 from app_jobs import *
 from app_input import *

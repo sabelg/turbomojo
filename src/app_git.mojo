@@ -17,10 +17,13 @@ from linediff import *
 from watch import file_sig, FileSig
 from app_outline import *
 from app_explorer import *
+from app_gitdiff import *
 
 comptime GQ_NONE = 0
 comptime GQ_STATUS = 1
 comptime GQ_BASE = 2
+comptime GQ_HEAD = 3              # the diff view's file as in HEAD
+comptime GQ_WRITE = 4             # staging or unstaging (a script that changes the index)
 comptime GIT_INDEX_MS = 1000      # how often the index file is looked at
 comptime GIT_STATUS_MS = 3000     # with the explorer open, status at least this often
 comptime GIT_MAX_LINES = 50000    # larger files get no markers (about 10 ms a change at this size)
@@ -43,16 +46,19 @@ __extension App:
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.git_state != GB_ASKED:
                 self.wins[i].buf.git_state = GB_UNKNOWN
+        if self.gd_head_state != GB_ASKED:
+            self.gd_head_state = GB_UNKNOWN     # a commit changes HEAD too
 
     def git_tick(mut self, now: Int):
         if self.git_proc.running:
             _ = self.git_proc.read_available()
             for b in self.git_proc.take():
                 self.git_out.append(b)
-            if self.git_proc.eof:
-                var st = self.git_proc.stop()
-                self.git_done(st)
-            return
+            if not self.git_proc.eof:
+                return
+            var st = self.git_proc.stop()
+            self.git_done(st)
+            # and on to the next command at once (not at the next wake-up)
         if now - self.git_checked_ns > GIT_INDEX_MS * 1000000:
             self.git_checked_ns = now
             var root = find_repo(self.symidx_root())
@@ -81,6 +87,13 @@ __extension App:
             self.git_status_due = True
         if self.git.root.byte_length() == 0 or not self.git_allowed(self.git.root):
             self.git_status_due = False     # nothing to ask (or not allowed to)
+        if len(self.git_q_req) > 0:
+            # what was asked for (staging, HEAD for the diff view) comes first
+            var req = self.git_q_req.pop(0)
+            var cmd = self.git_q_cmd.pop(0)
+            var qp = self.git_q_path.pop(0)
+            self.git_start(req, cmd, qp)
+            return
         if self.git_status_due and self.git.root.byte_length() > 0 and self.git_allowed(self.git.root):
             self.git_status_due = False
             self.git_status_ns = now
@@ -120,6 +133,14 @@ __extension App:
         if not self.git_proc.start(cmd):
             self.git_done(-1)
 
+    def git_queue(mut self, req: Int, cmd: String, path: String):
+        """Run a git command after the one running now (at once if none is)."""
+        self.git_q_req.append(req)
+        self.git_q_cmd.append(cmd)
+        self.git_q_path.append(path)
+        if not self.git_proc.running:
+            self.git_tick(now_ns())
+
     def git_fd(self) -> Int:
         return self.git_proc.out_fd if self.git_proc.running else -1
 
@@ -140,12 +161,29 @@ __extension App:
                 self.git_base_text(path, out)
             else:
                 self.git_set_base(path)
+        elif req == GQ_HEAD:
+            if status == 0:
+                self.gd_head = out
+                self.gd_head_state = GB_KNOWN
+            else:
+                self.gd_head = ""
+                self.gd_head_state = GB_NONE    # not in HEAD: a new file
+        elif req == GQ_WRITE:
+            if status != 0:
+                self.say("git could not change the index for " + basename(path))
+            self.git_status_due = True
+            for i in range(len(self.wins)):
+                if self.wins[i].kind == WK_EDITOR and self.wins[i].path == path and self.wins[i].buf.git_state != GB_ASKED:
+                    self.wins[i].buf.git_state = GB_UNKNOWN
+        self.git_stamp += 1
+        self.git_diff_refresh()
 
     def git_base_text(mut self, path: String, text: String):
         var h = text_hashes(decode(text))
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].path == path:
                 self.wins[i].buf.git_base = h.copy()
+                self.wins[i].buf.git_base_text = text
                 self.wins[i].buf.git_state = GB_KNOWN
                 self.wins[i].buf.git_path = path
                 self.wins[i].buf.git_ver = -1
@@ -157,6 +195,7 @@ __extension App:
                 self.wins[i].buf.git_state = GB_NONE
                 self.wins[i].buf.git_path = path
                 self.wins[i].buf.git_base.clear()
+                self.wins[i].buf.git_base_text = ""
                 self.wins[i].buf.git_marks.clear()
                 self.wins[i].buf.git_ver = -1
 

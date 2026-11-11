@@ -201,3 +201,8 @@ struct GitStatus(Copyable, Movable):
 
     def changed_count(self) -> Int:
         return len(self.files)
+
+
+def head_command(root: String, rel: String) -> String:
+    """The file as in the last commit (fails for a file the commit does not have)."""
+    return "git -C " + shell_quote(root) + " --no-optional-locks cat-file --filters " + shell_quote("HEAD:" + rel)
