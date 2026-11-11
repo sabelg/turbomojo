@@ -2739,3 +2739,55 @@ Built:
   ~P~revious in the Window menu; it is now "CPU - mac~h~ine code, registers, memory").
   From now on I build `test_commands` myself whenever a menu item is added.
 - Verified: `scripts/check.sh` → `CHECK OK`, 50 test files, 908 tests, smoke ok.
+
+## 2026-11-10 · P4-07 End-to-end debug test on `examples/hello.mojo` (scripted) · done
+
+`tests/test_debug_e2e.mojo` drives the IDE's own commands against Mojo's real debugger
+(no fake adapter), on copies of the bundled examples in a scratch folder (so that their
+`build/` output stays out of the repository):
+
+- `hello.mojo`: Ctrl-F8 on line 12, Shift-F5 (builds with `-g -O0`, starts the
+  session) → stop in `Counter::bump` with `by = 0 Int`, the call stack (bump, main),
+  `self: Counter` in the Debug window, the current-line mark; Shift-F5 → the next call
+  (`by = 1`); Enter opens `self` (`count = 0`); the breakpoint removed, F4 to line 25
+  → `c: Counter`; a watch `c.count` → `45 Int`; Evaluate `:frame variable` → in the
+  console transcript with `count = 45`; the CPU window (► on an instruction, `pc`,
+  memory, the `hello.mojo:25` heading); F8 over the print → line 26 and
+  "Hello from Mojo! count = 45" in the output; F7 into `fib` (line 16, `n = 20`);
+  Shift-F8 back to 26; Ctrl-F2 → the session ends, **the program's process is gone**,
+  the mark is cleared.
+- `test_fib.mojo`: Debug without breakpoints runs it to the end (its TestSuite output
+  and "Program exited with status 0"); a function breakpoint on `fib` with hit count 5
+  stops in `fib` with an `n` other than the first call's 10, the breakpoint verified;
+  ending the session ends the program.
+- The adapter must be on PATH: `scripts/check.sh` puts the toolchain's folder there;
+  run on its own, the test needs `pixi run`. Run time here: about 6 s for the three
+  tests (the examples build in about a second).
+- Verified: run alone through pixi, 3 of 3 pass; outside pixi the first test says
+  why the others fail (no adapter on PATH).
+- Not done / unverified: only these two examples exist; GPU debugging (`mojo debug`
+  with cuda-gdb, in the roadmap's table) is not done - there is no GPU here.
+
+## 2026-11-10 · Phase 4 summary
+
+All 7 tasks are marked done: a DAP client for `mojo-lldb-dap`, breakpoints (line,
+hit count, log message, function; kept per project), execution control with Turbo
+keys (F7, F8, Shift-F8, F4, Shift-F5, Ctrl-F2) and a current-line mark, the Debug
+window (call stack, variables tree, set value), watches and the Evaluate console, the
+CPU window (disassembly, registers, memory, instruction steps), and an end-to-end test
+against the real debugger.
+
+What Mojo 1.2's debugger limits (found by probing it, details above):
+- the Mojo LLDB plugin must be loaded by the IDE, or no variables are shown;
+- conditions on breakpoints and expressions in watches/Evaluate do not work (it
+  evaluates names and fields only); `setVariable` fails, so values are written into
+  memory instead, which works for numbers and Bools that have an address (locals, list
+  elements), not for struct fields;
+- `completions` answers nothing; colon commands need a backquote.
+What is thinner than the task names suggest: no data or instruction breakpoints, no
+float/vector registers, no editing of memory in the CPU window, one thread only, no
+GPU debugging, the program has no terminal of its own (keyboard input does not reach
+it - Phase 5 brings the terminal). Exit criterion "stopping the debugger always cleans
+up the debuggee" is tested with the fake adapter (also an adapter that ignores the
+request) and with the real one. The gate takes about 12 minutes now (51 test files).
+- Verified (P4-07 and the summary): `scripts/check.sh` → `CHECK OK`, 51 test files, 911 tests, smoke ok; the end-to-end test passed inside the gate (3 of 3).
