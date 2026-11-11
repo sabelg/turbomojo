@@ -40,6 +40,7 @@ from app_explorer import *
 from app_docs import *
 from app_debug import *
 from app_terminal import *
+from app_tests import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
@@ -265,6 +266,8 @@ __extension App:
             return "pixi run " + self.job.exe + "   (in " + self.job.path + ")"
         if self.job.kind == JOB_BUILD:
             return "Building " + self.job.path + " ..."
+        if self.job.kind == JOB_TESTS:
+            return self.job.exe
         if self.job.kind == JOB_DEBUG:
             return "Building " + self.job.path + " for debugging (no optimization, full debug information) ..."
         return "Formatting " + self.job.path + " ..."
@@ -305,6 +308,8 @@ __extension App:
         if got and (self.job.kind == JOB_BUILD or self.job.kind == JOB_DEBUG) and self.job.pid != 0:
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Compiling...")
+        if got and self.job.kind == JOB_TESTS and self.job.pid != 0:
+            self.tests_take_output(False)
         if got and (self.job.kind == JOB_TASK or self.job.kind == JOB_DOCS) and self.job.pid != 0:
             self.task_output("Running...")
         if eof:
@@ -322,6 +327,8 @@ __extension App:
             self.finish_build(st, secs)
         elif self.job.kind == JOB_DEBUG:
             self.finish_debug_build(st, secs)
+        elif self.job.kind == JOB_TESTS:
+            self.finish_tests(st, secs)
         else:
             self.finish_format(st)
 

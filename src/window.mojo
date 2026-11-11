@@ -21,6 +21,7 @@ comptime WK_OUTLINE = 2      # the outline of the file being edited: a list, lik
 comptime WK_DEBUG = 4        # the call stack and variables of the program being debugged
 comptime WK_CPU = 5          # machine code, registers and memory of the program being debugged
 comptime WK_TERM = 6         # a terminal: a program on a pty (the shell, or the program Run started)
+comptime WK_TESTS = 7        # the test explorer
 
 comptime ACT_NONE = 0
 comptime ACT_TYPE = 1

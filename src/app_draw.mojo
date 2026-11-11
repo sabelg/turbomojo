@@ -41,6 +41,7 @@ from app_explorer import *
 from app_docs import *
 from app_debug import *
 from app_terminal import *
+from app_tests import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -108,6 +109,9 @@ __extension App:
             if self.job.kind == JOB_DOCS:
                 what = "Downloading "
                 subject = "documentation"
+            if self.job.kind == JOB_TESTS:
+                what = ""
+                subject = self.job.exe
             var e = self.job_elapsed()
             right = bytes_to_str(b) + " " + what + subject + " " + String(Int(e)) + "." + String(Int(e * 10) % 10) + "s  ^F2 cancel  " + right
         var rl = cp_len(right)
@@ -200,6 +204,10 @@ __extension App:
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_CPU:
                 for h in ["~F7~/~F8~ Step instruction", "~G~ Memory at", "~+~/~-~ Next/prev memory"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_TESTS:
+                for h in ["~Enter~ Go to", "~R~ Run", "~A~ Run all", "~L~ List", "~T~ Find files"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_TERM:

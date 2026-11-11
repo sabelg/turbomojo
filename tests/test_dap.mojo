@@ -375,7 +375,7 @@ def test_debug_goes_to_the_line_a_program_stops_at() raises:
     var app = ide(d)
     app.open_path(d + "/other.mojo")
     app.debug_launch(d + "/build/stop", d + "/other.mojo")
-    settle(app, False)
+    settle_line(app, 12)                        # (the program writes before it stops)
     assert_equal(app.dbg.state, DS_STOPPED)
     var t = app.top_editor()
     assert_equal(app.wins[t].path, d + "/stop.mojo")

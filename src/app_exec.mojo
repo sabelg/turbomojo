@@ -39,6 +39,7 @@ from app_explorer import *
 from app_docs import *
 from app_debug import *
 from app_terminal import *
+from app_tests import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -48,7 +49,7 @@ from app_draw import *
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_BUILD or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_BUILD or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
@@ -431,6 +432,14 @@ __extension App:
             self.watch_dialog(-1)
         elif cmd == CM_EVALUATE:
             self.eval_dialog("", List[String]())
+        elif cmd == CM_TESTEXP:
+            self.tests_toggle()
+        elif cmd == CM_TEST_RUN:
+            self.tests_run_target()
+        elif cmd == CM_TEST_RUN_ALL:
+            self.tests_run_all()
+        elif cmd == CM_TEST_LIST:
+            self.tests_list()
         elif cmd == CM_REPL:
             self.repl_open()
         elif cmd == CM_REPL_SEND:

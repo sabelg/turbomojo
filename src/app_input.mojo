@@ -40,6 +40,7 @@ from app_explorer import *
 from app_docs import *
 from app_debug import *
 from app_terminal import *
+from app_tests import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -162,6 +163,8 @@ __extension App:
 
     def message_key(mut self, k: Int) raises:
         var t = self.top()
+        if self.wins[t].kind == WK_TESTS and self.tests_key(k):
+            return
         if self.wins[t].kind == WK_EXPLORER and self.explorer_key(k):
             return
         var n = self.wins[t].buf.count()

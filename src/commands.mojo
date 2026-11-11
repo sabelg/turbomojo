@@ -139,6 +139,10 @@ comptime CM_CPUWIN = 196
 comptime CM_TERMINAL = 197
 comptime CM_REPL = 198
 comptime CM_REPL_SEND = 199
+comptime CM_TESTEXP = 200
+comptime CM_TEST_RUN = 201
+comptime CM_TEST_RUN_ALL = 202
+comptime CM_TEST_LIST = 203
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -694,6 +698,10 @@ def build_registry() -> Registry:
     r.cmd(CM_REPL, "run.repl", "Mo~j~o REPL", "Start `mojo repl` in a window at the bottom (again: close the window); Ctrl-F10 in the editor sends the selection or line")
     r.hide(CM_REPL_SEND, "run.sendToRepl", "Send to REPL", "Send the selection or the line to the REPL (it is started if needed)")
     r.bind(CM_REPL_SEND, fkey(10) | MOD_CTRL)
+    r.cmd(CM_TESTEXP, "run.testExplorer", "Test e~x~plorer", "The project's TestSuite files and their tests: run them, see what failed and where")
+    r.hide(CM_TEST_RUN, "tests.run", "Run tests", "Run the test file or the test marked in the test explorer")
+    r.hide(CM_TEST_RUN_ALL, "tests.runAll", "Run all tests", "Run every test file of the project")
+    r.hide(CM_TEST_LIST, "tests.list", "List tests", "Ask the test programs for their tests (--skip-all)")
     r.cmd(CM_TEST, "run.test", "~T~est", "Run this file's TestSuite (std.testing) with `mojo run`")
     r.cmd(CM_USERSCREEN, "run.userScreen", "~U~ser screen", "View the program's output screen", [fkey(5) | MOD_ALT])
     r.cmd(CM_TASKS, "run.pixiTasks", "Pixi tas~k~s...", "Run a task of the project's pixi.toml", [fkey(9) | MOD_SHIFT])
@@ -850,6 +858,7 @@ def build_registry() -> Registry:
     r.item(CM_WATCH_ADD)
     r.item(CM_EVALUATE)
     r.item(CM_TEST)
+    r.item(CM_TESTEXP)
     r.item(CM_REPL)
     r.item(CM_USERSCREEN)
     r.item(CM_ARGS)

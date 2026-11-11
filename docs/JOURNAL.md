@@ -2976,3 +2976,51 @@ gives "42" and "(Int) x = 42"; `def` blocks work when sent with their indentatio
     REPL rejects at top level - nothing dedents it.
   - REPL crashes are Modular's; the IDE only shows them and offers to start again.
 - Verified: `scripts/check.sh` → `CHECK OK`, 54 test files, 931 tests, smoke ok.
+
+## 2026-11-10 · P5-05 Test explorer: discover, list via --skip-all, run via --only, tree, jump to failure · done
+
+Probed first (Mojo 1.2): a TestSuite program prints "Running N tests for <path>",
+"PASS / FAIL / SKIP [ ms ] name", under a failed assertion "At <path>:<line>:<col>:
+AssertionError: ..." and the details, under a raised error only its message, then
+"Summary [ ... ] N tests run: ...". `--skip-all` lists the tests as SKIP, `--only a b`
+runs those and reports the others as SKIP; other arguments are refused ("expected
+'--only' or '--skip'").
+
+- `src/testexp.mojo`: `is_test_source`, `test_names` (top-level `def test_*`, as
+  discover_tests finds them), `def_line`, `parse_location`, `parse_run` (sections by
+  "Running ... for <path>", states, times, failure messages, summary),
+  `apply_report` (adds tests the program ran; with --only the skipped ones keep their
+  earlier result), `TestFile` / `TestCase`, `state_mark`.
+- `src/app_tests.mojo`: Run ▸ Test e~x~plorer, a window at the right edge (WK_TESTS):
+  files found with grep for `discover_tests` under the project (not .pixi, .git,
+  build, node_modules), their tests from the source at once - asking every program
+  with --skip-all would compile each one, which takes up to a minute per file here;
+  L does it on request. A / R / L run as a background job (JOB_TESTS): one shell
+  command that runs each file in its folder with the project's compiler command and
+  include folders, sections marked "### <path>"; results come into the tree while it
+  runs; a file whose section ends without "Running ..." did not compile and shows the
+  compiler's message. Enter goes to the failure (or the test's def), the keyboard stays
+  in the explorer; Left / Right / Enter fold files; T looks again (keeping results).
+  Running tests asks for folder trust (they are the project's code).
+- **A Mojo quirk found by the test**: the "At <path>" of a failure can name the folder
+  where the same source was compiled before (the build cache is keyed by content), even
+  a folder that no longer exists. A location in a file of the test file's name is
+  therefore taken to be in the test file; another file is used if it exists. Seen live
+  too: the explorer in `build/txp` reported `build/tx/test_bad.mojo`.
+- Tests (`tests/test_testexp.mojo`, 3): the parser on output copied from a real run;
+  the explorer on a made-up project with real `mojo run`: which files are found (not
+  build/ or .pixi/, not a program without a TestSuite), the exact tree, running
+  marks, results, failure and compiler messages, the totals, Enter to the assertion's
+  line and column and to a raised error's def, R on one test (the others keep their
+  results), folding, L, T after a test was added; a project without tests.
+- Looked at in tmux: Run ▸ Test explorer on a scratch project, A: ✓1 ✗2 with the
+  messages, ✓2 for the other file.
+- Not done / unverified:
+  - Test functions inside structs or with other names are not found (discover_tests
+    does not run them either); a file is recognised by the word `discover_tests`.
+  - Tests are not run concurrently; a long suite runs file after file.
+  - The P5-09 "unified Problems" panel will be where failures could also be listed.
+- The first gate run failed in `test_dap` (`test_debug_goes_to_the_line_a_program_stops_at`,
+  from P4-01): its wait returned on the program's output, which the fake adapter sends
+  just before the stop, so the stop had sometimes not arrived. It now waits for the stop.
+- Verified: `scripts/check.sh` → `CHECK OK`, 55 test files, 934 tests, smoke ok.

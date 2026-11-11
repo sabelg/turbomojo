@@ -41,6 +41,7 @@ from dap import DebugSession
 from dbgview import DebugView
 from cpuview import CpuView
 from termsession import TermSession
+from testexp import TestFile
 from breakpoints import Breakpoints
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
@@ -86,6 +87,7 @@ comptime JOB_BUILD = 1
 comptime JOB_FORMAT = 2
 comptime JOB_DOCS = 4                    # downloading the documentation
 comptime JOB_DEBUG = 5                   # building a program to debug it
+comptime JOB_TESTS = 6                   # running (or listing) tests for the test explorer
 comptime JOB_TASK = 3                    # a pixi task of the project
 comptime SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -199,6 +201,13 @@ struct App(Movable):
     var tshell: TermSession    # Window > Terminal
     var trun: TermSession      # the program Run started
     var trepl: TermSession     # the Mojo REPL
+    var test_files: List[TestFile]  # the test explorer's files and tests
+    var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
+    var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
+    var test_target_file: Int
+    var test_target_test: Int
+    var test_list_only: Bool        # the running job only lists (--skip-all)
+    var test_only_run: Bool         # ... or runs some tests (--only): the others keep their results
     var run_in_terminal: Bool  # Run uses the Run window (else the user screen, as before)
     var shell_program: String  # what Window > Terminal starts ($SHELL)
     var cpu_dis_seq: Int       # its requests: disassembly, register scopes, sets, values, memory
@@ -513,6 +522,13 @@ struct App(Movable):
         self.tshell = TermSession()
         self.trun = TermSession()
         self.trepl = TermSession()
+        self.test_files = List[TestFile]()
+        self.test_rows_file = List[Int]()
+        self.test_rows_test = List[Int]()
+        self.test_target_file = -1
+        self.test_target_test = -1
+        self.test_list_only = False
+        self.test_only_run = False
         self.run_in_terminal = True
         self.shell_program = env_or("SHELL", "/bin/sh")
         self.cpu_dis_seq = -1
