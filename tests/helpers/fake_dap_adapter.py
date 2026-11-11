@@ -94,6 +94,8 @@ next_id = 0
 SOURCE = os.environ.get("FAKE_DAP_SOURCE", "/src/stop.mojo")
 frames = []         # innermost first: (name, path, line)
 memory = {"0xFF00": 4, "0xFF08": 1}
+ip = 0xAAAA0F20     # the instruction the "vars" program is at
+pc_moves = 0
 
 
 def raw(n, width=8):
@@ -116,6 +118,13 @@ def variables(handle):
                 {"name": "y", "type": "__mlir_type.`!kgen.scalar<f64>`", "value": "0000000000000440  2.5", "variablesReference": 15, "evaluateName": "p.y"}]
     if handle == 9:
         return [{"name": "[%d]" % k, "type": IDX, "value": raw(k), "variablesReference": 20 + k, "evaluateName": "(*( (!kgen.scalar<index> *)0x50353fe0400%d))" % (8 * k)} for k in range(2)]
+    if handle == 3:
+        return [{"name": "General Purpose Registers", "value": "", "variablesReference": 60}, {"name": "Floating Point Registers", "value": "", "variablesReference": 61}]
+    if handle == 60:
+        regs = [{"name": "x0", "value": "0x0000ffffffffde5c", "type": "unsigned long"}, {"name": "x1", "value": "0x0000aaaaaaaaa350 vars`static_string_b65d", "type": "unsigned long"},
+                {"name": "sp", "value": "0x0000ffffffffe060", "type": "unsigned long"}, {"name": "pc", "value": "0x%016x" % ip, "type": "unsigned long"},
+                {"name": "cpsr", "value": "0x80001000", "type": "unsigned int"}, {"name": "w0", "value": "0xffffde5c", "type": "unsigned int"}]
+        return [dict(r, variablesReference=0) for r in regs]
     if handle == 50:
         return [{"name": "r", "type": IDX, "value": raw(7), "variablesReference": 51, "memoryReference": "0xFF20", "evaluateName": "r"}]
     return []
@@ -216,10 +225,31 @@ while True:
             event("exited", {"exitCode": 3})
             event("terminated")
     elif cmd == "stackTrace" and frames:
-        respond(m, {"stackFrames": [{"id": 100 + k, "name": f[0], "line": f[2], "column": 1, "source": {"path": f[1]}} for k, f in enumerate(frames)], "totalFrames": len(frames)})
+        respond(m, {"stackFrames": [{"id": 100 + k, "name": f[0], "line": f[2], "column": 1, "source": ({"path": f[1]} if f[1] else {"name": f[0], "sourceReference": 9}), "instructionPointerReference": "0x%012X" % (ip if k == 0 else 0xAAAA1000 + k)} for k, f in enumerate(frames)], "totalFrames": len(frames)})
     elif cmd == "scopes":
         fid = m["arguments"]["frameId"]
         respond(m, {"scopes": [{"name": "Locals", "presentationHint": "locals", "variablesReference": 1 if fid == 100 else 50}, {"name": "Registers", "presentationHint": "registers", "variablesReference": 3, "expensive": True}]})
+    elif cmd == "disassemble":
+        a = m["arguments"]
+        base = int(a["memoryReference"], 16) + 4 * a.get("instructionOffset", 0)
+        listing = []
+        for k in range(a["instructionCount"]):
+            addr = base + 4 * k
+            ins = {"address": "0x%012X" % addr, "instruction": ("nop" if addr == ip else "add     x%d, x%d, #%d" % (k % 8, k % 8, k)) + "        ", "instructionBytes": "1f 20 03 d5"}
+            if addr in (ip - 8, ip):
+                ins["line"] = 4 if addr < ip else 5
+                ins["location"] = {"name": "vars.mojo", "path": SOURCE}
+            listing.append(ins)
+        respond(m, {"instructions": listing})
+    elif cmd == "readMemory":
+        a = m["arguments"]
+        start = int(a["memoryReference"], 16) + a.get("offset", 0)
+        import base64
+        if start < 0x1000:
+            respond(m, {"address": a["memoryReference"], "unreadableBytes": a["count"]})
+        else:
+            data = bytes((start + i) & 255 for i in range(a["count"] - 16))
+            respond(m, {"address": "0x%X" % start, "data": base64.b64encode(data).decode(), "unreadableBytes": 16})
     elif cmd == "evaluate":
         a = m["arguments"]
         e = a["expression"]
@@ -236,7 +266,10 @@ while True:
             value, typ = known[e]
             if a.get("context") == "repl":
                 value = "(%s)  = %s" % (typ, value.split("  ")[-1])
-            respond(m, {"result": value, "type": typ, "variablesReference": 0})
+            answer = {"result": value, "type": typ, "variablesReference": 0}
+            if e == "n":
+                answer["memoryReference"] = "0xFF00"      # as the real one: locals have an address
+            respond(m, answer)
         else:
             respond(m, {"error": {"id": 3, "format": "error: invalid value object"}}, success=False, message="failed")
     elif cmd == "variables":
@@ -250,6 +283,13 @@ while True:
             respond(m, {"bytesWritten": len(data)})
         else:
             respond(m, {"error": {"id": 2, "format": "memory write failed for " + addr}}, success=False, message="failed")
+    elif cmd in ("next", "stepIn", "stepOut") and m["arguments"].get("granularity") == "instruction":
+        respond(m)
+        resumed()
+        ip += 4
+        name, path, line = frames[0]
+        frames[0] = (name, "", 146)          # inside a line: a disassembly, no file
+        stop("step", "instruction step")
     elif cmd in ("next", "stepIn", "stepOut"):
         respond(m)
         resumed()

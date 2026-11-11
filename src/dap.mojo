@@ -351,6 +351,8 @@ struct DebugSession(Copyable, Movable):
     var auto_outs: Int              # steps out made because a step in left the sources
     var pausing: Bool               # a pause was asked for (it is reported as a signal)
     var frames: List[FrameRow]      # the call stack of the stop (innermost first)
+    var frame_ips: List[String]     # each frame's instruction address
+    var stop_ip: String             # the instruction the program is stopped at
     var asked: List[Int]            # requests made through ask() that wait for their answer
     var answers: List[DapMessage]   # their answers, for the IDE to take
 
@@ -391,6 +393,8 @@ struct DebugSession(Copyable, Movable):
         self.auto_outs = 0
         self.pausing = False
         self.frames = List[FrameRow]()
+        self.frame_ips = List[String]()
+        self.stop_ip = ""
         self.asked = List[Int]()
         self.answers = List[DapMessage]()
 
@@ -432,6 +436,8 @@ struct DebugSession(Copyable, Movable):
         self.stop_depth = 0
         self.stop_frame = -1
         self.frames.clear()
+        self.frame_ips.clear()
+        self.stop_ip = ""
         self.trace_seq = -1
 
     def begin(mut self, adapter_cmd: String, program: String, cwd: String, args: List[String], stderr_path: String = "/dev/null") -> Bool:
@@ -632,6 +638,10 @@ struct DebugSession(Copyable, Movable):
                 if p.startswith("/") and path_exists(p) and m.doc.int(m.doc.get(frames[k], "line"), 0) > 0:
                     pick = k
                     break
+            if self.step_kind == "instr" and pick != 0:
+                # an instruction step stays where it is, source or not (inside a line
+                # the adapter names a disassembly instead of the file)
+                pick = -1
             if pick > 0 and (self.step_kind == "stepIn" or self.step_kind == "toSource") and self.auto_outs < AUTO_OUTS:
                 # a step in that left the sources (into the standard library): out again,
                 # so that F7 stays in the program's own code
@@ -647,7 +657,10 @@ struct DebugSession(Copyable, Movable):
                 if not (p.startswith("/") and path_exists(p)):
                     p = ""
                 self.frames.append(FrameRow(m.doc.int(m.doc.get(frames[k], "id"), -1), m.doc.str(m.doc.get(frames[k], "name"), ""), p, m.doc.int(m.doc.get(frames[k], "line"), 0)))
+                self.frame_ips.append(m.doc.str(m.doc.get(frames[k], "instructionPointerReference"), ""))
+            self.stop_ip = self.frame_ips[0] if len(self.frame_ips) > 0 else String("")
             var f = frames[pick] if pick >= 0 else frames[0]
+            self.step_kind = ""
             self.stop_depth = max(0, pick)
             self.stop_frame = m.doc.int(m.doc.get(f, "id"), -1)
             self.stop_func = m.doc.str(m.doc.get(f, "name"), "")
@@ -682,12 +695,20 @@ struct DebugSession(Copyable, Movable):
         _ = self.conn.request("continue", "{\"threadId\":" + String(self.stop_thread) + "}")
         return True
 
-    def step(mut self, kind: String) -> Bool:
-        """One step of the stopped thread: "next" (over), "stepIn" or "stepOut". The
-        program counts as running until the adapter says where it stopped."""
+    def step(mut self, kind: String, instruction: Bool = False) -> Bool:
+        """One step of the stopped thread: "next" (over), "stepIn" or "stepOut" - a
+        line, or with `instruction` one machine instruction. The program counts as
+        running until the adapter says where it stopped."""
         if self.state != DS_STOPPED:
             return False
         var what = kind
+        if instruction:
+            self.step_kind = "instr"
+            self.auto_outs = 0
+            self.state = DS_RUNNING
+            self.clear_stop()
+            _ = self.conn.request(kind, "{\"threadId\":" + String(self.stop_thread) + ",\"granularity\":\"instruction\"}")
+            return True
         if self.stop_depth > 0 and kind != "stepOut":
             # stopped inside code without a source (a pause in the C library): a step
             # there means "back to the program's own line" - out until a source is there

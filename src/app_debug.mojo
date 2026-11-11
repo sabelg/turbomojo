@@ -57,7 +57,8 @@ from dap import *
 from breakpoints import *
 from dbgview import *
 from json import json_quote
-from window import WK_DEBUG
+from window import WK_DEBUG, WK_CPU
+from cpuview import *
 
 
 __extension App:
@@ -186,13 +187,18 @@ __extension App:
             if e == DE_RUNNING:
                 self.debug_mark_clear()
                 self.dv_running()
+                self.cpu_running()
                 self.say("Debugging " + basename(self.dbg_source) + " - " + self.reg.key_label(CM_CANCEL) + " ends it")
             elif e == DE_STOPPED:
                 self.say("Stopped: " + self.dbg.stop_text)
                 self.debug_temp_clear()
             elif e == DE_LOCATED:
+                var in_cpu = self.top() >= 0 and self.wins[self.top()].kind == WK_CPU
                 self.debug_show_stop()
                 self.dv_stopped()
+                self.cpu_stopped()
+                if in_cpu and self.cpuwin_index() >= 0:
+                    self.focus(self.cpuwin_index())      # instruction steps stay in it
             elif e == DE_BREAKPOINTS:
                 self.bp_take_reports()
             elif e == DE_ANSWER:
@@ -234,7 +240,9 @@ __extension App:
         if self.dbg.state != DS_STOPPED:
             self.say("The program is running - " + self.reg.key_label(CM_PAUSE) + " pauses it")
             return
-        if self.dbg.step(kind):
+        var t = self.top()
+        var by_instruction = t >= 0 and self.wins[t].kind == WK_CPU
+        if self.dbg.step(kind, by_instruction):
             self.debug_mark_clear()
 
     def debug_pause(mut self):
@@ -290,6 +298,9 @@ __extension App:
         self.dv_running()
         self.dview.note = "(no program is being debugged)"
         self.dview.watch_shown.clear()          # "?" until the next stop
+        self.cpu_running()
+        self.cpu.note = "(no program is stopped)"
+        self.cpuwin_show()
         self.debugwin_show()
         self.dbg_temp_path = ""
         self.dbg_temp_line = 0
@@ -718,6 +729,8 @@ __extension App:
                     break
             if handled:
                 continue
+            if self.cpu_answer(m):
+                continue
             if m.request_seq == self.dv_eval_seq:
                 self.dv_eval_seq = -1
                 self.eval_answer(m.success, m.doc.str(m.doc.get(b, "result"), ""), m.message)
@@ -971,3 +984,183 @@ __extension App:
                 _ = lines.pop()
             var again = self.dv_eval_expr
             self.eval_dialog(again, lines)
+
+    # ========================================================= the CPU window
+    def cpuwin_index(self) -> Int:
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_CPU:
+                return i
+        return -1
+
+    def cpuwin_toggle(mut self):
+        """Window > CPU (Alt-F2): a window over the editors with the machine code,
+        the registers and memory; again to close it."""
+        var ci = self.cpuwin_index()
+        if ci >= 0:
+            _ = self.wins.pop(ci)
+            return
+        var dh = self.desk_h()
+        var mi = self.msg_index()
+        if mi >= 0:
+            dh = max(8, self.wins[mi].y - 1)
+        var w = min(self.scr.w, 96)
+        var di = self.debugwin_index()
+        if di >= 0:
+            w = min(w, max(40, self.wins[di].x))
+        var win = Window(WK_CPU, "CPU", "", 0, 1, w, dh, self.free_number())
+        self.wins.append(win^)
+        self.cpuwin_show()
+        if self.dbg.state == DS_STOPPED:
+            self.cpu_stopped()
+
+    def cpuwin_show(mut self):
+        var ci = self.cpuwin_index()
+        if ci < 0:
+            return
+        var text = List[Int]()
+        var lines = self.cpu.lines()
+        for k in range(len(lines)):
+            if k > 0:
+                text.append(10)
+            for c in decode(lines[k]):
+                text.append(c)
+        var keep = self.wins[ci].cr
+        var keep_top = self.wins[ci].top
+        self.wins[ci].buf.load(text)
+        self.wins[ci].buf.modified = False
+        # the line of the instruction stopped at stays in view
+        var at = -1
+        for k in range(len(lines)):
+            if lines[k].startswith("► "):
+                at = k
+        if at >= 0 and (at < keep_top or at >= keep_top + self.wins[ci].rows()):
+            keep_top = max(0, at - 3)
+        self.wins[ci].cr = max(0, min(keep, self.wins[ci].buf.count() - 1))
+        self.wins[ci].top = max(0, min(keep_top, self.wins[ci].buf.count() - 1))
+
+    def cpu_running(mut self):
+        self.cpu.code.clear()
+        self.cpu.ip = ""
+        self.cpu.note = "(the program is running)"
+        self.cpu_dis_seq = -1
+        self.cpu_scope_seq = -1
+        self.cpu_set_seq = -1
+        self.cpu_reg_seq = -1
+        self.cpu_mem_seq = -1
+        self.cpuwin_show()
+
+    def cpu_stopped(mut self):
+        """Ask for what the CPU window shows (only while it is open)."""
+        if self.cpuwin_index() < 0 or self.dbg.state != DS_STOPPED:
+            return
+        self.cpu.ip = self.dbg.stop_ip
+        if self.cpu.ip.byte_length() > 0:
+            self.cpu_dis_seq = self.dbg.ask("disassemble", "{\"memoryReference\":" + json_quote(self.cpu.ip) + ",\"instructionOffset\":-8,\"instructionCount\":28,\"resolveSymbols\":true}")
+        if len(self.dbg.frames) > 0:
+            self.cpu_scope_seq = self.dbg.ask("scopes", "{\"frameId\":" + String(self.dbg.frames[0].id) + "}")
+        self.cpu_read_memory()
+        self.cpu.note = "(asking the debugger...)"
+        self.cpuwin_show()
+
+    def cpu_read_memory(mut self):
+        if self.cpu.mem_address < 0 or self.dbg.state != DS_STOPPED:
+            return
+        self.cpu_mem_seq = self.dbg.ask("readMemory", "{\"memoryReference\":" + json_quote(hex_text(self.cpu.mem_address)) + ",\"count\":128}")
+
+    def cpu_answer(mut self, m: DapMessage) -> Bool:
+        """An answer for the CPU window (False: not one of its requests)."""
+        var b = m.body()
+        if m.request_seq == self.cpu_dis_seq:
+            self.cpu_dis_seq = -1
+            self.cpu.code.clear()
+            if not m.success:
+                self.cpu.note = "(no disassembly: " + m.message + ")"
+            for ins in m.doc.children(m.doc.get(b, "instructions")):
+                self.cpu.code.append(Instr(m.doc.str(m.doc.get(ins, "address"), ""), m.doc.str(m.doc.get(ins, "instruction"), ""), m.doc.str(m.doc.path(ins, "location/path"), ""), m.doc.int(m.doc.get(ins, "line"), 0)))
+        elif m.request_seq == self.cpu_scope_seq:
+            self.cpu_scope_seq = -1
+            for sc in m.doc.children(m.doc.get(b, "scopes")):
+                if m.doc.str(m.doc.get(sc, "name"), "") == "Registers" or m.doc.str(m.doc.get(sc, "presentationHint"), "") == "registers":
+                    self.cpu_set_seq = self.dbg.ask("variables", "{\"variablesReference\":" + String(m.doc.int(m.doc.get(sc, "variablesReference"), 0)) + "}")
+                    break
+        elif m.request_seq == self.cpu_set_seq:
+            self.cpu_set_seq = -1
+            var sets = m.doc.children(m.doc.get(b, "variables"))
+            for s in sets:
+                # the general purpose set (the first one, by any name)
+                var name = m.doc.str(m.doc.get(s, "name"), "")
+                if name.find("General") >= 0 or s == sets[0]:
+                    self.cpu_reg_seq = self.dbg.ask("variables", "{\"variablesReference\":" + String(m.doc.int(m.doc.get(s, "variablesReference"), 0)) + "}")
+                    if name.find("General") >= 0:
+                        break
+        elif m.request_seq == self.cpu_reg_seq:
+            self.cpu_reg_seq = -1
+            var names = List[String]()
+            var values = List[String]()
+            for v in m.doc.children(m.doc.get(b, "variables")):
+                names.append(m.doc.str(m.doc.get(v, "name"), ""))
+                values.append(m.doc.str(m.doc.get(v, "value"), ""))
+            self.cpu.set_regs(names, values)
+            if self.cpu.mem_address < 0:
+                # memory starts where the stack is
+                var sp = self.cpu.register("sp")
+                if sp < 0:
+                    sp = self.cpu.register("rsp")
+                if sp >= 0:
+                    self.cpu.mem_address = sp
+                    self.cpu_read_memory()
+        elif m.request_seq == self.cpu_mem_seq:
+            self.cpu_mem_seq = -1
+            self.cpu.mem = base64_decode(m.doc.str(m.doc.get(b, "data"), ""))
+            self.cpu.mem_known = len(self.cpu.mem)
+            var lost = m.doc.int(m.doc.get(b, "unreadableBytes"), 0)
+            for _ in range(lost):
+                self.cpu.mem.append(0)
+            if not m.success:
+                self.say("Memory cannot be read there: " + m.message)
+        elif m.request_seq == self.cpu_addr_seq:
+            self.cpu_addr_seq = -1
+            var where = m.doc.str(m.doc.get(b, "memoryReference"), "")
+            if m.success and address_value(where) >= 0:
+                self.cpu.mem_address = address_value(where)
+                self.cpu_read_memory()
+            else:
+                self.say("The debugger does not say where that is" + ((": " + m.message) if not m.success else String("")))
+        else:
+            return False
+        self.cpuwin_show()
+        return True
+
+    def cpuwin_key(mut self, k: Int):
+        """G: memory at an address or a variable; + / -: the next / previous 128 bytes."""
+        if k == 43 or k == 45:
+            if self.cpu.mem_address < 0:
+                return
+            self.cpu.mem_address = max(0, self.cpu.mem_address + (128 if k == 43 else -128))
+            self.cpu_read_memory()
+            self.cpuwin_show()
+            return
+        var d = Dialog(D_MEMADDR, "Memory At", min(60, self.scr.w - 4), 10)
+        d.lines.append("An address (0x...) or the name of a variable (total, p).")
+        d.fields.append(Field("~A~ddress", hex_text(self.cpu.mem_address) if self.cpu.mem_address >= 0 else String("")))
+        d.fields[0].fresh = True
+        d.buttons.append("~O~K")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def cpu_goto(mut self, text: String):
+        if text.byte_length() == 0:
+            return
+        var a = address_value(text)
+        if a >= 0:
+            self.cpu.mem_address = a
+            self.cpu_read_memory()
+            self.cpuwin_show()
+            return
+        if self.dbg.state != DS_STOPPED:
+            self.say("The program has to be stopped to find " + text)
+            return
+        var args = "{\"expression\":" + json_quote(text) + ",\"context\":\"watch\""
+        if len(self.dbg.frames) > 0:
+            args += ",\"frameId\":" + String(self.dbg.frames[min(self.dview.sel, len(self.dbg.frames) - 1)].id)
+        self.cpu_addr_seq = self.dbg.ask("evaluate", args + "}")

@@ -430,6 +430,8 @@ __extension App:
             self.watch_dialog(-1)
         elif cmd == CM_EVALUATE:
             self.eval_dialog("", List[String]())
+        elif cmd == CM_CPUWIN:
+            self.cpuwin_toggle()
         elif cmd == CM_DEBUGWIN:
             self.debugwin_toggle()
         elif cmd == CM_BP_TOGGLE:

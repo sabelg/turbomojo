@@ -88,7 +88,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P4-03 Execution control with Turbo keys: step into/over/out, run to cursor, pause, terminate; current-line marker
 - [x] P4-04 Call Stack and Variables views (expandable, set value)
 - [x] P4-05 Watches and debug console with evaluate
-- [ ] P4-06 Disassembly, Registers and Memory views
+- [x] P4-06 Disassembly, Registers and Memory views
 - [ ] P4-07 End-to-end debug test on `examples/hello.mojo` (scripted)
 
 ## Phase 5: Integrated terminal, tests, Git (v1.6)

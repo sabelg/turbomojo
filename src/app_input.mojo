@@ -175,6 +175,9 @@ __extension App:
         elif (k == KEY_LEFT or k == KEY_RIGHT) and self.wins[t].kind == WK_MESSAGE:
             self.panel_show((self.msg_page + (1 if k == KEY_RIGHT else PG_COUNT - 1)) % PG_COUNT)
             return
+        elif self.wins[t].kind == WK_CPU and (k == 103 or k == 71 or k == 43 or k == 45):
+            self.cpuwin_key(k)
+            return
         elif self.wins[t].kind == WK_DEBUG and (k == KEY_ENTER or k == 32 or k == KEY_RIGHT or k == KEY_LEFT or k == 61 or k == KEY_DELETE):
             self.debugwin_key(k, self.wins[t].cr)
             return

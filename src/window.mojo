@@ -19,6 +19,7 @@ comptime WK_MESSAGE = 1
 comptime WK_EXPLORER = 3     # the project's files as a tree: a list window at the left edge
 comptime WK_OUTLINE = 2      # the outline of the file being edited: a list, like the Message window
 comptime WK_DEBUG = 4        # the call stack and variables of the program being debugged
+comptime WK_CPU = 5          # machine code, registers and memory of the program being debugged
 
 comptime ACT_NONE = 0
 comptime ACT_TYPE = 1

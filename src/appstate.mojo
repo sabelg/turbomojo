@@ -39,6 +39,7 @@ from trust import TrustStore
 from doclib import DocLibrary, DocIndex, Found, default_docs_home
 from dap import DebugSession
 from dbgview import DebugView
+from cpuview import CpuView
 from breakpoints import Breakpoints
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
@@ -193,6 +194,13 @@ struct App(Movable):
     var dv_eval_seq: Int       # the Evaluate dialog's request
     var dv_eval_expr: String
     var dv_watch_edit: Int     # the watch the dialog edits (-1: a new one)
+    var cpu: CpuView           # what the CPU window shows
+    var cpu_dis_seq: Int       # its requests: disassembly, register scopes, sets, values, memory
+    var cpu_scope_seq: Int
+    var cpu_set_seq: Int
+    var cpu_reg_seq: Int
+    var cpu_mem_seq: Int
+    var cpu_addr_seq: Int      # Go to: a variable's address
     var bp_stamp: Int          # changes with every change of the list
     var bp_dir: String         # where the lists are kept, one file per project ('' = not kept)
     var bp_edit: Int           # the breakpoint the dialog edits (-1: a new one at bp_edit_path/line)
@@ -495,6 +503,13 @@ struct App(Movable):
         self.dv_eval_seq = -1
         self.dv_eval_expr = ""
         self.dv_watch_edit = -1
+        self.cpu = CpuView()
+        self.cpu_dis_seq = -1
+        self.cpu_scope_seq = -1
+        self.cpu_set_seq = -1
+        self.cpu_reg_seq = -1
+        self.cpu_mem_seq = -1
+        self.cpu_addr_seq = -1
         self.bp_stamp = 0
         self.bp_dir = ""
         self.bp_edit = -1

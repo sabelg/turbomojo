@@ -135,6 +135,7 @@ comptime CM_RESET = 192
 comptime CM_DEBUGWIN = 193
 comptime CM_WATCH_ADD = 194
 comptime CM_EVALUATE = 195
+comptime CM_CPUWIN = 196
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -681,6 +682,7 @@ def build_registry() -> Registry:
     r.cmd(CM_DEBUGWIN, "debug.window", "Call stac~k~ and variables", "Show or hide the Debug window: the call stack and the variables of the stopped program", [fkey(3) | MOD_CTRL])
     r.cmd(CM_WATCH_ADD, "debug.addWatch", "Add ~w~atch...", "Watch a variable or field (a, a.b): its value is shown at every stop", [fkey(7) | MOD_CTRL])
     r.cmd(CM_EVALUATE, "debug.evaluate", "E~v~aluate...", "Evaluate a name, or run a debugger command (a line starting with :), while the program is stopped", [fkey(4) | MOD_CTRL])
+    r.cmd(CM_CPUWIN, "debug.cpu", "CPU - mac~h~ine code, registers, memory", "Machine code, registers and memory of the stopped program; F7/F8 there step one instruction", [fkey(2) | MOD_ALT])
     r.cmd(CM_BP_TOGGLE, "debug.toggleBreakpoint", "Toggle ~b~reakpoint", "Set or remove a breakpoint on the cursor's line (also: click the line number)", [fkey(8) | MOD_CTRL])
     r.cmd(CM_BP_EDIT, "debug.editBreakpoint", "Breakpoint c~o~ndition...", "Condition, hit count and log message of the breakpoint on this line (sets one if there is none)")
     r.cmd(CM_BP_FUNC, "debug.functionBreakpoint", "~F~unction breakpoint...", "Stop when a function is entered, by its name")
@@ -912,6 +914,7 @@ def build_registry() -> Registry:
     r.item(CM_EXPLORER)
     r.item(CM_OUTLINE)
     r.item(CM_DEBUGWIN)
+    r.item(CM_CPUWIN)
     r.item(CM_WINLIST)
 
     r.menu("~H~elp")

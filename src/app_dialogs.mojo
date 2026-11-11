@@ -188,6 +188,8 @@ __extension App:
                 self.docs_fetch()
         elif kind == D_TRUST:
             self.trust_answer(b)
+        elif kind == D_MEMADDR and b == 0:
+            self.cpu_goto(String(self.dlg.field_text(0).strip()))
         elif kind == D_WATCH and b == 0:
             self.watch_save(String(self.dlg.field_text(0).strip()))
         elif kind == D_SETVALUE and b == 0:

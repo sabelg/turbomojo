@@ -2681,3 +2681,61 @@ Built:
 - The first gate run failed in `test_commands`: E~v~aluate took the hot letter of
   Remo~v~e all breakpoints, which is now "Remove all breakpoi~n~ts".
 - Verified: `scripts/check.sh` → `CHECK OK`, 49 test files, 905 tests, smoke ok.
+
+## 2026-11-10 · P4-06 Disassembly, Registers and Memory views · done
+
+Probed first with the real `mojo-lldb-dap` (linux-aarch64), stopped at line 19 of the
+probe program:
+
+- `disassemble` at the frame's `instructionPointerReference` with an offset of -4 and
+  10 instructions: addresses like `0xAAAAAAAA0F20`, padded instruction text, calls with
+  "; function at file:line", and `line` + `location` on the first instruction of a
+  source line (also standard library lines: `len.mojo:164`, relative path).
+- Registers scope: sets "General Purpose Registers", "Floating Point Registers",
+  "Scalable Vector Extension Registers", "Pointer Authentication Registers", "Thread
+  Local Storage Registers". The general set has 63 entries: x0..x28, fp, lr, sp, pc,
+  cpsr, then w0..w28; values like `0x0000ffffffffde5c`, some with a symbol after them.
+- `readMemory` answers base64 `data`; at an unmapped address it answers success with
+  `unreadableBytes` and no data.
+- Steps with `granularity: "instruction"` work; after one the top frame's source is no
+  longer the file but a disassembly ("vars::work(...)" with an odd line number), so the
+  place cannot be shown as a source line.
+
+Built:
+
+- `src/cpuview.mojo`: `address_value` / `hex_text`, `base64_decode`, `keep_register`
+  (full-width registers and flags), `Instr`, `Reg`, `CpuView` (code, registers marked
+  when changed since the last stop, memory with unreadable bytes) and its text.
+- The session keeps each frame's instruction address (`stop_ip`); `step(kind,
+  instruction=True)` steps one instruction and stays on the innermost frame even
+  without a source.
+- CPU window (`WK_CPU`, Alt-F2, Window menu): placed over the editors, left of the Debug
+  window. At every stop it asks for 28 instructions around the stop (8 before), the
+  register sets (then the general one) and the memory; memory starts at the stack
+  pointer. F7 / F8 in it step one instruction (the keyboard stays there); G asks for an
+  address or a variable (its `memoryReference` from `evaluate`); + / - move by 128
+  bytes. It says so when nothing is stopped or the program runs.
+- Tests: `tests/test_cpuview.mojo` (3): the numbers, base64, the register filter and
+  change marks, the exact window text; with the fake adapter (which now disassembles,
+  has register sets and memory, and steps instructions): the window at a stop,
+  32-bit views left out, unreadable bytes, an instruction step (request, ► moved, *pc,
+  focus kept, no source line), memory + / G by address / by variable / unknown name,
+  the end of the session, Alt-F2.
+- Looked at in tmux with the real adapter: Alt-F2 at line 19 shows the code with
+  `vars.mojo:17/18/19` and `len.mojo:164` headings and ► on `nop` at 0xAAAAAAAA0F20,
+  the registers in three columns, memory at sp; F8 → ► on the next instruction; G
+  `total` → memory at the variable, starting with `08 00 00 00` (its value 8).
+- A bug in my fake adapter (it named a list `out`, the name of its output stream) made
+  it die on `disassemble`; found by running it by hand.
+- Not done / unverified:
+  - x86-64 was not tried (no machine): the register filter is written for both
+    (full-width values, flags by name) but only aarch64 was seen.
+  - Floating point and vector registers are not shown; registers cannot be changed
+    and memory cannot be edited here (writeMemory works, see P4-04).
+  - Instruction breakpoints and data breakpoints (watchpoints), which the adapter
+    announces, are not offered.
+  - Scrolling the code beyond the 28 instructions asked for is not possible.
+- The first gate run failed in `test_commands` again (a hot letter: C~P~U clashed with
+  ~P~revious in the Window menu; it is now "CPU - mac~h~ine code, registers, memory").
+  From now on I build `test_commands` myself whenever a menu item is added.
+- Verified: `scripts/check.sh` → `CHECK OK`, 50 test files, 908 tests, smoke ok.
