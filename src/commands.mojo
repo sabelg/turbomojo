@@ -137,6 +137,8 @@ comptime CM_WATCH_ADD = 194
 comptime CM_EVALUATE = 195
 comptime CM_CPUWIN = 196
 comptime CM_TERMINAL = 197
+comptime CM_REPL = 198
+comptime CM_REPL_SEND = 199
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -689,6 +691,9 @@ def build_registry() -> Registry:
     r.cmd(CM_BP_FUNC, "debug.functionBreakpoint", "~F~unction breakpoint...", "Stop when a function is entered, by its name")
     r.cmd(CM_BP_LIST, "debug.breakpoints", "Break~p~oints...", "All breakpoints: go to, edit, switch off, delete")
     r.cmd(CM_BP_CLEAR, "debug.removeAllBreakpoints", "Remove all breakpoi~n~ts", "Delete every breakpoint of the project")
+    r.cmd(CM_REPL, "run.repl", "Mo~j~o REPL", "Start `mojo repl` in a window at the bottom (again: close the window); Ctrl-F10 in the editor sends the selection or line")
+    r.hide(CM_REPL_SEND, "run.sendToRepl", "Send to REPL", "Send the selection or the line to the REPL (it is started if needed)")
+    r.bind(CM_REPL_SEND, fkey(10) | MOD_CTRL)
     r.cmd(CM_TEST, "run.test", "~T~est", "Run this file's TestSuite (std.testing) with `mojo run`")
     r.cmd(CM_USERSCREEN, "run.userScreen", "~U~ser screen", "View the program's output screen", [fkey(5) | MOD_ALT])
     r.cmd(CM_TASKS, "run.pixiTasks", "Pixi tas~k~s...", "Run a task of the project's pixi.toml", [fkey(9) | MOD_SHIFT])
@@ -845,6 +850,7 @@ def build_registry() -> Registry:
     r.item(CM_WATCH_ADD)
     r.item(CM_EVALUATE)
     r.item(CM_TEST)
+    r.item(CM_REPL)
     r.item(CM_USERSCREEN)
     r.item(CM_ARGS)
     r.item(CM_RUNCONFIGS)

@@ -73,7 +73,11 @@ __extension App:
     # ========================================================= the terminal
     def term_kind_of(self, i: Int) -> Int:
         """Which session window i shows (its path names it)."""
-        return TS_RUN if self.wins[i].path == "terminal:run" else TS_SHELL
+        if self.wins[i].path == "terminal:run":
+            return TS_RUN
+        if self.wins[i].path == "terminal:repl":
+            return TS_REPL
+        return TS_SHELL
 
     def term_index(self, which: Int) -> Int:
         for i in range(len(self.wins)):
@@ -90,7 +94,9 @@ __extension App:
         var dh = self.desk_h()
         var h = max(8, min(dh - 4, dh * 2 // 5))
         var y = 1 + dh - h
-        var win = Window(WK_TERM, "Terminal" if which == TS_SHELL else "Run", "terminal:run" if which == TS_RUN else "terminal:shell", 0, y, self.scr.w, h, self.free_number())
+        var names = ["Terminal", "Run", "REPL"]
+        var paths = ["terminal:shell", "terminal:run", "terminal:repl"]
+        var win = Window(WK_TERM, String(names[which]), String(paths[which]), 0, y, self.scr.w, h, self.free_number())
         win.gut = 0
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].y + self.wins[i].h > y and y - self.wins[i].y >= 6:
@@ -106,23 +112,15 @@ __extension App:
         var i = self.term_open_window(which)
         var cols = max(10, self.wins[i].w - 2)
         var rows = max(2, self.wins[i].h - 2)
-        if which == TS_RUN:
-            self.trun = TermSession()
-        else:
-            self.tshell = TermSession()
-        var ok: Bool
-        if which == TS_RUN:
-            ok = self.trun.vt.open(cols, rows) and self.trun.pty.start(argv, cwd, List[String](), rows, cols)
-            self.trun.started = ok
-            self.trun.title = title
-            self.trun.pty_argv = argv.copy()
-            self.trun.pty_cwd = cwd
-        else:
-            ok = self.tshell.vt.open(cols, rows) and self.tshell.pty.start(argv, cwd, List[String](), rows, cols)
-            self.tshell.started = ok
-            self.tshell.title = title
-            self.tshell.pty_argv = argv.copy()
-            self.tshell.pty_cwd = cwd
+        var s = TermSession()
+        var ok = s.vt.open(cols, rows) and s.pty.start(argv, cwd, List[String](), rows, cols)
+        s.started = ok
+        s.title = title
+        s.pty_argv = argv.copy()
+        s.pty_cwd = cwd
+        var old = self.term_take(which)
+        _ = old.pty.stop()
+        self.term_put(which, s^)
         self.wins[i].title = title
         if not ok:
             self.say("The terminal could not be started")
@@ -131,6 +129,8 @@ __extension App:
     def term_session_busy(self, which: Int) -> Bool:
         if which == TS_RUN:
             return self.trun.started and self.trun.pty.running
+        if which == TS_REPL:
+            return self.trepl.started and self.trepl.pty.running
         return self.tshell.started and self.tshell.pty.running
 
     def term_toggle(mut self):
@@ -167,13 +167,15 @@ __extension App:
             out.append(self.tshell.pty.fd())
         if self.trun.started and self.trun.pty.fd() >= 0:
             out.append(self.trun.pty.fd())
+        if self.trepl.started and self.trepl.pty.fd() >= 0:
+            out.append(self.trepl.pty.fd())
         return out^
 
     def term_tick(mut self):
         """Output of the terminals' programs into their emulators, the emulators'
         answers back to the programs, sizes kept in step, ends noticed."""
         var replies = vt_take_replies()
-        for which in [TS_SHELL, TS_RUN]:
+        for which in [TS_SHELL, TS_RUN, TS_REPL]:
             var s = self.term_take(which)
             self.term_pump(s, replies, self.term_index(which))
             self.term_put(which, s^)
@@ -183,6 +185,8 @@ __extension App:
         var s = TermSession()
         if which == TS_RUN:
             swap(s, self.trun)
+        elif which == TS_REPL:
+            swap(s, self.trepl)
         else:
             swap(s, self.tshell)
         return s^
@@ -190,6 +194,8 @@ __extension App:
     def term_put(mut self, which: Int, var s: TermSession):
         if which == TS_RUN:
             swap(s, self.trun)
+        elif which == TS_REPL:
+            swap(s, self.trepl)
         else:
             swap(s, self.tshell)
 
@@ -210,6 +216,20 @@ __extension App:
         if s.pty.read_available() > 0:
             s.vt.write(s.pty.take())
             s.dirty = True
+            s.last_output_ns = Int(perf_counter_ns())
+        if len(s.pending) > 0:
+            # code waiting for the REPL: it goes once the first prompt ("1> ") is shown
+            # and the REPL has been quiet for half a second (what is typed during its
+            # start-up is lost)
+            if s.dirty:
+                s.vt.update()
+                s.dirty = False
+            var last = String("")
+            if s.vt.is_open() and s.vt.cursor_y < s.vt.rows:
+                last = s.vt.row_text(s.vt.cursor_y)
+            if last.endswith(">") and Int(perf_counter_ns()) - s.last_output_ns > 500000000:
+                s.pty.write(s.pending)
+                s.pending.clear()
         if s.ended_note.byte_length() == 0 and s.pty.eof and s.pty.poll_exit():
             s.ended_note = "[the program ended with status " + String(exit_code(s.pty.status)) + " - Enter starts it again, Esc closes]"
             s.vt.write_text("\r\n\x1b[7m" + s.ended_note + "\x1b[0m")
@@ -410,3 +430,66 @@ __extension App:
         argv.append("printf '\\033[1m$ %s\\033[0m\\r\\n' " + shell_quote(label) + "; " + core)
         var here = self.cwd
         _ = self.term_start(TS_RUN, argv, here, "Run - " + label)
+
+    # ============================================================== the REPL
+    def repl_command(mut self) -> List[String]:
+        var argv = List[String]()
+        argv.append("/bin/sh")
+        argv.append("-c")
+        # LLDB's status line (it runs the REPL) redraws the last row with a scroll region
+        # and mixes into the output: it is switched off
+        argv.append("exec " + self.tool(self.compiler_cmd()) + " repl" + self.include_flags() + " -O 'settings set show-statusline false'")
+        return argv^
+
+    def repl_open(mut self):
+        """Run > Mojo REPL: `mojo repl` in a window at the bottom (started once; again
+        brings its window to the front, or closes it when it is in front)."""
+        var ri = self.term_index(TS_REPL)
+        if ri >= 0 and ri == self.top():
+            self.term_close_window(ri)
+            return
+        if ri >= 0:
+            self.focus(ri)
+            return
+        _ = self.term_open_window(TS_REPL)
+        if not self.term_session_busy(TS_REPL):
+            var argv = self.repl_command()
+            var here = self.cwd
+            _ = self.term_start(TS_REPL, argv, here, "REPL - mojo repl")
+        self.say("Mojo REPL: an expression ends with a blank line; " + self.reg.key_label(CM_REPL_SEND) + " in the editor sends the selection")
+
+    def repl_send(mut self) raises:
+        """Send the selection (or the cursor's line) to the REPL, ended by a blank line
+        so that it is evaluated; the keyboard stays in the editor."""
+        var i = self.top_editor()
+        if i < 0:
+            return
+        var text: List[Int]
+        if self.wins[i].sel:
+            text = self.wins[i].selected_text()
+        else:
+            text = self.wins[i].buf.line(self.wins[i].cr)
+            # the next line, so that F-key presses walk through a file line by line
+            if self.wins[i].cr + 1 < self.wins[i].buf.count():
+                self.wins[i].goto(self.wins[i].cr + 1, 0)
+        var started = False
+        if not self.term_session_busy(TS_REPL):
+            var argv = self.repl_command()
+            var here = self.cwd
+            if not self.term_start(TS_REPL, argv, here, "REPL - mojo repl"):
+                return
+            started = True
+        elif self.term_index(TS_REPL) < 0:
+            _ = self.term_open_window(TS_REPL)
+        var ed = self.top_editor()
+        if ed >= 0:
+            self.focus(ed)
+        # what is sent waits for the REPL's prompt: while it starts (a few seconds) and
+        # while it is still printing, input is lost - also the blank line that ends an
+        # expression
+        for b2 in repl_bytes(text):
+            self.trepl.pending.append(b2)
+        if started or self.trepl.last_output_ns == 0:
+            self.say("The REPL is starting - the code goes to it when it is ready")
+        else:
+            self.say("Sent to the REPL")

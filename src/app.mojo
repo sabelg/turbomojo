@@ -189,6 +189,7 @@ __extension App:
         self.dbg.finish()           # a program being debugged does not outlive the IDE
         _ = self.tshell.pty.stop()  # nor the terminals' programs (they get SIGHUP)
         _ = self.trun.pty.stop()
+        _ = self.trepl.pty.stop()
         self.bp_sync()
         self.bp_save()
         self.lsp_stop()

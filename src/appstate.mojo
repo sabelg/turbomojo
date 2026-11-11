@@ -198,6 +198,7 @@ struct App(Movable):
     var cpu: CpuView           # what the CPU window shows
     var tshell: TermSession    # Window > Terminal
     var trun: TermSession      # the program Run started
+    var trepl: TermSession     # the Mojo REPL
     var run_in_terminal: Bool  # Run uses the Run window (else the user screen, as before)
     var shell_program: String  # what Window > Terminal starts ($SHELL)
     var cpu_dis_seq: Int       # its requests: disassembly, register scopes, sets, values, memory
@@ -511,6 +512,7 @@ struct App(Movable):
         self.cpu = CpuView()
         self.tshell = TermSession()
         self.trun = TermSession()
+        self.trepl = TermSession()
         self.run_in_terminal = True
         self.shell_program = env_or("SHELL", "/bin/sh")
         self.cpu_dis_seq = -1
@@ -838,8 +840,10 @@ struct App(Movable):
             t = min(t, 10)
         if self.dbg.active() and self.dbg.conn.wants_write():
             t = min(t, 10)
-        if self.tshell.pty.wants_write() or self.trun.pty.wants_write():
+        if self.tshell.pty.wants_write() or self.trun.pty.wants_write() or self.trepl.pty.wants_write():
             t = min(t, 10)
+        if len(self.trepl.pending) > 0:
+            t = min(t, 100)             # code waits for the REPL to be ready
         if self.watch_enabled and not self.watch.active():
             t = min(t, max(1, (self.watch_due - now) // 1000000 + 1))
         if self.show_clock:

@@ -11,7 +11,7 @@ from term import Event, EV_MOUSE, EV_PASTE, MB_LEFT, MB_WHEEL_UP, wait_readable,
 from app import *
 from appstate import App, M_NORMAL
 from window import WK_TERM, WK_EDITOR
-from commands import CM_TERMINAL, CM_RUN, build_registry
+from commands import CM_TERMINAL, CM_RUN, CM_REPL, CM_REPL_SEND, build_registry
 from config import load_settings, read_text
 from signals import own_pid
 from util import to_str, env_or, run_system, bytes_to_str, decode
@@ -83,6 +83,17 @@ def wait_screen(mut app: App, which: Int, text: String, timeout_ms: Int = 8000) 
     return shown
 
 
+def wait_prompt(mut app: App, which: Int) raises:
+    """Until the shell shows its prompt "$ " again (what is typed before is echoed
+    among its output, as in any terminal)."""
+    var deadline = Int(perf_counter_ns()) + 5000 * MS
+    while Int(perf_counter_ns()) < deadline:
+        turn(app)
+        if String(screen_of(app, which).rstrip()).endswith("$"):
+            return
+    assert_true(False, "no prompt:\n" + screen_of(app, which))
+
+
 def typ(mut app: App, text: String) raises:
     for c in decode(text):
         app.handle(key_event(c))
@@ -100,11 +111,13 @@ def test_a_shell_in_a_window() raises:
     assert_equal(app.wins[t].kind, WK_TERM)
     assert_true(app.wins[t].title.startswith("Terminal"), app.wins[t].title)
     assert_true(app.tshell.pty.running)
+    wait_prompt(app, TS_SHELL)
     # what is typed goes to the shell; its output is on the screen; it runs in the project
     typ(app, "echo hello-$((6*7)); pwd; ls")
     app.handle(key_event(KEY_ENTER))
     var shown = wait_screen(app, TS_SHELL, "file.txt")
     assert_true(shown.find("hello-42") >= 0 and shown.find(d) >= 0, shown)
+    wait_prompt(app, TS_SHELL)
     # Ctrl-K is a key for the program, not the IDE's Ctrl-K prefix; Ctrl-C interrupts
     typ(app, "sleep 30")
     app.handle(key_event(KEY_ENTER))
@@ -121,9 +134,11 @@ def test_a_shell_in_a_window() raises:
     app.handle(key_event(KEY_ENTER))
     _ = wait_screen(app, TS_SHELL, "after-interrupt\n", 5000)
     assert_equal(app.chord, 0)
+    wait_prompt(app, TS_SHELL)
     # paste goes to the shell
     app.handle(Event(EV_PASTE, 0, 0, 0, 0, False, False, decode("echo pasted-text\n")))
     _ = wait_screen(app, TS_SHELL, "pasted-text\n")
+    wait_prompt(app, TS_SHELL)
     # the size follows the window
     typ(app, "stty size")
     app.handle(key_event(KEY_ENTER))
@@ -159,6 +174,7 @@ def test_scrollback_and_copy() raises:
     app.shell_program = "/bin/sh"
     app.exec(1)
     app.handle(key_event(fkey(11) | MOD_ALT))
+    wait_prompt(app, TS_SHELL)
     typ(app, "for i in $(seq 1 60); do echo line-$i; done")
     app.handle(key_event(KEY_ENTER))
     _ = wait_screen(app, TS_SHELL, "line-60")
@@ -230,6 +246,76 @@ def test_run_shows_the_program_in_the_run_window() raises:
     # the old way stays as a setting
     assert_true(load_settings("", "").run_in_terminal)
     assert_false(load_settings("[ui]\nrun_in_terminal = false\n", "").run_in_terminal)
+    _ = run_system("rm -rf '" + d + "'")
+
+
+def test_code_for_the_repl() raises:
+    assert_equal(b(repl_bytes(decode("var x = 1\nprint(x)\n\n"))), "var x = 1<13>print(x)<13><13>")
+    assert_equal(b(repl_bytes(decode("def f():\r\n\r\n    pass"))), "def f():<13>    pass<13><13>", "a blank line inside would end it early")
+    assert_equal(len(repl_bytes(decode("\n\n"))), 0)
+
+
+def test_the_repl_and_sending_code_to_it() raises:
+    var d = env_or("TMPDIR", "/tmp") + "/turbomojo-repl-" + String(own_pid())
+    _ = run_system("rm -rf '" + d + "' && mkdir -p '" + d + "'")
+    with open(d + "/scratch.mojo", "w") as f:
+        f.write("var x = 6 * 7\nprint(x * 2)\nprint(x + 1)\n")
+    var app = ide(d)
+    app.open_path(d + "/scratch.mojo")
+    assert_equal(build_registry().find_key(fkey(10) | MOD_CTRL), CM_REPL_SEND)
+    # (the Mojo REPL itself sometimes dies while it starts - Modular calls it unstable;
+    # only then is the start tried a second time)
+    var ok = False
+    var shown = String("")
+    for attempt in range(2):
+        var e = app.top_editor()
+        # the first two lines selected, Ctrl-F10: the REPL starts and gets them when ready
+        app.wins[e].goto(1, 12)
+        app.wins[e].sel = True                  # (a selection from the start: after the move)
+        app.wins[e].ar = 0
+        app.wins[e].ac = 0
+        assert_equal(to_str(app.wins[e].selected_text()), "var x = 6 * 7\nprint(x * 2)")
+        app.handle(key_event(fkey(10) | MOD_CTRL))
+        assert_equal(app.wins[app.top()].kind, WK_EDITOR, "the keyboard stays in the editor")
+        assert_true(app.term_index(TS_REPL) >= 0)
+        # a second press while it starts: queued behind the first, not instead of it
+        var e2 = app.top_editor()
+        app.wins[e2].sel = False
+        app.wins[e2].goto(2, 0)
+        app.handle(key_event(fkey(10) | MOD_CTRL))
+        assert_equal(app.status, "The REPL is starting - the code goes to it when it is ready")
+        var deadline = Int(perf_counter_ns()) + 60000 * MS
+        while Int(perf_counter_ns()) < deadline and app.trepl.ended_note.byte_length() == 0:
+            turn(app)
+            shown = screen_of(app, TS_REPL)
+            if shown.find("\n84\n") >= 0 and shown.find("\n43\n") >= 0:
+                ok = True
+                break
+        if ok or attempt == 1 or app.trepl.ended_note.byte_length() == 0:
+            break
+        print("    (the REPL died while starting; trying once more)")
+    assert_true(ok, "the REPL did not give 84 and 43:\n" + shown)
+    var e = app.top_editor()
+    # no selection: the cursor's line, and the cursor goes to the next one
+    e = app.top_editor()                        # (window order changed when the REPL's opened)
+    app.wins[e].sel = False
+    app.wins[e].goto(1, 0)
+    app.handle(key_event(fkey(10) | MOD_CTRL))
+    assert_equal(app.status, "Sent to the REPL")
+    assert_equal(app.wins[app.top_editor()].cr, 2, "on to the next line")
+    var count_before = shown.count("\n84\n")
+    var later = Int(perf_counter_ns()) + 20000 * MS
+    while Int(perf_counter_ns()) < later and screen_of(app, TS_REPL).count("\n84\n") <= count_before:
+        turn(app)
+    assert_true(screen_of(app, TS_REPL).count("\n84\n") > count_before, screen_of(app, TS_REPL))
+    # Run > Mojo REPL in front closes its window; the REPL goes on
+    app.focus(app.term_index(TS_REPL))
+    app.exec(CM_REPL)
+    assert_equal(app.term_index(TS_REPL), -1)
+    assert_true(app.trepl.pty.running)
+    var pid = app.trepl.pty.pid
+    _ = app.trepl.pty.stop()
+    assert_false(Int(external_call["kill", Int32](Int32(pid), Int32(0))) == 0)
     _ = run_system("rm -rf '" + d + "'")
 
 

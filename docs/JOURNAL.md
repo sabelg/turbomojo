@@ -2937,3 +2937,42 @@ static library). So no parser of my own.
     Ctrl-Space on some terminals) cannot reach the program.
   - Alt-F5 (user screen) shows the old user screen, not the Run window.
 - Verified: `scripts/check.sh` → `CHECK OK`, 54 test files, 929 tests, smoke ok.
+
+## 2026-11-10 · P5-04 REPL panel with send-selection · done
+
+Probed first: `mojo repl` (Mojo 1.2; its help says it "has known issues and isn't
+under active development") on a pty: a welcome text, the prompt "1> ", continuation
+prompts "2." ..., an expression ends with a blank line, `var x = 6 * 7` + `print(x)`
+gives "42" and "(Int) x = 42"; `def` blocks work when sent with their indentation.
+
+- A third terminal session (`TS_REPL`, window "REPL"); the session code was made
+  general (take / put by kind) instead of copied a third time.
+- Run ▸ Mo~j~o REPL: `mojo repl` (with the project's compiler command and include
+  folders) in its window; again in front: the window closes, the REPL goes on.
+  **Ctrl-F10** (hidden command "Send to REPL", in the palette): the selection, or the
+  cursor's line (the cursor then moves to the next line, so repeated presses walk
+  through a file); lines end in CR, blank lines inside are left out (they would end the
+  expression early), one blank line ends it; the keyboard stays in the editor.
+- Found while testing: (1) text typed into the REPL while it starts is lost - the first
+  line of a selection disappeared; (2) a second Ctrl-F10 during the start replaced the
+  first one's text (seen in tmux); (3) text sent while the REPL is still printing loses
+  its closing blank line, so it is not evaluated; (4) in a pty with a size, LLDB (which
+  runs the REPL) draws a status line at the bottom with a scroll region, which mixed
+  into the output. Now: everything sent waits in a queue until the REPL's prompt is at
+  the cursor and it has been quiet for half a second; LLDB's status line is switched
+  off (`-O 'settings set show-statusline false'`).
+- Tests (`tests/test_terminal.mojo`, now 6, run four times): the code bytes; the REPL
+  started by Ctrl-F10 with a two-line selection and a second press during the start,
+  both results (84 and 43) as whole lines; a line without selection, the cursor moving
+  on; closing the window with the REPL still running; stop. The Mojo REPL once died
+  while starting (an LLDB crash report on the screen); the test then tries the start
+  once more and says so. The shell test now waits for the prompt before typing (it was
+  flaky when typed text was echoed before the prompt).
+- Looked at in tmux: Ctrl-F10 twice on a scratch file → `var greeting = ...`,
+  `print(greeting)`, "hi from the editor", `(String) greeting = "hi from the editor"`.
+- Not done / unverified:
+  - The prompt is recognised by its ">" at the cursor; another REPL prompt would not be.
+  - Sending a block from inside a function body sends its indentation too, which the
+    REPL rejects at top level - nothing dedents it.
+  - REPL crashes are Modular's; the IDE only shows them and offers to start again.
+- Verified: `scripts/check.sh` → `CHECK OK`, 54 test files, 931 tests, smoke ok.
