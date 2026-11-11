@@ -156,6 +156,7 @@ comptime CM_AGENT = 213             # the agent panel
 comptime CM_AGENT_MENTION = 214     # mention the file or the selection in the prompt
 comptime CM_AGENT_START = 215       # start the configured agent (needs folder trust)
 comptime CM_THEME_PICK = 216        # Options > Colour theme...
+comptime CM_NOTICES = 217           # Help > Notifications
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -760,6 +761,7 @@ def build_registry() -> Registry:
     r.hide(CM_THEME0, "options.themeClassic", "Theme: Turbo Classic", "The 1992 CGA blue look")
     r.hide(CM_THEME1, "options.themeMidnight", "Theme: Midnight Neon", "A modern dark truecolor theme")
     r.hide(CM_THEME2, "options.themeAmber", "Theme: Amber CRT", "Phosphor monochrome terminal")
+    r.cmd(CM_NOTICES, "help.notifications", "~N~otifications...", "What is running now and the messages of this session (builds, tests, git, the agent)", [fkey(10) | MOD_SHIFT])
     r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge or restore the active window", [fkey(5)])
@@ -974,6 +976,7 @@ def build_registry() -> Registry:
 
     r.menu("~H~elp")
     r.item(CM_HELP)
+    r.item(CM_NOTICES)
     r.item(CM_DOCS)
     r.item(CM_MOJODOCS)
     r.item(CM_DOCFIND)

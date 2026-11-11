@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_notify import *
 from app_problems import *
 from app_lsp import *
 from lsp import *
@@ -241,6 +242,9 @@ __extension App:
             self.run_configs_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFG and b == 0:
             self.run_config_save()
+        elif kind == D_NOTICES and b == 1:
+            self.notes.clear()
+            self.say("Notifications cleared")
         elif kind == D_THEME and b == 0:
             var sel = self.dlg.selected_item()
             if sel >= 0:

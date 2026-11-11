@@ -113,7 +113,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 ## Phase 7: UX polish and accessibility (v1.8)
 
 - [x] P7-01 Themes as TOML files; light and high-contrast themes; follow terminal light/dark (mode 2031)
-- [ ] P7-02 Notification toasts and progress centre
+- [x] P7-02 Notification toasts and progress centre
 - [ ] P7-03 Help: tutorial file, cheat sheet, searchable help, What's new
 - [ ] P7-04 Accessibility: screen-reader (linear) mode, reduced motion
 - [ ] P7-05 Breadcrumbs and sticky scope header; optional minimap

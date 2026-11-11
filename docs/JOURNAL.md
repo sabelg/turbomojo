@@ -3521,3 +3521,36 @@ files).
   - No preview while moving in the theme list; Amber CRT and Turbo Classic are not
     contrast-checked (they reproduce old looks).
 - Verified: `scripts/check.sh` → `CHECK OK`, 64 test files, 995 tests, smoke ok.
+
+## 2026-11-11 · P7-02 Notification toasts and progress centre · done
+
+- `src/notify.mojo`: notices (level info / done / warn / error, title, text, time),
+  at most three toasts at once, newest first, 5 s (errors 10 s); the same message
+  again within the toast time shows again instead of twice; 100 kept; unread count.
+- `src/app_notify.mojo`: `notify` at the places where something finishes or needs
+  the user: build (succeeded / with warnings / failed / cancelled), test runs, pixi
+  tasks, git commit and branch switch (and their failures), the agent (its turn ending
+  or a permission asked while the panel is not in front, the agent stopping), the
+  language server crashing or not starting. Toasts are drawn at the top right under
+  the menu bar (frame in the level's colour); a click takes one away; the event loop
+  wakes when one is due to go. The status line shows "⟳n" when n things run.
+- The progress centre is made from the IDE's state each time (no registration to
+  forget): the job (build, tests, task, docs download, with seconds), git commands that
+  take a while (commit, branches, switch, blame), the language server starting, the
+  agent working or starting and its commands, the symbol index, a project search, a
+  program running in the terminal. Help > Notifications (Shift-F10) lists them and the
+  notices of this session; opening it puts the toasts away; Clear all.
+- Tests (`tests/test_notify.mojo`, 4): the model (limits, times, the error staying
+  longer, repeats, dismissing, trimming); toasts drawn at the top right, the loop's
+  timeout, a click removing one, the centre and Clear all; a real build of a bad file:
+  listed and counted on the status line while it runs, "Build failed - bad.mojo: 1
+  error(s)" after; the fake agent: no toast while the panel is in front, "Fake Agent has
+  finished" when it is not, "The agent asks for permission". The status line first
+  hid the count while a temporary message was shown; now both show.
+- Looked at in tmux: F9 on a file with an error showed "✗ Build failed / bad.mojo: 1
+  error(s)" at the top right. On a 100-column screen the status line's right part is
+  cut from the left when the build's own message is long, so "⟳1" can be cut off there.
+- Not done / unverified:
+  - No percentages: none of the tools report progress (the language server's
+    `$/progress` is not handled; mojo-lsp-server was not seen to send any).
+- Verified: `scripts/check.sh` → `CHECK OK`, 65 test files, 999 tests, smoke ok.

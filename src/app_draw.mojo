@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_notify import *
 from app_agent import *
 from app_problems import *
 from app_lsp import *
@@ -83,8 +84,10 @@ __extension App:
                 self.st_cmd.append(cmds[i])
                 x += 2
         var right = String("")
+        var running = len(self.running_tasks())
+        var busy = ("⟳" + String(running) + "  ") if running > 0 else String("")   # Shift-F10 lists them
         if self.status_until > now_ns():
-            right = self.status
+            right = busy + self.status
         else:
             var ti = self.top_editor()
             if ti >= 0:
@@ -100,6 +103,8 @@ __extension App:
             if self.dbg.active():
                 right += self.debug_badge() + "  "
             right += "INS" if self.insert_mode else "OVR"
+            right = busy + right
+
         if self.macro_rec:
             right = "● REC  " + right
         if self.job.active:
@@ -177,6 +182,7 @@ __extension App:
                 continue                        # panes lie side by side: no shadow
             if i == n - 1 and self.wins[i].w < self.scr.w:
                 self.scr.shadow(self.wins[i].x, self.wins[i].y, self.wins[i].w, self.wins[i].h, p.shadow_fg, p.shadow_bg)
+        self.draw_toasts()
         draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, clock_hm() if self.show_clock else "")
         # status line
         var items = List[String]()

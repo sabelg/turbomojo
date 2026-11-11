@@ -13,6 +13,7 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from themes import ThemeSet
+from notify import NotifyCenter
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
@@ -156,6 +157,11 @@ struct App(Movable):
     var theme_dark_id: String
     var theme_light_id: String
     var scheme_seen: Int        # the terminal's light/dark that the theme follows (0: none yet)
+    var notes: NotifyCenter     # toasts and the notification centre
+    var toast_rows: List[Int]   # the toasts as drawn: which notice, top and bottom row
+    var toast_y0: List[Int]
+    var toast_y1: List[Int]
+    var toast_x: Int
     var hl: Highlighter
     var wins: List[Window]
     var reg: Registry
@@ -530,6 +536,11 @@ struct App(Movable):
         self.theme_dark_id = "midnight"
         self.theme_light_id = "light"
         self.scheme_seen = 0
+        self.notes = NotifyCenter()
+        self.toast_rows = List[Int]()
+        self.toast_y0 = List[Int]()
+        self.toast_y1 = List[Int]()
+        self.toast_x = 1 << 30
         self.pal = theme(0)
         self.hl = Highlighter()
         self.wins = List[Window]()
@@ -990,6 +1001,9 @@ struct App(Movable):
             t = min(t, max(1, (self.act_retry_due - now) // 1000000 + 1))
         if self.git.root.byte_length() > 0:
             t = min(t, 2000)        # look at git's index now and then (see git_tick)
+        var tn = self.notes.next_change_ns(now)
+        if tn > 0:
+            t = min(t, max(1, (tn - now) // 1000000 + 1))     # a toast is due to go
         if self.agent.conn.wants_write():
             t = min(t, 10)
         if self.agent.state == 1:          # AS_STARTING: its time-out must be noticed

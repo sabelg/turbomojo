@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_notify import *
 from app_agent import *
 from app_lsp import *
 from lsp import *
@@ -580,6 +581,8 @@ __extension App:
             self.theme_id = self.themes.ids[cmd - CM_THEME0]
             self.theme_apply()
             self.say("Theme: " + self.pal.name)
+        elif cmd == CM_NOTICES:
+            self.notices_dialog()
         elif cmd == CM_THEME_PICK:
             self.theme_dialog()
         elif cmd == CM_ZOOM:

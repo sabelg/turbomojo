@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_notify import *
 from app_lsp import *
 from lsp import *
 from app_watch import *
@@ -53,6 +54,8 @@ __extension App:
         if self.mode == M_DOCS:
             self.docs_mouse(e)
             return
+        if self.mode == M_NORMAL and e.pressed and e.button == MB_LEFT and not e.drag and self.toast_click(x, y):
+            return                              # a click on a toast takes it away
         if self.mode == M_NORMAL:
             # inside a terminal window: its own wheel and selection
             var ti = self.window_at(x, y) if e.pressed or e.button == MB_WHEEL_UP or e.button == MB_WHEEL_DOWN else self.top()

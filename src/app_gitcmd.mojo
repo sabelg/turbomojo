@@ -6,6 +6,7 @@ command fails.
 """
 from std.collections import List
 from appstate import *
+from app_notify import *
 from util import *
 from dialog import *
 from window import Window, WK_EDITOR, WK_BLAME
@@ -268,11 +269,14 @@ __extension App:
         if req == GQ_COMMIT:
             if status == 0:
                 self.say(String(text.split("\n")[0]))
+                self.notify(NL_DONE, "Committed", String(text.split("\n")[0]))
             else:
                 self.git_info("Commit", "git did not commit:", text)
+                self.notify(NL_ERROR, "git did not commit", String(text.split("\n")[len(text.split("\n")) - 1]))
         elif req == GQ_SWITCH:
             if status == 0:
                 self.say("On branch " + path + " now")
+                self.notify(NL_DONE, "Branch", "On " + path + " now")
                 self.watch_recheck = True       # files git changed on disk are reloaded (or asked about)
             else:
                 self.git_info("Branch", "git did not switch to " + path + ":", text)

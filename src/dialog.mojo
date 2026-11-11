@@ -48,6 +48,7 @@ comptime D_GIT_COMMIT = 40      # the commit message
 comptime D_GIT_BRANCH = 41      # switch to (or make) a branch
 comptime D_PANEL_FILTER = 42    # the text the Problems or Message page's lines must contain
 comptime D_THEME = 43           # Options > Colour theme
+comptime D_NOTICES = 44         # Help > Notifications
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

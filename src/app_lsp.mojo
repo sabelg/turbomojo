@@ -11,6 +11,7 @@ from lsp import *
 from buffer import Mark, Hint
 from highlight import C_PARAM, C_DEF, C_PROP, C_TYPE, C_NS, C_SELF
 from appstate import *
+from app_notify import *
 from app_problems import *
 from app_files import *
 from app_dialogs import *
@@ -347,6 +348,8 @@ __extension App:
             _ = self.lsp.conn.stop()
             self.lsp.state = LSP_STOPPED
             self.log_error("language server: " + self.lsp.last_error)
+            var why = self.lsp.last_error
+            self.notify(NL_ERROR, "The language server " + ("crashed" if crashed else "did not start"), why)
             # forget crashes that are long ago, then decide whether to try again
             var recent = List[Int]()
             for t in self.lsp_crashes:

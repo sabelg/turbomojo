@@ -14,6 +14,7 @@ write files through the editor and what it asks permission for is refused.
 """
 from std.collections import List
 from appstate import *
+from app_notify import *
 from util import *
 from window import Window, WK_EDITOR, WK_AGENT
 from term import KEY_ENTER, KEY_ESC, KEY_BACKSPACE, KEY_DELETE, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_UP, KEY_DOWN, KEY_PGUP, KEY_PGDN, K_BASE
@@ -126,6 +127,8 @@ __extension App:
                     _ = self.agent.answer_permission(e.request, opt)
                     self.chat.note("Allowed (this session): " + self.agent_what(e))
                 else:
+                    if self.top() != self.agent_index():
+                        self.notify(NL_WARN, "The agent asks for permission", self.agent_what(e))
                     self.agent_perms.append(e.copy())
                     self.chat.note("The agent asks to " + self.agent_what(e) + ": Y allows it once, A for this session, N refuses")
                     var pi = self.agent_index()
@@ -133,6 +136,8 @@ __extension App:
                         self.focus(pi)
             elif e.kind == AE_TURN_END:
                 self.chat.cancel_open_tools()
+                if self.top() != self.agent_index():
+                    self.notify(NL_DONE if e.stop_reason == "end_turn" else NL_WARN, (self.agent.agent_name if self.agent.agent_name.byte_length() > 0 else String("The agent")) + " has finished", "" if e.stop_reason == "end_turn" else e.stop_reason)
                 if e.stop_reason == "error":
                     self.chat.note("The agent reported an error: " + e.text)
                 elif e.stop_reason != "end_turn":
@@ -169,6 +174,7 @@ __extension App:
                     _ = self.agent.prompt_blocks(self.agent_pending, now)
                     self.agent_pending = ""
             elif e.kind == AE_FAILED:
+                self.notify(NL_ERROR, "The agent stopped", e.text)
                 self.chat.note("The agent is not running: " + e.text + ". Ctrl-F11 twice starts it again.")
                 self.agent_pending = ""
                 self.agent_services_end()

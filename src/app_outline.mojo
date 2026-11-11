@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_notify import *
 from app_lsp import *
 from lsp import *
 from markdown import *
@@ -302,6 +303,7 @@ __extension App:
                 self.wins[mi].cr = self.errs[0].msg_line
             if not ok and not self.job.cancelled and self.mode == M_NORMAL:
                 self.focus(mi)
+        self.notify(NL_DONE if ok else (NL_INFO if self.job.cancelled else NL_ERROR), "Task " + name, result)
         self.say(result)
 
     def symidx_tick(mut self):
