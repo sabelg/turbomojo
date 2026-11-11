@@ -41,6 +41,8 @@ comptime D_BREAKPOINT = 33      # condition, hit count, log message of one break
 comptime D_BPFUNC = 34          # the name for a function breakpoint
 comptime D_BREAKPOINTS = 35     # the list of all breakpoints
 comptime D_SETVALUE = 36        # a new value for a variable of the program being debugged
+comptime D_WATCH = 37           # the expression of a watch
+comptime D_EVALUATE = 38        # evaluate an expression or run a debugger command
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

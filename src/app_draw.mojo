@@ -196,7 +196,7 @@ __extension App:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_DEBUG:
-                for h in ["~Enter~ Open / go to frame", "~←~ Close", "~=~ Set value"]:
+                for h in ["~Enter~ Open / go to frame", "~←~ Close", "~=~ Set value", "~Del~ Remove watch"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_OUTLINE:

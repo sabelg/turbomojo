@@ -426,6 +426,10 @@ __extension App:
                 self.debug_end(True)
             else:
                 self.say("No program is being debugged")
+        elif cmd == CM_WATCH_ADD:
+            self.watch_dialog(-1)
+        elif cmd == CM_EVALUATE:
+            self.eval_dialog("", List[String]())
         elif cmd == CM_DEBUGWIN:
             self.debugwin_toggle()
         elif cmd == CM_BP_TOGGLE:

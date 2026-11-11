@@ -115,6 +115,9 @@ __extension App:
         if kind == D_FIND or kind == D_REPLACE:
             self.find_button(b)
             return
+        if kind == D_EVALUATE:
+            self.eval_button(b)
+            return
         self.mode = M_NORMAL
         if kind == D_SAVEAS and b == 0:
             var i = self.dlg.payload
@@ -185,6 +188,8 @@ __extension App:
                 self.docs_fetch()
         elif kind == D_TRUST:
             self.trust_answer(b)
+        elif kind == D_WATCH and b == 0:
+            self.watch_save(String(self.dlg.field_text(0).strip()))
         elif kind == D_SETVALUE and b == 0:
             self.dv_set_save(self.dlg.field_text(0))
         elif kind == D_BREAKPOINT and b == 0:

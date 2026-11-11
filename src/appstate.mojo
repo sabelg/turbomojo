@@ -188,6 +188,11 @@ struct App(Movable):
     var dv_var_paths: List[String]
     var dv_write_seq: Int      # a value being set
     var dv_set: Int            # the node the Set value dialog is for
+    var dv_watch_seqs: List[Int]   # evaluate requests of the watches, and which watch
+    var dv_watch_idx: List[Int]
+    var dv_eval_seq: Int       # the Evaluate dialog's request
+    var dv_eval_expr: String
+    var dv_watch_edit: Int     # the watch the dialog edits (-1: a new one)
     var bp_stamp: Int          # changes with every change of the list
     var bp_dir: String         # where the lists are kept, one file per project ('' = not kept)
     var bp_edit: Int           # the breakpoint the dialog edits (-1: a new one at bp_edit_path/line)
@@ -485,6 +490,11 @@ struct App(Movable):
         self.dv_var_paths = List[String]()
         self.dv_write_seq = -1
         self.dv_set = -1
+        self.dv_watch_seqs = List[Int]()
+        self.dv_watch_idx = List[Int]()
+        self.dv_eval_seq = -1
+        self.dv_eval_expr = ""
+        self.dv_watch_edit = -1
         self.bp_stamp = 0
         self.bp_dir = ""
         self.bp_edit = -1

@@ -289,6 +289,7 @@ __extension App:
         self.debug_mark_clear()
         self.dv_running()
         self.dview.note = "(no program is being debugged)"
+        self.dview.watch_shown.clear()          # "?" until the next stop
         self.debugwin_show()
         self.dbg_temp_path = ""
         self.dbg_temp_line = 0
@@ -332,6 +333,7 @@ __extension App:
         if f.byte_length() > 0 and path_exists(f):
             self.bps.decode(read_text(f))
             self.bp_stamp += 1
+        self.watches_load()             # (kept next to them)
 
     def bp_save(mut self):
         var f = self.bp_file()
@@ -635,6 +637,9 @@ __extension App:
         self.dview.frames.clear()
         self.dview.nodes.clear()
         self.dview.note = "(the program is running)"
+        self.dview.watch_shown.clear()
+        for w in self.dview.watches:
+            self.dview.watch_shown.append(w + ": (the program is running)")
         self.dv_scope_seq = -1
         self.dv_var_seqs.clear()
         self.dv_var_paths.clear()
@@ -658,7 +663,21 @@ __extension App:
             return
         self.dview.note = "(asking the debugger...)"
         self.dv_scope_seq = self.dbg.ask("scopes", "{\"frameId\":" + String(self.dview.frames[self.dview.sel].id) + "}")
+        self.dv_ask_watches()
         self.debugwin_show()
+
+    def dv_ask_watches(mut self):
+        """Every watch, evaluated in the frame shown."""
+        self.dv_watch_seqs.clear()
+        self.dv_watch_idx.clear()
+        while len(self.dview.watch_shown) < len(self.dview.watches):
+            self.dview.watch_shown.append("")
+        if self.dbg.state != DS_STOPPED or self.dview.sel >= len(self.dview.frames):
+            return
+        var fid = self.dview.frames[self.dview.sel].id
+        for k in range(len(self.dview.watches)):
+            self.dv_watch_seqs.append(self.dbg.ask("evaluate", "{\"expression\":" + json_quote(self.dview.watches[k]) + ",\"frameId\":" + String(fid) + ",\"context\":\"watch\"}"))
+            self.dv_watch_idx.append(k)
 
     def dv_ask_children(mut self, handle: Int, path: String):
         self.dv_var_seqs.append(self.dbg.ask("variables", "{\"variablesReference\":" + String(handle) + "}"))
@@ -684,6 +703,24 @@ __extension App:
                     self.dv_ask_children(handle, "")
                 else:
                     self.dview.note = "(no variables)"
+                continue
+            var handled = False
+            for k in range(len(self.dv_watch_seqs)):
+                if self.dv_watch_seqs[k] == m.request_seq:
+                    var w = self.dv_watch_idx[k]
+                    _ = self.dv_watch_seqs.pop(k)
+                    _ = self.dv_watch_idx.pop(k)
+                    if w < len(self.dview.watches):
+                        while len(self.dview.watch_shown) <= w:
+                            self.dview.watch_shown.append("")
+                        self.dview.watch_shown[w] = watch_text(self.dview.watches[w], m.success, m.doc.str(m.doc.get(b, "result"), ""), m.doc.str(m.doc.get(b, "type"), ""), m.message)
+                    handled = True
+                    break
+            if handled:
+                continue
+            if m.request_seq == self.dv_eval_seq:
+                self.dv_eval_seq = -1
+                self.eval_answer(m.success, m.doc.str(m.doc.get(b, "result"), ""), m.message)
                 continue
             if m.request_seq == self.dv_write_seq:
                 self.dv_write_seq = -1
@@ -737,6 +774,16 @@ __extension App:
                     self.focus(di)              # the keyboard stays in the Debug window
             self.dv_load_frame()
             return
+        if kind == VK_WATCH:
+            if k == KEY_DELETE:
+                _ = self.dview.watches.pop(idx)
+                if idx < len(self.dview.watch_shown):
+                    _ = self.dview.watch_shown.pop(idx)
+                self.watches_save()
+                self.debugwin_show()
+            elif k == KEY_ENTER or k == 32:
+                self.watch_dialog(idx)
+            return
         if kind != VK_VAR:
             return
         var n = self.dview.nodes[idx].copy()
@@ -785,3 +832,142 @@ __extension App:
             return
         self.dv_write_seq = self.dbg.ask("writeMemory", "{\"memoryReference\":" + json_quote(n.address()) + ",\"data\":\"" + base64(enc[0]) + "\"}")
         self.say("Setting " + n.name + "...")
+
+    # ======================================================= watches, Evaluate
+    def watches_file(self) -> String:
+        var f = self.bp_file()
+        if f.byte_length() == 0:
+            return ""
+        return String(f[byte=0:f.byte_length() - 12]) + ".watches"
+
+    def watches_load(mut self):
+        var f = self.watches_file()
+        if f.byte_length() == 0 or not path_exists(f):
+            return
+        self.dview.watches.clear()
+        for l in read_text(f).split("\n"):
+            var w = String(String(l).strip())
+            if w.byte_length() > 0 and w not in self.dview.watches:
+                self.dview.watches.append(w)
+        self.dview.watch_shown.clear()
+
+    def watches_save(mut self):
+        var f = self.watches_file()
+        if f.byte_length() == 0:
+            return
+        if len(self.dview.watches) == 0:
+            if path_exists(f):
+                _ = run_system("rm -f " + shell_quote(f))
+            return
+        if not path_exists(self.bp_dir):
+            _ = run_system("mkdir -p " + shell_quote(self.bp_dir))
+        _ = write_file(f, str_bytes("\n".join(self.dview.watches) + "\n"))
+
+    def watch_dialog(mut self, k: Int):
+        """Add watch (Ctrl-F7) or, for k >= 0, change the k-th."""
+        var start = String("")
+        if k >= 0 and k < len(self.dview.watches):
+            start = self.dview.watches[k]
+        else:
+            var i = self.top_editor()
+            if i >= 0:
+                start = self.word_under(i)
+        self.dv_watch_edit = k
+        var d = Dialog(D_WATCH, "Watch" if k < 0 else "Change Watch", min(60, self.scr.w - 4), 10)
+        d.lines.append("A name or a field (a, a.b) - Mojo's debugger evaluates no more.")
+        d.fields.append(Field("~E~xpression", start))
+        d.fields[0].fresh = True
+        d.buttons.append("~O~K")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def watch_save(mut self, expr: String):
+        var k = self.dv_watch_edit
+        if expr.byte_length() == 0:
+            if k >= 0 and k < len(self.dview.watches):
+                _ = self.dview.watches.pop(k)       # emptied: removed
+                self.dview.watch_shown.clear()
+        elif expr in self.dview.watches and not (k >= 0 and k < len(self.dview.watches) and self.dview.watches[k] == expr):
+            self.say(expr + " is watched already")
+            return
+        elif k >= 0 and k < len(self.dview.watches):
+            self.dview.watches[k] = expr
+        elif expr in self.dview.watches:
+            self.say(expr + " is watched already")
+            return
+        else:
+            self.dview.watches.append(expr)
+        self.watches_save()
+        if self.debugwin_index() < 0:
+            self.debugwin_toggle()
+        if self.dbg.state == DS_STOPPED:
+            self.dv_ask_watches()
+        else:
+            self.dview.watch_shown.clear()
+        self.debugwin_show()
+
+    def eval_dialog(mut self, expr: String, result: List[String]):
+        """Run > Evaluate (Ctrl-F4): a name or field, or a debugger command after ':'.
+        The answer is shown here and written to the Message window too."""
+        var h = min(self.scr.h - 2, max(11, len(result) + 10))
+        var d = Dialog(D_EVALUATE, "Evaluate", min(76, self.scr.w - 4), h)
+        if len(result) == 0:
+            d.lines.append("A name or field (total, p.x), or :command for the debugger (:frame variable).")
+        for l in result:
+            d.lines.append(l)
+        var start = expr
+        if start.byte_length() == 0:
+            var i = self.top_editor()
+            if i >= 0:
+                start = self.word_under(i)
+        d.fields.append(Field("~E~xpression", start))
+        d.fields[0].fresh = True
+        d.buttons.append("~E~valuate")
+        d.buttons.append("~W~atch")
+        d.buttons.append("~C~lose")
+        self.show(d^)
+
+    def eval_button(mut self, b: Int):
+        var expr = String(self.dlg.field_text(0).strip())
+        if b == 2 or b < 0:
+            self.mode = M_NORMAL
+            return
+        if expr.byte_length() == 0:
+            return
+        if b == 1:
+            self.mode = M_NORMAL
+            self.dv_watch_edit = -1
+            self.watch_save(expr)
+            return
+        if not self.dbg.active() or self.dbg.state != DS_STOPPED:
+            var lines = List[String]()
+            lines.append("The program has to be stopped first (a breakpoint, F4, Shift-F5 pauses).")
+            self.eval_dialog(expr, lines)
+            return
+        var args = "{\"expression\":" + json_quote(console_command(expr)) + ",\"context\":\"repl\""
+        if self.dview.sel < len(self.dview.frames):
+            args += ",\"frameId\":" + String(self.dview.frames[self.dview.sel].id)
+        elif self.dbg.stop_frame >= 0:
+            args += ",\"frameId\":" + String(self.dbg.stop_frame)
+        self.dv_eval_seq = self.dbg.ask("evaluate", args + "}")
+        self.dv_eval_expr = expr
+        var waiting = List[String]()
+        waiting.append("(asking the debugger...)")
+        self.eval_dialog(expr, waiting)
+
+    def eval_answer(mut self, ok: Bool, result: String, message: String):
+        var text = console_result(result) if ok else ("error: " + message if not message.startswith("error") else message)
+        if not ok and message == "error: invalid value object":
+            text = "cannot be evaluated: Mojo's debugger knows names and fields (a, a.b), not expressions"
+        # the console transcript, with the program's output
+        self.dbg.add_text("> " + self.dv_eval_expr + "\n" + text + ("" if text.endswith("\n") else "\n"))
+        self.debug_show(self.debug_state_line())
+        if self.mode == M_DIALOG and self.dlg.kind == D_EVALUATE:
+            var lines = List[String]()
+            for l in text.split("\n"):
+                if len(lines) < max(1, self.scr.h - 12):
+                    lines.append(String(l))
+            while len(lines) > 0 and lines[len(lines) - 1].byte_length() == 0:
+                _ = lines.pop()
+            var again = self.dv_eval_expr
+            self.eval_dialog(again, lines)

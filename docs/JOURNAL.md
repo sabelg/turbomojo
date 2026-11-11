@@ -2629,3 +2629,55 @@ Built:
   after `stepIn` in the request log; the Debug window's `scopes` / `variables` requests
   now come in between). The test now checks the order of stepIn and stepOut only.
 - Verified: `scripts/check.sh` → `CHECK OK`, 49 test files, 903 tests, smoke ok.
+
+## 2026-11-10 · P4-05 Watches and debug console with evaluate · done
+
+Probed first with the real `mojo-lldb-dap`, stopped in the probe program:
+
+- `evaluate` (context "watch") works for names and fields: `total`, `p.x`, `p`. It
+  fails with "error: invalid value object" for anything else: `items[2]`, `total + 1`,
+  an unknown name.
+- Context "repl" answers names as `(String)  = "mojo"`. **LLDB commands work in the
+  repl context when written plainly (`thread list`, `frame variable`, `help`) or with a
+  backquote; with a colon they fail** - although the adapter's own welcome text says
+  "Inputs prefixed with a colon are treated as LLDB commands". `frame variable` gives a
+  readable dump (`(Point) p = (x = 4, y = 2.5)`, the List's elements).
+- `completions` returns no targets (for "it" or "p."), although the capability is
+  announced.
+
+Built:
+
+- Watches: Run ▸ Add watch (Ctrl-F7, the word at the cursor offered); a "Watches"
+  section in the Debug window between the stack and the variables; each watch is
+  evaluated in the frame shown at every stop (and when the frame changes), shown as
+  `total = 8   Int`, `p: Point`, or `total + 1: cannot be evaluated (only names and
+  fields: a, a.b)`; Enter changes a watch, Del removes it, duplicates are refused;
+  adding one opens the Debug window. Kept per project next to the breakpoints
+  (`<hash>.watches`).
+- Evaluate (Ctrl-F4, Run menu): a dialog with the expression; the answer is shown in
+  the dialog, which stays open for the next question; Watch adds the expression. A
+  leading ":" is turned into the backquote LLDB wants, so `:frame variable` works as the
+  welcome text promises. One-value answers are written the Mojo way (`"mojo"   String`,
+  `8   Int`). Every question and answer goes into the Message window with the
+  program's output, which makes it the debug console's transcript. Asked while nothing
+  is stopped, it says to stop first.
+- Tests (`tests/test_debugview.mojo`, now 6): the watch and console texts (from the
+  real answers), and in the IDE: adding (before a session), duplicates, the file, the
+  values at the stop, delete, change, Evaluate of a name, of `:frame variable` (exact
+  request with the backquote, exact lines), of an expression, Watch from the dialog,
+  the transcript in the Message window, Evaluate while not stopped, watches read again
+  by a new IDE. The fake adapter answers `evaluate` the way the real one does.
+- Looked at in tmux with the real adapter: watches `total`, `p.x`, `total + 1` set
+  before the session; at line 19 they show `total = 8 Int`, `p.x = 4 Int` and the
+  "cannot be evaluated" note; Ctrl-F4 `:frame variable` lists every local in the dialog
+  and in the Message window; `name` → `"mojo"`.
+- Not done / unverified:
+  - No completion in the Evaluate field: the adapter returns none.
+  - Hover evaluation in the editor (mentioned in the roadmap's Phase 4 table) is not
+    done; F1 / hover still show documentation.
+  - The console is a dialog plus the transcript, not a panel with its own prompt.
+  - After adding a watch from the editor, the keyboard is in the Debug window (Esc or
+    Alt-1 goes back) - I noticed it in tmux; it is how other windows behave here too.
+- The first gate run failed in `test_commands`: E~v~aluate took the hot letter of
+  Remo~v~e all breakpoints, which is now "Remove all breakpoi~n~ts".
+- Verified: `scripts/check.sh` → `CHECK OK`, 49 test files, 905 tests, smoke ok.

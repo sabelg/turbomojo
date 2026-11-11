@@ -21,6 +21,44 @@ comptime VK_HEAD = 0         # a title line
 comptime VK_FRAME = 1        # a frame of the call stack
 comptime VK_VAR = 2          # a variable
 comptime VK_NOTE = 3         # an explanation ("no variables", "loading")
+comptime VK_WATCH = 4        # a watched expression
+
+
+def watch_text(expr: String, ok: Bool, value: String, type: String, error: String) -> String:
+    """One watch as the Debug window shows it."""
+    if not ok:
+        var why = error
+        if why == "error: invalid value object" or why.byte_length() == 0:
+            # what Mojo 1.2's debugger answers for anything but a name or a field
+            why = "cannot be evaluated (only names and fields: a, a.b)"
+        return expr + ": " + why
+    var t = nice_type(type)
+    var v = nice_value(value)
+    if v == t:
+        return expr + ": " + t
+    return expr + " = " + v + (("   " + t) if t.byte_length() > 0 else String(""))
+
+
+def console_command(text: String) -> String:
+    """What the console sends: a leading ':' (as the debugger's welcome text suggests)
+    becomes the backquote that makes LLDB take the line as a command."""
+    var t = String(text.strip())
+    if t.startswith(":"):
+        return "`" + String(t[byte=1:])
+    return t
+
+
+def console_result(text: String) -> String:
+    """A console answer for one value, "(String)  = \"mojo\"", as "\"mojo\"   String";
+    anything else (several lines, command output) stays as it is."""
+    if not text.startswith("(") or text.find("\n") >= 0:
+        return text
+    var close = text.find(")  = ")
+    if close < 0:
+        return text
+    var t = nice_type(String(text[byte=1:close]))
+    var v = nice_value(String(text[byte=close + 5:]))
+    return v + "   " + t
 
 
 def is_hex(s: String) -> Bool:
@@ -254,6 +292,8 @@ struct DebugView(Copyable, Movable):
     var note: String                # instead of variables ("loading", "none", an error)
     var rows_kind: List[Int]        # what each line of the window is (VK_...)
     var rows_index: List[Int]       # ... and which frame or node
+    var watches: List[String]       # watched expressions
+    var watch_shown: List[String]   # how each is shown now
 
     def __init__(out self):
         self.frames = List[FrameRow]()
@@ -263,6 +303,8 @@ struct DebugView(Copyable, Movable):
         self.note = ""
         self.rows_kind = List[Int]()
         self.rows_index = List[Int]()
+        self.watches = List[String]()
+        self.watch_shown = List[String]()
 
     def clear(mut self):
         self.frames.clear()
@@ -361,6 +403,18 @@ struct DebugView(Copyable, Movable):
             out.append(("► " if k == self.sel else "  ") + f.name + "   " + place)
             self.rows_kind.append(VK_FRAME)
             self.rows_index.append(k)
+        if len(self.watches) > 0:
+            out.append("")
+            self.rows_kind.append(VK_NOTE)
+            self.rows_index.append(-1)
+            out.append("Watches")
+            self.rows_kind.append(VK_HEAD)
+            self.rows_index.append(-1)
+            for k in range(len(self.watches)):
+                var shown = self.watch_shown[k] if k < len(self.watch_shown) else String("")
+                out.append("  " + (shown if shown.byte_length() > 0 else self.watches[k] + ": ?"))
+                self.rows_kind.append(VK_WATCH)
+                self.rows_index.append(k)
         out.append("")
         self.rows_kind.append(VK_NOTE)
         self.rows_index.append(-1)

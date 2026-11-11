@@ -220,6 +220,25 @@ while True:
     elif cmd == "scopes":
         fid = m["arguments"]["frameId"]
         respond(m, {"scopes": [{"name": "Locals", "presentationHint": "locals", "variablesReference": 1 if fid == 100 else 50}, {"name": "Registers", "presentationHint": "registers", "variablesReference": 3, "expensive": True}]})
+    elif cmd == "evaluate":
+        a = m["arguments"]
+        e = a["expression"]
+        IDX = "__mlir_type.`!kgen.scalar<index>`"
+        known = {"n": (raw(memory["0xFF00"]), IDX), "p.x": (raw(4), IDX), "p": ("Point", "Point")}
+        if a.get("frameId") == 101:
+            known = {"r": (raw(7), IDX)}
+        if e.startswith("`"):
+            if e == "`frame variable":
+                respond(m, {"result": "(%s) n = %d\n(Point) p = (x = 4, y = 2.5)\n" % (IDX, memory["0xFF00"]), "variablesReference": 0})
+            else:
+                respond(m, {"error": {"id": 3, "format": "error: '%s' is not a valid command." % e[1:].split()[0]}}, success=False, message="failed")
+        elif e in known:
+            value, typ = known[e]
+            if a.get("context") == "repl":
+                value = "(%s)  = %s" % (typ, value.split("  ")[-1])
+            respond(m, {"result": value, "type": typ, "variablesReference": 0})
+        else:
+            respond(m, {"error": {"id": 3, "format": "error: invalid value object"}}, success=False, message="failed")
     elif cmd == "variables":
         respond(m, {"variables": variables(m["arguments"]["variablesReference"])})
     elif cmd == "writeMemory":
