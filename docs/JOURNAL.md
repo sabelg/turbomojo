@@ -2448,3 +2448,64 @@ What was built:
   - The gate's tests use the fake adapter only; the real one is covered by the manual
     check above until P4-07.
 - Verified: `scripts/check.sh` → `CHECK OK`, 47 test files, 888 tests, smoke ok.
+
+## 2026-11-10 · P4-02 Breakpoints: gutter toggle, conditional, hit-count, log points, function; persisted · done
+
+Probed first with the real `mojo-lldb-dap` on `examples/hello.mojo` (plugin loaded):
+
+- `setBreakpoints` answers in request order with `verified`, the line used and an id;
+  later `breakpoint` events (reason "changed") repeat ids as the code is loaded.
+  `setFunctionBreakpoints`: `fib` is placed (line 16), an unknown name comes back
+  `verified: false`.
+- **Hit counts work**: `hitCondition: "5"` on line 12 stopped with `by` = 4, 5, 6 -
+  from the fifth hit on.
+- **Conditions do not**: with `condition: "by == 7"` it stopped on every call;
+  `evaluate "by == 7"` answers "error: invalid value object", while `evaluate "by"`
+  gives `0000000000000000  0` (raw bytes, then the value). LLDB stops when it cannot
+  evaluate a condition. So with Mojo 1.2 a condition is useless; the dialog says so.
+- Log points work, but a `{by}` in the message comes out as the raw form above.
+
+Built:
+
+- `src/breakpoints.mojo`: `Breakpoint` (line or function; enabled, condition, hit
+  count, log message; what the debugger said: verified, actual line, id), `Breakpoints`
+  (toggle, function breakpoints, by file / ordered, `set_rows` - lines move with the
+  text, two that meet become one; the request JSON; applying answers and later
+  changes), a tab-separated file with escapes, kept per project in
+  `<state>/breakpoints/<project hash>.breakpoints` (removed when empty).
+- `TextBuffer.bps`: the rows move with insertions and deletions like folds do (a line
+  break typed at the start of a line moves its breakpoint down; deleted lines' ones
+  gather on the line that is left). The IDE reads them back on every draw (`bp_sync`),
+  so the list, the gutter and the debugger agree; a moved breakpoint is sent again.
+- Gutter: the line number on the alarm colour with ● / ◆, an outline ○ / ◌ for off or
+  not placed. A click on a line number toggles (the fold marker column still folds).
+- Run menu: Toggle breakpoint (Ctrl-F8), Breakpoint condition..., Function
+  breakpoint... (offers the word at the cursor), Breakpoints... (Go to, Edit, On/off,
+  Delete), Remove all breakpoints.
+- Debugger: breakpoints are part of the configuration before configurationDone;
+  changes while the program runs or is stopped are sent at once; answers and
+  `breakpoint` events update the marks; the session's answers are forgotten when it
+  ends. Log messages (console output once the process exists) appear with the
+  program's output.
+- Tests: `tests/test_breakpoints.mojo` (9): the list, looks and descriptions, the file
+  (escapes, junk lines, wrong header), moving rows, request JSON and answers; in the
+  IDE: the gutter and clicks, edits moving them and keeping them across IDE runs,
+  removing all, the dialogs, and a session with the fake adapter (placed, moved by the
+  debugger, refused, function breakpoints, log output, a breakpoint added while
+  stopped). The fake adapter learned breakpoints; `tests/test_dap.mojo` now also checks
+  the report for configured breakpoints.
+- Looked at in tmux with the real adapter: Ctrl-F8 on line 12 of hello.mojo, Shift-F5
+  → "Stopped: breakpoint 1.1 at hello.mojo:12 in hello::Counter::bump(...)", the
+  editor on line 12; Shift-F5 → stopped there again; Ctrl-F8 (removed while stopped),
+  Shift-F5 → ran to the end. A first attempt of mine typed stray keys into the file;
+  the IDE kept the unsaved change, offered it again on the next start, and Debug saved
+  it - `examples/hello.mojo` was restored from git, nothing of it is committed.
+- Not done / unverified:
+  - Conditions are passed to the debugger but do not work with Mojo 1.2 (above).
+  - Data breakpoints (watchpoints) and instruction breakpoints are not offered (the
+    adapter supports them; they belong with the Variables and Disassembly views).
+  - A breakpoint in a file that is edited and not saved is sent with its line in the
+    edited text, which the program being debugged (built from the saved file) may not
+    match. Debug saves first, so this only happens for edits made during a session.
+  - Breakpoints of files outside the project are kept too, in the project's list.
+- Verified: `scripts/check.sh` → `CHECK OK`, 48 test files, 897 tests, smoke ok.

@@ -54,6 +54,7 @@ from app_mouse import *
 from app_draw import *
 from app_docs import *
 from dap import *
+from breakpoints import *
 
 
 __extension App:
@@ -119,6 +120,13 @@ __extension App:
         self.dbg_source = source
         var cmd = self.debug_adapter_command()
         var args = split_arguments(self.run_args)
+        # the breakpoints go to the adapter while it is being configured
+        self.bp_sync()
+        self.dbg.clear_config()
+        for f in self.bps.files():
+            self.dbg.set_config(f, "setBreakpoints", self.bps.source_request(f))
+        if len(self.bps.sent_functions()) > 0:
+            self.dbg.set_config("", "setFunctionBreakpoints", self.bps.function_request())
         if not self.dbg.begin(cmd, exe, dirname(source), args, log):
             var why = self.dbg.error
             self.info("Debug", why)
@@ -166,6 +174,8 @@ __extension App:
                 self.say("Stopped: " + self.dbg.stop_text)
             elif e == DE_LOCATED:
                 self.debug_show_stop()
+            elif e == DE_BREAKPOINTS:
+                self.bp_take_reports()
             elif e == DE_FAILED or e == DE_ENDED:
                 over = True
         if over:
@@ -189,6 +199,8 @@ __extension App:
         and say how it ended."""
         var failed = self.dbg.error
         self.dbg.finish()
+        self.bps.forget_debugger()
+        self.bp_stamp += 1
         var footer: String
         if failed.byte_length() > 0:
             footer = failed
@@ -206,3 +218,268 @@ __extension App:
             if len(self.dbg.console) > 0:
                 tail = " - " + String(self.dbg.console[len(self.dbg.console) - 1].strip())
             self.info("Debug", failed + tail)
+
+    # ========================================================== breakpoints
+    def bp_file(self) -> String:
+        """The file this project's breakpoints are kept in ('' if they are not kept)."""
+        if self.bp_dir.byte_length() == 0:
+            return ""
+        var h = content_hash(str_bytes(self.symidx_root()))
+        var digits = "0123456789abcdef"
+        var name = String("")
+        for _ in range(16):
+            name = String(digits[byte=h % 16:h % 16 + 1]) + name
+            h = h // 16
+        return self.bp_dir + "/" + name + ".breakpoints"
+
+    def bp_enable(mut self, dir: String):
+        """Keep breakpoints between runs of the IDE, in `dir`; read this project's."""
+        self.bp_dir = dir
+        var f = self.bp_file()
+        if f.byte_length() > 0 and path_exists(f):
+            self.bps.decode(read_text(f))
+            self.bp_stamp += 1
+
+    def bp_save(mut self):
+        var f = self.bp_file()
+        if f.byte_length() == 0:
+            return
+        if len(self.bps.items) == 0:
+            if path_exists(f):
+                _ = run_system("rm -f " + shell_quote(f))
+            return
+        if not path_exists(self.bp_dir):
+            _ = run_system("mkdir -p " + shell_quote(self.bp_dir))
+        _ = write_file(f, str_bytes(self.bps.encode()))
+
+    def bp_sync(mut self):
+        """Bring the list and the open files together: a file that already shows the
+        current list tells where its breakpoints have moved to with the text; any
+        other file is given its breakpoints."""
+        var moved = List[String]()
+        for i in range(len(self.wins)):
+            if self.wins[i].kind != WK_EDITOR or self.wins[i].path.byte_length() == 0:
+                continue
+            if self.wins[i].buf.bp_stamp == self.bp_stamp:
+                var rows = self.wins[i].buf.bps.copy()
+                var path = self.wins[i].path
+                if path not in moved and self.bps.set_rows(path, rows):
+                    moved.append(path)
+        if len(moved) > 0:
+            self.bp_stamp += 1
+        for i in range(len(self.wins)):
+            if self.wins[i].kind != WK_EDITOR or self.wins[i].path.byte_length() == 0:
+                continue
+            if self.wins[i].buf.bp_stamp != self.bp_stamp:
+                var rows = List[Int]()
+                var looks = List[Int]()
+                for k in self.bps.of_file(self.wins[i].path):
+                    rows.append(self.bps.items[k].line - 1)
+                    looks.append(self.bps.items[k].look())
+                self.wins[i].buf.bps = rows^
+                self.wins[i].buf.bp_looks = looks^
+                self.wins[i].buf.bp_stamp = self.bp_stamp
+        for p in moved:
+            self.bp_send(p)
+
+    def bp_send(mut self, path: String):
+        """Tell a running debugger about the breakpoints of a file ('' = functions)."""
+        if not self.dbg.can_send():
+            return
+        if path.byte_length() == 0:
+            self.dbg.send_breakpoints("", "setFunctionBreakpoints", self.bps.function_request())
+        else:
+            self.dbg.send_breakpoints(path, "setBreakpoints", self.bps.source_request(path))
+
+    def bp_changed(mut self, path: String):
+        """The list was changed (for this file; '' = function breakpoints): show it,
+        keep it, tell the debugger."""
+        self.bp_stamp += 1
+        self.bp_sync()
+        self.bp_save()
+        self.bp_send(path)
+
+    def bp_take_reports(mut self):
+        """What the debugger said about breakpoints goes into the list."""
+        for r in self.dbg.reports:
+            self.bps.apply_report(r.tag, r.verified, r.lines, r.ids)
+        self.dbg.reports.clear()
+        for k in range(len(self.dbg.changed_ids)):
+            self.bps.apply_change(self.dbg.changed_ids[k], self.dbg.changed_ok[k], self.dbg.changed_lines[k])
+        self.dbg.changed_ids.clear()
+        self.dbg.changed_ok.clear()
+        self.dbg.changed_lines.clear()
+        self.bp_sync()              # (edits first: the stamp is about to change)
+        self.bp_stamp += 1
+        self.bp_sync()
+
+    def bp_toggle_at(mut self, i: Int, row: Int):
+        var path = self.wins[i].path
+        if path.byte_length() == 0:
+            self.say("Save the file first: a breakpoint needs its name")
+            return
+        self.bp_sync()
+        var added = self.bps.toggle(path, row + 1)
+        self.bp_changed(path)
+        self.say(("Breakpoint set on line " if added else "Breakpoint removed from line ") + String(row + 1))
+
+    def bp_toggle(mut self):
+        var i = self.top_editor()
+        if i < 0:
+            return
+        self.bp_toggle_at(i, self.wins[i].cr)
+
+    def bp_edit_dialog(mut self, k: Int, path: String, line: Int):
+        """The dialog for one breakpoint: the k-th of the list, or (k < 0) a new one."""
+        var b = Breakpoint(path, line)
+        if k >= 0:
+            b = self.bps.items[k].copy()
+        self.bp_edit = k
+        self.bp_edit_path = path
+        self.bp_edit_line = line
+        var what = (b.name + "()") if b.is_function() else (basename(b.path) + ":" + String(b.line))
+        var d = Dialog(D_BREAKPOINT, "Breakpoint " + what, min(76, self.scr.w - 4), 16 if b.is_function() else 18)
+        d.lines.append("Empty fields mean: stop every time.")
+        # found by trying: Mojo 1.2's debugger cannot evaluate Mojo expressions, and a
+        # condition it cannot evaluate makes it stop every time
+        d.lines.append("Note: Mojo's debugger cannot evaluate most conditions yet - it then stops every time.")
+        d.fields.append(Field("~C~ondition (stop only when true)", b.condition))
+        d.fields.append(Field("~H~it count (as the debugger reads it, e.g. 5)", b.hit))
+        if not b.is_function():
+            d.fields.append(Field("~L~og message instead of stopping ({name} = a value)", b.log))
+        d.checks.append("~E~nabled")
+        d.check_vals.append(b.enabled)
+        d.buttons.append("~O~K")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def bp_edit_here(mut self):
+        """Run > Breakpoint condition: the breakpoint of the cursor's line."""
+        var i = self.top_editor()
+        if i < 0:
+            return
+        var path = self.wins[i].path
+        if path.byte_length() == 0:
+            self.say("Save the file first: a breakpoint needs its name")
+            return
+        self.bp_sync()
+        var line = self.wins[i].cr + 1
+        self.bp_edit_dialog(self.bps.find(path, line), path, line)
+
+    def bp_edit_save(mut self):
+        var k = self.bp_edit
+        if k < 0:
+            k = self.bps.find(self.bp_edit_path, self.bp_edit_line)
+            if k < 0:
+                self.bps.items.append(Breakpoint(self.bp_edit_path, self.bp_edit_line))
+                k = len(self.bps.items) - 1
+        if k >= len(self.bps.items):
+            return
+        self.bps.items[k].condition = String(self.dlg.field_text(0).strip())
+        self.bps.items[k].hit = String(self.dlg.field_text(1).strip())
+        if not self.bps.items[k].is_function():
+            self.bps.items[k].log = String(self.dlg.field_text(2).strip())
+        self.bps.items[k].enabled = self.dlg.check_vals[0]
+        var path = self.bps.items[k].path
+        var text = self.bps.items[k].describe()
+        self.bp_changed(path)
+        self.say("Breakpoint " + text)
+
+    def bp_function_dialog(mut self):
+        var d = Dialog(D_BPFUNC, "Function Breakpoint", min(64, self.scr.w - 4), 10)
+        d.lines.append("Stop when this function is entered.")
+        var word = String("")
+        var i = self.top_editor()
+        if i >= 0:
+            word = self.word_under(i)
+        d.fields.append(Field("~F~unction name", word))
+        d.buttons.append("~O~K")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def bp_function_add(mut self, name: String):
+        if name.byte_length() == 0:
+            return
+        if not self.bps.add_function(name):
+            self.say("There is a breakpoint on " + name + "() already")
+            return
+        self.bp_changed("")
+        self.say("Breakpoint set on the function " + name)
+
+    def bp_list_dialog(mut self, sel: Int):
+        """Run > Breakpoints: every breakpoint of the project."""
+        self.bp_sync()
+        var order = self.bps.ordered()
+        if len(order) == 0:
+            self.say("No breakpoints - " + self.reg.key_label(CM_BP_TOGGLE) + " sets one on the cursor's line")
+            return
+        var items = List[String]()
+        var data = List[Int]()
+        var signs = ["●", "○", "◆", "◌"]
+        var root = self.symidx_root()
+        for k in order:
+            var b = self.bps.items[k].copy()
+            var text = b.describe()
+            if not b.is_function() and b.path.startswith(root + "/"):
+                # inside the project the folder tells files of one name apart
+                var rel = String(b.path[byte=root.byte_length() + 1:])
+                if rel != basename(b.path):
+                    text += "   " + dirname(rel) + "/"
+            items.append(String(signs[b.look() - 1]) + " " + text)
+            data.append(k)
+        var d = Dialog(D_BREAKPOINTS, "Breakpoints", min(84, self.scr.w - 4), min(22, max(10, len(items) + 7)))
+        d.lines.append("● stops   ◆ has a condition, count or message   ○ off   ◌ not placed by the debugger")
+        d.set_items(items^, data^)
+        d.list_sel = max(0, min(sel, len(order) - 1))
+        d.buttons.append("~G~o to")
+        d.buttons.append("~E~dit")
+        d.buttons.append("~O~n/off")
+        d.buttons.append("~D~elete")
+        d.buttons.append("~C~lose")
+        self.show(d^)
+
+    def bp_list_button(mut self, b: Int, sel: Int) raises:
+        """A button of the list (0 Go to, 1 Edit, 2 On/off, 3 Delete)."""
+        if sel < 0 or sel >= len(self.dlg.item_data) or b > 3:
+            return
+        var k = self.dlg.item_data[sel]
+        if k < 0 or k >= len(self.bps.items):
+            return
+        var path = self.bps.items[k].path
+        var line = self.bps.items[k].line
+        if b == 0:
+            if path.byte_length() == 0:
+                self.say("A function breakpoint has no line to go to")
+                return
+            if not path_exists(path):
+                self.say("The file is gone: " + path)
+                return
+            self.jump_mark()
+            self.open_path(path)
+            var t = self.top()
+            self.wins[t].goto(line - 1, 0)
+        elif b == 1:
+            self.bp_edit_dialog(k, path, line)
+        elif b == 2:
+            self.bps.items[k].enabled = not self.bps.items[k].enabled
+            self.bp_changed(path)
+            self.bp_list_dialog(sel)
+        elif b == 3:
+            _ = self.bps.items.pop(k)
+            self.bp_changed(path)
+            self.bp_list_dialog(sel)
+
+    def bp_clear_all(mut self):
+        var n = len(self.bps.items)
+        if n == 0:
+            self.say("No breakpoints")
+            return
+        var files = self.bps.files()
+        self.bps.items.clear()
+        self.bp_stamp += 1
+        self.bp_sync()
+        self.bp_save()
+        for f in files:
+            self.bp_send(f)
+        self.bp_send("")
+        self.say("Removed " + count_of(n, "breakpoint"))

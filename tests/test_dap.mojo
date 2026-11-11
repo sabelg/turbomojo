@@ -40,7 +40,7 @@ def adapter(d: String, mode: String = "") -> String:
 
 
 def names(events: List[Int]) -> String:
-    var words = ["?", "output", "running", "stopped", "located", "exited", "ended", "failed"]
+    var words = ["?", "output", "running", "stopped", "located", "exited", "ended", "failed", "breakpoints"]
     var s = String("")
     for e in events:
         if s.byte_length() > 0:
@@ -62,6 +62,8 @@ def run_until(mut s: DebugSession, last: Int, timeout_ms: Int = 5000) -> String:
         for e in s.pump():
             if e == DE_OUTPUT and len(seen) > 0 and seen[len(seen) - 1] == DE_OUTPUT:
                 continue
+            if e == DE_BREAKPOINTS and last != DE_BREAKPOINTS:
+                continue            # (tested in test_breakpoints.mojo)
             seen.append(e)
             if e == last:
                 done = True
@@ -174,8 +176,7 @@ def test_adapter_command_loads_the_mojo_plugin() raises:
 def test_a_program_runs_to_its_end() raises:
     var d = scratch("run")
     var s = DebugSession()
-    s.config_cmds.append("setBreakpoints")
-    s.config_args.append("{\"source\":{\"path\":\"/p/a.mojo\"},\"breakpoints\":[{\"line\":4}]}")
+    s.set_config("/p/a.mojo", "setBreakpoints", "{\"source\":{\"path\":\"/p/a.mojo\"},\"breakpoints\":[{\"line\":4}]}")
     var args = List[String]()
     args.append("first")
     args.append("second arg")
@@ -189,6 +190,10 @@ def test_a_program_runs_to_its_end() raises:
     assert_true(s.exited)
     assert_equal(s.exit_code, 3)
     assert_equal(" | ".join(s.console), "Welcome to fake debugging\n")
+    # the answer about the breakpoints, for the file they were sent for
+    assert_equal(len(s.reports), 1)
+    assert_equal(s.reports[0].tag, "/p/a.mojo")
+    assert_true(s.reports[0].verified[0])
     # what the adapter said it can do - at the start and later
     assert_true(s.supports("supportsConfigurationDoneRequest") and s.supports("supportsConditionalBreakpoints"))
     assert_true(s.supports("supportsRestartRequest"))

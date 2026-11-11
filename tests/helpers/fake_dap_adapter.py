@@ -11,6 +11,10 @@ The program named in `launch` chooses what the "debuggee" does:
     .../forever   runs until the session is ended; a real child process stands in for
                   the debuggee and its pid is reported
     .../nostart   the launch fails
+    .../bp        stops at the first breakpoint it was given (thread 7), then exits
+Breakpoints: lines from 1000 on cannot be placed; line 99 is placed on line 100; the
+first breakpoint is reported again by a "breakpoint" event (changed, verified) once the
+program runs; the log messages of the breakpoints are written to the console when the program starts.
 Modes: "die" - the adapter exits right after `initialize`; "deaf" - `disconnect` is
 ignored (the client must stop adapter and debuggee by itself); "ask" - the adapter sends a
 runInTerminal request before it launches.
@@ -77,6 +81,9 @@ def note(text):
 
 launch = None
 program = ""
+next_id = 0
+breakpoints = []    # (path, line, id) as last set, file by file
+logs = []
 while True:
     m = read_message()
     if m is None:
@@ -101,15 +108,47 @@ while True:
         event("output", {"category": "console", "output": "Welcome to fake debugging\n"})
         event("initialized")
     elif cmd == "setBreakpoints":
-        lines = [b["line"] for b in m["arguments"].get("breakpoints", [])]
-        respond(m, {"breakpoints": [{"verified": True, "line": l} for l in lines]})
+        path = m["arguments"]["source"]["path"]
+        breakpoints = [b for b in breakpoints if b[0] != path]
+        logs = []
+        out_bps = []
+        for b in m["arguments"].get("breakpoints", []):
+            next_id += 1
+            line = b["line"]
+            if line >= 1000:
+                out_bps.append({"id": next_id, "verified": False, "message": "no code"})
+                continue
+            if line == 99:
+                line = 100
+            breakpoints.append((path, line, next_id))
+            if "logMessage" in b:
+                logs.append(b["logMessage"])
+            out_bps.append({"id": next_id, "verified": True, "line": line, "source": {"path": path}})
+        respond(m, {"breakpoints": out_bps})
+    elif cmd == "setFunctionBreakpoints":
+        out_bps = []
+        for b in m["arguments"].get("breakpoints", []):
+            next_id += 1
+            out_bps.append({"id": next_id, "verified": b["name"] != "nosuch", "line": 3 if b["name"] != "nosuch" else 0})
+        respond(m, {"breakpoints": out_bps})
     elif cmd == "setExceptionBreakpoints":
         respond(m, {})
     elif cmd == "configurationDone":
         respond(m)
         respond(launch)
         event("capabilities", {"capabilities": {"supportsRestartRequest": True}})
-        if program == "forever":
+        if program == "bp":
+            event("process", {"name": program, "systemProcessId": 0})
+            for text in logs:      # as the real adapter does: on the console, once the program runs
+                event("output", {"category": "console", "output": text + "\n"})
+            if breakpoints:
+                event("breakpoint", {"reason": "changed", "breakpoint": {"id": breakpoints[0][2], "verified": True, "line": breakpoints[0][1]}})
+                stop_at = breakpoints[0]
+                event("stopped", {"reason": "breakpoint", "description": "breakpoint %d.1" % stop_at[2], "threadId": 7, "hitBreakpointIds": [stop_at[2]]})
+            else:
+                event("exited", {"exitCode": 0})
+                event("terminated")
+        elif program == "forever":
             child = subprocess.Popen(["sleep", "300"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             event("process", {"name": program, "systemProcessId": child.pid})
             event("output", {"category": "stdout", "output": "started\r\n"})
@@ -124,7 +163,10 @@ while True:
             event("exited", {"exitCode": 3})
             event("terminated")
     elif cmd == "stackTrace":
-        respond(m, {"stackFrames": [{"id": 1, "name": "stop::main()", "line": 12, "column": 5, "source": {"name": "stop.mojo", "path": os.environ.get("FAKE_DAP_SOURCE", "/src/stop.mojo")}}], "totalFrames": 3})
+        if program == "bp" and breakpoints:
+            respond(m, {"stackFrames": [{"id": 1, "name": "bp::main()", "line": breakpoints[0][1], "column": 1, "source": {"path": breakpoints[0][0]}}], "totalFrames": 1})
+        else:
+            respond(m, {"stackFrames": [{"id": 1, "name": "stop::main()", "line": 12, "column": 5, "source": {"name": "stop.mojo", "path": os.environ.get("FAKE_DAP_SOURCE", "/src/stop.mojo")}}], "totalFrames": 3})
     elif cmd == "continue":
         respond(m, {"allThreadsContinued": True})
         event("continued", {"threadId": 7, "allThreadsContinued": True})

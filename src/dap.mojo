@@ -41,6 +41,7 @@ comptime DE_LOCATED = 4      # the place it stopped at is known (stop_file, stop
 comptime DE_EXITED = 5       # the program ended (exit_code)
 comptime DE_ENDED = 6        # the session is over: the adapter said so, or went away
 comptime DE_FAILED = 7       # the session could not be set up (error says why)
+comptime DE_BREAKPOINTS = 8  # the debugger said where breakpoints are (reports, changed_*)
 
 
 struct DapMessage(Copyable, Movable):
@@ -293,6 +294,21 @@ def split_arguments(line: String) -> List[String]:
     return out^
 
 
+struct BpReport(Copyable, Movable):
+    """The debugger's answer for the breakpoints of one file ('' = function
+    breakpoints), in the order they were sent."""
+    var tag: String
+    var verified: List[Bool]
+    var lines: List[Int]
+    var ids: List[Int]
+
+    def __init__(out self, tag: String):
+        self.tag = tag
+        self.verified = List[Bool]()
+        self.lines = List[Int]()
+        self.ids = List[Int]()
+
+
 struct DebugSession(Copyable, Movable):
     var conn: DapConn
     var state: Int
@@ -302,6 +318,14 @@ struct DebugSession(Copyable, Movable):
     var caps: List[String]          # the capabilities the adapter said it has
     var config_cmds: List[String]   # requests to send when the adapter is ready for its
     var config_args: List[String]   #   configuration (breakpoints), before configurationDone
+    var config_tags: List[String]   # the file each of them is about ('' = functions)
+    var bp_seqs: List[Int]          # breakpoint requests that wait for their answer
+    var bp_tags: List[String]
+    var reports: List[BpReport]     # answers the IDE has not taken yet
+    var changed_ids: List[Int]      # single breakpoints the debugger changed later
+    var changed_ok: List[Bool]
+    var changed_lines: List[Int]
+    var launched: Bool              # the program's process exists
     var output: List[UInt8]         # what the program wrote (stdout and stderr)
     var console: List[String]       # what the debugger itself said
     var pid: Int                    # the program's process (0: not known)
@@ -325,6 +349,14 @@ struct DebugSession(Copyable, Movable):
         self.caps = List[String]()
         self.config_cmds = List[String]()
         self.config_args = List[String]()
+        self.config_tags = List[String]()
+        self.bp_seqs = List[Int]()
+        self.bp_tags = List[String]()
+        self.reports = List[BpReport]()
+        self.changed_ids = List[Int]()
+        self.changed_ok = List[Bool]()
+        self.changed_lines = List[Int]()
+        self.launched = False
         self.output = List[UInt8]()
         self.console = List[String]()
         self.pid = 0
@@ -356,6 +388,13 @@ struct DebugSession(Copyable, Movable):
         self.exited = False
         self.exit_code = 0
         self.error = ""
+        self.bp_seqs.clear()
+        self.bp_tags.clear()
+        self.reports.clear()
+        self.changed_ids.clear()
+        self.changed_ok.clear()
+        self.changed_lines.clear()
+        self.launched = False
         self.clear_stop()
 
     def clear_stop(mut self):
@@ -381,6 +420,27 @@ struct DebugSession(Copyable, Movable):
         _ = self.conn.request("initialize", initialize_arguments())
         return True
 
+    def can_send(self) -> Bool:
+        """The adapter takes breakpoint changes now (the program runs or is stopped)."""
+        return self.state == DS_RUNNING or self.state == DS_STOPPED
+
+    def set_config(mut self, tag: String, command: String, args_json: String):
+        """One more request for the configuration phase of the next session."""
+        self.config_tags.append(tag)
+        self.config_cmds.append(command)
+        self.config_args.append(args_json)
+
+    def clear_config(mut self):
+        self.config_tags.clear()
+        self.config_cmds.clear()
+        self.config_args.clear()
+
+    def send_breakpoints(mut self, tag: String, command: String, args_json: String):
+        """Send the breakpoints of one file (or the function breakpoints); the answer
+        comes back as a report with this tag."""
+        self.bp_seqs.append(self.conn.request(command, args_json))
+        self.bp_tags.append(tag)
+
     def add_text(mut self, text: String):
         for b in text.as_bytes():
             self.output.append(b)
@@ -400,7 +460,10 @@ struct DebugSession(Copyable, Movable):
         if m.name == "initialized":
             # the adapter is ready to be configured: breakpoints first, then go
             for k in range(len(self.config_cmds)):
-                _ = self.conn.request(self.config_cmds[k], self.config_args[k])
+                var tag = self.config_tags[k] if k < len(self.config_tags) else String("")
+                var command = self.config_cmds[k]
+                var args = self.config_args[k]
+                self.send_breakpoints(tag, command, args)
             _ = self.conn.request("setExceptionBreakpoints", "{\"filters\":[]}")
             if self.supports("supportsConfigurationDoneRequest"):
                 _ = self.conn.request("configurationDone")
@@ -416,13 +479,28 @@ struct DebugSession(Copyable, Movable):
                 return DE_OUTPUT
             if cat == "console" or cat == "important":
                 self.console.append(text)
+                # once the program runs, the debugger's console carries the messages
+                # of log points; its note that the process ended is told another way
+                if self.launched and not (text.startswith("Process ") and text.find(" exited with status") > 0):
+                    self.add_text(text)
+                    return DE_OUTPUT
             return 0
         if m.name == "process":
             self.pid = m.doc.int(m.doc.get(b, "systemProcessId"), 0)
+            self.launched = True
             return 0
         if m.name == "capabilities":
             self.take_capabilities(m.doc, m.doc.get(b, "capabilities"))
             return 0
+        if m.name == "breakpoint":
+            var bp = m.doc.get(b, "breakpoint")
+            var id = m.doc.int(m.doc.get(bp, "id"), -1)
+            if id < 0:
+                return 0
+            self.changed_ids.append(id)
+            self.changed_ok.append(m.doc.bool(m.doc.get(bp, "verified"), False))
+            self.changed_lines.append(m.doc.int(m.doc.get(bp, "line"), 0))
+            return DE_BREAKPOINTS
         if m.name == "stopped":
             self.state = DS_STOPPED
             self.clear_stop()
@@ -457,6 +535,19 @@ struct DebugSession(Copyable, Movable):
                     self.caps.append(name)
 
     def handle_response(mut self, m: DapMessage) -> Int:
+        for k in range(len(self.bp_seqs)):
+            if self.bp_seqs[k] == m.request_seq:
+                var report = BpReport(self.bp_tags[k])
+                _ = self.bp_seqs.pop(k)
+                _ = self.bp_tags.pop(k)
+                if not m.success:
+                    return 0
+                for n in m.doc.children(m.doc.get(m.body(), "breakpoints")):
+                    report.verified.append(m.doc.bool(m.doc.get(n, "verified"), False))
+                    report.lines.append(m.doc.int(m.doc.get(n, "line"), 0))
+                    report.ids.append(m.doc.int(m.doc.get(n, "id"), -1))
+                self.reports.append(report^)
+                return DE_BREAKPOINTS
         if m.name == "initialize":
             if not m.success:
                 self.error = "The debug adapter refused to start: " + m.message

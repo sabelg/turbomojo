@@ -183,6 +183,8 @@ __extension App:
             self.cancel_job()
             _ = external_call["pclose", Int32](self.job.fp)
         self.dbg.finish()           # a program being debugged does not outlive the IDE
+        self.bp_sync()
+        self.bp_save()
         self.lsp_stop()
         self.sig.close()
         self.watch.close()

@@ -121,6 +121,11 @@ comptime CM_MOJODOCS = 178
 comptime CM_DOCFETCH = 179
 comptime CM_DOCFIND = 180
 comptime CM_DEBUG = 181
+comptime CM_BP_TOGGLE = 182
+comptime CM_BP_EDIT = 183
+comptime CM_BP_FUNC = 184
+comptime CM_BP_LIST = 185
+comptime CM_BP_CLEAR = 186
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -635,6 +640,11 @@ def build_registry() -> Registry:
     # ---- Run
     r.cmd(CM_RUN, "run.run", "~R~un", "Run the current program with `mojo run`", [fkey(9) | MOD_CTRL, fkey(8)])
     r.cmd(CM_DEBUG, "run.debug", "~D~ebug", "Build with debug information and run under the debugger; continues a stopped program", [fkey(5) | MOD_SHIFT])
+    r.cmd(CM_BP_TOGGLE, "debug.toggleBreakpoint", "Toggle ~b~reakpoint", "Set or remove a breakpoint on the cursor's line (also: click the line number)", [fkey(8) | MOD_CTRL])
+    r.cmd(CM_BP_EDIT, "debug.editBreakpoint", "Breakpoint c~o~ndition...", "Condition, hit count and log message of the breakpoint on this line (sets one if there is none)")
+    r.cmd(CM_BP_FUNC, "debug.functionBreakpoint", "~F~unction breakpoint...", "Stop when a function is entered, by its name")
+    r.cmd(CM_BP_LIST, "debug.breakpoints", "Break~p~oints...", "All breakpoints: go to, edit, switch off, delete")
+    r.cmd(CM_BP_CLEAR, "debug.removeAllBreakpoints", "Remo~v~e all breakpoints", "Delete every breakpoint of the project")
     r.cmd(CM_TEST, "run.test", "~T~est", "Run this file's TestSuite (std.testing) with `mojo run`")
     r.cmd(CM_USERSCREEN, "run.userScreen", "~U~ser screen", "View the program's output screen", [fkey(5) | MOD_ALT])
     r.cmd(CM_TASKS, "run.pixiTasks", "Pixi tas~k~s...", "Run a task of the project's pixi.toml", [fkey(9) | MOD_SHIFT])
@@ -784,6 +794,12 @@ def build_registry() -> Registry:
     r.item(CM_USERSCREEN)
     r.item(CM_ARGS)
     r.item(CM_RUNCONFIGS)
+    r.sep()
+    r.item(CM_BP_TOGGLE)
+    r.item(CM_BP_EDIT)
+    r.item(CM_BP_FUNC)
+    r.item(CM_BP_LIST)
+    r.item(CM_BP_CLEAR)
     r.sep()
     r.item(CM_TASKS)
     r.item(CM_TASK_AGAIN)

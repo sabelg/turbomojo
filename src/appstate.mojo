@@ -38,6 +38,7 @@ from runconfig import RunConfig
 from trust import TrustStore
 from doclib import DocLibrary, DocIndex, Found, default_docs_home
 from dap import DebugSession
+from breakpoints import Breakpoints
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
 from grep import FileSearch
@@ -177,6 +178,12 @@ struct App(Movable):
     var debug_adapter: String  # the debug adapter program
     var dbg: DebugSession      # the program being debugged
     var dbg_source: String     # its main source file
+    var bps: Breakpoints       # where the debugger is to stop
+    var bp_stamp: Int          # changes with every change of the list
+    var bp_dir: String         # where the lists are kept, one file per project ('' = not kept)
+    var bp_edit: Int           # the breakpoint the dialog edits (-1: a new one at bp_edit_path/line)
+    var bp_edit_path: String
+    var bp_edit_line: Int
     var include_paths: List[String]   # extra -I folders, already made absolute
     var docs_paths: List[String]     # folders of library sources to find documentation in
     var doc_idx: List[SymbolIndex]   # one index per docs folder
@@ -460,6 +467,12 @@ struct App(Movable):
         self.debug_adapter = env_or("TURBOMOJO_DAP", "mojo-lldb-dap")
         self.dbg = DebugSession()
         self.dbg_source = ""
+        self.bps = Breakpoints()
+        self.bp_stamp = 0
+        self.bp_dir = ""
+        self.bp_edit = -1
+        self.bp_edit_path = ""
+        self.bp_edit_line = 0
         self.include_paths = List[String]()
         self.project_dir = ""
         self.errs = List[ErrLoc]()

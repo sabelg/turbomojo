@@ -170,6 +170,18 @@ __extension Window:
                 elif sev > 2:
                     num_fg = pal.diag_note
                 _ = scr.text(self.x + 1, yy, s, num_fg, pal.gutter_bg)
+                if seg == 0 and not is_msg and len(self.buf.bps) > 0:
+                    var look = self.buf.bp_look(r)
+                    if look == 1 or look == 3:
+                        # a breakpoint: the line number in the alarm colour, with its sign
+                        _ = scr.text(self.x + 1, yy, s, pal.gutter_bg, pal.diag_err)
+                        if pad >= 1:
+                            scr.put(self.x + 1, yy, 0x25CF if look == 1 else 0x25C6, pal.gutter_bg, pal.diag_err)
+                    elif look > 0:
+                        # switched off, or not placed by the debugger: only an outline
+                        _ = scr.text(self.x + 1, yy, s, pal.diag_err, pal.gutter_bg)
+                        if pad >= 1:
+                            scr.put(self.x + 1, yy, 0x25CB if look == 2 else 0x25CC, pal.diag_err, pal.gutter_bg)
                 if fold_mark != 32:
                     scr.put(self.x + self.gut, yy, fold_mark, pal.frame_act if fold_mark == 0x25B8 else pal.gutter_fg, pal.gutter_bg)
             var n = len(ln)

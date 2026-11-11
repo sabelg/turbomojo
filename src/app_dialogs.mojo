@@ -185,6 +185,12 @@ __extension App:
                 self.docs_fetch()
         elif kind == D_TRUST:
             self.trust_answer(b)
+        elif kind == D_BREAKPOINT and b == 0:
+            self.bp_edit_save()
+        elif kind == D_BPFUNC and b == 0:
+            self.bp_function_add(String(self.dlg.field_text(0).strip()))
+        elif kind == D_BREAKPOINTS:
+            self.bp_list_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFGS:
             self.run_configs_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFG and b == 0:

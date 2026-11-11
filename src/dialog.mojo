@@ -37,6 +37,9 @@ comptime D_RUNCFG = 29
 comptime D_TRUST = 30
 comptime D_DOCFETCH = 31
 comptime D_DOCFIND = 32
+comptime D_BREAKPOINT = 33      # condition, hit count, log message of one breakpoint
+comptime D_BPFUNC = 34          # the name for a function breakpoint
+comptime D_BREAKPOINTS = 35     # the list of all breakpoints
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

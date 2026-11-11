@@ -123,6 +123,7 @@ __extension App:
     def draw(mut self):
         var p = self.pal.copy()
         self.layout_sync()
+        self.bp_sync()              # files opened since show their breakpoints
         self.scr.no_clip()
         self.scr.fill(0, 1, self.scr.w, self.scr.h - 2, p.desk_ch, p.desk_fg, p.desk_bg)
         var n = len(self.wins)

@@ -84,6 +84,9 @@ struct TextBuffer(Copyable, Movable):
     var fold_ends: List[Int]  # last hidden row of each fold (as of fold_version)
     var fold_version: Int
     var marks: List[Mark]     # problems shown in this buffer (from the language server)
+    var bps: List[Int]        # rows with a breakpoint, ascending; they move with the text
+    var bp_looks: List[Int]   # how each is shown (Breakpoint.look)
+    var bp_stamp: Int         # which state of the IDE's breakpoint list they come from (-1: none)
     var sem: List[Int]        # semantic colours from the language server: row, c1, c2, class
                               # per token, by row; class -1 = dropped by an edit
     var hints: List[Hint]     # inlay hints from the language server
@@ -119,6 +122,9 @@ struct TextBuffer(Copyable, Movable):
         self.encoding = ENC_UTF8
         self.mixed_eol = False
         self.marks = List[Mark]()
+        self.bps = List[Int]()
+        self.bp_looks = List[Int]()
+        self.bp_stamp = -1
         self.sem = List[Int]()
         self.hints = List[Hint]()
         self.track = False
@@ -328,6 +334,9 @@ struct TextBuffer(Copyable, Movable):
 
     def after_load(mut self):
         self.marks.clear()
+        self.bps.clear()
+        self.bp_looks.clear()
+        self.bp_stamp = -1          # the IDE puts the file's breakpoints back
         if self.track:
             self.drop_changes()
             self.changes_lost = True       # a different text altogether
@@ -407,6 +416,13 @@ struct TextBuffer(Copyable, Movable):
         self.folds = kept^
         self.fold_ends = ends^
         self.fold_version = self.version
+
+    def bp_look(self, r: Int) -> Int:
+        """How row r's breakpoint is shown (0: there is none)."""
+        for i in range(len(self.bps)):
+            if self.bps[i] == r:
+                return self.bp_looks[i]
+        return 0
 
     def fold_index(self, r: Int) -> Int:
         """Index of the fold whose header is line r, or -1."""
@@ -807,6 +823,11 @@ struct TextBuffer(Copyable, Movable):
                 if self.marks[i].l1 > rr or (self.marks[i].l1 == rr and cc <= self.marks[i].c1):
                     self.marks[i].l1 += breaks
                     self.marks[i].l2 += breaks
+        if breaks > 0 and len(self.bps) > 0:
+            # a breakpoint stays on its statement: a line break before it moves it down
+            for i in range(len(self.bps)):
+                if self.bps[i] > rr or (self.bps[i] == rr and cc == 0):
+                    self.bps[i] += breaks
         if breaks > 0 and len(self.folds) > 0:
             # folded headers below the insertion move down with their lines
             for i in range(len(self.folds)):
@@ -847,6 +868,13 @@ struct TextBuffer(Copyable, Movable):
                     elif m.l1 > first + breaks:
                         left.append(Mark(m.l1 - breaks, m.c1, m.l2 - breaks, m.c2, m.severity, m.message))
                 self.marks = left^
+            if breaks > 0 and len(self.bps) > 0:
+                # breakpoints of removed lines gather on the line that is left
+                for i in range(len(self.bps)):
+                    if self.bps[i] > first + breaks:
+                        self.bps[i] -= breaks
+                    elif self.bps[i] > first:
+                        self.bps[i] = first
             if breaks > 0 and len(self.folds) > 0:
                 # headers on removed lines lose their fold; the ones below move up
                 var kept = List[Int]()

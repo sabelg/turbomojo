@@ -406,6 +406,16 @@ __extension App:
             self.run_program(True)
         elif cmd == CM_DEBUG:
             self.debug_command()
+        elif cmd == CM_BP_TOGGLE:
+            self.bp_toggle()
+        elif cmd == CM_BP_EDIT:
+            self.bp_edit_here()
+        elif cmd == CM_BP_FUNC:
+            self.bp_function_dialog()
+        elif cmd == CM_BP_LIST:
+            self.bp_list_dialog(0)
+        elif cmd == CM_BP_CLEAR:
+            self.bp_clear_all()
         elif cmd == CM_USERSCREEN:
             self.term.leave()
             self.term.raw()

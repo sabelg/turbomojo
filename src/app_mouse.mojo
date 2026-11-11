@@ -247,6 +247,12 @@ __extension App:
                 else:
                     self.wins[t].cr = r
             return
+        if self.wins[t].gut > 0 and x > wx and x < wx + self.wins[t].gut and self.wins[t].path.byte_length() > 0:
+            # a click on the line number sets or removes a breakpoint there
+            var br = self.wins[t].pos_at_screen_row(y - wy - 1).r
+            if br < self.wins[t].buf.count():
+                self.bp_toggle_at(t, br)
+            return
         if self.wins[t].gut > 0 and x == wx + self.wins[t].gut:
             # the fold marker in the gutter
             var fr = self.wins[t].pos_at_screen_row(y - wy - 1).r
