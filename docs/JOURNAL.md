@@ -3024,3 +3024,15 @@ runs those and reports the others as SKIP; other arguments are refused ("expecte
   from P4-01): its wait returned on the program's output, which the fake adapter sends
   just before the stop, so the stop had sometimes not arrived. It now waits for the stop.
 - Verified: `scripts/check.sh` → `CHECK OK`, 55 test files, 934 tests, smoke ok.
+
+## 2026-11-10 · pixi warning about `[system-requirements]` (reported by the user) · done
+
+The user ran `pixi run ./build/tmide examples/hello.mojo` and got a warning from pixi
+0.81: the `[system-requirements]` table I added in P5-02 is deprecated in favour of
+virtual packages on the `platforms` entries. Now `platforms` lists
+`{ name = "linux-aarch64-glibc", platform = "linux-aarch64", glibc = "2.34" }` and the
+same for linux-64 (a name equal to the subdir is refused when a virtual package is
+given). `pixi install` / `pixi run` print no warning; the lock file only names its
+platforms anew; the default and the nightly environment both resolve (Mojo 1.2.0, and
+the nightly). The minimum stays glibc 2.34.
+- Verified: `scripts/check.sh` → `CHECK OK`, 55 test files, 934 tests, smoke ok.
