@@ -3423,3 +3423,62 @@ recommended for after Phase 5 (no answer yet). The gate takes about 20 minutes n
     (the proposal was made against them, and the diff shows them).
   - Not tried with a real agent.
 - Verified: `scripts/check.sh` → `CHECK OK`, 62 test files, 983 tests, smoke ok.
+
+## 2026-11-11 · P6-04 Permission prompts and per-session allow list; off until configured · done
+
+The roadmap's line: "Every write or command prompts unless the user has allowed it for
+the session; honours workspace trust." "Off until configured": the agent is not started
+unless `tools.agent` names one, and nothing is allowed until the user says so.
+- `session/request_permission` is asked in the agent panel (the prompt gives way to
+  "Allow <title> (<kind>)? Y once, A this session, N no"; other typing is ignored):
+  Y answers with the agent's allow-once option, A with allow-once too and adds an entry
+  to the session's allow list, N with reject-once (or reject-always; no reject option:
+  "cancelled"). Esc stops the turn; open requests are answered "cancelled" by the
+  cancel (as before). A request whose key is on the list is answered at once with a
+  note. Keys (`agentsvc.allow_key`): a command exactly as written (`execute:git status
+  --short`), anything else by the tool's kind (`edit`, `read`, ...). (First by its
+  program; changed before committing: allowing `git status` would have allowed
+  `git push`.)
+  The agent's own "allow always" option is not used: the IDE keeps the list itself,
+  so it ends with the session (start, failure, quit) and the user sees what is on it.
+- The editor's own questions follow the same list: the command question gains A
+  (run it and allow that program for the session), commands whose program is allowed
+  run with a note; S in a proposal's diff view accepts it (and others waiting) and puts
+  `edit` on the list, after which proposals go in with a note.
+- Trust: when the folder's trust is taken back while the agent runs, it is stopped,
+  its commands killed, its requests and the list dropped.
+- Tests (`tests/test_agentperm.mojo`, 4): allow keys and options; a permission asked,
+  Y once (asked again next time), A for the session (then answered without a
+  question), another kind still asked, Esc cancelling a waiting request, a new session
+  starting with an empty list, N; A on a command and the same command run unasked
+  the next time while another command is asked; S on a write and the next write
+  going in unasked; trust removed stops the agent. test_agentpanel and test_agentsvc
+  now expect the question instead of the old automatic refusal. The first run of the
+  new test failed by waiting for text the earlier session had already put in the
+  conversation; it clears it first now.
+- Tried with the real Claude adapter (claude-agent-acp, Manual mode): "add a line to
+  @a.mojo" brought "Allow Edit a.mojo (edit)? Y once, A this session, N no"; after Y
+  Claude made the edit itself (its own tool writes the file, so there is no proposal
+  in the diff view for this agent - but nothing changes before the permission).
+- Not done / unverified:
+  - The allow list is not shown anywhere but in the notes; no command to clear it
+    short of restarting the agent (Ctrl-F11 twice).
+  - A for a command allows only that exact text: an agent that varies its commands
+    asks every time.
+- Verified: `scripts/check.sh` → `CHECK OK`, 63 test files, 987 tests, smoke ok.
+
+## 2026-11-11 · Phase 6 summary
+
+All 4 tasks are marked done: an ACP client on the shared JSON-RPC layer (line
+framing), the agent panel (Markdown conversation, streaming, @file mentions), the
+editor's services (reads through the editor, writes as proposals in the diff view,
+commands on ptys after a yes) and permission prompts with a session allow list.
+Tried with a real agent, Claude Code's adapter `claude-agent-acp` 0.106.0, which the
+user installed: it works, and it showed what the fake agent could not - an agent with
+its own tools writes files itself unless it is put into its asking mode, which the
+client now does by default. What is thinner than the task names suggest: no
+`session/load` (a conversation does not survive a restart), no MCP servers passed to
+the agent, no images, the agent's commands are shown in the conversation rather than
+in a terminal window, no prompt history. The gate takes about 22 minutes now (63 test
+files).
+- Verified: the P6-04 gate above is the phase's last.

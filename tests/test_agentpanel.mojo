@@ -146,11 +146,12 @@ def test_panel_talks_to_the_agent() raises:
     type_text(app, "tool")
     app.handle(key_event(KEY_ENTER))
     pump(app, "Reading a.mojo *(completed)*")
-    # a permission request is refused for now, and said so
+    # a permission request is asked in the panel; N refuses it
     type_text(app, "perm")
     app.handle(key_event(KEY_ENTER))
+    pump(app, "The agent asks to Write b.mojo (edit)", False)
+    app.handle(key_event(110))
     pump(app, "told: selected reject")
-    assert_true(app.chat.markdown("").find("The agent asked to Write b.mojo: refused") > 0)
     # Esc stops a turn that runs; another Esc goes back to the editor
     type_text(app, "slow")
     app.handle(key_event(KEY_ENTER))

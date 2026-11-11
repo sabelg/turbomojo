@@ -178,3 +178,24 @@ struct RunAsk(Copyable, Movable):
     var env: List[String]
     var limit: Int
     var title: String
+
+
+def allow_key(kind: String, title: String) -> String:
+    """What "always, this session" allows: a command exactly as written (`execute:git
+    status --short` - not `git push` too), anything else by the tool's kind (`edit`,
+    `read`, `fetch`...)."""
+    if kind == "execute" or kind == "run":
+        var t = String(title.strip())
+        if t.startswith("`") and t.endswith("`") and t.byte_length() >= 2:
+            var inner = String(t[byte=1:t.byte_length() - 1])
+            t = inner
+        return "execute:" + String(t.strip())
+    return kind if kind.byte_length() > 0 else String("other")
+
+
+def option_of(kinds: List[String], ids: List[String], want: String) -> String:
+    """The option id of the first option of kind `want` ('' if there is none)."""
+    for k in range(len(kinds)):
+        if kinds[k] == want:
+            return ids[k]
+    return ""

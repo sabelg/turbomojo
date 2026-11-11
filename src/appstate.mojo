@@ -48,6 +48,7 @@ from problems import Problem, ProblemFilter
 from acp import AcpClient
 from agentchat import AgentChat
 from agentsvc import AgentTerm, Proposal, RunAsk
+from acp import AcpEvent
 from markdown import MdLine
 from linediff import Hunk
 from proc import Proc
@@ -257,6 +258,8 @@ struct App(Movable):
     var agent_props: List[Proposal] # files the agent wants written, waiting for A / R
     var agent_term_n: Int
     var gd_proposal: Bool           # the diff view shows agent_props[0]
+    var agent_perms: List[AcpEvent] # permission requests waiting for the user's answer
+    var agent_allowed: List[String] # allowed for this session (agentsvc.allow_key)
     var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
@@ -624,6 +627,8 @@ struct App(Movable):
         self.agent_props = List[Proposal]()
         self.agent_term_n = 0
         self.gd_proposal = False
+        self.agent_perms = List[AcpEvent]()
+        self.agent_allowed = List[String]()
         self.test_rows_file = List[Int]()
         self.test_rows_test = List[Int]()
         self.test_target_file = -1

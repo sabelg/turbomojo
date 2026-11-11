@@ -238,7 +238,9 @@ __extension App:
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_DIFF:
                 var dh = List[String]()
-                if self.gd_staged:
+                if self.gd_proposal:
+                    dh = ["~A~ Accept", "~S~ Accept all (session)", "~R~ Reject", "~Esc~ Later"]
+                elif self.gd_staged:
                     dh = ["~U~ Unstage", "~Tab~ Changes", "~Esc~ Close"]
                 else:
                     dh = ["~Enter~ Go to", "~S~ Stage", "~R~ Revert", "~Tab~ Staged", "~Esc~ Close"]

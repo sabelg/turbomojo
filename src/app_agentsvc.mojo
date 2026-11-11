@@ -25,6 +25,7 @@ from app_outline import *
 from app_gitdiff import *
 from app_files import *
 from app_jobs import *
+from agentsvc import allow_key
 
 comptime ERR_NOT_FOUND = -32002
 comptime ERR_REFUSED = -32000
@@ -83,7 +84,11 @@ __extension App:
                 self.agent.answer(e.request, "{}")          # nothing to change
                 return
             self.agent_props.append(Proposal(e.request, path, got[0], new, got[1]))
-            self.chat.note("The agent proposes " + ("changes to " if got[1] else "a new file ") + self.agent_rel(path) + ": A accepts, R rejects (in the diff view; Enter in the empty prompt shows it again)")
+            if "edit" in self.agent_allowed and len(self.agent_props) == 1:
+                self.chat.note("Writing (allowed this session): " + self.agent_rel(path))
+                self.agent_proposal_answer(True)
+                return
+            self.chat.note("The agent proposes " + ("changes to " if got[1] else "a new file ") + self.agent_rel(path) + ": A accepts, S accepts its writes for this session, R rejects (in the diff view; Enter in the empty prompt shows it again)")
             if len(self.agent_props) == 1:
                 self.agent_show_proposal()
             return
@@ -121,7 +126,11 @@ __extension App:
                 self.agent.answer_error(e.request, ERR_PARAMS, "no command")
                 return
             self.agent_asks.append(RunAsk(e.request, argv^, cwd, env^, limit, title))
-            self.chat.note("The agent wants to run `" + title + "` in " + cwd + ": Y runs it, N refuses")
+            if allow_key("execute", title) in self.agent_allowed:
+                self.chat.note("Running (allowed this session): `" + title + "` in " + cwd)
+                self.agent_ask_answer(True)
+                return
+            self.chat.note("The agent wants to run `" + title + "` in " + cwd + ": Y runs it, A always (this session), N refuses")
             var ai = self.agent_index()
             if ai >= 0:
                 self.focus(ai)

@@ -22,6 +22,7 @@ from acp import *
 from agentchat import *
 from markdown import MdLine, md_render
 from app_outline import *
+from agentsvc import allow_key, option_of
 from app_agentsvc import *
 
 
@@ -74,6 +75,7 @@ __extension App:
         self.chat.note("Starting " + self.agent_command + " in " + root + "...")
         var log = state_dir() + "/agent.log"
         self.agent.services = True              # files and terminals through the editor
+        self.agent_forget()                     # a new session allows nothing yet
         _ = self.agent.start(self.agent_command, root, log, now_ns())
 
     def agent_title(self) -> String:
@@ -92,6 +94,13 @@ __extension App:
             self.agent_svc_tick()
         if not self.agent.conn.proc.running and len(self.agent.events) == 0:
             return
+        if self.agent.active() and not self.trust_ok():
+            # the folder's trust was taken back: the agent may not go on
+            self.agent.stop()
+            self.agent_services_end()
+            self.agent_forget()
+            self.chat.note("The agent was stopped: the folder is not trusted any more")
+            return
         self.agent.pump(now)
         for e in self.agent.take_events():
             if e.kind == AE_MESSAGE:
@@ -108,13 +117,20 @@ __extension App:
             elif e.kind == AE_PLAN:
                 self.chat.plan(e.entries)
             elif e.kind == AE_PERMISSION:
-                # asking you comes with P6-04: until then it is refused
-                var choice = String("")
-                for k in range(len(e.option_kinds)):
-                    if e.option_kinds[k] == "reject_once" and choice.byte_length() == 0:
-                        choice = e.option_ids[k]
-                _ = self.agent.answer_permission(e.request, choice)
-                self.chat.note("The agent asked to " + (e.title if e.title.byte_length() > 0 else String("use a tool")) + ": refused (TurboMojo cannot grant permissions yet)")
+                var key = allow_key(e.tool_kind, e.title)
+                if key in self.agent_allowed:
+                    # allowed for this session already
+                    var opt = option_of(e.option_kinds, e.option_ids, "allow_once")
+                    if opt.byte_length() == 0:
+                        opt = option_of(e.option_kinds, e.option_ids, "allow_always")
+                    _ = self.agent.answer_permission(e.request, opt)
+                    self.chat.note("Allowed (this session): " + self.agent_what(e))
+                else:
+                    self.agent_perms.append(e.copy())
+                    self.chat.note("The agent asks to " + self.agent_what(e) + ": Y allows it once, A for this session, N refuses")
+                    var pi = self.agent_index()
+                    if pi >= 0:
+                        self.focus(pi)
             elif e.kind == AE_TURN_END:
                 self.chat.cancel_open_tools()
                 if e.stop_reason == "error":
@@ -156,9 +172,45 @@ __extension App:
                 self.chat.note("The agent is not running: " + e.text + ". Ctrl-F11 twice starts it again.")
                 self.agent_pending = ""
                 self.agent_services_end()
+                self.agent_forget()
                 self.log_error("agent: " + e.text)
             if self.agent_index() >= 0:
                 self.agent_scroll = 0           # follow what comes
+
+    def agent_what(self, e: AcpEvent) -> String:
+        var what = e.title if e.title.byte_length() > 0 else String("use a tool")
+        return what + ((" (" + e.tool_kind + ")") if e.tool_kind.byte_length() > 0 else String(""))
+
+    def agent_perm_answer(mut self, how: Int):
+        """The user's answer to the first permission request: 1 once, 2 this session,
+        0 no."""
+        if len(self.agent_perms) == 0:
+            return
+        var e = self.agent_perms.pop(0)
+        var opt = String("")
+        if how == 0:
+            opt = option_of(e.option_kinds, e.option_ids, "reject_once")
+            if opt.byte_length() == 0:
+                opt = option_of(e.option_kinds, e.option_ids, "reject_always")
+            self.chat.note("Refused: " + self.agent_what(e))
+        else:
+            opt = option_of(e.option_kinds, e.option_ids, "allow_once")
+            if opt.byte_length() == 0:
+                opt = option_of(e.option_kinds, e.option_ids, "allow_always")
+            if how == 2:
+                var key = allow_key(e.tool_kind, e.title)
+                if key not in self.agent_allowed:
+                    self.agent_allowed.append(key)
+                self.chat.note("Allowed for this session: " + key)
+            else:
+                self.chat.note("Allowed once: " + self.agent_what(e))
+        # (no option of that kind: the request is answered "cancelled")
+        _ = self.agent.answer_permission(e.request, opt)
+
+    def agent_forget(mut self):
+        """The session is over: what it asked and was allowed goes."""
+        self.agent_perms.clear()
+        self.agent_allowed.clear()
 
     # -------------------------------------------------------------- prompts
     def agent_blocks(mut self, text: String) -> String:
@@ -256,9 +308,27 @@ __extension App:
         if t < 0 or self.wins[t].kind != WK_AGENT:
             return False
         var n = len(self.agent_input)
+        if len(self.agent_perms) > 0:
+            # the agent waits for a permission
+            if k == 121 or k == 89:
+                self.agent_perm_answer(1)
+            elif k == 97 or k == 65:
+                self.agent_perm_answer(2)
+            elif k == 110 or k == 78:
+                self.agent_perm_answer(0)
+            elif not (k >= 32 and k < K_BASE) and k != KEY_ENTER:
+                return k == KEY_ESC and self.agent_esc()
+            return True
         if len(self.agent_asks) > 0:
             # a command waits for a yes or a no
             if k == 121 or k == 89:
+                self.agent_ask_answer(True)
+                return True
+            if k == 97 or k == 65:
+                var key = allow_key("execute", self.agent_asks[0].title)
+                if key not in self.agent_allowed:
+                    self.agent_allowed.append(key)
+                self.chat.note("Allowed for this session: " + key)
                 self.agent_ask_answer(True)
                 return True
             if k == 110 or k == 78:
@@ -271,18 +341,7 @@ __extension App:
         elif k == KEY_ENTER:
             self.agent_send()
         elif k == KEY_ESC:
-            if self.agent.busy():
-                # what the agent asked for this turn is refused with it
-                while len(self.agent_asks) > 0:
-                    self.agent_ask_answer(False)
-                while len(self.agent_props) > 0:
-                    self.agent_proposal_answer(False)
-                self.agent.cancel()
-                self.say("Stopping the agent's turn...")
-            else:
-                var te = self.top_editor()
-                if te >= 0:
-                    self.focus(te)
+            _ = self.agent_esc()
         elif k == KEY_BACKSPACE:
             if self.agent_cur > 0:
                 _ = self.agent_input.pop(self.agent_cur - 1)
@@ -313,6 +372,23 @@ __extension App:
             return False
         return True
 
+    def agent_esc(mut self) raises -> Bool:
+        """Esc in the panel: stop the turn (refusing what it asked), else back to the
+        editor."""
+        if self.agent.busy():
+            while len(self.agent_asks) > 0:
+                self.agent_ask_answer(False)
+            while len(self.agent_props) > 0:
+                self.agent_proposal_answer(False)
+            self.agent_perms.clear()            # (cancel answers them "cancelled")
+            self.agent.cancel()
+            self.say("Stopping the agent's turn...")
+        else:
+            var te = self.top_editor()
+            if te >= 0:
+                self.focus(te)
+        return True
+
     def agent_paste(mut self, text: List[Int]) -> Bool:
         var t = self.top()
         if t < 0 or self.wins[t].kind != WK_AGENT:
@@ -332,9 +408,12 @@ __extension App:
         var rows = List[List[Int]]()
         var cur = decode("› ")
         var shown = self.agent_input.copy()
-        if len(self.agent_asks) > 0:
+        if len(self.agent_perms) > 0:
             cur = List[Int]()
-            shown = decode("Run `" + self.agent_asks[0].title + "`? Y runs it, N refuses")
+            shown = decode("Allow " + self.agent_what(self.agent_perms[0]) + "? Y once, A this session, N no")
+        elif len(self.agent_asks) > 0:
+            cur = List[Int]()
+            shown = decode("Run `" + self.agent_asks[0].title + "`? Y runs it, A always (this session), N refuses")
         for c in shown:
             if len(cur) >= width:
                 rows.append(cur^)
@@ -382,7 +461,7 @@ __extension App:
 
     def agent_cursor(mut self, i: Int):
         """The terminal's cursor on the prompt (called after the windows are drawn)."""
-        if len(self.agent_asks) > 0:
+        if len(self.agent_asks) > 0 or len(self.agent_perms) > 0:
             return                              # a question, not a prompt, is shown
         var x = self.wins[i].x + 1
         var y = self.wins[i].y + 1

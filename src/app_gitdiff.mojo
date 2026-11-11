@@ -204,6 +204,13 @@ __extension App:
             if k == 97 or k == 65:              # A
                 self.agent_proposal_answer(True)
                 return True
+            if k == 115 or k == 83:             # S: this and the session's later writes
+                if "edit" not in self.agent_allowed:
+                    self.agent_allowed.append("edit")
+                self.chat.note("Allowed for this session: edit (the agent's writes go in without asking)")
+                while len(self.agent_props) > 0 and self.gd_proposal:
+                    self.agent_proposal_answer(True)
+                return True
             if k == 114 or k == 82:             # R
                 self.agent_proposal_answer(False)
                 return True
@@ -218,7 +225,7 @@ __extension App:
                 if ai >= 0:
                     self.focus(ai)
                 return True
-            return k == KEY_TAB or k == 115 or k == 83 or k == 117 or k == 85 or k == KEY_ENTER
+            return k == KEY_TAB or k == 117 or k == 85 or k == KEY_ENTER
         var row = self.wins[t].cr
         var hi = self.gd_rows[row].hunk if row < len(self.gd_rows) else -1
         if k == KEY_ESC:

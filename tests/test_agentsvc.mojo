@@ -162,7 +162,7 @@ def test_commands_run_after_a_yes() raises:
     var d = scratch("run")
     var app = ide(d)
     say(app, "run echo hello $FAKE_AGENT_VAR; pwd; exit 3")
-    pump(app, "Y runs it, N refuses", False)
+    pump(app, "Y runs it, A always (this session), N refuses", False)
     # the question names the command as the agent wrote it, not "sh -c"
     assert_true(md(app).find("The agent wants to run `echo hello $FAKE_AGENT_VAR; pwd; exit 3` in " + d) > 0, md(app))
     assert_equal(app.agent_asks[0].title, "echo hello $FAKE_AGENT_VAR; pwd; exit 3")

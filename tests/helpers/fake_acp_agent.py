@@ -15,6 +15,8 @@ The prompt's text chooses what a turn does:
     "tool"      a tool call (read, with a location), an update with text and a diff, completed
     "plan"      a plan with two entries
     "perm"      asks for permission (allow / reject options) and says what it was told
+    "permrun"   asks for permission to run `git status --short` (execute; allow once,
+                allow always, reject)
     "slow"      sends a chunk every 50 ms until session/cancel, then stops with "cancelled"
     "read"      asks the client for fs/read_text_file, says what came back
     "other"     an update kind this client does not know, then end_turn
@@ -113,6 +115,16 @@ def turn(rid, text):
         update({"sessionUpdate": "plan", "entries": [
             {"content": "Read the file", "priority": "high", "status": "completed"},
             {"content": "Fix the bug", "priority": "medium", "status": "pending"}]})
+        return "end_turn"
+    if text == "permrun":
+        r = ask("session/request_permission", {
+            "sessionId": session,
+            "toolCall": {"toolCallId": "call_3", "title": "`git status --short`", "kind": "execute"},
+            "options": [{"optionId": "yes", "name": "Allow", "kind": "allow_once"},
+                        {"optionId": "always", "name": "Always", "kind": "allow_always"},
+                        {"optionId": "no", "name": "Reject", "kind": "reject_once"}]})
+        o = r.get("result", {}).get("outcome", {})
+        chunk("told: " + o.get("outcome", "?") + ((" " + o["optionId"]) if "optionId" in o else ""))
         return "end_turn"
     if text == "perm":
         update({"sessionUpdate": "tool_call", "toolCallId": "call_2", "title": "Write b.mojo", "kind": "edit", "status": "pending"})

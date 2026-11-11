@@ -108,7 +108,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P6-01 ACP client on the JSON-RPC layer: initialize, session new/prompt/update/cancel, tested against a fake agent script
 - [x] P6-02 Agent panel: Markdown conversation view, streaming, file/selection mentions
 - [x] P6-03 Editor services: fs read/write through buffers, diff accept/reject, terminal commands
-- [ ] P6-04 Permission prompts and per-session allow list; off until configured
+- [x] P6-04 Permission prompts and per-session allow list; off until configured
 
 ## Phase 7: UX polish and accessibility (v1.8)
 
