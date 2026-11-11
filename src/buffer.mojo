@@ -87,6 +87,7 @@ struct TextBuffer(Copyable, Movable):
     var bps: List[Int]        # rows with a breakpoint, ascending; they move with the text
     var bp_looks: List[Int]   # how each is shown (Breakpoint.look)
     var bp_stamp: Int         # which state of the IDE's breakpoint list they come from (-1: none)
+    var exec_row: Int         # the line the program being debugged is stopped at (-1: none)
     var sem: List[Int]        # semantic colours from the language server: row, c1, c2, class
                               # per token, by row; class -1 = dropped by an edit
     var hints: List[Hint]     # inlay hints from the language server
@@ -125,6 +126,7 @@ struct TextBuffer(Copyable, Movable):
         self.bps = List[Int]()
         self.bp_looks = List[Int]()
         self.bp_stamp = -1
+        self.exec_row = -1
         self.sem = List[Int]()
         self.hints = List[Hint]()
         self.track = False

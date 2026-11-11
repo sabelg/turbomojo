@@ -273,9 +273,10 @@ struct Breakpoints(Copyable, Movable):
         if self.items[k].hit.byte_length() > 0:
             w.kv_str("hitCondition", self.items[k].hit)
 
-    def source_request(self, path: String) -> String:
+    def source_request(self, path: String, extra_line: Int = 0) -> String:
         """The arguments of `setBreakpoints` for a file: all its enabled breakpoints
-        (an empty list removes what the debugger had there)."""
+        (an empty list removes what the debugger had there). `extra_line` adds a
+        plain one there, last (Run to cursor), unless a breakpoint is on that line."""
         var w = JsonWriter()
         w.begin_obj()
         w.key("source")
@@ -291,6 +292,10 @@ struct Breakpoints(Copyable, Movable):
             self.extras(k, w)
             if self.items[k].log.byte_length() > 0:
                 w.kv_str("logMessage", self.items[k].log)
+            w.end_obj()
+        if extra_line > 0 and self.find(path, extra_line) < 0:
+            w.begin_obj()
+            w.kv_int("line", extra_line)
             w.end_obj()
         w.end_arr()
         w.end_obj()

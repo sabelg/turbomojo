@@ -47,12 +47,17 @@ from app_draw import *
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_BUILD or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_BUILD or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
     def shortcut(self, k: Int) -> Int:
-        """Command bound to key k (bindings live in the command registry)."""
+        """Command bound to key k (bindings live in the command registry). While a
+        program is being debugged, F7 and F8 step (and Shift-F5 pauses a running one)."""
+        if self.dbg.active():
+            var d = self.reg.find_debug_key(k)
+            if d != CM_NONE and (d != CM_PAUSE or self.dbg.state == DS_RUNNING) and (d != CM_RESET or not (self.job.active or self.fsearch.active)):
+                return d
         return self.reg.find_key(k)
 
     def cursor_command(mut self, cmd: Int) raises:
@@ -406,6 +411,21 @@ __extension App:
             self.run_program(True)
         elif cmd == CM_DEBUG:
             self.debug_command()
+        elif cmd == CM_STEP_INTO:
+            self.debug_step("stepIn")
+        elif cmd == CM_STEP_OVER:
+            self.debug_step("next")
+        elif cmd == CM_STEP_OUT:
+            self.debug_step("stepOut")
+        elif cmd == CM_RUN_CURSOR:
+            self.debug_run_to_cursor()
+        elif cmd == CM_PAUSE:
+            self.debug_pause()
+        elif cmd == CM_RESET:
+            if self.dbg.active():
+                self.debug_end(True)
+            else:
+                self.say("No program is being debugged")
         elif cmd == CM_BP_TOGGLE:
             self.bp_toggle()
         elif cmd == CM_BP_EDIT:

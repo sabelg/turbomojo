@@ -12,7 +12,7 @@ from term import wait_readable, fkey, key_event, MOD_SHIFT, MOD_CTRL
 from app import *
 from appstate import App, M_NORMAL, M_DIALOG
 from app_exec import trust_needed
-from commands import CM_DEBUG, CM_CANCEL, CM_RUN, build_registry
+from commands import CM_DEBUG, CM_CANCEL, CM_RUN, CM_LSP, CM_STEP_INTO, CM_STEP_OVER, CM_STEP_OUT, CM_RUN_CURSOR, CM_PAUSE, build_registry
 from config import load_settings, read_text
 from signals import own_pid
 from util import to_str, env_or, run_system, bytes_to_str, path_exists, str_bytes
@@ -229,9 +229,11 @@ def test_a_stop_is_located_and_continued() raises:
     assert_equal(s.stop_reason, "breakpoint")
     assert_equal(s.stop_text, "breakpoint 1.1")
     assert_equal(s.stop_thread, 7)
-    assert_equal(s.stop_file, "/src/stop.mojo")
-    assert_equal(s.stop_line, 12)
+    # the frame's file is not on this machine: the stop has no place to show
+    assert_equal(s.stop_file, "")
+    assert_equal(s.stop_line, 0)
     assert_equal(s.stop_func, "stop::main()")
+    assert_equal(s.stop_top, "stop::main()")
     assert_true(s.resume())
     assert_equal(run_until(s, DE_ENDED), "running output exited ended")
     assert_equal(s.stop_file, "", "running again: no stop to show")
@@ -239,7 +241,7 @@ def test_a_stop_is_located_and_continued() raises:
     assert_equal(bytes_to_str(s.output), "before the stop\nafter the stop\n")
     s.finish()
     var log = read_text(d + "/requests.log")
-    assert_true(log.find("stackTrace {\"levels\": 1, \"startFrame\": 0, \"threadId\": 7}") > 0, log)
+    assert_true(log.find("stackTrace {\"levels\": 20, \"startFrame\": 0, \"threadId\": 7}") > 0, log)
     assert_true(log.find("continue {\"threadId\": 7}") > 0, log)
     _ = run_system("rm -rf '" + d + "'")
 
@@ -379,7 +381,7 @@ def test_debug_goes_to_the_line_a_program_stops_at() raises:
     assert_equal(app.wins[t].path, d + "/stop.mojo")
     assert_equal(app.wins[t].cr, 11)
     assert_true(app.status.startswith("Stopped: breakpoint 1.1 at stop.mojo:12 in stop::main()"), app.status)
-    assert_true(messages(app).endswith("before the stop\nStopped: breakpoint 1.1 at stop.mojo:12 in stop::main()  (Shift-F5 continues, Ctrl-F2 ends)"), messages(app))
+    assert_true(messages(app).endswith("before the stop\nStopped: breakpoint 1.1 at stop.mojo:12 in stop::main()  (F7/F8 step, Shift-F5 continues, Ctrl-F2 ends)"), messages(app))
     assert_true(screen(app).find("DEBUG:stopped") > 0)
     # Debug again lets it continue
     assert_equal(build_registry().find_key(fkey(5) | MOD_SHIFT), CM_DEBUG)
@@ -401,10 +403,7 @@ def test_ctrl_f2_ends_a_program_being_debugged() raises:
     var pid = app.dbg.pid
     assert_true(alive(pid))
     assert_true(screen(app).find("DEBUG:running") > 0)
-    # Debug while it runs changes nothing
-    app.exec(CM_DEBUG)
-    assert_true(app.status.startswith("A program is being debugged - Ctrl-F2 ends it"), app.status)
-    assert_true(app.dbg.active())
+    assert_true(messages(app).endswith("Running...  (Shift-F5 pauses, Ctrl-F2 ends the program)"), messages(app))
     app.handle(key_event(fkey(2) | MOD_CTRL))
     assert_false(app.dbg.active())
     assert_true(gone_soon(pid))
@@ -417,6 +416,143 @@ def test_ctrl_f2_ends_a_program_being_debugged() raises:
     app.handle(key_event(fkey(2) | MOD_CTRL))
     assert_equal(app.status, "Nothing to cancel")
     _ = run_system("rm -rf '" + d + "'")
+
+
+def test_stepping_over_into_and_out() raises:
+    var d = scratch("steps")
+    var src = String("")
+    for k in range(1, 13):
+        src += "line " + String(k) + "\n"
+    put(d + "/stop.mojo", src)                  # the fake's source ($FAKE_DAP_SOURCE)
+    var app = ide(d)
+    app.open_path(d + "/stop.mojo")
+    var reg = build_registry()
+    # F7 and F8 are other commands until a program is being debugged
+    assert_equal(app.shortcut(fkey(7)), CM_LSP)
+    assert_equal(app.shortcut(fkey(8)), CM_RUN)
+    assert_equal(reg.key_label(CM_STEP_INTO), "F7")
+    assert_equal(reg.key_label(CM_STEP_OUT), "Shift-F8")
+    app.exec(CM_STEP_OVER)
+    assert_true(app.status.startswith("No program is being debugged - Shift-F5 starts one, F4 runs to the cursor"), app.status)
+    app.debug_launch(d + "/build/steps", d + "/stop.mojo")
+    settle(app, False)
+    var t = app.top_editor()
+    assert_equal(app.wins[t].buf.exec_row, 1, "the current line is marked")
+    assert_true(screen(app).find("►") > 0)
+    assert_equal(app.shortcut(fkey(7)), CM_STEP_INTO)
+    assert_equal(app.shortcut(fkey(8)), CM_STEP_OVER)
+    assert_equal(app.shortcut(fkey(5) | MOD_SHIFT), CM_DEBUG, "Shift-F5 continues a stopped program")
+    # F8: the next line; the mark and the cursor follow
+    step_to(app, fkey(8), 3)
+    assert_equal(app.wins[t].cr, 2)
+    assert_equal(app.wins[t].buf.exec_row, 2)
+    # F7 on a line that calls into the library: it comes out again by itself
+    step_to(app, fkey(7), 3)
+    assert_equal(app.dbg.stop_func, "steps::main()")
+    assert_equal(app.dbg.stop_depth, 0)
+    var log = read_text(d + "/requests.log")
+    assert_true(log.find("stepIn {\"granularity\": \"line\", \"threadId\": 7}\nstackTrace") > 0 and log.find("stepOut {\"threadId\": 7}") > 0, log)
+    # F7 into a function of the program, Shift-F8 out of it
+    step_to(app, fkey(8), 4)
+    step_to(app, fkey(7), 10)
+    assert_equal(app.dbg.stop_func, "steps::helper()")
+    step_to(app, fkey(8) | MOD_SHIFT, 4)
+    assert_equal(app.dbg.stop_func, "steps::main()")
+    # F4: run to the cursor's line - one stop there, and the breakpoint is gone after it
+    app.wins[t].goto(8, 0)
+    app.handle(key_event(fkey(4)))
+    assert_equal(app.status, "Running to line 9")
+    settle_line(app, 9)
+    assert_equal(app.dbg.stop_line, 9)
+    assert_equal(len(app.bps.items), 0, "run to cursor sets no breakpoint of the user's")
+    settle_quiet(app)
+    var after = read_text(d + "/requests.log")
+    var last_set = after.rfind("setBreakpoints")
+    assert_true(after.find("\"breakpoints\": []", last_set) > last_set, after)
+    # Ctrl-F2 (Program reset) ends it; the mark goes
+    app.handle(key_event(fkey(2) | MOD_CTRL))
+    assert_false(app.dbg.active())
+    assert_equal(app.wins[t].buf.exec_row, -1)
+    _ = run_system("rm -rf '" + d + "'")
+
+
+def test_run_to_cursor_starts_debugging_and_pause_stops_it() raises:
+    var d = scratch("f4")
+    var src = String("")
+    for k in range(1, 13):
+        src += "line " + String(k) + "\n"
+    put(d + "/stop.mojo", src)
+    put(d + "/forever.mojo", "def main():\n    pass\n")
+    var app = ide(d)
+    app.open_path(d + "/forever.mojo")
+    # F4 without a session: debugging starts (here: the build is started first)
+    app.wins[app.top_editor()].goto(1, 0)
+    app.trust_enforced = False
+    app.compiler = "true"                       # a build that does nothing and succeeds
+    app.exec(CM_RUN_CURSOR)
+    assert_true(app.job.active, "the program is built for debugging first")
+    assert_equal(app.dbg_temp_line, 2)
+    # (the fake adapter cannot run what was built; the launch itself is tested below)
+    app.cancel_job()
+    _ = external_call["pclose", Int32](app.job.fp)
+    app.job.active = False
+    app.debug_temp_clear()
+    # a running program: Shift-F5 pauses it, the place shown is the program's own line
+    app.debug_launch(d + "/build/forever", d + "/forever.mojo")
+    settle(app, False)
+    assert_equal(app.dbg.state, DS_RUNNING)
+    assert_equal(app.shortcut(fkey(5) | MOD_SHIFT), CM_PAUSE)
+    app.handle(key_event(fkey(5) | MOD_SHIFT))
+    assert_equal(app.status, "Pausing...")
+    settle_line(app, 7)
+    assert_equal(app.dbg.state, DS_STOPPED)
+    assert_equal(app.dbg.stop_reason, "pause")
+    assert_equal(app.dbg.stop_top, "__clock_nanosleep")
+    assert_equal(app.dbg.stop_depth, 1)
+    assert_equal(app.wins[app.top_editor()].path, d + "/stop.mojo")
+    assert_true(app.status.startswith("Stopped: paused at stop.mojo:7 in forever::main() (called it: the stop is in __clock_nanosleep)"), app.status)
+    # a step from there first leaves the code without a source
+    app.handle(key_event(fkey(8)))
+    settle_line(app, 7)
+    var deadline = now() + 3000 * MS
+    while now() < deadline and not (app.dbg.state == DS_STOPPED and app.dbg.stop_depth == 0):
+        var fds = List[Int]()
+        fds.append(app.dbg.fd())
+        _ = wait_readable(fds, 20)
+        app.debug_tick()
+    assert_equal(app.dbg.stop_depth, 0)
+    assert_equal(app.dbg.stop_top, "forever::main()")
+    assert_true(read_text(d + "/requests.log").find("stepOut {\"granularity\": \"line\", \"threadId\": 7}") > 0)
+    app.debug_end(True)
+    _ = run_system("rm -rf '" + d + "'")
+
+
+def step_to(mut app: App, k: Int, line: Int) raises:
+    app.handle(key_event(k))
+    settle_line(app, line)
+    assert_equal(app.dbg.stop_line, line)
+
+
+def settle_line(mut app: App, line: Int) raises:
+    """Follow the session until the program stopped on `line`."""
+    var deadline = now() + 5000 * MS
+    while now() < deadline:
+        var fds = List[Int]()
+        fds.append(app.dbg.fd())
+        _ = wait_readable(fds, 20)
+        app.debug_tick()
+        if app.dbg.state == DS_STOPPED and app.dbg.stop_line == line:
+            return
+
+
+def settle_quiet(mut app: App) raises:
+    """Take what is still on its way (for a short while)."""
+    var deadline = now() + 300 * MS
+    while now() < deadline:
+        var fds = List[Int]()
+        fds.append(app.dbg.fd())
+        _ = wait_readable(fds, 20)
+        app.debug_tick()
 
 
 def test_debug_explains_what_went_wrong() raises:

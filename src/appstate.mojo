@@ -179,6 +179,8 @@ struct App(Movable):
     var dbg: DebugSession      # the program being debugged
     var dbg_source: String     # its main source file
     var bps: Breakpoints       # where the debugger is to stop
+    var dbg_temp_path: String  # Run to cursor: the line to stop at once ('' = none)
+    var dbg_temp_line: Int
     var bp_stamp: Int          # changes with every change of the list
     var bp_dir: String         # where the lists are kept, one file per project ('' = not kept)
     var bp_edit: Int           # the breakpoint the dialog edits (-1: a new one at bp_edit_path/line)
@@ -468,6 +470,8 @@ struct App(Movable):
         self.dbg = DebugSession()
         self.dbg_source = ""
         self.bps = Breakpoints()
+        self.dbg_temp_path = ""
+        self.dbg_temp_line = 0
         self.bp_stamp = 0
         self.bp_dir = ""
         self.bp_edit = -1

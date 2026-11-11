@@ -126,6 +126,12 @@ comptime CM_BP_EDIT = 183
 comptime CM_BP_FUNC = 184
 comptime CM_BP_LIST = 185
 comptime CM_BP_CLEAR = 186
+comptime CM_STEP_INTO = 187
+comptime CM_STEP_OVER = 188
+comptime CM_STEP_OUT = 189
+comptime CM_RUN_CURSOR = 190
+comptime CM_PAUSE = 191
+comptime CM_RESET = 192
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -365,12 +371,27 @@ struct Registry(Copyable, Movable):
     var menu_titles: List[String]
     var layout: List[Placement]
     var hidden: List[Int]      # commands that are in no menu on purpose (palette and keys only)
+    var ctx_ids: List[Int]     # keys that mean these commands only while a program is
+    var ctx_keys: List[Int]    #   being debugged (F7, F8 are other commands otherwise)
 
     def __init__(out self):
         self.cmds = List[Command]()
         self.menu_titles = List[String]()
         self.layout = List[Placement]()
         self.hidden = List[Int]()
+        self.ctx_ids = List[Int]()
+        self.ctx_keys = List[Int]()
+
+    def debug_key(mut self, id: Int, k: Int):
+        self.ctx_ids.append(id)
+        self.ctx_keys.append(k)
+
+    def find_debug_key(self, k: Int) -> Int:
+        """The command key k means while debugging (CM_NONE: none)."""
+        for i in range(len(self.ctx_keys)):
+            if self.ctx_keys[i] == k:
+                return self.ctx_ids[i]
+        return CM_NONE
 
     def hide(mut self, id: Int, name: String, title: String, hint: String):
         """A command without a menu entry."""
@@ -458,6 +479,10 @@ struct Registry(Copyable, Movable):
     def key_label(self, id: Int) -> String:
         """Name of the primary binding ('' when the command has no key)."""
         var i = self.index_of(id)
+        if i >= 0 and len(self.cmds[i].keys) == 0:
+            for j in range(len(self.ctx_ids)):
+                if self.ctx_ids[j] == id:
+                    return key_name(self.ctx_keys[j])
         if i < 0 or len(self.cmds[i].keys) == 0:
             return ""
         return key_name(self.cmds[i].keys[0])
@@ -640,6 +665,16 @@ def build_registry() -> Registry:
     # ---- Run
     r.cmd(CM_RUN, "run.run", "~R~un", "Run the current program with `mojo run`", [fkey(9) | MOD_CTRL, fkey(8)])
     r.cmd(CM_DEBUG, "run.debug", "~D~ebug", "Build with debug information and run under the debugger; continues a stopped program", [fkey(5) | MOD_SHIFT])
+    r.cmd(CM_STEP_INTO, "debug.stepInto", "Trace ~i~nto", "While debugging: one line, into the functions it calls")
+    r.cmd(CM_STEP_OVER, "debug.stepOver", "St~e~p over", "While debugging: one line, over the functions it calls")
+    r.cmd(CM_STEP_OUT, "debug.stepOut", "~S~tep out", "While debugging: run to the end of this function", [fkey(8) | MOD_SHIFT])
+    r.cmd(CM_RUN_CURSOR, "debug.runToCursor", "~G~o to cursor", "Run (or debug) until the program reaches the cursor's line", [fkey(4)])
+    r.cmd(CM_PAUSE, "debug.pause", "Pause t~h~e program", "Stop the program being debugged where it is")
+    r.cmd(CM_RESET, "debug.reset", "Reset progra~m~", "End the program being debugged")
+    r.debug_key(CM_STEP_INTO, fkey(7))
+    r.debug_key(CM_STEP_OVER, fkey(8))
+    r.debug_key(CM_PAUSE, fkey(5) | MOD_SHIFT)
+    r.debug_key(CM_RESET, fkey(2) | MOD_CTRL)
     r.cmd(CM_BP_TOGGLE, "debug.toggleBreakpoint", "Toggle ~b~reakpoint", "Set or remove a breakpoint on the cursor's line (also: click the line number)", [fkey(8) | MOD_CTRL])
     r.cmd(CM_BP_EDIT, "debug.editBreakpoint", "Breakpoint c~o~ndition...", "Condition, hit count and log message of the breakpoint on this line (sets one if there is none)")
     r.cmd(CM_BP_FUNC, "debug.functionBreakpoint", "~F~unction breakpoint...", "Stop when a function is entered, by its name")
@@ -790,6 +825,12 @@ def build_registry() -> Registry:
     r.menu("~R~un")
     r.item(CM_RUN)
     r.item(CM_DEBUG)
+    r.item(CM_STEP_INTO)
+    r.item(CM_STEP_OVER)
+    r.item(CM_STEP_OUT)
+    r.item(CM_RUN_CURSOR)
+    r.item(CM_PAUSE)
+    r.item(CM_RESET)
     r.item(CM_TEST)
     r.item(CM_USERSCREEN)
     r.item(CM_ARGS)

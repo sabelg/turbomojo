@@ -145,6 +145,11 @@ __extension Window:
                     rowbg = pal.msg_sel_bg
                     rowfg = pal.msg_sel_fg
                     scr.fill(self.x + 1, yy, self.w - 2, 1, 32, rowfg, rowbg)
+            elif r == self.buf.exec_row:
+                # the line the program being debugged is stopped at
+                rowbg = pal.msg_sel_bg
+                rowfg = pal.msg_sel_fg
+                scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
             elif hl_line and active and r == self.cr:
                 rowbg = pal.curline_bg
                 scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
@@ -182,7 +187,9 @@ __extension Window:
                         _ = scr.text(self.x + 1, yy, s, pal.diag_err, pal.gutter_bg)
                         if pad >= 1:
                             scr.put(self.x + 1, yy, 0x25CB if look == 2 else 0x25CC, pal.diag_err, pal.gutter_bg)
-                if fold_mark != 32:
+                if seg == 0 and r == self.buf.exec_row:
+                    scr.put(self.x + self.gut, yy, 0x25BA, pal.msg_sel_bg, pal.gutter_bg)   # ►
+                elif fold_mark != 32:
                     scr.put(self.x + self.gut, yy, fold_mark, pal.frame_act if fold_mark == 0x25B8 else pal.gutter_fg, pal.gutter_bg)
             var n = len(ln)
             scr.clip(cx0, self.y + 1, cls, self.h - 2)

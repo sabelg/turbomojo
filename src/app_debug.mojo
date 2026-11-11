@@ -80,7 +80,11 @@ __extension App:
         """Run > Debug: build the current file with debug information and run it under
         the debugger. While a program is stopped, the same command lets it continue."""
         if self.dbg.active():
+            if self.dbg.state == DS_RUNNING:
+                self.debug_pause()
+                return
             if self.dbg.resume():
+                self.debug_mark_clear()
                 self.say("Continuing " + basename(self.dbg_source))
             else:
                 self.say("A program is being debugged - " + self.reg.key_label(CM_CANCEL) + " ends it")
@@ -123,8 +127,12 @@ __extension App:
         # the breakpoints go to the adapter while it is being configured
         self.bp_sync()
         self.dbg.clear_config()
-        for f in self.bps.files():
-            self.dbg.set_config(f, "setBreakpoints", self.bps.source_request(f))
+        var files = self.bps.files()
+        if self.dbg_temp_path.byte_length() > 0 and self.dbg_temp_path not in files:
+            files.append(self.dbg_temp_path)
+        for f in files:
+            var extra = self.dbg_temp_line if f == self.dbg_temp_path else 0
+            self.dbg.set_config(f, "setBreakpoints", self.bps.source_request(f, extra))
         if len(self.bps.sent_functions()) > 0:
             self.dbg.set_config("", "setFunctionBreakpoints", self.bps.function_request())
         if not self.dbg.begin(cmd, exe, dirname(source), args, log):
@@ -154,9 +162,13 @@ __extension App:
                 s += " at " + basename(self.dbg.stop_file) + ":" + String(self.dbg.stop_line)
             if self.dbg.stop_func.byte_length() > 0:
                 s += " in " + self.dbg.stop_func
-            return s + "  (" + self.reg.key_label(CM_DEBUG) + " continues, " + self.reg.key_label(CM_CANCEL) + " ends)"
+            if self.dbg.stop_file.byte_length() == 0:
+                s += " (no source)"
+            elif self.dbg.stop_depth > 0:
+                s += " (called it: the stop is in " + self.dbg.stop_top + ")"
+            return s + "  (" + self.reg.key_label(CM_STEP_INTO) + "/" + self.reg.key_label(CM_STEP_OVER) + " step, " + self.reg.key_label(CM_DEBUG) + " continues, " + self.reg.key_label(CM_CANCEL) + " ends)"
         if self.dbg.state == DS_RUNNING:
-            return "Running...  (" + self.reg.key_label(CM_CANCEL) + " ends the program)"
+            return "Running...  (" + self.reg.key_label(CM_PAUSE) + " pauses, " + self.reg.key_label(CM_CANCEL) + " ends the program)"
         return "Starting..."
 
     def debug_tick(mut self) raises:
@@ -169,9 +181,11 @@ __extension App:
         var over = False
         for e in evs:
             if e == DE_RUNNING:
+                self.debug_mark_clear()
                 self.say("Debugging " + basename(self.dbg_source) + " - " + self.reg.key_label(CM_CANCEL) + " ends it")
             elif e == DE_STOPPED:
                 self.say("Stopped: " + self.dbg.stop_text)
+                self.debug_temp_clear()
             elif e == DE_LOCATED:
                 self.debug_show_stop()
             elif e == DE_BREAKPOINTS:
@@ -184,21 +198,90 @@ __extension App:
             self.debug_show(self.debug_state_line())
 
     def debug_show_stop(mut self) raises:
-        """The program stopped and the place is known: show the line."""
+        """The program stopped and the place is known: show the line, marked."""
         var file = self.dbg.stop_file
         var line = self.dbg.stop_line
-        if self.mode == M_NORMAL and file.byte_length() > 0 and path_exists(file) and line > 0:
-            self.jump_mark()
-            self.open_path(file)
-            var t = self.top()
-            self.wins[t].goto(line - 1, 0)
+        self.debug_mark_clear()
+        if file.byte_length() > 0 and path_exists(file) and line > 0:
+            if self.mode == M_NORMAL:
+                var already = self.top_editor() >= 0 and self.wins[self.top_editor()].path == file
+                if not already:
+                    self.jump_mark()
+                self.open_path(file)
+                var t = self.top()
+                self.wins[t].goto(line - 1, 0)
+            for i in range(len(self.wins)):
+                if self.wins[i].kind == WK_EDITOR and self.wins[i].path == file:
+                    self.wins[i].buf.exec_row = line - 1
         self.say(self.debug_state_line())
+
+    def debug_mark_clear(mut self):
+        for i in range(len(self.wins)):
+            self.wins[i].buf.exec_row = -1
+
+    def debug_step(mut self, kind: String) raises:
+        """F7 / F8 / Shift-F8 while a program is stopped."""
+        if not self.dbg.active():
+            self.say("No program is being debugged - " + self.reg.key_label(CM_DEBUG) + " starts one, " + self.reg.key_label(CM_RUN_CURSOR) + " runs to the cursor")
+            return
+        if self.dbg.state != DS_STOPPED:
+            self.say("The program is running - " + self.reg.key_label(CM_PAUSE) + " pauses it")
+            return
+        if self.dbg.step(kind):
+            self.debug_mark_clear()
+
+    def debug_pause(mut self):
+        if self.dbg.state != DS_RUNNING:
+            self.say("No program is running under the debugger")
+            return
+        if self.dbg.pause():
+            self.say("Pausing...")
+
+    def debug_run_to_cursor(mut self) raises:
+        """F4: run until the cursor's line - a breakpoint there for one stop. Without
+        a session, debugging starts and runs to it."""
+        var i = self.top_editor()
+        if i < 0:
+            return
+        var path = self.wins[i].path
+        if path.byte_length() == 0:
+            self.say("Save the file first")
+            return
+        var line = self.wins[i].cr + 1
+        if self.dbg.active() and self.dbg.state != DS_STOPPED:
+            self.say("The program is running - " + self.reg.key_label(CM_PAUSE) + " pauses it")
+            return
+        self.bp_sync()
+        self.dbg_temp_path = path
+        self.dbg_temp_line = line
+        if not self.dbg.active():
+            self.debug_command()
+            if not self.job.active:
+                self.debug_temp_clear()     # (nothing was started)
+            return
+        self.dbg.send_breakpoints(path, "setBreakpoints", self.bps.source_request(path, line))
+        if self.dbg.resume():
+            self.debug_mark_clear()
+            self.say("Running to line " + String(line))
+
+    def debug_temp_clear(mut self):
+        """The stop came (wherever it is): the breakpoint of Run to cursor goes."""
+        if self.dbg_temp_path.byte_length() == 0:
+            return
+        var path = self.dbg_temp_path
+        self.dbg_temp_path = ""
+        self.dbg_temp_line = 0
+        if self.dbg.can_send():
+            self.dbg.send_breakpoints(path, "setBreakpoints", self.bps.source_request(path))
 
     def debug_end(mut self, by_user: Bool):
         """The session is over (or the user ends it): stop the adapter and the program,
         and say how it ended."""
         var failed = self.dbg.error
         self.dbg.finish()
+        self.debug_mark_clear()
+        self.dbg_temp_path = ""
+        self.dbg_temp_line = 0
         self.bps.forget_debugger()
         self.bp_stamp += 1
         var footer: String

@@ -85,7 +85,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 
 - [x] P4-01 DAP client on the JSON-RPC layer: initialize, launch (build with debug info first), configurationDone, events
 - [x] P4-02 Breakpoints: gutter toggle, conditional, hit-count, log points, function; persisted
-- [ ] P4-03 Execution control with Turbo keys: step into/over/out, run to cursor, pause, terminate; current-line marker
+- [x] P4-03 Execution control with Turbo keys: step into/over/out, run to cursor, pause, terminate; current-line marker
 - [ ] P4-04 Call Stack and Variables views (expandable, set value)
 - [ ] P4-05 Watches and debug console with evaluate
 - [ ] P4-06 Disassembly, Registers and Memory views

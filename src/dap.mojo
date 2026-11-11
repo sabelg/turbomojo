@@ -43,6 +43,9 @@ comptime DE_ENDED = 6        # the session is over: the adapter said so, or went
 comptime DE_FAILED = 7       # the session could not be set up (error says why)
 comptime DE_BREAKPOINTS = 8  # the debugger said where breakpoints are (reports, changed_*)
 
+comptime TRACE_LEVELS = 20   # frames asked for to find the innermost one with a source
+comptime AUTO_OUTS = 6       # at most this many automatic steps out after a step in
+
 
 struct DapMessage(Copyable, Movable):
     var kind: Int
@@ -339,6 +342,12 @@ struct DebugSession(Copyable, Movable):
     var stop_func: String
     var error: String
     var trace_seq: Int              # the stackTrace request whose answer locates the stop
+    var stop_top: String            # the innermost function, which may have no source
+    var stop_depth: Int             # how many frames out the shown place is (0: the innermost)
+    var stop_frame: Int             # the adapter's id of the frame shown
+    var step_kind: String           # the step under way ("next", "stepIn", "stepOut"; '' none)
+    var auto_outs: Int              # steps out made because a step in left the sources
+    var pausing: Bool               # a pause was asked for (it is reported as a signal)
 
     def __init__(out self):
         self.conn = DapConn()
@@ -370,6 +379,12 @@ struct DebugSession(Copyable, Movable):
         self.stop_func = ""
         self.error = ""
         self.trace_seq = -1
+        self.stop_top = ""
+        self.stop_depth = 0
+        self.stop_frame = -1
+        self.step_kind = ""
+        self.auto_outs = 0
+        self.pausing = False
 
     def active(self) -> Bool:
         return self.state != DS_OFF
@@ -403,6 +418,9 @@ struct DebugSession(Copyable, Movable):
         self.stop_file = ""
         self.stop_line = 0
         self.stop_func = ""
+        self.stop_top = ""
+        self.stop_depth = 0
+        self.stop_frame = -1
         self.trace_seq = -1
 
     def begin(mut self, adapter_cmd: String, program: String, cwd: String, args: List[String], stderr_path: String = "/dev/null") -> Bool:
@@ -509,9 +527,16 @@ struct DebugSession(Copyable, Movable):
             if self.stop_text.byte_length() == 0:
                 self.stop_text = m.doc.str(m.doc.get(b, "text"), self.stop_reason)
             self.stop_thread = m.doc.int(m.doc.get(b, "threadId"), self.stop_thread)
-            self.trace_seq = self.conn.request("stackTrace", "{\"threadId\":" + String(self.stop_thread) + ",\"startFrame\":0,\"levels\":1}")
+            if self.pausing:
+                # LLDB stops the program with SIGSTOP and says so ("signal SIGSTOP")
+                self.pausing = False
+                self.stop_reason = "pause"
+                self.stop_text = "paused"
+            self.trace_seq = self.conn.request("stackTrace", "{\"threadId\":" + String(self.stop_thread) + ",\"startFrame\":0,\"levels\":" + String(TRACE_LEVELS) + "}")
             return DE_STOPPED
         if m.name == "continued":
+            if self.step_kind.byte_length() > 0:
+                return 0                # a step under way: it is about to stop again
             if self.state == DS_STOPPED:
                 self.state = DS_RUNNING
                 self.clear_stop()
@@ -571,12 +596,35 @@ struct DebugSession(Copyable, Movable):
             self.trace_seq = -1
             if not m.success or self.state != DS_STOPPED:
                 return 0
-            var frame0 = m.doc.at(m.doc.get(m.body(), "stackFrames"), 0)
-            if frame0 < 0:
+            var frames = m.doc.children(m.doc.get(m.body(), "stackFrames"))
+            if len(frames) == 0:
                 return 0
-            self.stop_func = m.doc.str(m.doc.get(frame0, "name"), "")
-            self.stop_file = m.doc.str(m.doc.path(frame0, "source/path"), "")
-            self.stop_line = m.doc.int(m.doc.get(frame0, "line"), 0)
+            self.stop_top = m.doc.str(m.doc.get(frames[0], "name"), "")
+            # the place shown is the innermost frame whose source file is there: a stop
+            # inside the C library or the standard library (paths like
+            # "Mojo/stdlib/std/time/time.mojo" are relative to where it was built) shows
+            # the line of the program that called it
+            var pick = -1
+            for k in range(len(frames)):
+                var p = m.doc.str(m.doc.path(frames[k], "source/path"), "")
+                if p.startswith("/") and path_exists(p) and m.doc.int(m.doc.get(frames[k], "line"), 0) > 0:
+                    pick = k
+                    break
+            if pick > 0 and (self.step_kind == "stepIn" or self.step_kind == "toSource") and self.auto_outs < AUTO_OUTS:
+                # a step in that left the sources (into the standard library): out again,
+                # so that F7 stays in the program's own code
+                self.auto_outs += 1
+                self.state = DS_RUNNING
+                _ = self.conn.request("stepOut", "{\"threadId\":" + String(self.stop_thread) + "}")
+                return 0
+            self.step_kind = ""
+            self.auto_outs = 0
+            var f = frames[pick] if pick >= 0 else frames[0]
+            self.stop_depth = max(0, pick)
+            self.stop_frame = m.doc.int(m.doc.get(f, "id"), -1)
+            self.stop_func = m.doc.str(m.doc.get(f, "name"), "")
+            self.stop_file = m.doc.str(m.doc.path(f, "source/path"), "") if pick >= 0 else String("")
+            self.stop_line = m.doc.int(m.doc.get(f, "line"), 0) if pick >= 0 else 0
             return DE_LOCATED
         return 0
 
@@ -602,7 +650,41 @@ struct DebugSession(Copyable, Movable):
     def resume(mut self) -> Bool:
         if self.state != DS_STOPPED:
             return False
+        self.step_kind = ""
         _ = self.conn.request("continue", "{\"threadId\":" + String(self.stop_thread) + "}")
+        return True
+
+    def step(mut self, kind: String) -> Bool:
+        """One step of the stopped thread: "next" (over), "stepIn" or "stepOut". The
+        program counts as running until the adapter says where it stopped."""
+        if self.state != DS_STOPPED:
+            return False
+        var what = kind
+        if self.stop_depth > 0 and kind != "stepOut":
+            # stopped inside code without a source (a pause in the C library): a step
+            # there means "back to the program's own line" - out until a source is there
+            what = "stepOut"
+            self.step_kind = "toSource"
+        else:
+            self.step_kind = kind
+        self.auto_outs = 0
+        self.state = DS_RUNNING
+        self.clear_stop()
+        _ = self.conn.request(what, "{\"threadId\":" + String(self.stop_thread) + ",\"granularity\":\"line\"}")
+        return True
+
+    def pause(mut self) -> Bool:
+        """Stop the running program where it is (the adapter reports it as a stop)."""
+        if self.state != DS_RUNNING:
+            return False
+        # the main thread's id is the process id (Linux); before the first stop that is
+        # the only thread known
+        var thread = self.stop_thread if self.stop_thread > 0 else self.pid
+        if thread <= 0:
+            return False
+        self.step_kind = ""
+        self.pausing = True
+        _ = self.conn.request("pause", "{\"threadId\":" + String(thread) + "}")
         return True
 
     def finish(mut self):

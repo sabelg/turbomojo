@@ -2509,3 +2509,65 @@ Built:
     match. Debug saves first, so this only happens for edits made during a session.
   - Breakpoints of files outside the project are kept too, in the project's list.
 - Verified: `scripts/check.sh` → `CHECK OK`, 48 test files, 897 tests, smoke ok.
+
+## 2026-11-10 · P4-03 Execution control: step into/over/out, run to cursor, pause, terminate; current-line marker · done
+
+Probed first with the real `mojo-lldb-dap` (plugin loaded):
+
+- On `examples/hello.mojo`, stopped at line 24 (`c.bump(i)`): `stepIn` → `bump` line 12;
+  `next` → line 11 (the function's end is attributed to its `def` line); `stepOut` →
+  back on 24; `next` → 23, then the breakpoint on 24 again. Each step answers, sends
+  `continued`, then `stopped` with reason "step".
+- `pause` on a program sleeping in a loop: `stopped` with reason "exception" and
+  description "signal SIGSTOP". The innermost frames are `__clock_nanosleep` /
+  `__nanosleep` (paths relative to glibc's build, no file), then
+  `std::time::time::sleep(...)` with the path `Mojo/stdlib/std/time/time.mojo`
+  (relative, not on this machine), then `loop::main()` line 8 with an absolute path.
+- Run to cursor: a breakpoint on the line plus `continue` stops there; resending the
+  file's list without it removes it. The adapter offers no goto targets.
+- F7 on a `print(...)` line: LLDB itself steps over library code without debug
+  information (landed on the next line in tmux).
+
+Built:
+
+- `DebugSession.step(kind)` (`next`, `stepIn`, `stepOut`, line granularity),
+  `pause()` (the main thread's id is the pid before any stop), and `stackTrace` of 20
+  frames: **the place shown is the innermost frame whose file exists**; the innermost
+  function is kept in `stop_top`, the distance in `stop_depth`, the frame id in
+  `stop_frame` (for P4-04). A step in that lands without a source steps out again (at
+  most 6 times); a step while stopped without a source (after a pause) means "out to
+  the program's line". A pause is reported as "paused", not as SIGSTOP.
+- Keys: the registry got "debug keys" - F7 / F8 mean Trace into / Step over only while a
+  session is active (otherwise Check with language server / Run, as before; the
+  test that no key is bound twice still holds for the normal bindings); Shift-F8 Step
+  out and F4 Go to cursor are ordinary bindings (they were free); Shift-F5 continues a
+  stopped program and pauses a running one; Ctrl-F2 is Program reset while debugging
+  (and still cancels a build or search when one runs). Menus show the debug keys.
+- F4 sets a one-stop breakpoint for the cursor's line (not in the user's list; removed
+  at the next stop, wherever it is); without a session it starts Debug with it.
+- `TextBuffer.exec_row`: the stopped line has ► in the fold column and the
+  selection colours as its bar; cleared when the program runs or the session ends.
+- Tests (`tests/test_dap.mojo`, now 15): stepping over, into a library function (and
+  back out by itself), into and out of a program function, F4 while stopped (and that
+  the one-stop breakpoint is removed), Program reset clearing the mark, F7/F8 meanings
+  outside and inside a session, F4 starting the debug build, pause (shown as the
+  calling line, with the innermost function named) and a step after it. The fake
+  adapter follows the observed behaviour (continued before stopped, SIGSTOP, frames
+  with relative paths).
+- Looked at in tmux with the real adapter: F4 on line 24 started debugging and stopped
+  there; F7 → line 12 with ►; Shift-F8 → 24; F8 twice; F4 to 25, F7 over `print` → 26
+  with the output shown; an endless program: Shift-F5 pause → "paused at loop.mojo:8
+  in loop::main() (called it: the stop is in __clock_nanosleep)"; F8 → line 5, F8 → 6;
+  Ctrl-F2 leaves no `lldb-server` or program process.
+- Not done / unverified:
+  - Instruction-level stepping (with the Disassembly view, P4-06).
+  - Pause and steps act on the thread that stopped last (or the main thread); other
+    threads of a multi-threaded program are not chosen.
+  - Standard library frames have relative paths; they could be shown from the
+    downloaded sources (`docs-cache/modular/Mojo/stdlib/...`) - not done.
+  - F4 on a line without code: LLDB moves the breakpoint to the next line with code;
+    the stop is shown where it really is.
+- The first gate run failed in `test_commands` (two Run menu items with the same hot
+  letter); the new items are now Trace ~i~nto, St~e~p over, ~S~tep out, ~G~o to cursor,
+  Pause t~h~e program, Reset progra~m~.
+- Verified: `scripts/check.sh` → `CHECK OK`, 48 test files, 899 tests, smoke ok.
