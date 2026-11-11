@@ -2571,3 +2571,61 @@ Built:
   letter); the new items are now Trace ~i~nto, St~e~p over, ~S~tep out, ~G~o to cursor,
   Pause t~h~e program, Reset progra~m~.
 - Verified: `scripts/check.sh` → `CHECK OK`, 48 test files, 899 tests, smoke ok.
+
+## 2026-11-10 · P4-04 Call Stack and Variables views (expandable, set value) · done
+
+Probed first with the real `mojo-lldb-dap` on a small program stopped in a function
+(`build/dap/vars/vars.mojo`, not committed: Int, Bool, Float64 field, struct, List,
+String):
+
+- `scopes` gives Locals, Globals, Registers. Variables come as LLDB sees them: an Int is
+  type "__mlir_type.`!kgen.scalar<index>`" with value `0400000000000000  4` (raw bytes,
+  two blanks, the value) and one child `[0]` repeating it; a Bool is `01 True`; a
+  struct shows its type name and has its fields as children; a List shows
+  `(size 4)[0, 1, 4, 9]` with elements named by address in `evaluateName`; a String
+  shows `"mojo"` (an uninitialised one shows garbage).
+- **`setVariable` fails for every Mojo value** ("Invalid c-string value string."), on
+  the variable and on its `[0]` child; `evaluate "total = 5"` fails too. **`writeMemory`
+  at the variable's `memoryReference` works**: writing 41 into `total` made the program
+  print 41. Locals have a `memoryReference`; struct fields do not.
+
+Built:
+
+- `src/dbgview.mojo`: `nice_value` (drops the raw bytes), `nice_type` (Int, Bool,
+  Float64, Int64, UInt8, ...), `scalar_kind`, `value_width`, `encode_value` (text →
+  little-endian bytes for Int / IntN / UIntN / Float64 / Float32 / Bool, with range
+  checks), `base64`, `address_in`; `VarNode`, `FrameRow`, `DebugView` (frames, the
+  chosen frame, a variable tree by "path" of names: put children, close, which nodes to
+  reopen after a stop, and the window's lines with what each line is).
+- `src/dap.mojo`: the stop's frames are kept (`FrameRow`, an existing file or none);
+  `ask()` sends a request whose answer goes to `answers` (DE_ANSWER) for the IDE.
+- Debug window (`WK_DEBUG`, Ctrl-F3 / Window menu; the first stop opens it at the right
+  edge, in the Outline's place): call stack (► the frame shown), the variables of the
+  frame. Enter on a frame shows its line and its variables (the keyboard stays in the
+  window); Enter / → opens a node, ← closes, what was open is opened again after every
+  stop; = or Enter on a leaf asks for a new value, written with `writeMemory`, then the
+  variables are read again. A field (no address) or a non-scalar says why it cannot be
+  set; a value that does not fit is refused before anything is sent. While the program
+  runs the window says so; after the session it says no program is being debugged.
+- Tests: `tests/test_debugview.mojo` (4): the value and type names (from the real
+  adapter's strings), the byte encodings (checked against Python's `struct`), base64,
+  the tree; in the IDE with the fake adapter (which now has scopes, variables shaped
+  like the real ones and memory): the window's exact text, opening and closing, setting
+  `n` (the exact `writeMemory` request), refusals, the caller's frame, reopening after a
+  step, the end of the session, Ctrl-F3.
+- Looked at in tmux with the real adapter: F4 to line 19 of the probe program → the
+  window shows 7 frames and `n = 4 Int`, `name = "mojo" String`, `total = 8 Int`,
+  `flag = True Bool`, `p: Point`, `items = (size 4)[0, 1, 4, 9] List`; setting `flag`
+  to "True41" was refused; setting `total` to 41 → "Value set", the window shows 41,
+  and Shift-F5 printed `41 True 4 4 mojo!` and `41`. The Set dialog now has its value
+  selected so that typing replaces it (I had to delete the old text by hand).
+- Not done / unverified:
+  - Fields of structs and Strings cannot be set (no address from the debugger).
+  - Globals and Registers scopes are not shown (Registers belong to P4-06).
+  - The Debug window replaces the Outline while open; in the tiled layout it was not
+    looked at.
+  - Frames of other threads are not listed (the stopped thread only).
+- The first gate run failed in `test_dap` (my P4-03 test expected `stackTrace` right
+  after `stepIn` in the request log; the Debug window's `scopes` / `variables` requests
+  now come in between). The test now checks the order of stepIn and stepOut only.
+- Verified: `scripts/check.sh` → `CHECK OK`, 49 test files, 903 tests, smoke ok.

@@ -55,6 +55,9 @@ from app_draw import *
 from app_docs import *
 from dap import *
 from breakpoints import *
+from dbgview import *
+from json import json_quote
+from window import WK_DEBUG
 
 
 __extension App:
@@ -182,14 +185,18 @@ __extension App:
         for e in evs:
             if e == DE_RUNNING:
                 self.debug_mark_clear()
+                self.dv_running()
                 self.say("Debugging " + basename(self.dbg_source) + " - " + self.reg.key_label(CM_CANCEL) + " ends it")
             elif e == DE_STOPPED:
                 self.say("Stopped: " + self.dbg.stop_text)
                 self.debug_temp_clear()
             elif e == DE_LOCATED:
                 self.debug_show_stop()
+                self.dv_stopped()
             elif e == DE_BREAKPOINTS:
                 self.bp_take_reports()
+            elif e == DE_ANSWER:
+                self.dv_answers()
             elif e == DE_FAILED or e == DE_ENDED:
                 over = True
         if over:
@@ -280,6 +287,9 @@ __extension App:
         var failed = self.dbg.error
         self.dbg.finish()
         self.debug_mark_clear()
+        self.dv_running()
+        self.dview.note = "(no program is being debugged)"
+        self.debugwin_show()
         self.dbg_temp_path = ""
         self.dbg_temp_line = 0
         self.bps.forget_debugger()
@@ -566,3 +576,212 @@ __extension App:
             self.bp_send(f)
         self.bp_send("")
         self.say("Removed " + count_of(n, "breakpoint"))
+
+    # ======================================================= the Debug window
+    def debugwin_index(self) -> Int:
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_DEBUG:
+                return i
+        return -1
+
+    def debugwin_toggle(mut self):
+        """Window > Call stack and variables: the Debug window at the right edge (it
+        takes the Outline's place), or close it."""
+        var di = self.debugwin_index()
+        if di >= 0:
+            var x = self.wins[di].x
+            _ = self.wins.pop(di)
+            for i in range(len(self.wins)):
+                if self.wins[i].kind == WK_EDITOR and self.wins[i].x + self.wins[i].w == x:
+                    self.wins[i].w = self.scr.w - self.wins[i].x
+            return
+        if self.outline_index() >= 0:
+            self.outline_toggle()
+        var w = max(30, min(48, self.scr.w * 2 // 5))
+        var x = self.scr.w - w
+        var h = self.desk_h()
+        var mi = self.msg_index()
+        if mi >= 0:
+            h = max(6, self.wins[mi].y - 1)
+        var win = Window(WK_DEBUG, "Debug", "", x, 1, w, h, self.free_number())
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EDITOR and self.wins[i].x + self.wins[i].w > x and x - self.wins[i].x >= 20:
+                self.wins[i].w = x - self.wins[i].x
+        self.wins.insert(0, win^)
+        if not self.dbg.active() and len(self.dview.frames) == 0:
+            self.dview.note = "(no program is being debugged)"
+        self.debugwin_show()
+
+    def debugwin_show(mut self):
+        var di = self.debugwin_index()
+        if di < 0:
+            return
+        var text = List[Int]()
+        var lines = self.dview.lines()
+        for k in range(len(lines)):
+            if k > 0:
+                text.append(10)
+            for c in decode(lines[k]):
+                text.append(c)
+        var keep = self.wins[di].cr
+        var keep_top = self.wins[di].top
+        self.wins[di].buf.load(text)
+        self.wins[di].buf.modified = False
+        self.wins[di].cr = max(0, min(keep, self.wins[di].buf.count() - 1))
+        self.wins[di].top = max(0, min(keep_top, self.wins[di].buf.count() - 1))
+
+    def dv_running(mut self):
+        """The program runs: there is no stack to show."""
+        self.dview.frames.clear()
+        self.dview.nodes.clear()
+        self.dview.note = "(the program is running)"
+        self.dv_scope_seq = -1
+        self.dv_var_seqs.clear()
+        self.dv_var_paths.clear()
+        self.debugwin_show()
+
+    def dv_stopped(mut self):
+        """The program stopped: its stack, and the variables of the frame shown."""
+        if self.debugwin_index() < 0 and self.mode == M_NORMAL:
+            self.debugwin_toggle()          # the first stop opens the window
+        self.dview.frames = self.dbg.frames.copy()
+        self.dview.sel = min(self.dbg.stop_depth, max(0, len(self.dview.frames) - 1))
+        self.dv_load_frame()
+
+    def dv_load_frame(mut self):
+        self.dview.nodes.clear()
+        self.dv_var_seqs.clear()
+        self.dv_var_paths.clear()
+        if self.dview.sel >= len(self.dview.frames):
+            self.dview.note = "(no frame)"
+            self.debugwin_show()
+            return
+        self.dview.note = "(asking the debugger...)"
+        self.dv_scope_seq = self.dbg.ask("scopes", "{\"frameId\":" + String(self.dview.frames[self.dview.sel].id) + "}")
+        self.debugwin_show()
+
+    def dv_ask_children(mut self, handle: Int, path: String):
+        self.dv_var_seqs.append(self.dbg.ask("variables", "{\"variablesReference\":" + String(handle) + "}"))
+        self.dv_var_paths.append(path)
+
+    def dv_answers(mut self):
+        """Answers to the Debug window's requests."""
+        var got = self.dbg.answers.copy()
+        self.dbg.answers.clear()
+        for m in got:
+            var b = m.body()
+            if m.request_seq == self.dv_scope_seq:
+                self.dv_scope_seq = -1
+                if not m.success:
+                    self.dview.note = "(" + m.message + ")"
+                    continue
+                var handle = 0
+                for sc in m.doc.children(m.doc.get(b, "scopes")):
+                    var hint = m.doc.str(m.doc.get(sc, "presentationHint"), "")
+                    if hint == "locals" or (handle == 0 and m.doc.str(m.doc.get(sc, "name"), "") == "Locals"):
+                        handle = m.doc.int(m.doc.get(sc, "variablesReference"), 0)
+                if handle > 0:
+                    self.dv_ask_children(handle, "")
+                else:
+                    self.dview.note = "(no variables)"
+                continue
+            if m.request_seq == self.dv_write_seq:
+                self.dv_write_seq = -1
+                if m.success:
+                    self.say("Value set")
+                    self.dv_load_frame()        # what the program now has
+                else:
+                    self.say("The debugger did not set it: " + m.message)
+                continue
+            for k in range(len(self.dv_var_seqs)):
+                if self.dv_var_seqs[k] != m.request_seq:
+                    continue
+                var path = self.dv_var_paths[k]
+                _ = self.dv_var_seqs.pop(k)
+                _ = self.dv_var_paths.pop(k)
+                if not m.success:
+                    if path.byte_length() == 0:
+                        self.dview.note = "(" + m.message + ")"
+                    break
+                var kids = List[VarNode]()
+                for v in m.doc.children(m.doc.get(b, "variables")):
+                    kids.append(VarNode(m.doc.str(m.doc.get(v, "name"), "?"), m.doc.str(m.doc.get(v, "type"), ""), m.doc.str(m.doc.get(v, "value"), ""), m.doc.int(m.doc.get(v, "variablesReference"), 0), m.doc.str(m.doc.get(v, "memoryReference"), ""), m.doc.str(m.doc.get(v, "evaluateName"), ""), 0, ""))
+                self.dview.put_children(path, kids^)
+                # nodes that were open at the last stop open again
+                for w in self.dview.wanted():
+                    self.dview.nodes[w].open = True     # (asked for once)
+                    var wh = self.dview.nodes[w].handle
+                    var wp = self.dview.nodes[w].path
+                    self.dv_ask_children(wh, wp)
+                break
+        self.debugwin_show()
+
+    def debugwin_key(mut self, k: Int, row: Int) raises:
+        """Enter / Space / → / ← / = on a line of the Debug window."""
+        if row < 0 or row >= len(self.dview.rows_kind):
+            return
+        var kind = self.dview.rows_kind[row]
+        var idx = self.dview.rows_index[row]
+        if kind == VK_FRAME and k != KEY_LEFT:
+            if not self.dbg.active() or self.dbg.state != DS_STOPPED:
+                return
+            self.dview.sel = idx
+            var f = self.dview.frames[idx].copy()
+            if f.path.byte_length() > 0 and f.line > 0:
+                var back = self.top()
+                self.open_path(f.path)
+                var t = self.top()
+                self.wins[t].goto(f.line - 1, 0)
+                var di = self.debugwin_index()
+                if di >= 0 and back >= 0:
+                    self.focus(di)              # the keyboard stays in the Debug window
+            self.dv_load_frame()
+            return
+        if kind != VK_VAR:
+            return
+        var n = self.dview.nodes[idx].copy()
+        if k == 61 or ((k == KEY_ENTER or k == 32) and not n.has_children()):
+            self.dv_set_dialog(idx)
+            return
+        if not n.has_children():
+            return
+        if k == KEY_LEFT or ((k == KEY_ENTER or k == 32) and n.open):
+            if n.open:
+                self.dview.close(idx)
+                self.debugwin_show()
+            return
+        if not n.open and self.dbg.state == DS_STOPPED:
+            self.dview.mark_open(idx)
+            self.dview.nodes[idx].open = True
+            self.dv_ask_children(n.handle, n.path)
+            self.debugwin_show()
+
+    def dv_set_dialog(mut self, idx: Int):
+        var n = self.dview.nodes[idx].copy()
+        if self.dbg.state != DS_STOPPED:
+            return
+        if not n.settable():
+            if not n.scalar():
+                self.say("Only numbers and Bools can be set (" + n.name + " is a " + nice_type(n.type) + ")")
+            else:
+                self.say("The debugger does not say where " + n.name + " is: it cannot be set (fields of structs)")
+            return
+        self.dv_set = idx
+        var d = Dialog(D_SETVALUE, "Set " + n.name, min(56, self.scr.w - 4), 10)
+        d.lines.append(nice_type(n.type) + " at " + n.address())
+        d.fields.append(Field("~N~ew value", nice_value(n.value)))
+        d.fields[0].fresh = True        # typing replaces the old value
+        d.buttons.append("~O~K")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def dv_set_save(mut self, text: String):
+        if self.dv_set < 0 or self.dv_set >= len(self.dview.nodes) or self.dbg.state != DS_STOPPED:
+            return
+        var n = self.dview.nodes[self.dv_set].copy()
+        var enc = encode_value(n.type, text)
+        if enc[1].byte_length() > 0:
+            self.say("Not set: " + enc[1])
+            return
+        self.dv_write_seq = self.dbg.ask("writeMemory", "{\"memoryReference\":" + json_quote(n.address()) + ",\"data\":\"" + base64(enc[0]) + "\"}")
+        self.say("Setting " + n.name + "...")

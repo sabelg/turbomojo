@@ -16,6 +16,9 @@ The program named in `launch` chooses what the "debuggee" does:
                   step in on line 3 enters a library function without a source, on
                   line 4 the function helper() at line 10; step out returns; a breakpoint
                   of a later line is where `continue` stops, else it exits
+    .../vars      stops in work() (line 5 of $FAKE_DAP_SOURCE, called from main() on
+                  line 9) with variables shaped like Mojo 1.2's debugger shows them;
+                  writeMemory changes them
     .../forever   (also) `pause` stops it inside a C function without a source, called
                   from line 7 of $FAKE_DAP_SOURCE
 Breakpoints: lines from 1000 on cannot be placed; line 99 is placed on line 100; the
@@ -90,6 +93,32 @@ program = ""
 next_id = 0
 SOURCE = os.environ.get("FAKE_DAP_SOURCE", "/src/stop.mojo")
 frames = []         # innermost first: (name, path, line)
+memory = {"0xFF00": 4, "0xFF08": 1}
+
+
+def raw(n, width=8):
+    return n.to_bytes(width, "little", signed=True).hex() + ("  " if width == 8 else " ") + (str(n) if width == 8 else ("True" if n else "False"))
+
+
+def variables(handle):
+    IDX = "__mlir_type.`!kgen.scalar<index>`"
+    if handle == 1:
+        return [
+            {"name": "n", "type": IDX, "value": raw(memory["0xFF00"]), "variablesReference": 4, "memoryReference": "0xFF00", "evaluateName": "n"},
+            {"name": "flag", "type": "__mlir_type.`!kgen.scalar<bool>`", "value": raw(memory["0xFF08"], 1), "variablesReference": 5, "memoryReference": "0xFF08", "evaluateName": "flag"},
+            {"name": "p", "type": "Point", "value": "Point", "variablesReference": 8, "evaluateName": "p"},
+            {"name": "items", "type": "List", "value": "(size 2)[0, 1]", "variablesReference": 9, "memoryReference": "0xFF10", "evaluateName": "items"},
+        ]
+    if handle == 4:
+        return [{"name": "[0]", "type": "__mlir_type.si64", "value": str(memory["0xFF00"]), "variablesReference": 0}]
+    if handle == 8:
+        return [{"name": "x", "type": IDX, "value": raw(4), "variablesReference": 14, "evaluateName": "p.x"},
+                {"name": "y", "type": "__mlir_type.`!kgen.scalar<f64>`", "value": "0000000000000440  2.5", "variablesReference": 15, "evaluateName": "p.y"}]
+    if handle == 9:
+        return [{"name": "[%d]" % k, "type": IDX, "value": raw(k), "variablesReference": 20 + k, "evaluateName": "(*( (!kgen.scalar<index> *)0x50353fe0400%d))" % (8 * k)} for k in range(2)]
+    if handle == 50:
+        return [{"name": "r", "type": IDX, "value": raw(7), "variablesReference": 51, "memoryReference": "0xFF20", "evaluateName": "r"}]
+    return []
 
 
 def stop(reason, description):
@@ -164,6 +193,10 @@ while True:
             else:
                 event("exited", {"exitCode": 0})
                 event("terminated")
+        elif program == "vars":
+            event("process", {"name": program, "systemProcessId": 0})
+            frames = [("vars::work(...)", SOURCE, 5), ("vars::main()", SOURCE, 9), ("std::builtin::_startup::__mojo_main_prototype(...)", "Mojo/stdlib/std/builtin/_startup.mojo", 133)]
+            stop("breakpoint", "breakpoint 1.1")
         elif program == "steps":
             event("process", {"name": program, "systemProcessId": 0})
             frames = [("steps::main()", SOURCE, 2)]
@@ -184,6 +217,20 @@ while True:
             event("terminated")
     elif cmd == "stackTrace" and frames:
         respond(m, {"stackFrames": [{"id": 100 + k, "name": f[0], "line": f[2], "column": 1, "source": {"path": f[1]}} for k, f in enumerate(frames)], "totalFrames": len(frames)})
+    elif cmd == "scopes":
+        fid = m["arguments"]["frameId"]
+        respond(m, {"scopes": [{"name": "Locals", "presentationHint": "locals", "variablesReference": 1 if fid == 100 else 50}, {"name": "Registers", "presentationHint": "registers", "variablesReference": 3, "expensive": True}]})
+    elif cmd == "variables":
+        respond(m, {"variables": variables(m["arguments"]["variablesReference"])})
+    elif cmd == "writeMemory":
+        import base64
+        data = base64.b64decode(m["arguments"]["data"])
+        addr = m["arguments"]["memoryReference"]
+        if addr in memory:
+            memory[addr] = int.from_bytes(data, "little", signed=True)
+            respond(m, {"bytesWritten": len(data)})
+        else:
+            respond(m, {"error": {"id": 2, "format": "memory write failed for " + addr}}, success=False, message="failed")
     elif cmd in ("next", "stepIn", "stepOut"):
         respond(m)
         resumed()

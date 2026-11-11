@@ -195,6 +195,10 @@ __extension App:
                 for h in ["~Enter~ Open", "~N~ New file", "~F~ Folder", "~R~ Rename", "~M~ Move", "~Del~ Trash"]:
                     items.append(h)
                     cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_DEBUG:
+                for h in ["~Enter~ Open / go to frame", "~←~ Close", "~=~ Set value"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_OUTLINE:
                 items.append("~Enter~ Go to symbol")
                 cmds.append(CM_NONE)

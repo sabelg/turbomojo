@@ -451,7 +451,8 @@ def test_stepping_over_into_and_out() raises:
     assert_equal(app.dbg.stop_func, "steps::main()")
     assert_equal(app.dbg.stop_depth, 0)
     var log = read_text(d + "/requests.log")
-    assert_true(log.find("stepIn {\"granularity\": \"line\", \"threadId\": 7}\nstackTrace") > 0 and log.find("stepOut {\"threadId\": 7}") > 0, log)
+    var step_in = log.find("stepIn {\"granularity\": \"line\", \"threadId\": 7}")
+    assert_true(step_in > 0 and log.find("stepOut {\"threadId\": 7}", step_in) > 0, log)
     # F7 into a function of the program, Shift-F8 out of it
     step_to(app, fkey(8), 4)
     step_to(app, fkey(7), 10)

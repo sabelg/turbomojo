@@ -38,6 +38,7 @@ from runconfig import RunConfig
 from trust import TrustStore
 from doclib import DocLibrary, DocIndex, Found, default_docs_home
 from dap import DebugSession
+from dbgview import DebugView
 from breakpoints import Breakpoints
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
@@ -181,6 +182,12 @@ struct App(Movable):
     var bps: Breakpoints       # where the debugger is to stop
     var dbg_temp_path: String  # Run to cursor: the line to stop at once ('' = none)
     var dbg_temp_line: Int
+    var dview: DebugView       # what the Debug window shows
+    var dv_scope_seq: Int      # the scopes request of the frame shown (-1: none)
+    var dv_var_seqs: List[Int] # variables requests, and the node each one is for
+    var dv_var_paths: List[String]
+    var dv_write_seq: Int      # a value being set
+    var dv_set: Int            # the node the Set value dialog is for
     var bp_stamp: Int          # changes with every change of the list
     var bp_dir: String         # where the lists are kept, one file per project ('' = not kept)
     var bp_edit: Int           # the breakpoint the dialog edits (-1: a new one at bp_edit_path/line)
@@ -472,6 +479,12 @@ struct App(Movable):
         self.bps = Breakpoints()
         self.dbg_temp_path = ""
         self.dbg_temp_line = 0
+        self.dview = DebugView()
+        self.dv_scope_seq = -1
+        self.dv_var_seqs = List[Int]()
+        self.dv_var_paths = List[String]()
+        self.dv_write_seq = -1
+        self.dv_set = -1
         self.bp_stamp = 0
         self.bp_dir = ""
         self.bp_edit = -1

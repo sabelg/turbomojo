@@ -1,0 +1,381 @@
+"""What the Debug window shows: the call stack of the stopped program and the variables
+of the chosen frame, as a tree that opens on request.
+
+Values come from Mojo's debugger the way LLDB sees them, which is not how a Mojo
+programmer writes them (verified with mojo-lldb-dap of Mojo 1.2):
+
+- scalars carry their raw bytes first: `0400000000000000  4`, `01 True`;
+- their type is the compiler's: "__mlir_type.`!kgen.scalar<index>`" is an Int;
+- a scalar has one child, "[0]", with the same value again.
+
+`nice_value` / `nice_type` turn these into `4`, `True`, `Int`; scalars are shown as leaves.
+The debugger cannot set a value of these types (setVariable answers "Invalid c-string
+value string."), but it can write memory, so `encode_value` turns a typed value into the
+bytes to write (`writeMemory`, base64).
+"""
+from std.collections import List
+from std.memory import bitcast
+from util import basename
+
+comptime VK_HEAD = 0         # a title line
+comptime VK_FRAME = 1        # a frame of the call stack
+comptime VK_VAR = 2          # a variable
+comptime VK_NOTE = 3         # an explanation ("no variables", "loading")
+
+
+def is_hex(s: String) -> Bool:
+    if s.byte_length() == 0:
+        return False
+    for c in s.as_bytes():
+        if not ((c >= 48 and c <= 57) or (c >= 97 and c <= 102) or (c >= 65 and c <= 70)):
+            return False
+    return True
+
+
+def nice_value(value: String) -> String:
+    """A value without the raw bytes LLDB puts before a scalar ("0400000000000000  4"
+    → "4", "01 True" → "True"). Other values stay as they are."""
+    var sp = value.find(" ")
+    if sp < 2 or sp > 16 or sp % 2 != 0:
+        return value
+    var head = String(value[byte=0:sp])
+    if not is_hex(head):
+        return value
+    var rest = String(String(value[byte=sp:]).strip())
+    if rest.byte_length() == 0:
+        return value
+    return rest
+
+
+def scalar_kind(type: String) -> String:
+    """The element kind of a compiler scalar type ("index", "si64", "f64", "bool", ...;
+    '' if the type is not one)."""
+    var t = String(type[byte=12:]) if type.startswith("__mlir_type.") else type
+    if t.startswith("`") and t.endswith("`") and t.byte_length() >= 2:
+        var inner = String(t[byte=1:t.byte_length() - 1])
+        t = inner
+    if t.startswith("!kgen.scalar<") and t.endswith(">"):
+        return String(t[byte=13:t.byte_length() - 1])
+    for k in ["index", "si64", "ui64", "si32", "ui32", "si16", "ui16", "si8", "ui8", "i64", "i32", "i16", "i8", "i1", "f64", "f32", "f16", "bf16", "bool"]:
+        if t == k:
+            return t
+    return ""
+
+
+def nice_type(type: String) -> String:
+    """A Mojo name for a compiler type ("__mlir_type.`!kgen.scalar<index>`" → "Int")."""
+    var k = scalar_kind(type)
+    if k.byte_length() == 0:
+        if type.startswith("__mlir_type."):
+            return String(type[byte=12:])
+        return type
+    if k == "index":
+        return "Int"
+    if k == "bool" or k == "i1":
+        return "Bool"
+    if k.startswith("si") or k.startswith("i"):
+        return "Int" + String(k[byte=2:] if k.startswith("si") else k[byte=1:])
+    if k.startswith("ui"):
+        return "UInt" + String(k[byte=2:])
+    if k == "bf16":
+        return "BFloat16"
+    if k.startswith("f"):
+        return "Float" + String(k[byte=1:])
+    return k
+
+
+def value_width(type: String) -> Int:
+    """Bytes of a scalar of this type (0: not a scalar that can be written)."""
+    var k = scalar_kind(type)
+    if k == "index" or k == "si64" or k == "ui64" or k == "i64" or k == "f64":
+        return 8
+    if k == "si32" or k == "ui32" or k == "i32" or k == "f32":
+        return 4
+    if k == "si16" or k == "ui16" or k == "i16" or k == "f16":
+        return 2
+    if k == "si8" or k == "ui8" or k == "i8" or k == "bool" or k == "i1":
+        return 1
+    return 0
+
+
+def encode_value(type: String, text: String) -> Tuple[List[UInt8], String]:
+    """The bytes (little-endian) for `text` as a value of `type`, or a reason why not."""
+    var out = List[UInt8]()
+    var k = scalar_kind(type)
+    var n = value_width(type)
+    var t = String(text.strip())
+    if n == 0 or k == "f16" or k == "bf16":
+        return (out^, "values of type " + nice_type(type) + " cannot be set here")
+    if k == "bool" or k == "i1":
+        var low = t.lower()
+        if low == "true" or t == "1":
+            out.append(1)
+        elif low == "false" or t == "0":
+            out.append(0)
+        else:
+            return (out^, "a Bool is True or False")
+        return (out^, "")
+    if k == "f64" or k == "f32":
+        var f: Float64
+        try:
+            f = Float64(t)
+        except:
+            return (out^, "not a number: " + t)
+        var bits: UInt64
+        if k == "f64":
+            bits = bitcast[DType.uint64](f)
+        else:
+            bits = UInt64(bitcast[DType.uint32](Float32(f)))
+        for i in range(n):
+            out.append(UInt8((bits >> UInt64(8 * i)) & 255))
+        return (out^, "")
+    var v: Int
+    try:
+        v = atol(t)
+    except:
+        return (out^, "not a whole number: " + t)
+    var unsigned = k.startswith("ui")
+    if n < 8:
+        var lo = 0 if unsigned else -(1 << (8 * n - 1))
+        var hi = ((1 << (8 * n)) - 1) if unsigned else ((1 << (8 * n - 1)) - 1)
+        if v < lo or v > hi:
+            return (out^, String(v) + " does not fit in " + nice_type(type))
+    elif unsigned and v < 0:
+        return (out^, String(v) + " does not fit in " + nice_type(type))
+    var u: UInt64
+    if v >= 0:
+        u = UInt64(v)
+    else:
+        u = ~UInt64(-(v + 1))       # two's complement
+    for i in range(n):
+        out.append(UInt8((u >> UInt64(8 * i)) & 255))
+    return (out^, "")
+
+
+def base64(data: List[UInt8]) -> String:
+    var abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".as_bytes()
+    var out = List[UInt8]()
+    var i = 0
+    while i < len(data):
+        var b0 = Int(data[i])
+        var b1 = Int(data[i + 1]) if i + 1 < len(data) else 0
+        var b2 = Int(data[i + 2]) if i + 2 < len(data) else 0
+        out.append(abc[b0 >> 2])
+        out.append(abc[((b0 & 3) << 4) | (b1 >> 4)])
+        out.append(abc[((b1 & 15) << 2) | (b2 >> 6)] if i + 1 < len(data) else 61)
+        out.append(abc[b2 & 63] if i + 2 < len(data) else 61)
+        i += 3
+    return String(StringSlice(unsafe_from_utf8=Span(out)))
+
+
+def address_in(text: String) -> String:
+    """The first "0x..." address in a text (LLDB names list elements by their address:
+    "(*( (!kgen.scalar<index> *)0x50353fe04000))"); '' if there is none."""
+    var at = text.find("0x")
+    if at < 0:
+        return ""
+    var end = at + 2
+    var bs = text.as_bytes()
+    while end < len(bs) and ((bs[end] >= 48 and bs[end] <= 57) or (bs[end] >= 97 and bs[end] <= 102) or (bs[end] >= 65 and bs[end] <= 70)):
+        end += 1
+    if end == at + 2:
+        return ""
+    return String(text[byte=at:end])
+
+
+@fieldwise_init
+struct FrameRow(Copyable, Movable):
+    var id: Int
+    var name: String
+    var path: String        # '' when the source is not on this machine
+    var line: Int
+
+
+struct VarNode(Copyable, Movable):
+    var name: String
+    var type: String
+    var value: String
+    var handle: Int            # the adapter's handle for its children (0: none)
+    var memory: String      # where it is, when the adapter says
+    var eval_name: String
+    var depth: Int
+    var open: Bool
+    var path: String        # names from the top, joined with "\t" (to reopen after a step)
+
+    def __init__(out self, name: String, type: String, value: String, handle: Int, memory: String, eval_name: String, depth: Int, path: String):
+        self.name = name
+        self.type = type
+        self.value = value
+        self.handle = handle
+        self.memory = memory
+        self.eval_name = eval_name
+        self.depth = depth
+        self.open = False
+        self.path = path
+
+    def scalar(self) -> Bool:
+        return scalar_kind(self.type).byte_length() > 0
+
+    def has_children(self) -> Bool:
+        """Children worth opening: not the "[0]" a scalar repeats itself in."""
+        return self.handle > 0 and not self.scalar()
+
+    def address(self) -> String:
+        if self.memory.byte_length() > 0:
+            return self.memory
+        return address_in(self.eval_name)
+
+    def settable(self) -> Bool:
+        return self.scalar() and value_width(self.type) > 0 and self.address().byte_length() > 0
+
+    def line(self) -> String:
+        var s = String("")
+        for _ in range(self.depth):
+            s += "  "
+        if self.has_children():
+            s += "▾ " if self.open else "▸ "
+        else:
+            s += "  "
+        var t = nice_type(self.type)
+        var v = nice_value(self.value)
+        if self.has_children() and (v == t or v.byte_length() == 0):
+            return s + self.name + ": " + t
+        s += self.name + " = " + v
+        if t.byte_length() > 0:
+            s += "   " + t
+        return s
+
+
+struct DebugView(Copyable, Movable):
+    var frames: List[FrameRow]
+    var sel: Int                    # the frame whose variables are shown
+    var nodes: List[VarNode]
+    var opened: List[String]        # paths of open nodes, kept across stops
+    var note: String                # instead of variables ("loading", "none", an error)
+    var rows_kind: List[Int]        # what each line of the window is (VK_...)
+    var rows_index: List[Int]       # ... and which frame or node
+
+    def __init__(out self):
+        self.frames = List[FrameRow]()
+        self.sel = 0
+        self.nodes = List[VarNode]()
+        self.opened = List[String]()
+        self.note = ""
+        self.rows_kind = List[Int]()
+        self.rows_index = List[Int]()
+
+    def clear(mut self):
+        self.frames.clear()
+        self.sel = 0
+        self.nodes.clear()
+        self.note = ""
+
+    def find(self, path: String) -> Int:
+        for k in range(len(self.nodes)):
+            if self.nodes[k].path == path:
+                return k
+        return -1
+
+    def subtree_end(self, k: Int) -> Int:
+        """The index after node k's descendants."""
+        var j = k + 1
+        while j < len(self.nodes) and self.nodes[j].depth > self.nodes[k].depth:
+            j += 1
+        return j
+
+    def put_children(mut self, parent_path: String, var children: List[VarNode]):
+        """The answer for a node's children ('' = the frame's variables). Returns
+        nothing; nodes that were open before are marked open (their children are to
+        be asked for: see `wanted`)."""
+        var at = 0
+        var depth = 0
+        var end = len(self.nodes)
+        if parent_path.byte_length() > 0:
+            var p = self.find(parent_path)
+            if p < 0:
+                return
+            at = p + 1
+            depth = self.nodes[p].depth + 1
+            end = self.subtree_end(p)
+            self.nodes[p].open = True
+        else:
+            self.note = "" if len(children) > 0 else "(no variables)"
+        # what was there is replaced
+        var kept = List[VarNode]()
+        for k in range(at):
+            kept.append(self.nodes[k].copy())
+        for i in range(len(children)):
+            var c = children[i].copy()
+            c.depth = depth
+            c.path = (parent_path + "\t" + c.name) if parent_path.byte_length() > 0 else c.name
+            c.open = False
+            kept.append(c^)
+        for k in range(end, len(self.nodes)):
+            kept.append(self.nodes[k].copy())
+        self.nodes = kept^
+
+    def wanted(self) -> List[Int]:
+        """Nodes that were open before (by path) and whose children are not there yet."""
+        var out = List[Int]()
+        for k in range(len(self.nodes)):
+            var n = self.nodes[k].copy()
+            if n.has_children() and not n.open and n.path in self.opened:
+                out.append(k)
+        return out^
+
+    def close(mut self, k: Int):
+        var end = self.subtree_end(k)
+        var kept = List[VarNode]()
+        for j in range(len(self.nodes)):
+            if j <= k or j >= end:
+                kept.append(self.nodes[j].copy())
+        self.nodes = kept^
+        self.nodes[k].open = False
+        var p = self.nodes[k].path
+        var left = List[String]()
+        for o in self.opened:
+            if o != p and not o.startswith(p + "\t"):
+                left.append(o)
+        self.opened = left^
+
+    def mark_open(mut self, k: Int):
+        if self.nodes[k].path not in self.opened:
+            self.opened.append(self.nodes[k].path)
+
+    def lines(mut self) -> List[String]:
+        """The window's text, one entry per line; rows_kind / rows_index say what each
+        line is."""
+        var out = List[String]()
+        self.rows_kind.clear()
+        self.rows_index.clear()
+        out.append("Call stack")
+        self.rows_kind.append(VK_HEAD)
+        self.rows_index.append(-1)
+        if len(self.frames) == 0:
+            out.append("  (the program is not stopped)")
+            self.rows_kind.append(VK_NOTE)
+            self.rows_index.append(-1)
+        for k in range(len(self.frames)):
+            var f = self.frames[k].copy()
+            var place = (basename(f.path) + ":" + String(f.line)) if f.path.byte_length() > 0 else String("(no source)")
+            out.append(("► " if k == self.sel else "  ") + f.name + "   " + place)
+            self.rows_kind.append(VK_FRAME)
+            self.rows_index.append(k)
+        out.append("")
+        self.rows_kind.append(VK_NOTE)
+        self.rows_index.append(-1)
+        var title = String("Variables")
+        if self.sel < len(self.frames):
+            title += " of " + self.frames[self.sel].name
+        out.append(title)
+        self.rows_kind.append(VK_HEAD)
+        self.rows_index.append(-1)
+        if self.note.byte_length() > 0 or len(self.nodes) == 0:
+            out.append("  " + (self.note if self.note.byte_length() > 0 else String("(none)")))
+            self.rows_kind.append(VK_NOTE)
+            self.rows_index.append(-1)
+        for k in range(len(self.nodes)):
+            out.append(self.nodes[k].line())
+            self.rows_kind.append(VK_VAR)
+            self.rows_index.append(k)
+        return out^

@@ -20,6 +20,7 @@ from json import Json, JsonWriter, json_parse_bytes, json_quote, J_OBJ, J_STR, J
 from rpc import Framer, frame
 from proc import Proc
 from util import dirname, path_exists, shell_quote, bytes_to_str
+from dbgview import FrameRow
 
 comptime DAP_INVALID = 0
 comptime DAP_RESPONSE = 1    # the answer to one of our requests
@@ -42,6 +43,7 @@ comptime DE_EXITED = 5       # the program ended (exit_code)
 comptime DE_ENDED = 6        # the session is over: the adapter said so, or went away
 comptime DE_FAILED = 7       # the session could not be set up (error says why)
 comptime DE_BREAKPOINTS = 8  # the debugger said where breakpoints are (reports, changed_*)
+comptime DE_ANSWER = 9       # an answer to a request the IDE made through ask() (in answers)
 
 comptime TRACE_LEVELS = 20   # frames asked for to find the innermost one with a source
 comptime AUTO_OUTS = 6       # at most this many automatic steps out after a step in
@@ -348,6 +350,9 @@ struct DebugSession(Copyable, Movable):
     var step_kind: String           # the step under way ("next", "stepIn", "stepOut"; '' none)
     var auto_outs: Int              # steps out made because a step in left the sources
     var pausing: Bool               # a pause was asked for (it is reported as a signal)
+    var frames: List[FrameRow]      # the call stack of the stop (innermost first)
+    var asked: List[Int]            # requests made through ask() that wait for their answer
+    var answers: List[DapMessage]   # their answers, for the IDE to take
 
     def __init__(out self):
         self.conn = DapConn()
@@ -385,6 +390,9 @@ struct DebugSession(Copyable, Movable):
         self.step_kind = ""
         self.auto_outs = 0
         self.pausing = False
+        self.frames = List[FrameRow]()
+        self.asked = List[Int]()
+        self.answers = List[DapMessage]()
 
     def active(self) -> Bool:
         return self.state != DS_OFF
@@ -410,6 +418,8 @@ struct DebugSession(Copyable, Movable):
         self.changed_ok.clear()
         self.changed_lines.clear()
         self.launched = False
+        self.asked.clear()
+        self.answers.clear()
         self.clear_stop()
 
     def clear_stop(mut self):
@@ -421,6 +431,7 @@ struct DebugSession(Copyable, Movable):
         self.stop_top = ""
         self.stop_depth = 0
         self.stop_frame = -1
+        self.frames.clear()
         self.trace_seq = -1
 
     def begin(mut self, adapter_cmd: String, program: String, cwd: String, args: List[String], stderr_path: String = "/dev/null") -> Bool:
@@ -559,7 +570,18 @@ struct DebugSession(Copyable, Movable):
                 if doc.bool(c) and name not in self.caps:
                     self.caps.append(name)
 
+    def ask(mut self, command: String, args_json: String) -> Int:
+        """A request whose answer the IDE handles itself (it comes back in answers)."""
+        var seq = self.conn.request(command, args_json)
+        self.asked.append(seq)
+        return seq
+
     def handle_response(mut self, m: DapMessage) -> Int:
+        for k in range(len(self.asked)):
+            if self.asked[k] == m.request_seq:
+                _ = self.asked.pop(k)
+                self.answers.append(m.copy())
+                return DE_ANSWER
         for k in range(len(self.bp_seqs)):
             if self.bp_seqs[k] == m.request_seq:
                 var report = BpReport(self.bp_tags[k])
@@ -619,6 +641,12 @@ struct DebugSession(Copyable, Movable):
                 return 0
             self.step_kind = ""
             self.auto_outs = 0
+            self.frames.clear()
+            for k in range(len(frames)):
+                var p = m.doc.str(m.doc.path(frames[k], "source/path"), "")
+                if not (p.startswith("/") and path_exists(p)):
+                    p = ""
+                self.frames.append(FrameRow(m.doc.int(m.doc.get(frames[k], "id"), -1), m.doc.str(m.doc.get(frames[k], "name"), ""), p, m.doc.int(m.doc.get(frames[k], "line"), 0)))
             var f = frames[pick] if pick >= 0 else frames[0]
             self.stop_depth = max(0, pick)
             self.stop_frame = m.doc.int(m.doc.get(f, "id"), -1)

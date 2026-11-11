@@ -426,6 +426,8 @@ __extension App:
                 self.debug_end(True)
             else:
                 self.say("No program is being debugged")
+        elif cmd == CM_DEBUGWIN:
+            self.debugwin_toggle()
         elif cmd == CM_BP_TOGGLE:
             self.bp_toggle()
         elif cmd == CM_BP_EDIT:

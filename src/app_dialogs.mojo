@@ -185,6 +185,8 @@ __extension App:
                 self.docs_fetch()
         elif kind == D_TRUST:
             self.trust_answer(b)
+        elif kind == D_SETVALUE and b == 0:
+            self.dv_set_save(self.dlg.field_text(0))
         elif kind == D_BREAKPOINT and b == 0:
             self.bp_edit_save()
         elif kind == D_BPFUNC and b == 0:
