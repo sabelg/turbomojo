@@ -3263,3 +3263,46 @@ libghostty-vt (static, glibc 2.34); a pure-Mojo emulator was proposed to the use
 recommended for after Phase 5 (no answer yet). The gate takes about 20 minutes now
 (59 test files).
 - Verified: the P5-09 gate above is the phase's last.
+
+## 2026-11-11 · P6-01 ACP client on the JSON-RPC layer · done
+
+- Read the protocol pages first (agentclientprotocol.com: overview, transports,
+  initialization, session setup, prompt turn, tool calls, file system). What matters
+  here: stdio messages are **one JSON-RPC message per line** (no Content-Length, no
+  raw line feeds inside), stderr is the agent's log, the protocol version is the
+  integer 1, paths are absolute and lines 1-based.
+- `src/rpc.mojo`: `Framer.lines` / `RpcConn.lines` - line framing (a CR before the LF
+  dropped, empty lines skipped, a runaway line over 64 MB given up); sending appends a
+  line feed. LSP and DAP keep Content-Length framing.
+- `src/acp.mojo`, `AcpClient`: starts the agent through `sh -c 'cd <project> && exec
+  <cmd>'` (Proc execs its command, so `cd` needs the shell; found by the tests: the
+  first run had no session at all), stderr to a file; `initialize` (version 1,
+  clientInfo, fs and terminal **not** offered yet: P6-03), then `session/new` with the
+  folder and no MCP servers. A different version, an error, no session id, an exit or
+  30 s without an answer to `initialize` fail with a reason (authMethods offered: "sign
+  in first"). `prompt` (one turn at a time; text block), `cancel` (`session/cancel`, and
+  open permission requests answered "cancelled" as the protocol requires),
+  `answer_permission` (selected option or cancelled; a permission asked outside a turn
+  is answered "cancelled" at once). `session/update` becomes `AcpEvent`s: message,
+  thought and user chunks, tool calls and updates (id, title, kind, status, text,
+  diffs' paths, locations), plans, others by name; the end of a turn carries the stop
+  reason (or "error" and the message). Requests the client does not offer (fs/*,
+  terminal/*, unknown) get -32601 and are noted in `refused`.
+- `tests/helpers/fake_acp_agent.py`: a scripted agent (modes v2, noinit, nosession,
+  die; prompts hello, tool, plan, perm, slow, read, other, fail, noise) that logs every
+  line it gets.
+- Tests (`tests/test_acp.mojo`, 7): line framing (split messages, CRLF, empty lines);
+  start, capabilities, what was sent, a streamed turn, one turn at a time, quotes and
+  line feeds in a prompt; tool calls, updates, diffs, locations, plans, an unknown
+  update; permission answered with an option, twice refused, cancelled by a cancel;
+  cancelling a running turn and going on; fs refused, a failing prompt, stderr kept
+  apart; five agents that do not work (version, no session, exits, not a program,
+  silent).
+- Not done / unverified:
+  - Not tried with a real agent. `codex` is installed here but is not an ACP agent by
+    itself (its ACP adapter is a separate program), and running a real agent would
+    use the user's accounts: left for the user (P6-02 adds the configuration and the
+    panel).
+  - `session/load`, `authenticate`, modes, MCP servers, images and embedded context in
+    prompts are not used.
+- Verified: `scripts/check.sh` → `CHECK OK`, 60 test files, 973 tests, smoke ok.

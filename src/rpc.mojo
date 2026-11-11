@@ -1,4 +1,5 @@
-"""JSON-RPC 2.0 over a child process's pipes, with `Content-Length` framing.
+"""JSON-RPC 2.0 over a child process's pipes, with `Content-Length` framing (LSP, DAP) or
+one message per line (ACP: `lines`, messages contain no raw line feeds).
 
 This is the transport shared by the Language Server Protocol and (with a different message
 shape) the Debug Adapter Protocol and the Agent Client Protocol.
@@ -25,11 +26,13 @@ struct Framer(Copyable, Movable):
     var buf: List[UInt8]
     var pos: Int            # start of unconsumed data in buf
     var dropped: Int        # bytes thrown away because they were not a valid frame
+    var lines: Bool         # a message per line instead of Content-Length headers
 
     def __init__(out self):
         self.buf = List[UInt8]()
         self.pos = 0
         self.dropped = 0
+        self.lines = False
 
     def feed(mut self, data: List[UInt8]):
         if self.pos > 0 and self.pos == len(self.buf):
@@ -89,6 +92,8 @@ struct Framer(Copyable, Movable):
 
     def next(mut self, mut body: List[UInt8]) -> Bool:
         """Extract the next complete message body. False when more data is needed."""
+        if self.lines:
+            return self.next_line(body)
         while True:
             var he = self.header_end()
             if he < 0:
@@ -105,6 +110,33 @@ struct Framer(Copyable, Movable):
             for k in range(he, he + n):
                 body.append(self.buf[k])
             self.pos = he + n
+            return True
+
+
+    def next_line(mut self, mut body: List[UInt8]) -> Bool:
+        """Line framing: the next non-empty line (a CR before the LF is dropped)."""
+        while True:
+            var n = len(self.buf)
+            var nl = -1
+            for i in range(self.pos, n):
+                if self.buf[i] == 10:
+                    nl = i
+                    break
+            if nl < 0:
+                if n - self.pos > MAX_MESSAGE_BYTES:
+                    self.dropped += n - self.pos       # a runaway line: given up
+                    self.pos = n
+                return False
+            var end = nl
+            if end > self.pos and self.buf[end - 1] == 13:
+                end -= 1
+            var start = self.pos
+            self.pos = nl + 1
+            if end == start:
+                continue
+            body.clear()
+            for k in range(start, end):
+                body.append(self.buf[k])
             return True
 
 
@@ -152,6 +184,7 @@ struct RpcConn(Copyable, Movable):
     var pending_methods: List[String]
     var pending_since: List[Int]     # caller-supplied timestamps (ns) for timeouts
     var invalid: Int                 # bodies that were not valid JSON-RPC
+    var lines: Bool                  # line framing (ACP)
 
     def __init__(out self):
         self.proc = Proc()
@@ -161,10 +194,12 @@ struct RpcConn(Copyable, Movable):
         self.pending_methods = List[String]()
         self.pending_since = List[Int]()
         self.invalid = 0
+        self.lines = False
 
     # ------------------------------------------------------------ lifecycle
     def start(mut self, cmd: String, stderr_path: String = "/dev/null") -> Bool:
         self.framer = Framer()
+        self.framer.lines = self.lines
         self.pending_ids.clear()
         self.pending_methods.clear()
         self.pending_since.clear()
@@ -188,7 +223,12 @@ struct RpcConn(Copyable, Movable):
 
     # -------------------------------------------------------------- sending
     def send_body(mut self, body: String):
-        self.proc.write(frame(body))
+        if self.lines:
+            var b = str_bytes(body)
+            b.append(10)
+            self.proc.write(b)
+        else:
+            self.proc.write(frame(body))
 
     def request(mut self, method: String, params_json: String, now: Int = 0) -> Int:
         """Send a request; returns its id. `params_json` is JSON text ('' for none)."""
@@ -291,6 +331,7 @@ struct RpcConn(Copyable, Movable):
 
     def feed(mut self, data: List[UInt8]) -> List[RpcMessage]:
         """Parse received bytes into messages (usable without a child process)."""
+        self.framer.lines = self.lines
         var out = List[RpcMessage]()
         self.framer.feed(data)
         var body = List[UInt8]()
