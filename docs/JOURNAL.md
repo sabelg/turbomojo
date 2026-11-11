@@ -2791,3 +2791,39 @@ it - Phase 5 brings the terminal). Exit criterion "stopping the debugger always 
 up the debuggee" is tested with the fake adapter (also an adapter that ignores the
 request) and with the real one. The gate takes about 12 minutes now (51 test files).
 - Verified (P4-07 and the summary): `scripts/check.sh` → `CHECK OK`, 51 test files, 911 tests, smoke ok; the end-to-end test passed inside the gate (3 of 3).
+
+## 2026-11-10 · P5-01 pty support via FFI, non-blocking, resize · done
+
+- Checked first: glibc 2.39 has `forkpty` / `openpty` in libc itself. I did not use
+  them: both take optional pointers (name, termios, winsize) that would have to be
+  NULL, and the project's rule is one consistent signature per C function with real
+  buffers. Instead `posix_openpt` / `grantpt` / `unlockpt` / `ptsname_r`, then `fork`.
+  A first try in a scratch program failed with garbage arguments: Mojo had already
+  freed the argument buffers after their last use (before the fork); they are now
+  used again after it on purpose.
+- `src/pty.mojo` - `Pty`: `start(argv, cwd, env, rows, cols)`: the size is set on the
+  master (`TIOCSWINSZ`), every string and the pointer array are made before `fork`;
+  the child only calls C functions: `setsid`, `openat` of the slave (it becomes the
+  controlling terminal), `dup2` to 0/1/2, `close_range(3, ~0)` so it inherits none of
+  the IDE's descriptors (pipes of the language server, the debugger, ...), SIGPIPE back
+  to default (the IDE ignores it, and ignoring is inherited across exec), `putenv`
+  TERM=xterm-256color, COLORTERM=truecolor and the caller's entries, `chdir`,
+  `execvp`, `_exit(127)`. The master is non-blocking; `read_available` (end detected
+  by POLLHUP after a failed read - errno is not reachable cleanly from Mojo here),
+  `take`, `write` / `write_text` with a queue and `flush`, `resize` (the program gets
+  SIGWINCH), `poll_exit` (waitpid WNOHANG), `stop` (SIGHUP to the process group as a
+  closing terminal does, SIGKILL after half a second), `exit_code`.
+- Tests (`tests/test_pty.mojo`, 6, all real programs on real ptys; run three times in
+  a row, stable): the program sees a terminal (`tty`, `test -t`, `stty size` = the
+  size given, TERM and an extra variable, the working folder, exit code 7, \n → \r\n);
+  input reaches it and is echoed, Ctrl-D ends `cat`; Ctrl-C becomes SIGINT (a trap
+  catches it); resize → the program's WINCH trap prints the new size; stop ends a
+  program by SIGHUP, and one that ignores SIGHUP by SIGKILL within the time; the child
+  does not have a descriptor the parent has open (dup'ed to 77 for an unambiguous
+  check) and a missing program ends with 127.
+- Not done / unverified:
+  - Nothing in the IDE uses it yet: the terminal panel is P5-03, the parser P5-02.
+  - `TIOCSWINSZ` and `O_NOCTTY` are the Linux values; macOS differs (P9-03).
+  - The environment additions use `putenv` in the child; unsetting variables is not
+    offered.
+- Verified: `scripts/check.sh` → `CHECK OK`, 52 test files, 917 tests, smoke ok.

@@ -93,7 +93,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 
 ## Phase 5: Integrated terminal, tests, Git (v1.6)
 
-- [ ] P5-01 pty support via FFI (`forkpty`/`openpty`), non-blocking, resize
+- [x] P5-01 pty support via FFI (`forkpty`/`openpty`), non-blocking, resize
 - [ ] P5-02 Terminal emulation: libghostty-vt via FFI if obtainable through pixi/conda; otherwise built-in VT parser (CSI, SGR incl. truecolor, alt screen, scroll regions, cursor modes) with tests
 - [ ] P5-03 Terminal panel: input pass-through, scrollback, copy; Run uses it instead of leaving the TUI (old behaviour kept as option)
 - [ ] P5-04 REPL panel with send-selection
