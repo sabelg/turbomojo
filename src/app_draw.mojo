@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_agent import *
 from app_problems import *
 from app_lsp import *
 from lsp import *
@@ -140,6 +141,8 @@ __extension App:
         for i in range(n):
             if self.wins[i].kind == WK_EDITOR:
                 self.git_marks_update(i)
+            if self.wins[i].kind == WK_AGENT:
+                self.wins[i].title = self.agent_title()     # (before the frame is drawn)
             self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers)
             self.wins[i].clustered = self.scr.clustered
             self.wins[i].auto_pairs = self.auto_pairs
@@ -165,6 +168,8 @@ __extension App:
             self.draw_window(i, i == n - 1)
             if self.wins[i].kind == WK_TERM:
                 self.term_draw(i)
+            if self.wins[i].kind == WK_AGENT:
+                self.agent_draw(i, i == n - 1)
             if self.wins[i].kind == WK_MESSAGE:
                 self.draw_pages(i, i == n - 1)
             if self.tiled and self.wins[i].kind == WK_EDITOR:
@@ -222,6 +227,10 @@ __extension App:
                 cmds.append(CM_NONE)
                 if self.out_filtered:
                     items.append("~C~ All")
+                    cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_AGENT:
+                for h in ["~Enter~ Send", "~Esc~ Stop / editor", "~PgUp~ Back", "@file:1-9 Mention"]:
+                    items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_BLAME:
                 for h in ["~Enter~ Go to", "~Esc~ Close", self.git_blame_summary()]:
@@ -292,6 +301,8 @@ __extension App:
                 self.draw_completion(cx, cy)
             if self.mode == M_HOVER:
                 self.draw_hover(cx, cy)
+        if self.mode == M_NORMAL and t >= 0 and self.wins[t].kind == WK_AGENT:
+            self.agent_cursor(t)
         if self.mode == M_DIALOG:
             var c = self.dlg.draw(self.scr, p)
             if c[0] >= 0:

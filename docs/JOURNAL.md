@@ -3306,3 +3306,54 @@ recommended for after Phase 5 (no answer yet). The gate takes about 20 minutes n
   - `session/load`, `authenticate`, modes, MCP servers, images and embedded context in
     prompts are not used.
 - Verified: `scripts/check.sh` → `CHECK OK`, 60 test files, 973 tests, smoke ok.
+
+## 2026-11-11 · P6-02 Agent panel: Markdown conversation view, streaming, file/selection mentions · done
+
+- Configuration: `tools.agent` (a command; empty by default) or `TURBOMOJO_AGENT`.
+  Starting it is a new hidden command, `CM_AGENT_START`, in the folder-trust list (the
+  agent runs in the project folder like a build).
+- `src/agentchat.mojo`: the conversation (you, the agent's answer with chunks merged,
+  thinking, tool calls with status, places and changed files, the plan - a newer plan
+  replaces the last one shown -, notes) as Markdown: one heading per agent turn,
+  thinking quoted, tool calls as a list with ✓ … ✗ - ·; tool calls still open when a
+  turn ends become "cancelled". Mentions: `@path`, `@path:12`, `@path:12-20` at the
+  start or after a blank, trailing punctuation dropped, a backwards range means the
+  whole file.
+- `src/app_agent.mojo`: the panel (window kind WK_AGENT) at the right edge like the test
+  explorer; drawn with the docs viewer's Markdown renderer (cached per conversation
+  version and width), a line that says when the agent works, and the prompt (wrapped,
+  the last third of the panel at most) with the cursor in it. Keys: printable keys,
+  Backspace, Delete, Left, Right, Home, End edit; Enter sends; Esc stops a turn
+  (`session/cancel`) or goes back to the editor; Up / Down / PgUp / PgDn scroll; a paste
+  goes in as one paragraph. Ctrl-F11 opens (and starts the agent), from the editor
+  returns to the panel, from the panel closes it (the agent keeps its session; it is
+  stopped on quit). Shift-F11 (hidden command: the File menu has no letter left) puts
+  `@file:first-last` of the selection (or `@file`) into the prompt.
+- A prompt is sent as ACP content blocks: the text, then for each mention that names a
+  file an embedded `resource` (uri `file://path#L12-L20`, a MIME type, the lines - taken
+  from the editor's buffer when the file is open) if the agent takes embedded context,
+  else a `resource_link`. A prompt written while the agent starts is sent when the
+  session opens. Permission requests are answered with the agent's "reject once"
+  option (else cancelled) and a note says so - asking the user is P6-04.
+- `AcpClient.prompt_blocks`; the fake agent now answers a prompt with mentions by
+  listing what it got.
+- Tests (`tests/test_agentpanel.mojo`, 5): the conversation model and its Markdown;
+  mentions; in the IDE with the fake agent: Ctrl-F11 opens the panel beside the editor
+  and connects, a typed prompt, the streamed answer and the thinking on screen, tool
+  calls, a refused permission, Esc stopping a turn and then going back, Ctrl-F11
+  toggling (the session stays); Shift-F11 on a selection of an edited, unsaved file:
+  the agent got exactly those lines of the buffer; a mention of a missing file stays
+  text; without an agent configured, with an agent that does not exist, and in an
+  untrusted folder (the trust question first). The first runs failed by racing the
+  agent (checking before the turn was over): the test waits for the end of the turn.
+- Looked at in tmux with the fake agent (TURBOMOJO_AGENT): hello, tool and plan
+  turns. Found two things: the title kept "(working)" after a turn until the next key
+  (it was set while drawing, after the frame) - now set before the windows are
+  drawn; and a tool call's places and text ran together into one line - now sub-items.
+- Not done / unverified:
+  - Not tried with a real agent (see P6-01).
+  - Markdown of a half-received answer can look odd for a moment (an open code
+    fence renders the rest as code until it closes).
+  - No history of prompts, no multi-line prompt editing, no mouse in the panel; the
+    conversation is not saved with the session.
+- Verified: `scripts/check.sh` → `CHECK OK`, 61 test files, 978 tests, smoke ok.

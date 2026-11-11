@@ -248,20 +248,19 @@ struct AcpClient(Movable):
     def prompt(mut self, text: String, now: Int) -> Bool:
         """Start a turn with the user's text. False if no session is open or a turn
         is running."""
-        if self.state != AS_READY or self.busy():
-            return False
         var w = JsonWriter()
-        w.begin_obj()
-        w.kv_str("sessionId", self.session_id)
-        w.key("prompt")
-        w.begin_arr()
         w.begin_obj()
         w.kv_str("type", "text")
         w.kv_str("text", text)
         w.end_obj()
-        w.end_arr()
-        w.end_obj()
-        self.prompt_id = self.conn.request("session/prompt", w.text(), now)
+        return self.prompt_blocks("[" + w.text() + "]", now)
+
+    def prompt_blocks(mut self, blocks_json: String, now: Int) -> Bool:
+        """Start a turn with these content blocks (a JSON array: text, resource_link,
+        resource)."""
+        if self.state != AS_READY or self.busy():
+            return False
+        self.prompt_id = self.conn.request("session/prompt", "{\"sessionId\":" + json_quote(self.session_id) + ",\"prompt\":" + blocks_json + "}", now)
         return True
 
     def cancel(mut self):

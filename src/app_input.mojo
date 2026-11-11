@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_agent import *
 from app_problems import *
 from app_lsp import *
 from lsp import *
@@ -89,6 +90,8 @@ __extension App:
                 return
             if self.mode == M_NORMAL and self.term_paste(e.text):
                 return
+            if self.mode == M_NORMAL and self.agent_paste(e.text):
+                return
             self.mode = M_NORMAL
             var ai = self.active_editor()
             if ai >= 0:
@@ -114,6 +117,8 @@ __extension App:
                 return
         if self.mode == M_NORMAL and self.chord == 0 and self.term_key(k):
             return                              # a terminal in front has the keyboard
+        if self.mode == M_NORMAL and self.chord == 0 and self.agent_key(k):
+            return                              # so has the agent panel's prompt
         if self.mode == M_NORMAL and self.sig_on and k == KEY_ESC and self.chord == 0:
             self.sig_close()                    # Esc takes the parameter tip away first
             return

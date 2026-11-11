@@ -45,6 +45,9 @@ from testexp import TestFile
 from git import GitStatus, BlameLine
 from gitdiff import DiffRow
 from problems import Problem, ProblemFilter
+from acp import AcpClient
+from agentchat import AgentChat
+from markdown import MdLine
 from linediff import Hunk
 from proc import Proc
 from breakpoints import Breakpoints
@@ -237,6 +240,16 @@ struct App(Movable):
     var out_filter: String          # the Message page shows only lines with this
     var out_filtered: Bool
     var out_full: List[String]      # the Message page's lines before filtering
+    var agent_command: String       # tools.agent: the ACP agent to run ('' = none)
+    var agent: AcpClient            # the coding agent (File > Agent panel)
+    var chat: AgentChat             # the conversation with it
+    var agent_input: List[Int]      # the prompt being written
+    var agent_cur: Int              # the cursor in it
+    var agent_scroll: Int           # rows scrolled back from the end of the conversation
+    var agent_lines: List[MdLine]   # the conversation rendered (for chat.version, width)
+    var agent_lines_ver: Int
+    var agent_lines_w: Int
+    var agent_pending: String       # a prompt written before the session was open (JSON blocks)
     var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
@@ -588,6 +601,16 @@ struct App(Movable):
         self.out_filter = ""
         self.out_filtered = False
         self.out_full = List[String]()
+        self.agent_command = env_or("TURBOMOJO_AGENT", "")
+        self.agent = AcpClient()
+        self.chat = AgentChat()
+        self.agent_input = List[Int]()
+        self.agent_cur = 0
+        self.agent_scroll = 0
+        self.agent_lines = List[MdLine]()
+        self.agent_lines_ver = -1
+        self.agent_lines_w = -1
+        self.agent_pending = ""
         self.test_rows_file = List[Int]()
         self.test_rows_test = List[Int]()
         self.test_target_file = -1
@@ -919,6 +942,10 @@ struct App(Movable):
             t = min(t, max(1, (self.act_retry_due - now) // 1000000 + 1))
         if self.git.root.byte_length() > 0:
             t = min(t, 2000)        # look at git's index now and then (see git_tick)
+        if self.agent.conn.wants_write():
+            t = min(t, 10)
+        if self.agent.state == 1:          # AS_STARTING: its time-out must be noticed
+            t = min(t, 1000)
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.dbg.active() and self.dbg.conn.wants_write():
@@ -982,6 +1009,7 @@ struct App(Movable):
         self.compiler = env_or("TURBOMOJO_COMPILER", s.compiler)
         self.lsp_server = env_or("TURBOMOJO_LSP", s.lsp_server)
         self.debug_adapter = env_or("TURBOMOJO_DAP", s.debug_adapter)
+        self.agent_command = env_or("TURBOMOJO_AGENT", s.agent)
         # relative include folders belong to the project file's folder (or where we run)
         self.docs_paths = List[String]()
         self.doc_idx = List[SymbolIndex]()

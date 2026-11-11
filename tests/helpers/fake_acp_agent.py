@@ -19,6 +19,7 @@ The prompt's text chooses what a turn does:
     "read"      asks the client for fs/read_text_file, says what came back
     "other"     an update kind this client does not know, then end_turn
     "fail"      the prompt request fails with an error
+A prompt with blocks other than text (mentions) is answered with what they were.
 Lines it writes to stdout that are not JSON: never (the protocol forbids it); with
 "noise" in the prompt it writes a log line to stderr instead.
 """
@@ -171,6 +172,16 @@ while True:
         text = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")
         if text == "fail":
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32603, "message": "the model is unavailable"}})
+            continue
+        extra = [b for b in blocks if b.get("type") != "text"]
+        if extra:
+            for b in extra:
+                if b["type"] == "resource":
+                    r = b["resource"]
+                    chunk("got resource %s (%s): %s|" % (r["uri"], r.get("mimeType", ""), r.get("text", "")))
+                else:
+                    chunk("got %s %s|" % (b["type"], b.get("uri", "")))
+            send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": "end_turn"}})
             continue
         reason = turn(rid, text)
         send({"jsonrpc": "2.0", "id": rid, "result": {"stopReason": reason}})

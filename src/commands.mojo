@@ -152,6 +152,9 @@ comptime CM_GIT_STAGED = 209        # the diff view of what is staged
 comptime CM_GIT_COMMIT = 210
 comptime CM_GIT_BRANCH = 211
 comptime CM_GIT_BLAME = 212
+comptime CM_AGENT = 213             # the agent panel
+comptime CM_AGENT_MENTION = 214     # mention the file or the selection in the prompt
+comptime CM_AGENT_START = 215       # start the configured agent (needs folder trust)
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -717,6 +720,10 @@ def build_registry() -> Registry:
     r.cmd(CM_GIT_NEXT, "git.nextChange", "Ne~x~t change", "To the next block that differs from git's index", [alt(110)])
     r.cmd(CM_GIT_PREV, "git.previousChange", "Pre~v~ious change", "To the previous block that differs from git's index", [alt(98)])
     r.hide(CM_GIT_STAGED, "git.diffStaged", "Diff of staged changes", "What is staged of this file: its index against HEAD")
+    r.cmd(CM_AGENT, "agent.panel", "Agent ~p~anel", "Talk to a coding agent (ACP) at the right edge; again: back to the editor or close it", [fkey(11) | MOD_CTRL])
+    r.hide(CM_AGENT_MENTION, "agent.mention", "Mention in agent prompt", "Put the selection (or this file) into the agent's prompt as @file:lines")
+    r.bind(CM_AGENT_MENTION, fkey(11) | MOD_SHIFT)    # (not in a menu: no letter left in File)
+    r.hide(CM_AGENT_START, "agent.start", "Start the agent", "Start the coding agent named by tools.agent")
     r.cmd(CM_GIT_COMMIT, "git.commit", "Comm~i~t...", "Commit what is staged (or every change to tracked files) with a message")
     r.cmd(CM_GIT_BRANCH, "git.branch", "~B~ranch...", "Switch to another branch of the repository, or make a new one")
     r.cmd(CM_GIT_BLAME, "git.blame", "Blam~e~", "Who last changed each line of this file, when, and in which commit")
@@ -811,6 +818,8 @@ def build_registry() -> Registry:
     r.item(CM_GIT_COMMIT)
     r.item(CM_GIT_BRANCH)
     r.item(CM_GIT_BLAME)
+    r.sep()
+    r.item(CM_AGENT)
     r.sep()
     r.item(CM_QUIT)
 
