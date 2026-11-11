@@ -22,6 +22,7 @@ from acp import *
 from agentchat import *
 from markdown import MdLine, md_render
 from app_outline import *
+from app_agentsvc import *
 
 
 __extension App:
@@ -61,7 +62,7 @@ __extension App:
         self.wins.append(win^)
         if not self.agent.active():
             if self.agent_command.byte_length() == 0:
-                self.chat.note("No agent is set up. Name a coding agent that speaks ACP under [tools] in turbomojo.toml, for example agent = \"claude-code-acp\", agent = \"gemini --experimental-acp\" or agent = \"codex-acp\" (each must be installed and signed in once in a terminal).")
+                self.chat.note("No agent is set up. Name a coding agent that speaks ACP under [tools] in turbomojo.toml, for example agent = \"claude-agent-acp\", agent = \"gemini --experimental-acp\" or agent = \"codex-acp\" (each must be installed and signed in once in a terminal).")
             else:
                 self.exec(CM_AGENT_START)
 
@@ -72,6 +73,7 @@ __extension App:
         var root = self.symidx_root()
         self.chat.note("Starting " + self.agent_command + " in " + root + "...")
         var log = state_dir() + "/agent.log"
+        self.agent.services = True              # files and terminals through the editor
         _ = self.agent.start(self.agent_command, root, log, now_ns())
 
     def agent_title(self) -> String:
@@ -85,7 +87,9 @@ __extension App:
         return name
 
     # -------------------------------------------------------------- events
-    def agent_tick(mut self, now: Int):
+    def agent_tick(mut self, now: Int) raises:
+        if len(self.agent_terms) > 0:
+            self.agent_svc_tick()
         if not self.agent.conn.proc.running and len(self.agent.events) == 0:
             return
         self.agent.pump(now)
@@ -126,14 +130,32 @@ __extension App:
                     elif why == "refusal":
                         why = "the agent refused to go on"
                     self.chat.note(why)
+            elif e.kind == AE_SERVICE:
+                self.agent_service(e)
+            elif e.kind == AE_MODE:
+                if e.text.byte_length() > 0:
+                    self.chat.note(e.text)
+                else:
+                    self.chat.note("Mode: " + self.agent.mode_name(e.status))
             elif e.kind == AE_READY:
-                self.chat.note("Connected to " + self.agent.agent_name + " (" + self.agent_command + ")")
+                self.chat.note("Connected to " + self.agent.agent_name + " (" + self.agent_command + ")" + ((", mode " + self.agent.mode_name(self.agent.mode)) if self.agent.mode.byte_length() > 0 else String("")))
+                # the agent's own tools may change files without asking the editor: by
+                # default it works in the mode in which it asks first
+                var want = self.agent_mode
+                if want == "ask":
+                    want = self.agent.asking_mode()
+                    if want.byte_length() == 0 and len(self.agent.mode_ids) > 0:
+                        self.chat.note("This agent has no mode that asks before it changes files; set tools.agent_mode to choose one")
+                if want.byte_length() > 0 and want != self.agent.mode:
+                    if not self.agent.set_mode(want, now):
+                        self.chat.note("The agent has no mode \"" + want + "\" (tools.agent_mode)")
                 if self.agent_pending.byte_length() > 0:
                     _ = self.agent.prompt_blocks(self.agent_pending, now)
                     self.agent_pending = ""
             elif e.kind == AE_FAILED:
                 self.chat.note("The agent is not running: " + e.text + ". Ctrl-F11 twice starts it again.")
                 self.agent_pending = ""
+                self.agent_services_end()
                 self.log_error("agent: " + e.text)
             if self.agent_index() >= 0:
                 self.agent_scroll = 0           # follow what comes
@@ -234,10 +256,27 @@ __extension App:
         if t < 0 or self.wins[t].kind != WK_AGENT:
             return False
         var n = len(self.agent_input)
-        if k == KEY_ENTER:
+        if len(self.agent_asks) > 0:
+            # a command waits for a yes or a no
+            if k == 121 or k == 89:
+                self.agent_ask_answer(True)
+                return True
+            if k == 110 or k == 78:
+                self.agent_ask_answer(False)
+                return True
+            if k >= 32 and k < K_BASE:
+                return True
+        if k == KEY_ENTER and n == 0 and len(self.agent_props) > 0:
+            self.agent_show_proposal()
+        elif k == KEY_ENTER:
             self.agent_send()
         elif k == KEY_ESC:
             if self.agent.busy():
+                # what the agent asked for this turn is refused with it
+                while len(self.agent_asks) > 0:
+                    self.agent_ask_answer(False)
+                while len(self.agent_props) > 0:
+                    self.agent_proposal_answer(False)
                 self.agent.cancel()
                 self.say("Stopping the agent's turn...")
             else:
@@ -288,10 +327,15 @@ __extension App:
 
     # ---------------------------------------------------------------- draw
     def agent_input_rows(self, width: Int) -> List[List[Int]]:
-        """The prompt as it is shown: "› " and the text, cut into rows of `width`."""
+        """The prompt as it is shown: "› " and the text, cut into rows of `width` (or
+        the question about a command the agent wants to run)."""
         var rows = List[List[Int]]()
         var cur = decode("› ")
-        for c in self.agent_input:
+        var shown = self.agent_input.copy()
+        if len(self.agent_asks) > 0:
+            cur = List[Int]()
+            shown = decode("Run `" + self.agent_asks[0].title + "`? Y runs it, N refuses")
+        for c in shown:
             if len(cur) >= width:
                 rows.append(cur^)
                 cur = decode("  ")
@@ -338,6 +382,8 @@ __extension App:
 
     def agent_cursor(mut self, i: Int):
         """The terminal's cursor on the prompt (called after the windows are drawn)."""
+        if len(self.agent_asks) > 0:
+            return                              # a question, not a prompt, is shown
         var x = self.wins[i].x + 1
         var y = self.wins[i].y + 1
         var w = self.wins[i].w - 2

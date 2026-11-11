@@ -19,6 +19,11 @@ The prompt's text chooses what a turn does:
     "read"      asks the client for fs/read_text_file, says what came back
     "other"     an update kind this client does not know, then end_turn
     "fail"      the prompt request fails with an error
+    "readfile P" / "readlines P" (line 2, limit 1)   asks the client for file P
+    "write P TEXT"  asks the client to write TEXT (\\n for line feeds) to P
+    "run CMD"       runs sh -c CMD in a client terminal (64-byte output limit), waits,
+                    reads the output, releases it, and says it all
+    "killrun"       starts "sleep 30", kills it, says how it ended
 A prompt with blocks other than text (mentions) is answered with what they were.
 Lines it writes to stdout that are not JSON: never (the protocol forbids it); with
 "noise" in the prompt it writes a log line to stderr instead.
@@ -139,6 +144,45 @@ def turn(rid, text):
         else:
             chunk("read: " + r["result"]["content"])
         return "end_turn"
+    word, _, rest = text.partition(" ")
+    if word == "readfile":
+        r = ask("fs/read_text_file", {"sessionId": session, "path": rest})
+        chunk(("read error: " + r["error"]["message"]) if "error" in r else ("read: " + r["result"]["content"]))
+        return "end_turn"
+    if word == "readlines":
+        r = ask("fs/read_text_file", {"sessionId": session, "path": rest, "line": 2, "limit": 1})
+        chunk(("read error: " + r["error"]["message"]) if "error" in r else ("lines: " + r["result"]["content"]))
+        return "end_turn"
+    if word == "write":
+        path, _, content = rest.partition(" ")
+        r = ask("fs/write_text_file", {"sessionId": session, "path": path, "content": content.replace("\\n", "\n")})
+        chunk(("write refused: " + r["error"]["message"]) if "error" in r else "write: ok")
+        return "end_turn"
+    if word == "run":
+        r = ask("terminal/create", {"sessionId": session, "command": "sh", "args": ["-c", rest], "env": [{"name": "FAKE_AGENT_VAR", "value": "set"}], "outputByteLimit": 64})
+        if "error" in r:
+            chunk("run refused: " + r["error"]["message"])
+            return "end_turn"
+        tid = r["result"]["terminalId"]
+        w = ask("terminal/wait_for_exit", {"sessionId": session, "terminalId": tid})
+        o = ask("terminal/output", {"sessionId": session, "terminalId": tid})
+        ask("terminal/release", {"sessionId": session, "terminalId": tid})
+        gone = ask("terminal/output", {"sessionId": session, "terminalId": tid})
+        res = o["result"]
+        chunk("exit %s truncated %s: %s|released: %s" % (w["result"]["exitCode"], res["truncated"], res["output"], "error" in gone))
+        return "end_turn"
+    if word == "killrun":
+        r = ask("terminal/create", {"sessionId": session, "command": "sleep 30"})
+        if "error" in r:
+            chunk("run refused: " + r["error"]["message"])
+            return "end_turn"
+        tid = r["result"]["terminalId"]
+        o = ask("terminal/output", {"sessionId": session, "terminalId": tid})
+        ask("terminal/kill", {"sessionId": session, "terminalId": tid})
+        w = ask("terminal/wait_for_exit", {"sessionId": session, "terminalId": tid})
+        ask("terminal/release", {"sessionId": session, "terminalId": tid})
+        chunk("before kill: %s; signal %s" % ("exitStatus" in o["result"], w["result"]["signal"]))
+        return "end_turn"
     if text == "other":
         update({"sessionUpdate": "available_commands_update", "availableCommands": []})
         return "end_turn"
@@ -166,7 +210,16 @@ while True:
         if mode == "nosession":
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Authentication required"}})
         else:
-            send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": session}})
+            send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": session, "modes": {
+                "currentModeId": "auto",
+                "availableModes": [{"id": "default", "name": "Manual", "description": "Always ask before making changes"},
+                                   {"id": "auto", "name": "Auto", "description": "Decides by itself"},
+                                   {"id": "plan", "name": "Plan", "description": "Plans first"}]}}})
+    elif method == "session/set_mode":
+        if m["params"].get("modeId") not in ("default", "auto", "plan"):
+            send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "no such mode"}})
+        else:
+            send({"jsonrpc": "2.0", "id": rid, "result": {}})
     elif method == "session/prompt":
         blocks = m["params"]["prompt"]
         text = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")

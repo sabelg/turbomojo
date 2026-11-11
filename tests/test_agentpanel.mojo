@@ -202,6 +202,36 @@ def test_mentions_send_the_editors_text() raises:
     _ = run_system("rm -rf " + shell_quote(d))
 
 
+def test_the_agent_is_put_in_its_asking_mode() raises:
+    var d = scratch("mode")
+    var app = ide(d)
+    app.agent_command = agent_cmd(d + "/log", "")
+    app.exec(CM_AGENT)
+    pump(app, "Mode: Manual")
+    assert_equal(app.agent.mode, "default")
+    assert_true(app.chat.markdown("").find("Connected to Fake Agent") >= 0 and app.chat.markdown("").find("mode Auto") > 0)
+    var log = bytes_to_str(read_file(d + "/log"))
+    assert_true(log.find("\"method\":\"session/set_mode\",\"params\":{\"sessionId\":\"sess_fake_1\",\"modeId\":\"default\"}") > 0, log)
+    app.agent.stop()
+    # tools.agent_mode = "": the agent's own mode stays
+    var app2 = ide(d)
+    app2.agent_command = agent_cmd(d + "/log2", "")
+    app2.agent_mode = ""
+    app2.exec(CM_AGENT)
+    pump(app2, "Connected")
+    assert_equal(app2.agent.mode, "auto")
+    assert_true(bytes_to_str(read_file(d + "/log2")).find("set_mode") < 0)
+    app2.agent.stop()
+    # a mode the agent does not have
+    var app3 = ide(d)
+    app3.agent_command = agent_cmd(d + "/log3", "")
+    app3.agent_mode = "turbo"
+    app3.exec(CM_AGENT)
+    pump(app3, "The agent has no mode \"turbo\"")
+    app3.agent.stop()
+    _ = run_system("rm -rf " + shell_quote(d))
+
+
 def test_without_an_agent() raises:
     var d = scratch("none")
     var app = ide(d)

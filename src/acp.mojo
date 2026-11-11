@@ -35,6 +35,9 @@ comptime AE_TURN_END = 8        # the prompt's turn is over (stop reason)
 comptime AE_READY = 9           # the session is open
 comptime AE_FAILED = 10         # the agent could not be started, or ended (text: why)
 comptime AE_OTHER = 11          # an update this client does not show (its kind in `kind_name`)
+comptime AE_MODE = 13           # the session's mode changed (status: the mode; text: a problem)
+comptime AE_SERVICE = 12        # the agent asks the editor (fs/*, terminal/*): method in
+                                # kind_name, request id in request, params (JSON) in text
 
 comptime INIT_TIMEOUT_NS = 30 * 1000 * 1000 * 1000
 
@@ -152,6 +155,13 @@ struct AcpClient(Movable):
     var permissions: List[String]   # requests for permission not answered yet (their ids)
     var events: List[AcpEvent]
     var refused: List[String]   # methods the agent asked for that were refused (for tests and the log)
+    var services: Bool          # offer the editor's file system and terminals (the app answers)
+    var mode: String            # the session's mode (agents that have modes: ask, auto, plan...)
+    var mode_ids: List[String]
+    var mode_names: List[String]
+    var mode_texts: List[String]
+    var mode_id: Int            # a session/set_mode request waiting for its answer
+    var mode_wanted: String
 
     def __init__(out self):
         self.conn = RpcConn()
@@ -173,6 +183,13 @@ struct AcpClient(Movable):
         self.permissions = List[String]()
         self.events = List[AcpEvent]()
         self.refused = List[String]()
+        self.services = False
+        self.mode = ""
+        self.mode_ids = List[String]()
+        self.mode_names = List[String]()
+        self.mode_texts = List[String]()
+        self.mode_id = -1
+        self.mode_wanted = ""
 
     def fd(self) -> Int:
         return self.conn.fd() if self.conn.proc.running else -1
@@ -208,10 +225,10 @@ struct AcpClient(Movable):
         w.begin_obj()
         w.key("fs")
         w.begin_obj()
-        w.kv_bool("readTextFile", False)
-        w.kv_bool("writeTextFile", False)
+        w.kv_bool("readTextFile", self.services)
+        w.kv_bool("writeTextFile", self.services)
         w.end_obj()
-        w.kv_bool("terminal", False)
+        w.kv_bool("terminal", self.services)
         w.end_obj()
         w.key("clientInfo")
         w.begin_obj()
@@ -289,6 +306,39 @@ struct AcpClient(Movable):
             self.conn.respond(request, "{\"outcome\":{\"outcome\":\"selected\",\"optionId\":" + json_quote(option_id) + "}}")
         return True
 
+    def set_mode(mut self, id: String, now: Int) -> Bool:
+        """Ask the agent to work in one of the modes it offers."""
+        if self.state != AS_READY or id not in self.mode_ids:
+            return False
+        self.mode_wanted = id
+        self.mode_id = self.conn.request("session/set_mode", "{\"sessionId\":" + json_quote(self.session_id) + ",\"modeId\":" + json_quote(id) + "}", now)
+        return True
+
+    def asking_mode(self) -> String:
+        """The mode in which the agent asks before it changes anything ('' if it has no
+        such mode): "default" (Claude's "Manual: Always ask before making changes"), else
+        one whose name or description says it asks."""
+        if "default" in self.mode_ids:
+            return "default"
+        for k in range(len(self.mode_ids)):
+            var t = self.mode_names[k].lower() + " " + self.mode_texts[k].lower()
+            if t.find("ask") >= 0 or t.find("approv") >= 0 or t.find("manual") >= 0:
+                return self.mode_ids[k]
+        return ""
+
+    def mode_name(self, id: String) -> String:
+        for k in range(len(self.mode_ids)):
+            if self.mode_ids[k] == id:
+                return self.mode_names[k] if self.mode_names[k].byte_length() > 0 else id
+        return id
+
+    def answer(mut self, request: String, result_json: String):
+        """Answer a request of the agent (a service the editor gave)."""
+        self.conn.respond(request, result_json)
+
+    def answer_error(mut self, request: String, code: Int, message: String):
+        self.conn.respond_error(request, code, message)
+
     def take_events(mut self) -> List[AcpEvent]:
         var out = self.events.copy()
         self.events.clear()
@@ -320,7 +370,12 @@ struct AcpClient(Movable):
                     return
                 var u = m.doc.get(p, "update")
                 if u >= 0:
-                    self.events.append(update_event(m.doc, u))
+                    var ev = update_event(m.doc, u)
+                    if ev.kind_name == "current_mode_update":
+                        self.mode = m.doc.str(m.doc.get(u, "currentModeId"))
+                        ev.kind = AE_MODE
+                        ev.status = self.mode
+                    self.events.append(ev^)
         elif m.kind == RPC_REQUEST:
             if m.method == "session/request_permission":
                 var p = m.params()
@@ -342,8 +397,15 @@ struct AcpClient(Movable):
                     return
                 self.permissions.append(m.id_json)
                 self.events.append(e^)
+            elif self.services and (m.method.startswith("fs/") or m.method.startswith("terminal/")):
+                var e = AcpEvent(AE_SERVICE)
+                e.kind_name = m.method
+                e.request = m.id_json
+                var p = m.params()
+                e.text = m.doc.dump(p) if p >= 0 else String("{}")
+                self.events.append(e^)
             else:
-                # fs/*, terminal/* (not offered yet) and anything unknown
+                # fs/*, terminal/* when not offered, and anything unknown
                 self.refused.append(m.method)
                 self.conn.respond_error(m.id_json, -32601, "TurboMojo does not offer " + m.method)
 
@@ -387,8 +449,29 @@ struct AcpClient(Movable):
             if self.session_id.byte_length() == 0:
                 self.fail("no session: the agent gave no session id")
                 return
+            var modes = m.doc.get(m.result(), "modes")
+            self.mode = m.doc.str(m.doc.get(modes, "currentModeId"))
+            self.mode_ids.clear()
+            self.mode_names.clear()
+            self.mode_texts.clear()
+            var am = m.doc.get(modes, "availableModes")
+            if am >= 0 and m.doc.kind(am) == J_ARR:
+                for md in m.doc.children(am):
+                    self.mode_ids.append(m.doc.str(m.doc.get(md, "id")))
+                    self.mode_names.append(m.doc.str(m.doc.get(md, "name")))
+                    self.mode_texts.append(m.doc.str(m.doc.get(md, "description")))
             self.state = AS_READY
             self.events.append(AcpEvent(AE_READY))
+            return
+        if m.id == self.mode_id:
+            self.mode_id = -1
+            var e = AcpEvent(AE_MODE)
+            if m.kind == RPC_ERROR:
+                e.text = "the agent did not change its mode: " + m.error_message()
+            else:
+                self.mode = self.mode_wanted
+            e.status = self.mode
+            self.events.append(e^)
             return
         if m.id == self.prompt_id:
             self.prompt_id = -1

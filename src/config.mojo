@@ -36,7 +36,7 @@ Example:
     lsp_server = "mojo-lsp-server"
     debug_adapter = "mojo-lldb-dap"     # Run > Debug; a command with arguments is used as it is
     agent = ""                  # a coding agent that speaks ACP, for File > Agent panel
-                                # (e.g. "claude-code-acp", "gemini --experimental-acp", "codex-acp")
+                                # (e.g. "claude-agent-acp", "gemini --experimental-acp", "codex-acp")
     include_paths = []          # extra -I folders for the compiler and the language server;
                                 # relative ones are taken from the folder of the config file
     docs_paths = []             # folders with Mojo sources of libraries: their documentation
@@ -140,6 +140,7 @@ struct Settings(Copyable, Movable):
     var lsp_server: String
     var debug_adapter: String
     var agent: String
+    var agent_mode: String
     var include_paths: List[String]
     var docs_paths: List[String]
     var docs_home: String
@@ -174,6 +175,7 @@ struct Settings(Copyable, Movable):
         self.lsp_server = "mojo-lsp-server"
         self.debug_adapter = "mojo-lldb-dap"
         self.agent = ""
+        self.agent_mode = "ask"
         self.include_paths = List[String]()
         self.docs_paths = List[String]()
         self.docs_home = ""
@@ -283,6 +285,12 @@ struct Settings(Copyable, Movable):
                 self.warnings.append("tools.agent must be a string (a command)")
             else:
                 self.agent = doc.vals[agi].s
+        var ami = doc.find("tools.agent_mode")
+        if ami >= 0:
+            if doc.vals[ami].kind != T_STR:
+                self.warnings.append("tools.agent_mode must be a string")
+            else:
+                self.agent_mode = doc.vals[ami].s
         var ii = doc.find("tools.include_paths")
         if ii >= 0:
             if doc.vals[ii].kind == T_STR and doc.vals[ii].s.byte_length() > 0:
@@ -319,7 +327,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

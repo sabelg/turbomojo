@@ -47,6 +47,7 @@ from gitdiff import DiffRow
 from problems import Problem, ProblemFilter
 from acp import AcpClient
 from agentchat import AgentChat
+from agentsvc import AgentTerm, Proposal, RunAsk
 from markdown import MdLine
 from linediff import Hunk
 from proc import Proc
@@ -241,6 +242,7 @@ struct App(Movable):
     var out_filtered: Bool
     var out_full: List[String]      # the Message page's lines before filtering
     var agent_command: String       # tools.agent: the ACP agent to run ('' = none)
+    var agent_mode: String          # tools.agent_mode
     var agent: AcpClient            # the coding agent (File > Agent panel)
     var chat: AgentChat             # the conversation with it
     var agent_input: List[Int]      # the prompt being written
@@ -250,6 +252,11 @@ struct App(Movable):
     var agent_lines_ver: Int
     var agent_lines_w: Int
     var agent_pending: String       # a prompt written before the session was open (JSON blocks)
+    var agent_terms: List[AgentTerm]    # the agent's terminals (commands it runs)
+    var agent_asks: List[RunAsk]    # commands waiting for the user's Y / N
+    var agent_props: List[Proposal] # files the agent wants written, waiting for A / R
+    var agent_term_n: Int
+    var gd_proposal: Bool           # the diff view shows agent_props[0]
     var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
@@ -602,6 +609,7 @@ struct App(Movable):
         self.out_filtered = False
         self.out_full = List[String]()
         self.agent_command = env_or("TURBOMOJO_AGENT", "")
+        self.agent_mode = "ask"
         self.agent = AcpClient()
         self.chat = AgentChat()
         self.agent_input = List[Int]()
@@ -611,6 +619,11 @@ struct App(Movable):
         self.agent_lines_ver = -1
         self.agent_lines_w = -1
         self.agent_pending = ""
+        self.agent_terms = List[AgentTerm]()
+        self.agent_asks = List[RunAsk]()
+        self.agent_props = List[Proposal]()
+        self.agent_term_n = 0
+        self.gd_proposal = False
         self.test_rows_file = List[Int]()
         self.test_rows_test = List[Int]()
         self.test_target_file = -1
@@ -1010,6 +1023,7 @@ struct App(Movable):
         self.lsp_server = env_or("TURBOMOJO_LSP", s.lsp_server)
         self.debug_adapter = env_or("TURBOMOJO_DAP", s.debug_adapter)
         self.agent_command = env_or("TURBOMOJO_AGENT", s.agent)
+        self.agent_mode = s.agent_mode
         # relative include folders belong to the project file's folder (or where we run)
         self.docs_paths = List[String]()
         self.doc_idx = List[SymbolIndex]()

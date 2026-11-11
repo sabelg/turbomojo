@@ -3357,3 +3357,69 @@ recommended for after Phase 5 (no answer yet). The gate takes about 20 minutes n
   - No history of prompts, no multi-line prompt editing, no mouse in the panel; the
     conversation is not saved with the session.
 - Verified: `scripts/check.sh` → `CHECK OK`, 61 test files, 978 tests, smoke ok.
+
+## 2026-11-11 · P6-03 Editor services: fs read/write through buffers, diff accept/reject, terminal commands · done
+
+- Read the protocol's terminal page first (terminal/create with command, args, env
+  `{name, value}`, cwd, outputByteLimit; output with `truncated` and `exitStatus`;
+  wait_for_exit; kill keeps the terminal; release kills and forgets it; truncation drops
+  the oldest output at a character boundary).
+- `AcpClient.services`: when set (the panel sets it), `initialize` offers readTextFile,
+  writeTextFile and terminal, and fs/* and terminal/* requests become `AE_SERVICE`
+  events for the app to answer (`answer`, `answer_error`). Off by default, so P6-01's
+  "refused" behaviour stays for a bare client.
+- `src/agentsvc.mojo`: `AgentTerm` (a command on a pty, output cleaned of escape
+  sequences and CRs, the newest `limit` bytes kept, exit code or signal, waiters),
+  `Proposal`, `RunAsk`, `clean_output`, `keep_last`, `tail_lines`.
+- `src/app_agentsvc.mojo`:
+  - reads: the editor's text if open (unsaved), else the file; `line` / `limit`; only
+    the project's files or files open in the editor; missing files an error.
+  - writes: never at once. A proposal opens in the diff view (`gd_proposal`: the file
+    now against the agent's text; "Proposed new file" for a new one; "+n more" when
+    several wait); A accepts (the editor gets the text through `replace_text_min` -
+    one undo step - and saves; a new file is created first), R rejects (the agent gets
+    an error saying so), Esc leaves it pending; Enter in the panel's empty prompt
+    shows it again. Unchanged text is answered at once; files outside the project are
+    refused.
+  - terminals: terminal/create asks first, in the panel (the prompt gives way to "Run
+    `cmd`? Y runs it, N refuses"; other typing is ignored meanwhile). The ACP protocol
+    has no permission step of its own for terminals, so without this an agent's
+    commands would run unasked; P6-04 adds the allow list. `sh -c X` is shown as X.
+    The command runs on its own pty in the cwd asked for (default: the project) with
+    the env given; its last 8 lines show in the conversation (a code block under
+    "$ cmd (running / exit n / SIGHUP)"); output, wait_for_exit (answered when it
+    ends), kill, release as specified; an unknown id is an error.
+  - Esc stopping a turn refuses what it asked; the agent ending or the IDE quitting
+    stops its commands and drops its proposals.
+- Tests (`tests/test_agentsvc.mojo`, 4): output cleaning and truncation at a UTF-8
+  boundary; reads of an unsaved buffer, line/limit, outside the project, missing; a
+  proposed change (the diff, nothing written yet, the agent waiting), A (on disk, one
+  Undo restores), R of a new file (not created), Esc and Enter to see it again, a
+  path outside refused; a command after Y (env, cwd, exit 3, output, release), a
+  long output truncated to 64 bytes, N, kill (SIGHUP). The first version showed `sh
+  -c X` commands as "sh" and the test did not notice (it checked for the absence of
+  the wrong text): both fixed, the test now checks the text shown.
+- **Tried with a real agent** (the user installed `@agentclientprotocol/claude-agent-acp`
+  0.106.0, the renamed Claude Code adapter; `claude` itself has no ACP mode). In a
+  scratch project with a temporary config: initialize (version 1, embedded context,
+  signed in), session/new, a one-word answer streamed into the panel. Then "add a line"
+  to a mentioned file: **the adapter changed the file on disk itself** - its session
+  starts in mode "auto" and its Edit tool writes directly, without fs/write_text_file
+  and without asking. So the editor's proposals only cover agents that write through
+  the protocol. Fix: `session/new`'s `modes` are read (current mode, available ids,
+  names, descriptions), `session/set_mode` and `current_mode_update` are handled, and
+  by default (`tools.agent_mode = "ask"`) the client switches to the mode that asks
+  before changes ("default" = Claude's "Manual", else a mode whose name or description
+  says it asks). Tried again: the panel said "Mode: Manual", Claude asked permission to
+  edit, the refusal reached it, the file stayed as it was, and Claude said so.
+  README says what holds for which agents. Also: a tool call's first text line was a
+  code fence (```), now the first line of text is shown.
+- The fake agent now offers modes (current "auto"); test_agentpanel checks the switch
+  to "default", `agent_mode = ""` keeping "auto", and an unknown mode named.
+- Not done / unverified:
+  - The commands do not run in a terminal window of the IDE (they have their own pty
+    and are shown in the conversation); keyboard input cannot be given to them.
+  - Accepting a proposal for a file open with unsaved changes saves those changes too
+    (the proposal was made against them, and the diff shows them).
+  - Not tried with a real agent.
+- Verified: `scripts/check.sh` → `CHECK OK`, 62 test files, 983 tests, smoke ok.

@@ -19,6 +19,8 @@ from gitdiff import *
 from signals import own_pid
 from app_git import *
 from app_jobs import *
+from app_agentsvc import *
+from app_agent import *
 from commands import CM_GIT_STAGE
 
 
@@ -75,6 +77,7 @@ __extension App:
         var path = self.wins[ei].path
         if path != self.gd_path:
             self.gd_head_state = GB_UNKNOWN
+        self.gd_proposal = False
         self.gd_path = path
         self.gd_staged = staged
         self.gd_stamp = -1
@@ -101,6 +104,7 @@ __extension App:
         if di >= 0:
             _ = self.wins.pop(di)
         self.gd_path = ""
+        self.gd_proposal = False
         var ei = self.top_editor()
         if ei >= 0:
             self.focus(ei)
@@ -115,6 +119,9 @@ __extension App:
         """Make the view's rows again if the file, the index or HEAD changed."""
         var di = self.gd_index()
         if di < 0 or self.gd_path.byte_length() == 0:
+            return
+        if self.gd_proposal:
+            self.agent_proposal_rows()
             return
         var ei = self.find_editor(self.gd_path)
         var stamp = self.git_stamp * 2 + (1 if self.gd_staged else 0)
@@ -161,9 +168,57 @@ __extension App:
         self.gd_rows = rows^
         self.gd_hunks = hunks^
 
+    def agent_proposal_rows(mut self):
+        """The diff view for the agent's first proposed write: the file now (the
+        editor's text) against what the agent wants."""
+        if len(self.agent_props) == 0:
+            return
+        var stamp = len(self.agent_props) * 7 + 3
+        if stamp == self.gd_stamp:
+            return
+        self.gd_stamp = stamp
+        var old = Side.of(self.agent_props[0].old)
+        var new = Side.of(self.agent_props[0].new)
+        var hunks = side_hunks(old, new)
+        var rows = unified(old, new, hunks)
+        if len(rows) == 0:
+            rows.append(DiffRow(DR_NOTE, "(the same text)", -1, -1))
+        var di = self.gd_index()
+        var more = len(self.agent_props) - 1
+        self.wins[di].title = ("Proposed: " if self.agent_props[0].exists else "Proposed new file: ") + basename(self.agent_props[0].path) + ((" (+" + String(more) + " more)") if more > 0 else String(""))
+        var text = List[Int]()
+        for k in range(len(rows)):
+            if k > 0:
+                text.append(10)
+            for c in decode(rows[k].text):
+                text.append(c)
+        self.wins[di].buf.load(text)
+        self.wins[di].buf.modified = False
+        self.gd_rows = rows^
+        self.gd_hunks = hunks^
+
     def git_diff_key(mut self, k: Int) raises -> Bool:
         """Keys of the diff view (False: not one of its keys)."""
         var t = self.top()
+        if self.gd_proposal:
+            if k == 97 or k == 65:              # A
+                self.agent_proposal_answer(True)
+                return True
+            if k == 114 or k == 82:             # R
+                self.agent_proposal_answer(False)
+                return True
+            if k == KEY_ESC:
+                # it stays proposed: Enter in the agent panel's empty prompt shows it again
+                var di = self.gd_index()
+                if di >= 0:
+                    _ = self.wins.pop(di)
+                self.gd_proposal = False
+                self.gd_path = ""
+                var ai = self.agent_index()
+                if ai >= 0:
+                    self.focus(ai)
+                return True
+            return k == KEY_TAB or k == 115 or k == 83 or k == 117 or k == 85 or k == KEY_ENTER
         var row = self.wins[t].cr
         var hi = self.gd_rows[row].hunk if row < len(self.gd_rows) else -1
         if k == KEY_ESC:

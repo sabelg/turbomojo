@@ -14,6 +14,7 @@ comptime CE_THOUGHT = 3
 comptime CE_TOOL = 4
 comptime CE_PLAN = 5
 comptime CE_NOTE = 6
+comptime CE_TERM = 7         # a command the agent runs in a terminal: title, status, last lines
 
 
 struct ChatEntry(Copyable, Movable):
@@ -103,6 +104,23 @@ struct AgentChat(Copyable, Movable):
         self.tool(id, title, status, List[String]())
         self.tool_update(id, "", "", text, diffs)
 
+    def term(mut self, id: String, title: String):
+        var e = ChatEntry(CE_TERM, "")
+        e.id = id
+        e.title = title
+        e.status = "running"
+        self.entries.append(e^)
+        self.version += 1
+
+    def term_update(mut self, id: String, status: String, tail: String):
+        for k in range(len(self.entries) - 1, -1, -1):
+            if self.entries[k].kind == CE_TERM and self.entries[k].id == id:
+                if status.byte_length() > 0:
+                    self.entries[k].status = status
+                self.entries[k].text = tail
+                self.version += 1
+                return
+
     def plan(mut self, entries: List[String]):
         """The agent's plan; a newer plan replaces the one shown last in this turn."""
         var n = len(self.entries)
@@ -143,8 +161,19 @@ struct AgentChat(Copyable, Movable):
                 for d in e.detail:
                     out += "\n  - `" + d + "`"
                 if e.text.byte_length() > 0:
-                    var first = String(e.text.split("\n")[0])
-                    out += "\n  - " + first
+                    # its first line of text (not a code fence)
+                    var first = String("")
+                    for l in e.text.split("\n"):
+                        var t = String(String(l).strip())
+                        if t.byte_length() > 0 and not t.startswith("```"):
+                            first = t
+                            break
+                    if first.byte_length() > 0:
+                        out += "\n  - " + first
+            elif e.kind == CE_TERM:
+                out += "- `$ " + e.title + "` *(" + e.status + ")*"
+                if e.text.byte_length() > 0:
+                    out += "\n\n```\n" + e.text + "\n```"
             elif e.kind == CE_PLAN:
                 out += "**Plan**\n"
                 for d in e.detail:
