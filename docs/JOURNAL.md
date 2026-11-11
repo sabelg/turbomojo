@@ -3153,3 +3153,48 @@ went on with P5-06.
     lines are the index's, which can differ from the buffer's).
   - A file whose index entry is a conflict (several stages) is not handled specially.
 - Verified: `scripts/check.sh` → `CHECK OK`, 57 test files, 955 tests, smoke ok.
+
+## 2026-11-11 · P5-08 Git: commit dialog, branch switch, blame · done
+
+- `src/git.mojo`: the status parser now also lists the staged files; commit, branch and
+  blame commands as sh scripts (git's errors go to the output, so they can be shown);
+  `parse_branches` (for-each-ref, latest commit first, `%(HEAD)` marks the current),
+  `branch_name_problem` (the common check-ref-format rules), `parse_blame` (porcelain:
+  a commit's details only the first time it appears), `ymd` (days-from-civil, UTC).
+- `src/app_gitcmd.mojo`, all three in the File menu and the palette, through the git
+  queue, only in trusted folders:
+  - Commit dialog: the staged files, how many files are not saved (their editor text
+    is not what is committed), Summary and Details fields, "Amend the last commit"
+    (no summary: `--no-edit`), "Include all changes to tracked files" (`--all`; ticked
+    when nothing is staged). The message goes through a file (`-F`, `--cleanup=strip`)
+    that the script removes. A refusal (nothing to commit, a hook) shows git's own last
+    lines in a message box.
+  - Branch dialog: the list from git, filtered as you type; Enter switches (or, when
+    nothing matches what was typed, makes a branch of that name); New branch makes one
+    from the typed name. Afterwards status and the files' index versions are asked
+    again and the files on disk are checked (git switch rewrites them).
+  - Blame window (kind WK_BLAME) over the editor: `git blame --porcelain --contents
+    <file>` with the buffer's text, so unsaved lines show as "(not committed)" and the
+    rest line up with the editor; rows "sha date author │ line"; the status line shows
+    the current row's commit summary; Enter goes to the line, Esc closes.
+- Bug found by the tests: `git switch -c -- name` takes `--` as the new branch's name.
+  The command has no `--` now (names come from git's list or pass the name check, and
+  cannot start with -).
+- Tests (`tests/test_gitcmd.mojo`, 7): dates (a leap day, year ends); branch names;
+  commit messages; the parsers on real git output (blame with two authors and an
+  unsaved line, the text file removed afterwards; branches; staged files); in the IDE
+  on real repositories: a commit with summary and details (the log has both), nothing
+  to commit (git's words shown, "all" ticked), no summary refused, amend keeping the
+  message; making a branch, switching back through the filtered list, a bad name, a
+  switch git refuses (shown); the blame window's rows, cursor, summary, Enter.
+- Looked at in tmux: commit from the palette (status line `[main 3252f1e] Print 22`,
+  in the log), blame rows and summary, a new branch made from the dialog. The branch
+  dialog's explanation was cut off and its list was one line high: shortened and made
+  taller.
+- Not done / unverified:
+  - No remote branches, fetch, pull or push (TurboMojo never touches remotes).
+  - Commit message fields are single lines (details are one paragraph).
+  - Blame is not updated as you edit (open it again); the blame window cannot jump to
+    the commit's diff.
+  - Conflict resolution (named in the roadmap's Git row) is not in any P5 task yet.
+- Verified: `scripts/check.sh` → `CHECK OK`, 58 test files, 962 tests, smoke ok.

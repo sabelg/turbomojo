@@ -14,7 +14,7 @@ runs one (the app does, in the background). `git status --porcelain=v2 -z` lines
     ? build/            (a folder nothing in which is tracked)
 """
 from std.collections import List, Dict
-from util import join_path, dirname, path_exists, shell_quote
+from util import join_path, dirname, path_exists, shell_quote, decode
 
 comptime GS_NONE = 0
 comptime GS_UNTRACKED = 1
@@ -117,6 +117,7 @@ struct GitStatus(Copyable, Movable):
     var files: Dict[String, Int]    # absolute path -> GS_*
     var dirs: Dict[String, Int]     # folders with changes in them -> the most urgent
     var untracked_dirs: List[String]  # folders nothing in which is tracked (absolute, no /)
+    var staged: List[String]        # files with changes in the index (absolute)
 
     def __init__(out self):
         self.root = ""
@@ -124,12 +125,14 @@ struct GitStatus(Copyable, Movable):
         self.files = Dict[String, Int]()
         self.dirs = Dict[String, Int]()
         self.untracked_dirs = List[String]()
+        self.staged = List[String]()
 
     def clear(mut self):
         self.branch = ""
         self.files = Dict[String, Int]()
         self.dirs = Dict[String, Int]()
         self.untracked_dirs.clear()
+        self.staged.clear()
 
     def note_dirs(mut self, path: String, code: Int):
         """Every folder from `path`'s up to the root has at least `code`."""
@@ -183,6 +186,8 @@ struct GitStatus(Copyable, Movable):
                 self.note_dirs(d, GS_UNTRACKED)
                 continue
             var p = join_path(self.root, rel)
+            if (kind == "1" or kind == "2") and String(e[byte=2:3]) != ".":
+                self.staged.append(p)
             self.files[p] = code
             self.note_dirs(p, code)
 
@@ -206,3 +211,147 @@ struct GitStatus(Copyable, Movable):
 def head_command(root: String, rel: String) -> String:
     """The file as in the last commit (fails for a file the commit does not have)."""
     return "git -C " + shell_quote(root) + " --no-optional-locks cat-file --filters " + shell_quote("HEAD:" + rel)
+
+
+# ------------------------------------------------------------ commit, branches, blame
+def sh_script(script: String) -> String:
+    """A command line that runs `script` with sh (for Proc.start, which execs)."""
+    return "sh -c " + shell_quote(script)
+
+
+def commit_script(root: String, msg_file: String, amend: Bool, all: Bool) -> String:
+    """`git commit` with the message in `msg_file` (removed afterwards); what git (and
+    the hooks) print goes to the output, error messages too."""
+    var opts = String("")
+    if msg_file.byte_length() == 0:
+        opts += " --no-edit"          # (amending, keeping the message)
+    else:
+        opts += " -F " + shell_quote(msg_file)
+    if amend:
+        opts += " --amend"
+    if all:
+        opts += " --all"
+    var rm = ("; rm -f " + shell_quote(msg_file)) if msg_file.byte_length() > 0 else String("")
+    return sh_script("cd " + shell_quote(root) + " && git commit --cleanup=strip" + opts
+        + " </dev/null 2>&1; rc=$?" + rm + "; exit $rc")
+
+
+def commit_message(summary: String, details: String) -> String:
+    var m = String(summary.strip())
+    var d = String(details.strip())
+    if d.byte_length() > 0:
+        m += "\n\n" + d
+    return m + "\n"
+
+
+def branches_command(root: String) -> String:
+    return ("git -C " + shell_quote(root) + " for-each-ref --sort=-committerdate"
+        + " --format='%(HEAD)%(refname:short)' refs/heads")
+
+
+def parse_branches(output: String) -> Tuple[List[String], String]:
+    """(branch names, the current one) from branches_command's output."""
+    var names = List[String]()
+    var current = String("")
+    for l in output.split("\n"):
+        var t = String(String(l).rstrip("\r"))
+        if t.byte_length() < 2:
+            continue
+        var name = String(t[byte=1:])
+        if t.startswith("*"):
+            current = name
+        names.append(name)
+    return (names^, current)
+
+
+def switch_script(root: String, branch: String, create: Bool) -> String:
+    # (no "--": `-c --` would make "--" the name; a branch name cannot start with -)
+    return sh_script("cd " + shell_quote(root) + " && git switch " + ("-c " if create else "")
+        + shell_quote(branch) + " </dev/null 2>&1")
+
+
+def branch_name_problem(name: String) -> String:
+    """'' if `name` can be a new branch's name (the common rules of git check-ref-format)."""
+    if name.byte_length() == 0:
+        return "A name is needed"
+    if name.startswith("-") or name.startswith("/") or name.endswith("/") or name.endswith(".") or name.endswith(".lock"):
+        return "A branch name cannot start with - or /, or end with /, . or .lock"
+    if name.find("..") >= 0 or name.find("@{") >= 0 or name.find("//") >= 0 or name == "@":
+        return "A branch name cannot contain .., @{ or //"
+    for c in decode(name):
+        if c <= 32 or c == 127 or c == 126 or c == 94 or c == 58 or c == 63 or c == 42 or c == 91 or c == 92:
+            return "A branch name cannot contain spaces or any of ~ ^ : ? * [ \\"
+    return ""
+
+
+def blame_script(root: String, rel: String, contents: String) -> String:
+    """Blame of the text in file `contents` (the buffer as edited; removed afterwards)
+    as if it were `rel`."""
+    return sh_script("cd " + shell_quote(root) + " && git blame --porcelain --contents " + shell_quote(contents)
+        + " -- " + shell_quote(rel) + "; rc=$?; rm -f " + shell_quote(contents) + "; exit $rc")
+
+
+@fieldwise_init
+struct BlameLine(Copyable, Movable):
+    var sha: String
+    var author: String
+    var time: Int           # seconds since 1970 (author time)
+    var summary: String
+    var line: String
+
+
+def parse_blame(output: String) -> List[BlameLine]:
+    """`git blame --porcelain`: per line a header "<sha> <orig> <final> [<count>]", the
+    commit's details the first time it appears, and the line after a tab."""
+    var res = List[BlameLine]()
+    var authors = Dict[String, String]()
+    var times = Dict[String, Int]()
+    var summaries = Dict[String, String]()
+    var sha = String("")
+    for raw in output.split("\n"):
+        var l = String(raw)
+        if l.startswith("\t"):
+            res.append(BlameLine(sha, authors.get(sha, ""), times.get(sha, 0), summaries.get(sha, ""), String(l[byte=1:])))
+            continue
+        var sp = l.find(" ")
+        var key = String(l[byte=0:sp]) if sp > 0 else l
+        var val = String(l[byte=sp + 1:]) if sp > 0 else String("")
+        if key.byte_length() == 40 and is_hex(key):
+            sha = key
+        elif key == "author":
+            authors[sha] = val
+        elif key == "author-time":
+            try:
+                times[sha] = atol(val)
+            except:
+                pass
+        elif key == "summary":
+            summaries[sha] = val
+    return res^
+
+
+def is_hex(s: String) -> Bool:
+    for c in s.as_bytes():
+        if not ((c >= 48 and c <= 57) or (c >= 97 and c <= 102)):
+            return False
+    return True
+
+
+def is_uncommitted(sha: String) -> Bool:
+    return sha.startswith("0000000000")
+
+
+def ymd(t: Int) -> String:
+    """The UTC date of a time in seconds since 1970, as YYYY-MM-DD."""
+    var z = t // 86400 + 719468
+    var era = (z if z >= 0 else z - 146096) // 146097
+    var doe = z - era * 146097
+    var yoe = (doe - doe // 1460 + doe // 36524 - doe // 146096) // 365
+    var y = yoe + era * 400
+    var doy = doe - (365 * yoe + yoe // 4 - yoe // 100)
+    var mp = (5 * doy + 2) // 153
+    var d = doy - (153 * mp + 2) // 5 + 1
+    var m = mp + 3 if mp < 10 else mp - 9
+    if m <= 2:
+        y += 1
+    return String(y) + "-" + ("0" if m < 10 else "") + String(m) + "-" + ("0" if d < 10 else "") + String(d)

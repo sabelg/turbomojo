@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -43,6 +43,7 @@ from app_debug import *
 from app_terminal import *
 from app_tests import *
 from app_gitdiff import *
+from app_gitcmd import *
 from app_git import *
 from app_jobs import *
 from app_input import *
@@ -209,6 +210,10 @@ __extension App:
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_CPU:
                 for h in ["~F7~/~F8~ Step instruction", "~G~ Memory at", "~+~/~-~ Next/prev memory"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_BLAME:
+                for h in ["~Enter~ Go to", "~Esc~ Close", self.git_blame_summary()]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_DIFF:

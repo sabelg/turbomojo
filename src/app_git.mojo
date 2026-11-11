@@ -18,12 +18,17 @@ from watch import file_sig, FileSig
 from app_outline import *
 from app_explorer import *
 from app_gitdiff import *
+from app_gitcmd import *
 
 comptime GQ_NONE = 0
 comptime GQ_STATUS = 1
 comptime GQ_BASE = 2
 comptime GQ_HEAD = 3              # the diff view's file as in HEAD
 comptime GQ_WRITE = 4             # staging or unstaging (a script that changes the index)
+comptime GQ_COMMIT = 5
+comptime GQ_BRANCHES = 6          # the list for the branch dialog
+comptime GQ_SWITCH = 7
+comptime GQ_BLAME = 8
 comptime GIT_INDEX_MS = 1000      # how often the index file is looked at
 comptime GIT_STATUS_MS = 3000     # with the explorer open, status at least this often
 comptime GIT_MAX_LINES = 50000    # larger files get no markers (about 10 ms a change at this size)
@@ -175,6 +180,8 @@ __extension App:
             for i in range(len(self.wins)):
                 if self.wins[i].kind == WK_EDITOR and self.wins[i].path == path and self.wins[i].buf.git_state != GB_ASKED:
                     self.wins[i].buf.git_state = GB_UNKNOWN
+        elif req == GQ_COMMIT or req == GQ_BRANCHES or req == GQ_SWITCH or req == GQ_BLAME:
+            self.git_command_done(req, status, out, path)
         self.git_stamp += 1
         self.git_diff_refresh()
 

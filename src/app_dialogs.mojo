@@ -40,6 +40,7 @@ from app_docs import *
 from app_debug import *
 from app_terminal import *
 from app_tests import *
+from app_gitcmd import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -206,6 +207,11 @@ __extension App:
             self.run_configs_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFG and b == 0:
             self.run_config_save()
+        elif kind == D_GIT_COMMIT and b == 0:
+            self.git_commit(self.dlg.field_text(0), self.dlg.field_text(1), self.dlg.check_vals[0], self.dlg.check_vals[1])
+        elif kind == D_GIT_BRANCH:
+            var sel = self.dlg.selected_item()
+            self.git_branch_button(b, self.dlg.item_data[sel] if sel >= 0 else -1, self.dlg.field_text(0))
         elif kind == D_TASKS and b == 0:
             var s = self.dlg.selected_item()
             if s >= 0 and self.dlg.item_data[s] < len(self.tasks):

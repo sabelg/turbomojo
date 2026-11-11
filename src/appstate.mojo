@@ -42,7 +42,7 @@ from dbgview import DebugView
 from cpuview import CpuView
 from termsession import TermSession
 from testexp import TestFile
-from git import GitStatus
+from git import GitStatus, BlameLine
 from gitdiff import DiffRow
 from linediff import Hunk
 from proc import Proc
@@ -228,6 +228,9 @@ struct App(Movable):
     var gd_hunks: List[Hunk]
     var gd_stamp: Int          # the state the rows were made for
     var git_tmp_n: Int         # numbers the files staged text is written to
+    var git_branches: List[String]  # the branch dialog's branches
+    var blame_path: String     # the blame window's file
+    var blame_rows: List[BlameLine]
     var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
@@ -571,6 +574,9 @@ struct App(Movable):
         self.gd_hunks = List[Hunk]()
         self.gd_stamp = -1
         self.git_tmp_n = 0
+        self.git_branches = List[String]()
+        self.blame_path = ""
+        self.blame_rows = List[BlameLine]()
         self.test_rows_file = List[Int]()
         self.test_rows_test = List[Int]()
         self.test_target_file = -1

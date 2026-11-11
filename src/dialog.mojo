@@ -44,6 +44,8 @@ comptime D_SETVALUE = 36        # a new value for a variable of the program bein
 comptime D_WATCH = 37           # the expression of a watch
 comptime D_EVALUATE = 38        # evaluate an expression or run a debugger command
 comptime D_MEMADDR = 39         # the CPU window's memory: an address or a variable
+comptime D_GIT_COMMIT = 40      # the commit message
+comptime D_GIT_BRANCH = 41      # switch to (or make) a branch
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

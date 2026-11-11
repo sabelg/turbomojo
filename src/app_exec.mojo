@@ -41,6 +41,7 @@ from app_debug import *
 from app_terminal import *
 from app_tests import *
 from app_gitdiff import *
+from app_gitcmd import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -439,6 +440,12 @@ __extension App:
             self.git_diff_open(True)
         elif cmd == CM_GIT_STAGE or cmd == CM_GIT_REVERT:
             self.git_change_command(cmd)
+        elif cmd == CM_GIT_COMMIT:
+            self.git_commit_dialog()
+        elif cmd == CM_GIT_BRANCH:
+            self.git_branch_dialog()
+        elif cmd == CM_GIT_BLAME:
+            self.git_blame_open()
         elif cmd == CM_GIT_NEXT:
             self.git_next_change(True)
         elif cmd == CM_GIT_PREV:
