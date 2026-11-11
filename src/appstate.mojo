@@ -12,6 +12,7 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
+from themes import ThemeSet
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
@@ -150,6 +151,11 @@ struct App(Movable):
     var scr: Screen
     var pal: Palette
     var theme_idx: Int
+    var themes: ThemeSet        # every theme: built in and ~/.config/turbomojo/themes/*.toml
+    var theme_id: String        # ui.theme as set ("auto": follow the terminal)
+    var theme_dark_id: String
+    var theme_light_id: String
+    var scheme_seen: Int        # the terminal's light/dark that the theme follows (0: none yet)
     var hl: Highlighter
     var wins: List[Window]
     var reg: Registry
@@ -519,6 +525,11 @@ struct App(Movable):
         var sz = self.term.size()
         self.scr = Screen(sz[0], sz[1])
         self.theme_idx = 0
+        self.themes = ThemeSet()
+        self.theme_id = "classic"
+        self.theme_dark_id = "midnight"
+        self.theme_light_id = "light"
+        self.scheme_seen = 0
         self.pal = theme(0)
         self.hl = Highlighter()
         self.wins = List[Window]()
@@ -923,6 +934,25 @@ struct App(Movable):
         var w = self.wins.pop(i)
         self.wins.append(w^)
 
+    def theme_apply(mut self):
+        """Use the theme ui.theme names (for "auto": the dark or light one, as the
+        terminal says; dark until it has said)."""
+        var id = self.theme_id
+        if id == "auto":
+            id = self.theme_light_id if self.term.scheme == 2 else self.theme_dark_id
+            self.scheme_seen = self.term.scheme
+        var k = self.themes.find(id)
+        if k < 0:
+            self.config_warnings.append("ui.theme: there is no theme \"" + id + "\" (themes: " + ", ".join(self.themes.ids) + ")")
+            k = 0
+        self.theme_idx = k
+        self.pal = self.themes.pals[k].copy()
+
+    def theme_tick(mut self):
+        """The terminal said it turned light or dark (mode 2031): follow it."""
+        if self.theme_id == "auto" and self.term.scheme != self.scheme_seen:
+            self.theme_apply()
+
     def next_timeout_ms(self, now: Int, input_pending: Bool, secs_to_minute: Int) -> Int:
         """How long the event loop may sleep before something on screen must change."""
         # With signals on a descriptor a resize wakes the loop by itself; without it
@@ -999,8 +1029,12 @@ struct App(Movable):
 
     def apply_settings(mut self, s: Settings):
         """Take over loaded settings, including custom key bindings."""
-        self.theme_idx = s.theme
-        self.pal = theme(s.theme)
+        self.themes = ThemeSet()
+        self.themes.add_folder(config_home() + "/themes")
+        self.theme_id = s.theme
+        self.theme_dark_id = s.theme_dark
+        self.theme_light_id = s.theme_light
+        self.scheme_seen = 0
         self.line_numbers = s.line_numbers
         self.auto_indent = s.auto_indent
         self.hl_line = s.highlight_line
@@ -1042,6 +1076,9 @@ struct App(Movable):
             if ip.byte_length() > 0:
                 self.include_paths.append(abs_path(base, ip))
         self.config_warnings = s.warnings.copy()
+        for pr in self.themes.problems:
+            self.config_warnings.append("theme " + pr)
+        self.theme_apply()
         self.keymap = s.keymap
         self.restore_session = s.restore_session
         if s.docs_home.byte_length() > 0 and s.docs_home != self.doc_home:

@@ -155,6 +155,7 @@ comptime CM_GIT_BLAME = 212
 comptime CM_AGENT = 213             # the agent panel
 comptime CM_AGENT_MENTION = 214     # mention the file or the selection in the prompt
 comptime CM_AGENT_START = 215       # start the configured agent (needs folder trust)
+comptime CM_THEME_PICK = 216        # Options > Colour theme...
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -756,9 +757,10 @@ def build_registry() -> Registry:
     r.cmd(CM_KEYMAP0, "options.keymapModern", "Keys: Mo~d~ern", "Ctrl-S, Ctrl-C/V, Ctrl-F... as in current editors")
     r.cmd(CM_KEYMAP1, "options.keymapTurbo", "Keys: T~u~rbo / WordStar", "The cursor diamond and Ctrl-K / Ctrl-Q sequences of Turbo's editor")
     r.cmd(CM_KEYMAP2, "options.keymapEmacs", "Keys: Emac~s~", "Ctrl-A/E/F/B/N/P, Ctrl-K, Ctrl-Y and Ctrl-X sequences")
-    r.cmd(CM_THEME0, "options.themeClassic", "Theme: Turbo ~C~lassic", "The 1992 CGA blue look")
-    r.cmd(CM_THEME1, "options.themeMidnight", "Theme: ~M~idnight Neon", "A modern dark truecolor theme")
-    r.cmd(CM_THEME2, "options.themeAmber", "Theme: Am~b~er CRT", "Phosphor monochrome terminal")
+    r.hide(CM_THEME0, "options.themeClassic", "Theme: Turbo Classic", "The 1992 CGA blue look")
+    r.hide(CM_THEME1, "options.themeMidnight", "Theme: Midnight Neon", "A modern dark truecolor theme")
+    r.hide(CM_THEME2, "options.themeAmber", "Theme: Amber CRT", "Phosphor monochrome terminal")
+    r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge or restore the active window", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")
@@ -937,9 +939,7 @@ def build_registry() -> Registry:
     r.item(CM_KEYMAP1)
     r.item(CM_KEYMAP2)
     r.sep()
-    r.item(CM_THEME0)
-    r.item(CM_THEME1)
-    r.item(CM_THEME2)
+    r.item(CM_THEME_PICK)
     r.sep()
     r.item(CM_TRUST)
 

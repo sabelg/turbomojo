@@ -137,6 +137,7 @@ __extension App:
             out.append(CM_USETABS)
         if ti >= 0 and self.wins[ti].buf.crlf:
             out.append(CM_CRLF)
-        out.append(CM_THEME0 + self.theme_idx)
+        if self.theme_idx < THEME_COUNT and self.theme_id != "auto":
+            out.append(CM_THEME0 + self.theme_idx)
         out.append(CM_KEYMAP0 + self.keymap)
         return out^

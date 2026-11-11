@@ -126,6 +126,7 @@ struct Terminal(Movable):
     var grapheme_on: Bool
     var kitty_on: Bool        # kitty keyboard protocol flags are pushed
     var event_type: Int       # of the sequence being parsed: 0/1 press, 2 repeat, 3 release
+    var scheme: Int           # the terminal's colour scheme (mode 2031): 0 unknown, 1 dark, 2 light
 
     def __init__(out self):
         self.saved = List[UInt8](length=128, fill=0)
@@ -143,6 +144,7 @@ struct Terminal(Movable):
         self.grapheme_on = False
         self.kitty_on = False
         self.event_type = 0
+        self.scheme = 0
 
     # ------------------------------------------------------------- modes
     def raw(mut self):
@@ -178,6 +180,8 @@ struct Terminal(Movable):
             append_str(self.out, "\x1b[?2027h")
         if self.kitty_on:
             append_str(self.out, KITTY_PUSH)
+        # tell us when the terminal turns light or dark, and ask what it is now
+        append_str(self.out, "\x1b[?2031h\x1b[?996n")
         self.flush()
 
     def set_kitty(mut self, on: Bool):
@@ -201,6 +205,7 @@ struct Terminal(Movable):
             append_str(self.out, KITTY_POP)
         if self.grapheme_on:
             append_str(self.out, "\x1b[?2027l")
+        append_str(self.out, "\x1b[?2031l")
         append_str(
             self.out,
             "\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l",
@@ -569,6 +574,9 @@ struct Terminal(Movable):
             self.caps.kitty_keyboard = True
         elif final == 99:                           # DA1: CSI ? ... c
             self.caps.answered = True
+        elif final == 110 and len(params) >= 2 and params[0] == 997:
+            # the colour scheme (mode 2031; answer to CSI ? 996 n): 1 dark, 2 light
+            self.scheme = params[1]
 
     def csi(mut self, final: Int, params: List[Int], mut evs: List[Event]):
         if self.event_type == 3:

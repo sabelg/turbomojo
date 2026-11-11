@@ -184,6 +184,7 @@ __extension App:
             self.quick_tick()
             self.explorer_tick(now_ns())
             self.git_tick(now_ns())
+            self.theme_tick()
             try:
                 self.agent_tick(now_ns())
             except err:

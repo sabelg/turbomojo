@@ -61,6 +61,39 @@ __extension App:
         d.focus = d.button_focus_index(0)
         self.show(d^)
 
+    def theme_dialog(mut self):
+        """Options > Colour theme: every theme, and following the terminal."""
+        var items = List[String]()
+        var data = List[Int]()
+        var dark = self.themes.find(self.theme_dark_id)
+        var light = self.themes.find(self.theme_light_id)
+        var auto_name = "Follow the terminal: " + (self.themes.pals[dark].name if dark >= 0 else self.theme_dark_id) + " when dark, " + (self.themes.pals[light].name if light >= 0 else self.theme_light_id) + " when light"
+        items.append(auto_name)
+        data.append(-1)
+        var first = 0
+        for k in range(self.themes.count()):
+            items.append(self.themes.pals[k].name + ("   (light)" if not self.themes.dark[k] else String("")))
+            data.append(k)
+            if k == self.theme_idx and self.theme_id != "auto":
+                first = len(items) - 1
+        var d = Dialog(D_THEME, "Colour Theme", min(72, self.scr.w - 4), min(20, len(items) + 8))
+        d.has_list = True
+        d.set_items(items^, data^)
+        d.list_sel = first
+        d.lines.append("Your own: TOML files in " + config_home() + "/themes/")
+        d.buttons.append("~O~K")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def theme_chosen(mut self, k: Int):
+        if k < 0:
+            self.theme_id = "auto"
+        elif k < self.themes.count():
+            self.theme_id = self.themes.ids[k]
+        self.theme_apply()
+        self.persist_option("ui", "theme", toml_quote(self.theme_id))
+        self.say("Theme: " + self.pal.name + (" (following the terminal)" if self.theme_id == "auto" else String("")))
+
     def open_dialog(mut self, dir: String):
         var d = Dialog(D_OPEN, "Open a File", min(64, self.scr.w - 4), min(22, self.desk_h()))
         d.fields.append(Field("~N~ame", ""))
@@ -208,6 +241,10 @@ __extension App:
             self.run_configs_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFG and b == 0:
             self.run_config_save()
+        elif kind == D_THEME and b == 0:
+            var sel = self.dlg.selected_item()
+            if sel >= 0:
+                self.theme_chosen(self.dlg.item_data[sel])
         elif kind == D_PANEL_FILTER and b == 0:
             self.panel_filter_set(String(self.dlg.field_text(0).strip()))
         elif kind == D_GIT_COMMIT and b == 0:

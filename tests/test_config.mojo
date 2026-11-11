@@ -150,7 +150,9 @@ def test_set_result_parses_back() raises:
 # ----------------------------------------------------------------- settings
 def test_defaults() raises:
     var s = load_settings("", "")
-    assert_equal(s.theme, 0)
+    assert_equal(s.theme, "classic")
+    assert_equal(s.theme_dark, "midnight")
+    assert_equal(s.theme_light, "light")
     assert_true(s.line_numbers)
     assert_true(s.auto_indent)
     assert_true(s.highlight_line)
@@ -164,7 +166,7 @@ def test_user_then_project_layering() raises:
     var user = String("[ui]\ntheme = \"midnight\"\nclock = false\n[tools]\ncompiler = \"/opt/mojo\"\n")
     var project = String("[ui]\ntheme = \"amber\"\n[editor]\nauto_indent = false\n")
     var s = load_settings(user, project)
-    assert_equal(s.theme, 2)                 # project wins
+    assert_equal(s.theme, "amber")           # project wins
     assert_false(s.clock)                    # from user
     assert_false(s.auto_indent)              # from project
     assert_equal(s.compiler, "/opt/mojo")
@@ -172,8 +174,9 @@ def test_user_then_project_layering() raises:
 
 
 def test_invalid_values_warn_and_keep_defaults() raises:
-    var s = load_settings("[ui]\ntheme = \"neon\"\nclock = \"yes\"\nline_numbers = 1\n[tools]\ncompiler = \"\"\n", "")
-    assert_equal(s.theme, 0)
+    # (a theme's name is checked once the theme files are known: test_themes)
+    var s = load_settings("[ui]\ntheme = 3\nclock = \"yes\"\nline_numbers = 1\n[tools]\ncompiler = \"\"\n", "")
+    assert_equal(s.theme, "classic")
     assert_true(s.clock)
     assert_true(s.line_numbers)
     assert_equal(s.compiler, "mojo")
@@ -281,7 +284,7 @@ def test_options_persist_and_preserve_user_comments() raises:
     assert_true(text.find("\"file.save\" = \"F4\"") > 0, "unrelated keys must survive")
     var s = load_settings(text, "")
     assert_equal(len(s.warnings), 0)
-    assert_equal(s.theme, 1)
+    assert_equal(s.theme, "midnight")
     assert_false(s.line_numbers)
     assert_true(s.clock)
     assert_equal(len(s.key_commands), 1)

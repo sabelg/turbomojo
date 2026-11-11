@@ -3482,3 +3482,42 @@ the agent, no images, the agent's commands are shown in the conversation rather 
 in a terminal window, no prompt history. The gate takes about 22 minutes now (63 test
 files).
 - Verified: the P6-04 gate above is the phase's last.
+
+## 2026-11-11 · P7-01 Themes as TOML files; light and high-contrast themes; follow terminal light/dark (mode 2031) · done
+
+- `src/themes.mojo`: `palette_keys` / `palette_set` / `palette_get` for the 68 colours of
+  the palette (generated from the struct, so every field has its name), `syntax_keys`
+  for the 14 syntax classes, `parse_color` (#RRGGBB, #RGB), and `ThemeSet`: the three
+  palettes in code, then Paper Light and High Contrast from TOML, then the user's
+  `~/.config/turbomojo/themes/*.toml` (a file of a built-in's name replaces it). A
+  theme file has `name`, `dark`, an optional `base` theme, `[colors]` and `[syntax]`;
+  unknown keys and bad colours are reported (and skipped) as configuration warnings.
+- `themes/paper-light.toml`, `themes/high-contrast.toml`: shipped as examples and built
+  into the binary as text (a test keeps the two the same). Both set every colour.
+  The contrast test (WCAG formula) found Paper Light's amber (decorators, warnings) at
+  4.29:1 on the editor background: darkened to #8A5700 (5.9:1). Now High Contrast has
+  at least 7:1 for text in every area, the selection, the menu and every syntax colour,
+  Paper Light at least 4.5:1.
+- Config: `ui.theme` takes any theme's id or "auto"; `ui.theme_dark` (midnight) and
+  `ui.theme_light` (light) for "auto". Names are checked once the theme files are read
+  (an unknown one: a warning listing the themes, classic used).
+- Mode 2031: on entering the screen the IDE sends `CSI ? 2031 h` (report changes) and
+  `CSI ? 996 n` (what is it now); `CSI ? 997 ; 1|2 n` sets the terminal's `scheme` (no
+  key event); `theme_tick` switches when "auto" is on. `CSI ? 2031 l` on leaving.
+- Options menu: the three "Theme:" items are replaced by "Colour theme..." (a list of
+  every theme, light ones marked, and "Follow the terminal: X when dark, Y when
+  light"); the choice is used at once and written to the user's config. The three old
+  commands stay as hidden commands (keymaps, the palette). The dropdown golden file was
+  regenerated for this one line.
+- Tests (`tests/test_themes.mojo`, 8): colours; every palette field named; the built-in
+  text equals the shipped files, every colour of Paper Light set; WCAG contrast of both
+  new themes; a user's theme file with a base, a bad key, a bad colour, a replaced
+  built-in; the terminal's reports parsed without key events; auto switching both ways,
+  an unknown theme; the dialog (items, the current one marked, choosing, written to the
+  config), the old commands. test_config now expects theme names.
+- Looked at in tmux with `theme = "light"`.
+- Not done / unverified:
+  - Mode 2031 not seen live: tmux does not pass it on, and no Ghostty/kitty here.
+  - No preview while moving in the theme list; Amber CRT and Turbo Classic are not
+    contrast-checked (they reproduce old looks).
+- Verified: `scripts/check.sh` → `CHECK OK`, 64 test files, 995 tests, smoke ok.

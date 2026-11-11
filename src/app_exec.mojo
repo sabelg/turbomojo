@@ -212,7 +212,7 @@ __extension App:
         elif cmd == CM_AUTOINDENT:
             self.persist_option("editor", "auto_indent", toml_bool(self.auto_indent))
         elif cmd >= CM_THEME0 and cmd < CM_THEME0 + THEME_COUNT:
-            self.persist_option("ui", "theme", toml_quote(theme_name(self.theme_idx)))
+            self.persist_option("ui", "theme", toml_quote(self.theme_id))
         elif cmd >= CM_KEYMAP0 and cmd < CM_KEYMAP0 + KEYMAP_COUNT:
             self.persist_option("ui", "keymap", toml_quote(keymap_name(self.keymap)))
 
@@ -577,9 +577,11 @@ __extension App:
         elif cmd == CM_LSP:
             self.lsp_command()
         elif cmd >= CM_THEME0 and cmd < CM_THEME0 + THEME_COUNT:
-            self.theme_idx = cmd - CM_THEME0
-            self.pal = theme(self.theme_idx)
+            self.theme_id = self.themes.ids[cmd - CM_THEME0]
+            self.theme_apply()
             self.say("Theme: " + self.pal.name)
+        elif cmd == CM_THEME_PICK:
+            self.theme_dialog()
         elif cmd == CM_ZOOM:
             var t = self.top()
             if t >= 0:
