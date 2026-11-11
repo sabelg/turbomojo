@@ -5,6 +5,7 @@ Search and bracket matching are in window_search.mojo, drawing in window_draw.mo
 from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
 from watch import FileSig
+from git import GB_KNOWN
 from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT, line_state, scan_states
@@ -74,6 +75,7 @@ struct Window(Copyable, Movable):
     var ar: Int
     var ac: Int
     var number: Int
+    var git_rows: List[Int]     # explorer: GS_* of each row's file or folder
     var wid: Int             # a lasting identity (the tiled layout keeps windows by it); 0 = none yet
     var hidden: Bool         # a tab that is not the one its pane shows: not drawn, not clickable
     var gseq: Int
@@ -131,6 +133,7 @@ struct Window(Copyable, Movable):
         self.ar = 0
         self.ac = 0
         self.number = number
+        self.git_rows = List[Int]()
         self.gseq = 0
         self.cur_group = 0
         self.last_act = ACT_NONE
@@ -185,7 +188,8 @@ struct Window(Copyable, Movable):
         while n >= 10:
             n //= 10
             d += 1
-        return max(d, 3) + 1
+        # a column for the git markers when the file is in a repository
+        return max(d, 3) + 1 + (1 if self.buf.git_state == GB_KNOWN else 0)
 
     # ------------------------------------------------------ visual columns
     def adv(self, ch: Int, v: Int) -> Int:

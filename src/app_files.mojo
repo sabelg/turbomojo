@@ -42,6 +42,7 @@ from app_docs import *
 from app_debug import *
 from app_terminal import *
 from app_tests import *
+from app_git import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -143,6 +144,7 @@ __extension App:
             self.symidx.replace_file(self.wins[i].path, scan_outline(self.wins[i].buf))
         self.note_disk_state(i)
         self.drop_swap(i)
+        self.git_saved()
         self.say("Saved " + self.wins[i].path + note)
         return True
 

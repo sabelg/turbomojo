@@ -44,6 +44,7 @@ from app_docs import *
 from app_debug import *
 from app_terminal import *
 from app_tests import *
+from app_git import *
 from outline import *
 from symindex import *
 from docs import *
@@ -105,11 +106,20 @@ __extension App:
         if xi < 0:
             return
         var text = List[Int]()
+        var codes = List[Int]()
         for k in range(len(self.ex.rows)):
             if k > 0:
                 text.append(10)
-            for c in decode(self.ex.line(k)):
+            var line = self.ex.line(k)
+            # git: the file's state as a letter after its name (folders: a dot)
+            var code = self.git.code_of(self.ex.rows[k].path)
+            codes.append(code)
+            if code != GS_NONE:
+                line += "  " + (String("•") if self.ex.rows[k].dir else status_letter(code))
+            for c in decode(line):
                 text.append(c)
+        self.wins[xi].git_rows = codes^
+        self.wins[xi].title = "Files" if self.git.branch.byte_length() == 0 else "Files (" + self.git.branch + ")"
         if len(self.ex.rows) == 0:
             text = decode("(no files)")
         if text == self.wins[xi].buf.all_text():

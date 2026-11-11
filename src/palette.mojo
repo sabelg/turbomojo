@@ -69,6 +69,10 @@ struct Palette(Copyable, Movable):
     var msg_err: Int
     var msg_warn: Int
     var msg_note: Int
+    var msg_ok: Int         # list rows that are fine/new (git: added, untracked)
+    var git_add: Int        # gutter markers: lines added, changed, removed since the index
+    var git_mod: Int
+    var git_del: Int
     var msg_sel_fg: Int
     var msg_sel_bg: Int
     var msg_frame: Int
@@ -143,6 +147,10 @@ struct Palette(Copyable, Movable):
         self.msg_err = RED
         self.msg_warn = BROWN
         self.msg_note = BLUE
+        self.msg_ok = GREEN
+        self.git_add = LGREEN
+        self.git_mod = YELLOW
+        self.git_del = LRED
         self.msg_sel_fg = WHITE
         self.msg_sel_bg = GREEN
         self.msg_frame = WHITE
@@ -217,6 +225,10 @@ def theme(n: Int) -> Palette:
         p.msg_err = 0xF7768E
         p.msg_warn = 0xE0AF68
         p.msg_note = 0x7DCFFF
+        p.msg_ok = 0x9ECE6A
+        p.git_add = 0x9ECE6A
+        p.git_mod = 0x7AA2F7
+        p.git_del = 0xF7768E
         p.msg_sel_fg = 0xC0CAF5
         p.msg_sel_bg = 0x283457
         p.msg_frame = 0x7AA2F7
@@ -292,6 +304,10 @@ def theme(n: Int) -> Palette:
         p.msg_err = hi
         p.msg_warn = md
         p.msg_note = lo
+        p.msg_ok = md
+        p.git_add = hi
+        p.git_mod = md
+        p.git_del = hi
         p.msg_sel_fg = bk
         p.msg_sel_bg = md
         p.msg_frame = hi

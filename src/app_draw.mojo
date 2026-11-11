@@ -42,6 +42,7 @@ from app_docs import *
 from app_debug import *
 from app_terminal import *
 from app_tests import *
+from app_git import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -133,6 +134,8 @@ __extension App:
         self.scr.fill(0, 1, self.scr.w, self.scr.h - 2, p.desk_ch, p.desk_fg, p.desk_bg)
         var n = len(self.wins)
         for i in range(n):
+            if self.wins[i].kind == WK_EDITOR:
+                self.git_marks_update(i)
             self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers)
             self.wins[i].clustered = self.scr.clustered
             self.wins[i].auto_pairs = self.auto_pairs

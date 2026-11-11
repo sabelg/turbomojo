@@ -3036,3 +3036,67 @@ given). `pixi install` / `pixi run` print no warning; the lock file only names i
 platforms anew; the default and the nightly environment both resolve (Mojo 1.2.0, and
 the nightly). The minimum stays glibc 2.34.
 - Verified: `scripts/check.sh` → `CHECK OK`, 55 test files, 934 tests, smoke ok.
+
+## 2026-11-10 · P5-06 Git gutter markers and status in explorer · done
+
+(Written 2026-11-11.) The loop had stopped after the pixi fix: I asked whether to write
+our own terminal emulator and did not schedule the next run while waiting. The user
+asked why the runners were not working; the emulator question stays open and the loop
+went on with P5-06.
+
+- `src/linediff.mojo`: a line diff (Myers O(ND) after the common start and end are
+  taken off; lines compared by an FNV-1a hash, a final CR ignored). Past 1000
+  differences the middle is one changed block. `line_marks` turns hunks into a mark
+  per line: added, changed, removed above, removed at the end. P5-07's diff view can
+  use the same code.
+- `src/git.mojo`: `find_repo` (the nearest `.git` upwards), the `git status
+  --porcelain=v2 -z --branch` parser (`GitStatus`: per file, folders get the most
+  urgent state inside them, untracked folders cover what is in them, the branch) and
+  the commands. The base a buffer is compared with is the index's version,
+  `git cat-file --filters :path` (the work tree's line-end and filter conversions
+  applied, so it compares with the file as on disk).
+- `src/app_git.mojo`: one git command at a time in the background (`Proc`, its output
+  descriptor in the event loop's poll set). The index file is looked at every second
+  (the loop wakes at least every 2 s while a repository is open); when it changes,
+  status and every open file's base are asked again. Status also after a save and
+  every 3 s while the explorer is open. Markers are worked out before drawing when
+  the buffer's version changed: the whole text hashed in one pass (asking the rope line
+  by line took 30 ms for 20,000 lines; one pass takes 4.3 ms, measured), so they
+  follow edits as you type. No markers for files over 50,000 lines or in large-file
+  mode.
+- Gutter: one more column (only for files git has) between the number and the fold
+  marker: `+`, `~`, `‾`, `_` in new palette colours `git_add/git_mod/git_del` (distinct
+  characters, so the mono theme works too). Explorer: the status letter after the name
+  (`•` for folders) and the row in a colour (`msg_ok` is new); its title shows the
+  branch.
+- **Folder trust**: git runs what a repository's own configuration names
+  (`core.fsmonitor`, clean/smudge filter drivers), so a repository from an unknown
+  source could run code when `git status` runs. git therefore runs only for repositories
+  whose folder is trusted; nothing asks. When the trust changes, everything is asked
+  again (or cleared). `-c core.fsmonitor=false` is passed to status as well. README's
+  Folder trust row says so.
+- Tests (`tests/test_git.mojo`, 12): the diff on fixed cases and 300 random edits
+  (applying the hunks rebuilds the new text, also with a tiny limit); line marks; the
+  status parser on porcelain v2 output with every kind of entry (paths with spaces, a
+  rename's second name, untracked folders, ignored entries); against a real repository
+  in $TMPDIR: status, the index version, a file git does not have; in the IDE: markers
+  on the screen for a changed and an added line, an edit shows at once, a removal,
+  `git add` outside clears them; no markers outside git or for an untracked file; the
+  explorer's letters, colours, folder dot, branch title, and a commit clearing them; no
+  git at all in an untrusted folder until it is trusted, and back when the trust is
+  removed.
+- Looked at in tmux on a scratch repository (trust in a temporary XDG_STATE_HOME): the
+  explorer showed `Files (main)`, `hello.mojo  M`, `notes.txt  U`; the editor `~` and
+  `+`; `git add` in another shell cleared the markers within the 2 s without a key;
+  a typed line got `+` at once.
+- Not done / unverified:
+  - A repository whose `.git` is a file (linked work trees, submodules) gets no index
+    watching: only the explorer's 3-second status and saves refresh it.
+  - Trust is checked for the repository's root; a trusted project inside an untrusted
+    parent repository gets no git.
+  - Files read as Latin-1 are compared with the index's bytes read as UTF-8: non-ASCII
+    lines show as changed.
+  - The explorer's title with a long branch name can run into the window number in a
+    narrow explorer.
+  - Only tried on Linux with git 2.43.
+- Verified: `scripts/check.sh` → `CHECK OK`, 56 test files, 946 tests, smoke ok.

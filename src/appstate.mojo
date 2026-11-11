@@ -42,6 +42,8 @@ from dbgview import DebugView
 from cpuview import CpuView
 from termsession import TermSession
 from testexp import TestFile
+from git import GitStatus
+from proc import Proc
 from breakpoints import Breakpoints
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
@@ -202,6 +204,16 @@ struct App(Movable):
     var trun: TermSession      # the program Run started
     var trepl: TermSession     # the Mojo REPL
     var test_files: List[TestFile]  # the test explorer's files and tests
+    var git: GitStatus         # `git status` of the project's repository (explorer colours)
+    var git_proc: Proc         # the git command running now (one at a time)
+    var git_req: Int           # what it was asked: GQ_*
+    var git_req_path: String   # for GQ_BASE: the file
+    var git_out: List[UInt8]   # what it has printed so far
+    var git_status_due: Bool   # status is to be asked again
+    var git_status_ns: Int     # when it was last asked
+    var git_index: FileSig     # the index file as it was when last looked at
+    var git_checked_ns: Int    # when the index was last looked at
+    var git_ok: Bool           # git may run for the project's repository (folder trust)
     var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
@@ -523,6 +535,16 @@ struct App(Movable):
         self.trun = TermSession()
         self.trepl = TermSession()
         self.test_files = List[TestFile]()
+        self.git = GitStatus()
+        self.git_proc = Proc()
+        self.git_req = 0
+        self.git_req_path = ""
+        self.git_out = List[UInt8]()
+        self.git_status_due = True
+        self.git_status_ns = 0
+        self.git_index = FileSig()
+        self.git_checked_ns = 0
+        self.git_ok = False
         self.test_rows_file = List[Int]()
         self.test_rows_test = List[Int]()
         self.test_target_file = -1
@@ -852,6 +874,8 @@ struct App(Movable):
             t = min(t, max(1, (self.ren_retry_due - now) // 1000000 + 1))
         if self.act_retry_due > 0:
             t = min(t, max(1, (self.act_retry_due - now) // 1000000 + 1))
+        if self.git.root.byte_length() > 0:
+            t = min(t, 2000)        # look at git's index now and then (see git_tick)
         if self.lsp.conn.wants_write():
             t = min(t, 10)
         if self.dbg.active() and self.dbg.conn.wants_write():

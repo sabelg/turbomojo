@@ -6,6 +6,8 @@ from palette import Palette
 from highlight import Highlighter, C_TEXT
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
 from grapheme import cluster_end
+from git import GB_KNOWN, GS_NONE, GS_CONFLICT, GS_DELETED, GS_UNTRACKED, GS_ADDED
+from linediff import LM_NONE, LM_ADDED, LM_CHANGED, LM_DELETED_ABOVE
 from window import *
 from window_search import *
 from window_multi import *
@@ -141,6 +143,14 @@ __extension Window:
                     rowfg = pal.msg_warn
                 elif str_contains(lt, "note:"):
                     rowfg = pal.msg_note
+                if r < len(self.git_rows) and self.git_rows[r] != GS_NONE:
+                    var gc = self.git_rows[r]
+                    if gc == GS_CONFLICT or gc == GS_DELETED:
+                        rowfg = pal.msg_err
+                    elif gc == GS_UNTRACKED or gc == GS_ADDED:
+                        rowfg = pal.msg_ok
+                    else:
+                        rowfg = pal.msg_warn
                 if r == self.cr:
                     rowbg = pal.msg_sel_bg
                     rowfg = pal.msg_sel_fg
@@ -161,11 +171,12 @@ __extension Window:
                         fold_mark = 0x25B8          # folded: points at the hidden block
                     elif self.buf.foldable(r):
                         fold_mark = 0x25BE
-                var pad = self.gut - 1 - cp_len(num)
+                var git_col = self.buf.git_state == GB_KNOWN
+                var pad = self.gut - (2 if git_col else 1) - cp_len(num)
                 var s = String("")
                 for _ in range(pad):
                     s += " "
-                s += num + " "
+                s += num + ("  " if git_col else " ")
                 var num_fg = pal.frame_act if r == self.cr and active else pal.gutter_fg
                 var sev = self.buf.mark_severity(r) if len(self.buf.marks) > 0 else 0
                 if sev == 1:
@@ -187,6 +198,12 @@ __extension Window:
                         _ = scr.text(self.x + 1, yy, s, pal.diag_err, pal.gutter_bg)
                         if pad >= 1:
                             scr.put(self.x + 1, yy, 0x25CB if look == 2 else 0x25CC, pal.diag_err, pal.gutter_bg)
+                if git_col and seg == 0 and r < len(self.buf.git_marks) and self.buf.git_marks[r] != LM_NONE:
+                    # since the index: + added, ~ changed, ‾ removed above, _ removed below
+                    var gm = Int(self.buf.git_marks[r])
+                    var gch = 0x2B if gm == LM_ADDED else (0x7E if gm == LM_CHANGED else (0x203E if gm == LM_DELETED_ABOVE else 0x5F))
+                    var gfg = pal.git_add if gm == LM_ADDED else (pal.git_mod if gm == LM_CHANGED else pal.git_del)
+                    scr.put(self.x + self.gut - 1, yy, gch, gfg, pal.gutter_bg)
                 if seg == 0 and r == self.buf.exec_row:
                     scr.put(self.x + self.gut, yy, 0x25BA, pal.msg_sel_bg, pal.gutter_bg)   # ►
                 elif fold_mark != 32:

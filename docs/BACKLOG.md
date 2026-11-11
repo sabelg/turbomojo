@@ -98,7 +98,7 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 - [x] P5-03 Terminal panel: input pass-through, scrollback, copy; Run uses it instead of leaving the TUI (old behaviour kept as option)
 - [x] P5-04 REPL panel with send-selection
 - [x] P5-05 Test explorer: discover TestSuite files, list via `--skip-all`, run via `--only`, tree with states, jump to failure
-- [ ] P5-06 Git gutter markers and status in explorer
+- [x] P5-06 Git gutter markers and status in explorer
 - [ ] P5-07 Git: diff view, stage/unstage/revert hunk
 - [ ] P5-08 Git: commit dialog, branch switch, blame
 - [ ] P5-09 Unified Problems/Output panels with filters

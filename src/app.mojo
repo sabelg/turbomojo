@@ -42,6 +42,7 @@ from app_docs import *
 from app_debug import *
 from app_terminal import *
 from app_tests import *
+from app_git import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -143,6 +144,8 @@ __extension App:
                 fds.append(self.dbg.fd())
             for tf in self.term_fds():
                 fds.append(tf)
+            if self.git_fd() >= 0:
+                fds.append(self.git_fd())
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -172,6 +175,7 @@ __extension App:
             self.symidx_tick()
             self.quick_tick()
             self.explorer_tick(now_ns())
+            self.git_tick(now_ns())
             self.session_tick(now_ns())
             self.swap_tick(now_ns())
             self.fsearch_tick(now_ns())
@@ -188,6 +192,7 @@ __extension App:
             self.cancel_job()
             _ = external_call["pclose", Int32](self.job.fp)
         self.dbg.finish()           # a program being debugged does not outlive the IDE
+        _ = self.git_proc.stop()
         _ = self.tshell.pty.stop()  # nor the terminals' programs (they get SIGHUP)
         _ = self.trun.pty.stop()
         _ = self.trepl.pty.stop()
