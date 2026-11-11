@@ -73,7 +73,7 @@ def test_tasks_of_odd_and_empty_files() raises:
     assert_equal(listed(odd), "ok=yes | number= | broken=unclosed | last=end")
     # this project's own file
     var own = parse_pixi_tasks(read_text(getcwd() + "/pixi.toml"))
-    assert_equal(listed(own), "build=mkdir -p build && mojo build -I src src/main.mojo -o build/tmide | run=./build/tmide < build | check=scripts/check.sh | canary=TM_ENV=nightly scripts/check.sh")
+    assert_equal(listed(own), "build=mkdir -p build && mojo build -I src src/main.mojo -o build/tmide -Xlinker $CONDA_PREFIX/lib/libghostty-vt.a | run=./build/tmide < build | check=scripts/check.sh | canary=TM_ENV=nightly scripts/check.sh")
     assert_equal(pixi_project_name(read_text(getcwd() + "/pixi.toml")), "turbo-mojo")
 
 

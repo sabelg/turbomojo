@@ -1,16 +1,18 @@
 version: 7
 platforms:
-- name: linux-64
+- name: linux-64-glibc-2-34
+  subdir: linux-64
   virtual-packages:
+  - __glibc=2.34
   - __unix=0=0
   - __linux=4.18
-  - __glibc=2.28
   - __archspec=0=x86_64
-- name: linux-aarch64
+- name: linux-aarch64-glibc-2-34
+  subdir: linux-aarch64
   virtual-packages:
+  - __glibc=2.34
   - __unix=0=0
   - __linux=4.18
-  - __glibc=2.28
   - __archspec=0=aarch64
 environments:
   default:
@@ -18,7 +20,7 @@ environments:
     - url: https://conda.modular.com/max/
     - url: https://conda.anaconda.org/conda-forge/
     packages:
-      linux-64:
+      linux-64-glibc-2-34:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-h7cc23a3_1.conda
@@ -28,6 +30,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libexpat-2.9.0-hd2095e1_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libffi-3.7.0-h81df57d_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/libghostty-vt-1.0.0-h862dfd4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libmpdec-4.0.0-hb03c661_2.conda
@@ -69,7 +72,7 @@ environments:
       - conda: https://conda.modular.com/max/linux-64/mojo-compiler-1.2.0-release.conda
       - conda: https://conda.modular.com/max/noarch/mblack-26.7.0-release.conda
       - conda: https://conda.modular.com/max/noarch/mojo-python-1.2.0-release.conda
-      linux-aarch64:
+      linux-aarch64-glibc-2-34:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/bzip2-1.0.8-h4777abc_10.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/keyutils-1.6.3-h5bc82ec_1.conda
@@ -79,6 +82,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libexpat-2.9.0-h4154aff_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libffi-3.7.0-hdaad0be_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libgcc-16.2.0-h205dda4_7.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libghostty-vt-1.0.0-h551d7ce_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libgomp-16.2.0-h8acb6b2_7.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/liblzma-5.8.3-he30d5cf_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libmpdec-4.0.0-he30d5cf_2.conda
@@ -125,7 +129,7 @@ environments:
     - url: https://conda.modular.com/max-nightly/
     - url: https://conda.anaconda.org/conda-forge/
     packages:
-      linux-64:
+      linux-64-glibc-2-34:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/bzip2-1.0.8-hda65f42_10.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/keyutils-1.6.3-h7cc23a3_1.conda
@@ -135,6 +139,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libexpat-2.9.0-hd2095e1_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libffi-3.7.0-h81df57d_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/libghostty-vt-1.0.0-h862dfd4_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/libmpdec-4.0.0-hb03c661_2.conda
@@ -175,7 +180,7 @@ environments:
       - conda: https://conda.modular.com/max-nightly/linux-64/mojo-compiler-1.3.0.dev2026111005-release.conda
       - conda: https://conda.modular.com/max-nightly/noarch/mblack-26.8.0.dev2026111005-release.conda
       - conda: https://conda.modular.com/max-nightly/noarch/mojo-python-1.3.0.dev2026111005-libpython_release.conda
-      linux-aarch64:
+      linux-aarch64-glibc-2-34:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/bzip2-1.0.8-h4777abc_10.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/keyutils-1.6.3-h5bc82ec_1.conda
@@ -185,6 +190,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libexpat-2.9.0-h4154aff_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libffi-3.7.0-hdaad0be_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libgcc-16.2.0-h205dda4_7.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libghostty-vt-1.0.0-h551d7ce_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libgomp-16.2.0-h8acb6b2_7.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/liblzma-5.8.3-he30d5cf_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libmpdec-4.0.0-he30d5cf_2.conda
@@ -353,6 +359,18 @@ packages:
   run_exports: {}
   size: 1058444
   timestamp: 1790303109576
+- conda: https://conda.anaconda.org/conda-forge/linux-64/libghostty-vt-1.0.0-h862dfd4_0.conda
+  sha256: 5f4b94df9de40163854de1d2871b587f9fb5bc2593ae58067868d72b07340ed4
+  md5: 16dd50a17724785b7b4b8e7c93f6441f
+  depends:
+  - __glibc >=2.34,<3.0.a0
+  - libgcc >=15
+  license: MIT
+  run_exports:
+    weak:
+    - libghostty-vt >=1.0.0,<2.0a0
+  size: 6556885
+  timestamp: 1794146527066
 - conda: https://conda.anaconda.org/conda-forge/linux-64/libgomp-16.2.0-he0feb66_7.conda
   sha256: 92a0bb350c7be6a4eedcb4e111c60aefd176018e6b1c009a6e025dbe9bbcd758
   md5: d904c7ddd95e026254b4b80808ee9e12
@@ -795,6 +813,18 @@ packages:
   run_exports: {}
   size: 627793
   timestamp: 1790302345214
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libghostty-vt-1.0.0-h551d7ce_0.conda
+  sha256: 28fe0416cc66dcbd5275e68853209ffa7275a709dcb53f4598457d2ed126e19d
+  md5: bd0589e7031fa4503cd6249a3e8a831b
+  depends:
+  - libgcc >=15
+  - __glibc >=2.34,<3.0.a0
+  license: MIT
+  run_exports:
+    weak:
+    - libghostty-vt >=1.0.0,<2.0a0
+  size: 6528163
+  timestamp: 1794146533987
 - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/libgomp-16.2.0-h8acb6b2_7.conda
   sha256: 4406fd67c5beeb99b9372f9bf07aa3e40ca141e337eceebac3ff64aa72799494
   md5: 259ded79ac497cfbcf5434540e8b81b6

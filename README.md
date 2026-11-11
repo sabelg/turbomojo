@@ -23,6 +23,8 @@ pixi run build                         # -> build/tmide
 pixi run ./build/tmide examples/hello.mojo
 ```
 
+Requirements: Linux with glibc 2.34 or newer. pixi fetches everything else: the Mojo toolchain and, from conda-forge, `libghostty-vt` (Ghostty's terminal emulator core, MIT licence), which the build links in statically for the integrated terminal - the built program does not need it at run time.
+
 `pixi run` puts the Mojo toolchain on `PATH`. The IDE also works when started directly, as long
 as `mojo` is on `PATH`: it then works out the toolchain's environment (`MODULAR_HOME`) itself.
 To use a different compiler binary, set `TURBOMOJO_COMPILER` or change it under
@@ -200,7 +202,7 @@ pixi run check
 
 builds the IDE, compiles and runs every `tests/test_*.mojo` (std.testing TestSuite files), and
 runs a scripted smoke test of the real UI in a private tmux server. It prints `CHECK OK` only
-if everything passed.
+if everything passed. To build one test by hand: `pixi run mojo build -I src tests/test_vt.mojo -o build/tests/test_vt -Xlinker .pixi/envs/default/lib/libghostty-vt.a`.
 
 The project builds against the stable Mojo release (1.2 or newer). A second environment tracks
 the nightly toolchain as an early warning for upcoming changes:

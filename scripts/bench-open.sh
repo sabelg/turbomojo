@@ -21,7 +21,7 @@ with open("build/big/60mb.txt", "w") as f:
         f.write(line)
 PY
 fi
-pixi run -e "$ENVN" mojo build -I src bench/open_bench.mojo -o build/open_bench 2>/dev/null
+pixi run -e "$ENVN" mojo build -I src bench/open_bench.mojo -o build/open_bench -Xlinker "$(pixi run -e "$ENVN" printenv CONDA_PREFIX)/lib/libghostty-vt.a" 2>/dev/null
 echo "== 1,000,000 lines, old loader"
 ./build/open_bench build/big/1m.mojo old
 echo "== 1,000,000 lines"

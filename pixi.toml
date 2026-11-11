@@ -4,6 +4,10 @@ name = "turbo-mojo"
 platforms = ["linux-aarch64", "linux-64"]
 version = "0.1.0"
 
+[system-requirements]
+# libghostty-vt (the terminal emulator library) is built for glibc 2.34 and newer
+libc = "2.34"
+
 # The default environment uses the stable Mojo release. The `nightly` environment is a
 # canary: `pixi run canary` runs the whole gate against the newest nightly toolchain so
 # that upcoming language or library changes are noticed early.
@@ -24,7 +28,10 @@ default = ["stable"]
 nightly = ["nightly"]
 
 [tasks]
-build = "mkdir -p build && mojo build -I src src/main.mojo -o build/tmide"
+build = "mkdir -p build && mojo build -I src src/main.mojo -o build/tmide -Xlinker $CONDA_PREFIX/lib/libghostty-vt.a"
 run = { cmd = "./build/tmide", depends-on = ["build"] }
 check = "scripts/check.sh"
 canary = "TM_ENV=nightly scripts/check.sh"
+
+[dependencies]
+libghostty-vt = ">=1.0.0,<2"

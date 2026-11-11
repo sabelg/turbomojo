@@ -2827,3 +2827,53 @@ request) and with the real one. The gate takes about 12 minutes now (51 test fil
   - The environment additions use `putenv` in the child; unsetting variables is not
     offered.
 - Verified: `scripts/check.sh` → `CHECK OK`, 52 test files, 917 tests, smoke ok.
+
+## 2026-11-10 · P5-02 Terminal emulation: libghostty-vt via FFI · done
+
+The backlog said: libghostty-vt through pixi/conda if obtainable, else a built-in
+parser. It is obtainable: `pixi search` found **libghostty-vt 1.0.0 on conda-forge**
+(built 2026-11-08, linux-aarch64 and linux-64, MIT, with headers, a shared and a
+static library). So no parser of my own.
+
+- `pixi.toml`: `libghostty-vt >=1.0.0,<2` as a dependency (both environments). The
+  solver refused it at first: the package needs glibc >= 2.34 and pixi assumes 2.28
+  for linux-64 unless told; `[system-requirements] libc = "2.34"` was added - **the
+  project now requires glibc 2.34 (2021) or newer**; this machine has 2.39.
+- Linking: `mojo build` takes `-Xlinker`; every build links
+  `$CONDA_PREFIX/lib/libghostty-vt.a` (pixi `build` task, `scripts/check.sh` for the
+  IDE and every test, `scripts/bench-open.sh`). Statically, so `build/tmide` has no
+  run-time dependency on it (checked with ldd). A scratch program first showed it
+  works from Mojo: terminal, render state, row and cell iterators.
+- `src/vt.mojo` - `VtTerm`: `open(cols, rows)`, `write` / `write_text` (the program's
+  output), `resize` (the library reflows the primary screen), `update()` takes a
+  picture: per cell the codepoint (extra codepoints of a cluster kept, -1 for the
+  right half of a wide character), foreground and background (-1 = the default; colours
+  of the 256-colour palette kept as indices so that the IDE can use its own theme for
+  them, others as RGB), attributes (bold, italic, faint, blink, inverse, invisible,
+  strike, underline style); the cursor position and visibility, the alternate screen,
+  mouse tracking, the scrollback size; `row_text` / `text`.
+- Answers to a program's questions (cursor position, device attributes, mode reports):
+  the library calls back while parsing. Setting the callback's user data as well would
+  need a second C signature for `ghostty_terminal_set`, which the project's FFI rule
+  forbids, so the Mojo callback `vt_reply_c` writes "[terminal][length][bytes]" into a
+  pipe kept at a fixed descriptor (like the signal eventfd); `vt_take_replies` reads
+  them back, each tagged with its terminal, for the IDE to send to that program's pty.
+- Tests (`tests/test_vt.mojo`, 8, run twice): text, wrapping, scrolling into the
+  scrollback, CUP / EL / ED, cursor hide/show; colours: palette index, 256 colours,
+  truecolor fg and bg, bold+underline, inverse, erase with a background colour; wide
+  and combining characters; scroll regions with IL / DL / ICH / DCH; the alternate
+  screen and the cursor restored after it; answers to DSR, DECRQM and DA, for two
+  terminals; resize with reflow; and real programs on a pty: colours, a program that
+  asks for the cursor position and reads the answer from its terminal (`answer=[1;3R`),
+  a full-screen program leaving the alternate screen.
+- Not done / unverified:
+  - Scrolling back through the scrollback (the library's call takes a tagged union by
+    value, which is not straightforward through Mojo's FFI) - for P5-03.
+  - Window title, working folder (OSC 7), bell, clipboard (OSC 52), the kitty graphics
+    protocol: not read yet.
+  - Keyboard and mouse encoding for the program (the library has encoders: key.h,
+    mouse.h) - P5-03 needs them.
+  - linux-64 builds were not tried (no such machine); the package exists for it.
+- The first gate run failed in `test_project`: it reads this repository's own
+  `pixi.toml` tasks and expected the old build line; updated.
+- Verified: `scripts/check.sh` → `CHECK OK`, 53 test files, 925 tests, smoke ok.
