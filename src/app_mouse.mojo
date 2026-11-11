@@ -39,6 +39,7 @@ from app_layout import *
 from app_explorer import *
 from app_docs import *
 from app_debug import *
+from app_terminal import *
 from app_jobs import *
 from app_input import *
 from app_draw import *
@@ -51,6 +52,13 @@ __extension App:
         if self.mode == M_DOCS:
             self.docs_mouse(e)
             return
+        if self.mode == M_NORMAL:
+            # inside a terminal window: its own wheel and selection
+            var ti = self.window_at(x, y) if e.pressed or e.button == MB_WHEEL_UP or e.button == MB_WHEEL_DOWN else self.top()
+            if e.drag or not e.pressed:
+                ti = self.top()
+            if ti >= 0 and self.wins[ti].kind == WK_TERM and (ti == self.top() or e.pressed) and self.term_mouse(ti, e):
+                return
         # ---- wheel
         if e.button == MB_WHEEL_UP or e.button == MB_WHEEL_DOWN:
             var d = -3 if e.button == MB_WHEEL_UP else 3

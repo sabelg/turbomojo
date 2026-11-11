@@ -38,6 +38,7 @@ from app_layout import *
 from app_explorer import *
 from app_docs import *
 from app_debug import *
+from app_terminal import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -430,6 +431,8 @@ __extension App:
             self.watch_dialog(-1)
         elif cmd == CM_EVALUATE:
             self.eval_dialog("", List[String]())
+        elif cmd == CM_TERMINAL:
+            self.term_toggle()
         elif cmd == CM_CPUWIN:
             self.cpuwin_toggle()
         elif cmd == CM_DEBUGWIN:

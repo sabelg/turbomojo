@@ -136,6 +136,7 @@ comptime CM_DEBUGWIN = 193
 comptime CM_WATCH_ADD = 194
 comptime CM_EVALUATE = 195
 comptime CM_CPUWIN = 196
+comptime CM_TERMINAL = 197
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -740,6 +741,7 @@ def build_registry() -> Registry:
     r.cmd(CM_PANE_GROW, "window.growPane", "Gro~w~ pane", "Make this pane larger", [alt(125)])
     r.cmd(CM_PANE_SHRINK, "window.shrinkPane", "~S~hrink pane", "Make this pane smaller", [alt(123)])
     r.cmd(CM_EXPLORER, "window.explorer", "~F~ile explorer", "Show the project's files as a tree at the left edge (again: close it)", [ctrl(101)])
+    r.cmd(CM_TERMINAL, "window.terminal", "Ter~m~inal", "A shell in a window at the bottom (again: back to the editor or close it)", [fkey(11) | MOD_ALT])
     r.cmd(CM_OUTLINE, "window.outline", "~O~utline", "Show or hide the outline of the file: its functions, structs and traits", [fkey(12) | MOD_CTRL])
     r.cmd(CM_WINLIST, "window.list", "~L~ist...", "Show a list of open windows", [alt(48)])
     # ---- Help / system
@@ -767,6 +769,7 @@ def build_registry() -> Registry:
     r.sep()
     r.item(CM_QUICK)
     r.item(CM_CLOSE)
+    r.item(CM_TERMINAL)
     r.item(CM_SHELL)
     r.item(CM_QUIT)
 

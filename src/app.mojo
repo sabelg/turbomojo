@@ -40,6 +40,7 @@ from app_layout import *
 from app_explorer import *
 from app_docs import *
 from app_debug import *
+from app_terminal import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -139,6 +140,8 @@ __extension App:
                 fds.append(self.lsp.fd())
             if self.dbg.fd() >= 0:
                 fds.append(self.dbg.fd())
+            for tf in self.term_fds():
+                fds.append(tf)
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -163,6 +166,7 @@ __extension App:
                 self.debug_tick()
             except err:
                 self.log_error(String(err))
+            self.term_tick()
             self.outline_tick(now_ns())
             self.symidx_tick()
             self.quick_tick()
@@ -183,6 +187,8 @@ __extension App:
             self.cancel_job()
             _ = external_call["pclose", Int32](self.job.fp)
         self.dbg.finish()           # a program being debugged does not outlive the IDE
+        _ = self.tshell.pty.stop()  # nor the terminals' programs (they get SIGHUP)
+        _ = self.trun.pty.stop()
         self.bp_sync()
         self.bp_save()
         self.lsp_stop()

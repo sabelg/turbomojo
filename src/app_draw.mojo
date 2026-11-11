@@ -40,6 +40,7 @@ from app_layout import *
 from app_explorer import *
 from app_docs import *
 from app_debug import *
+from app_terminal import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -151,6 +152,8 @@ __extension App:
             if self.wins[i].hidden:
                 continue
             self.draw_window(i, i == n - 1)
+            if self.wins[i].kind == WK_TERM:
+                self.term_draw(i)
             if self.wins[i].kind == WK_MESSAGE:
                 self.draw_pages(i, i == n - 1)
             if self.tiled and self.wins[i].kind == WK_EDITOR:
@@ -197,6 +200,10 @@ __extension App:
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_CPU:
                 for h in ["~F7~/~F8~ Step instruction", "~G~ Memory at", "~+~/~-~ Next/prev memory"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_TERM:
+                for h in ["~F6~ Back to the editor", "~Shift-PgUp~ Scroll back", "~Alt-F11~ Close", "drag: copy"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_DEBUG:

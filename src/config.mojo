@@ -14,6 +14,7 @@ Example:
     line_numbers = true
     highlight_line = true
     clock = true
+    run_in_terminal = true      # Run shows the program in a terminal window; false: on the user screen
     show_whitespace = false
 
     [editor]
@@ -123,6 +124,7 @@ struct Settings(Copyable, Movable):
     var auto_indent: Bool
     var highlight_line: Bool
     var clock: Bool
+    var run_in_terminal: Bool
     var show_whitespace: Bool
     var soft_wrap: Bool
     var semantic_colors: Bool
@@ -155,6 +157,7 @@ struct Settings(Copyable, Movable):
         self.auto_indent = True
         self.highlight_line = True
         self.clock = True
+        self.run_in_terminal = True
         self.show_whitespace = False
         self.soft_wrap = False
         self.semantic_colors = True
@@ -202,6 +205,7 @@ struct Settings(Copyable, Movable):
         self.line_numbers = self.take_bool(doc, "ui.line_numbers", self.line_numbers)
         self.highlight_line = self.take_bool(doc, "ui.highlight_line", self.highlight_line)
         self.clock = self.take_bool(doc, "ui.clock", self.clock)
+        self.run_in_terminal = self.take_bool(doc, "ui.run_in_terminal", self.run_in_terminal)
         self.show_whitespace = self.take_bool(doc, "ui.show_whitespace", self.show_whitespace)
         self.soft_wrap = self.take_bool(doc, "editor.soft_wrap", self.soft_wrap)
         self.semantic_colors = self.take_bool(doc, "editor.semantic_colors", self.semantic_colors)
@@ -305,7 +309,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

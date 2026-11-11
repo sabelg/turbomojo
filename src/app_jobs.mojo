@@ -39,6 +39,7 @@ from app_layout import *
 from app_explorer import *
 from app_docs import *
 from app_debug import *
+from app_terminal import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
@@ -480,6 +481,9 @@ __extension App:
         var label = "mojo run " + basename(path)
         if not test and self.run_active.byte_length() > 0:
             label = "configuration " + self.run_active
+        if self.run_in_terminal:
+            self.run_in_window(label, core)
+            return
         var cmd = (
             "clear && printf '\\033[1m$ %s\\033[0m\\n' " + shell_quote(label)
             + " && " + core

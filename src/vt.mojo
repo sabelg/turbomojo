@@ -17,6 +17,7 @@ that terminal.
 """
 from std.ffi import external_call
 from std.collections import List, Dict
+from std.sys.info import CompilationTarget
 
 comptime VT_REPLY_FD = 978          # the write end of the replies pipe
 comptime VT_REPLY_READ_FD = 979     # its read end
@@ -48,6 +49,12 @@ comptime TERM_ACTIVE_SCREEN = 6
 comptime TERM_MOUSE_TRACKING = 11
 comptime TERM_SCROLLBACK_ROWS = 15
 comptime OPT_WRITE_PTY = 2
+comptime TERM_MODE = 37
+comptime TERM_VIEWPORT_ACTIVE = 32
+comptime SCROLL_BOTTOM = 1
+comptime SCROLL_DELTA = 2
+comptime MODE_CURSOR_KEYS = 1           # DEC private modes (as the library packs them: no ANSI bit)
+comptime MODE_BRACKETED_PASTE = 2004
 
 
 def vt_reply_c(term: Int, userdata: Int, data: UnsafePointer[UInt8, MutAnyOrigin], n: Int):
@@ -293,6 +300,44 @@ struct VtTerm(Movable):
         var sb = List[Int](length=1, fill=0)
         if Int(external_call["ghostty_terminal_get", Int32](self.term, Int32(TERM_SCROLLBACK_ROWS), sb.unsafe_ptr())) == 0:
             self.scrollback = sb[0]
+
+    def mode(self, n: Int, ansi: Bool = False) -> Bool:
+        """Whether a terminal mode is set (MODE_CURSOR_KEYS, MODE_BRACKETED_PASTE, ...)."""
+        if self.term == 0:
+            return False
+        var cfg = List[UInt16](length=2, fill=0)       # { uint16 mode; bool value }
+        cfg[0] = UInt16((n & 0x7FFF) | ((1 << 15) if ansi else 0))
+        if Int(external_call["ghostty_terminal_get", Int32](self.term, Int32(TERM_MODE), cfg.unsafe_ptr())) != 0:
+            return False
+        return (Int(cfg[1]) & 255) != 0
+
+    def scroll_view(mut self, tag: Int, delta: Int):
+        """Move the view through the scrollback (SCROLL_DELTA rows, negative = up;
+        SCROLL_BOTTOM back to the live screen).
+
+        The library takes a 24-byte struct by value. The C ABI passes such a struct by
+        reference on aarch64 (AAPCS64) and in memory on the stack on x86-64 (System V):
+        the call below gives the library exactly that."""
+        if self.term == 0:
+            return
+        comptime if CompilationTarget.is_x86():
+            # six integer registers are used first (the handle and five fillers), so the
+            # three words of the struct go onto the stack, where the callee reads them
+            _ = external_call["ghostty_terminal_scroll_viewport", Int32](self.term, Int(0), Int(0), Int(0), Int(0), Int(0), Int(tag), Int(delta), Int(0))
+        else:
+            var sv = List[Int](length=3, fill=0)
+            sv[0] = tag
+            sv[1] = delta
+            _ = external_call["ghostty_terminal_scroll_viewport", Int32](self.term, sv.unsafe_ptr())
+
+    def at_bottom(self) -> Bool:
+        """The view shows the live screen (not the scrollback)."""
+        if self.term == 0:
+            return True
+        var b = List[UInt8](length=8, fill=0)
+        if Int(external_call["ghostty_terminal_get", Int32](self.term, Int32(TERM_VIEWPORT_ACTIVE), b.unsafe_ptr())) != 0:
+            return True
+        return b[0] != 0
 
     def row_text(self, y: Int) -> String:
         """A line of the screen as text (trailing blanks removed)."""

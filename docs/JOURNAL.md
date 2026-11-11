@@ -2877,3 +2877,63 @@ static library). So no parser of my own.
 - The first gate run failed in `test_project`: it reads this repository's own
   `pixi.toml` tasks and expected the old build line; updated.
 - Verified: `scripts/check.sh` → `CHECK OK`, 53 test files, 925 tests, smoke ok.
+
+## 2026-11-10 · P5-03 Terminal panel: input pass-through, scrollback, copy; Run uses it · done
+
+- `src/termsession.mojo`: `TermSession` - a `Pty` and a `VtTerm`, title, what was
+  started (to start it again), an end note, a mouse selection; `ansi_color` (xterm's
+  256 colours).
+- `src/termkeys.mojo`: `encode_key` - the bytes xterm sends: characters as UTF-8,
+  Ctrl-letters as control codes, Alt as an ESC prefix, Enter CR, Backspace DEL (Ctrl:
+  BS), Shift-Tab, arrows / Home / End as CSI or (application cursor mode) SS3, with
+  xterm's modifier parameter, Insert / Delete / PgUp / PgDn and F1-F12; `paste_bytes`
+  (line ends as CR; with bracketed paste the text is wrapped and an ESC inside dropped).
+- `src/vt.mojo` additions: `mode(n)` (DECCKM, bracketed paste ...), `scroll_view`
+  (the library takes a 24-byte struct by value: by reference on aarch64, on the stack
+  on x86-64 - the x86-64 form is written for that ABI but **not tried**: no such
+  machine), `at_bottom`.
+- `src/app_terminal.mojo`: two sessions, each in a window of kind `WK_TERM` at the
+  bottom: **Terminal** (File ▸ Terminal, Alt-F11: the user's `$SHELL` in the project
+  folder) and **Run**. Their programs' output goes through the emulator, its answers go
+  back to them, the size follows the window (SIGWINCH), the screen is drawn from the
+  cells (palette colours bright when bold, inverse, invisible, underline, wide and
+  combined characters, the cursor where the program has it). Keys go to the program
+  except F10, F6 / Shift-F6, Alt-digits, Alt-F11 and Shift-PgUp / PgDn (scrollback);
+  paste goes to it; the mouse wheel scrolls back, typing returns to the live screen; a
+  drag selects (shown in the selection colours) and letting go copies to the clipboard
+  (and OSC 52). When the program ends the window says so with its status; Enter starts
+  it again, Esc closes. Closing the window of the shell keeps the shell; quitting the
+  IDE hangs up both programs.
+- Run (Ctrl-F9) now runs in the Run window, so a program can be typed to without
+  leaving the IDE; one still running from the last Run is ended first. `[ui]
+  run_in_terminal = false` keeps the old user screen. Opening a shell does not ask for
+  folder trust (it runs nothing of the folder); Run still does.
+- Menu: the Window menu had no hot letter left (25 items for 24 possible letters, I
+  checked with a matching), so Terminal went into the File menu, next to OS shell -
+  where Turbo C had "DOS shell". Alt-F12 was taken (Go to symbol in project): Alt-F11.
+- Tests (`tests/test_terminal.mojo`, 4; five runs in a row): the key and paste
+  encodings; a shell (`/bin/sh` for the test, not the user's shell and its start-up
+  files) in the window: typing, its output, its working folder, Ctrl-K going to the
+  program, Ctrl-C interrupting `sleep`, paste, `stty size` = the window's inside, F6
+  back to the editor (keys are the editor's again), Alt-F11 back and closing with the
+  shell still running, the end note, Enter starting it again, stop; scrollback by
+  Shift-PgUp / PgDn and the wheel, typing returning to the bottom, a drag copying two
+  lines; Run with a stand-in compiler: the program asks for a name and reads it from
+  the window, ends with status 4, Esc closes, a second Run ends a waiting one, the
+  setting. Flaky at first: typing right after Ctrl-C was thrown away by the terminal
+  (as in any terminal) - the test now waits for the prompt; and once Ctrl-C arrived
+  before `sleep` was running - it now waits a moment.
+- Looked at in tmux: bash with its coloured prompt (256-colour codes reached the outer
+  terminal), `ls`, a bold green printf, `top` running and quit with q, then Ctrl-F9 on
+  hello.mojo: "$ mojo run hello.mojo", its two lines, "[the program ended with status
+  0 ...]".
+- Not done / unverified:
+  - Mouse reporting to programs that ask for it (vim with mouse=a, htop): the mouse
+    stays the IDE's (wheel = scrollback). The library's mouse encoder is not used yet.
+  - The window title a program sets (OSC 0/2) is not shown; the bell is ignored.
+  - One shell only; the Terminal and Run windows lie in the same place at the bottom
+    (the one in front is seen).
+  - Keys the IDE's own key parser does not deliver (e.g. some Ctrl+Shift combinations,
+    Ctrl-Space on some terminals) cannot reach the program.
+  - Alt-F5 (user screen) shows the old user screen, not the Run window.
+- Verified: `scripts/check.sh` → `CHECK OK`, 54 test files, 929 tests, smoke ok.

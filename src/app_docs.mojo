@@ -53,6 +53,7 @@ from app_input import *
 from app_mouse import *
 from app_draw import *
 from app_debug import *
+from app_terminal import *
 
 
 comptime DOC_FIND_MAX = 150         # results the finder lists

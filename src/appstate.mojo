@@ -40,6 +40,7 @@ from doclib import DocLibrary, DocIndex, Found, default_docs_home
 from dap import DebugSession
 from dbgview import DebugView
 from cpuview import CpuView
+from termsession import TermSession
 from breakpoints import Breakpoints
 from explorer import ExplorerTree, default_trash_dir
 from lsp import LspClient, CompletionItem, SigInfo, WorkspaceEdit, CodeAction
@@ -195,6 +196,10 @@ struct App(Movable):
     var dv_eval_expr: String
     var dv_watch_edit: Int     # the watch the dialog edits (-1: a new one)
     var cpu: CpuView           # what the CPU window shows
+    var tshell: TermSession    # Window > Terminal
+    var trun: TermSession      # the program Run started
+    var run_in_terminal: Bool  # Run uses the Run window (else the user screen, as before)
+    var shell_program: String  # what Window > Terminal starts ($SHELL)
     var cpu_dis_seq: Int       # its requests: disassembly, register scopes, sets, values, memory
     var cpu_scope_seq: Int
     var cpu_set_seq: Int
@@ -504,6 +509,10 @@ struct App(Movable):
         self.dv_eval_expr = ""
         self.dv_watch_edit = -1
         self.cpu = CpuView()
+        self.tshell = TermSession()
+        self.trun = TermSession()
+        self.run_in_terminal = True
+        self.shell_program = env_or("SHELL", "/bin/sh")
         self.cpu_dis_seq = -1
         self.cpu_scope_seq = -1
         self.cpu_set_seq = -1
@@ -829,6 +838,8 @@ struct App(Movable):
             t = min(t, 10)
         if self.dbg.active() and self.dbg.conn.wants_write():
             t = min(t, 10)
+        if self.tshell.pty.wants_write() or self.trun.pty.wants_write():
+            t = min(t, 10)
         if self.watch_enabled and not self.watch.active():
             t = min(t, max(1, (self.watch_due - now) // 1000000 + 1))
         if self.show_clock:
@@ -862,6 +873,7 @@ struct App(Movable):
         self.auto_indent = s.auto_indent
         self.hl_line = s.highlight_line
         self.show_clock = s.clock
+        self.run_in_terminal = s.run_in_terminal
         self.show_ws = s.show_whitespace
         self.soft_wrap = s.soft_wrap
         self.semantic_on = s.semantic_colors

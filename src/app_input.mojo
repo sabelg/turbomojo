@@ -39,6 +39,7 @@ from app_layout import *
 from app_explorer import *
 from app_docs import *
 from app_debug import *
+from app_terminal import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -82,6 +83,8 @@ __extension App:
                 if fi >= 0:
                     self.dlg.field_key_insert(fi, e.text)
                 return
+            if self.mode == M_NORMAL and self.term_paste(e.text):
+                return
             self.mode = M_NORMAL
             var ai = self.active_editor()
             if ai >= 0:
@@ -105,6 +108,8 @@ __extension App:
         if self.mode == M_HOVER:
             if self.hover_key(k):
                 return
+        if self.mode == M_NORMAL and self.chord == 0 and self.term_key(k):
+            return                              # a terminal in front has the keyboard
         if self.mode == M_NORMAL and self.sig_on and k == KEY_ESC and self.chord == 0:
             self.sig_close()                    # Esc takes the parameter tip away first
             return
