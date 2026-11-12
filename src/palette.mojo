@@ -94,10 +94,12 @@ struct Palette(Copyable, Movable):
     var list_sel_bg: Int
     var shadow_fg: Int
     var shadow_bg: Int
+    var scanlines: Bool     # draw every other row a little darker (a CRT look)
 
     def __init__(out self):
         """Turbo Classic."""
         self.name = "Turbo Classic"
+        self.scanlines = False
         self.desk_fg = BLUE
         self.desk_bg = LGRAY
         self.desk_ch = 0x2591

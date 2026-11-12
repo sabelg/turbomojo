@@ -3588,3 +3588,34 @@ files).
 - Not done / unverified: the GNOME setting was read on this desktop ('prefer-dark') but
   the IDE's switch was not watched in GNOME Terminal itself.
 - Verified: `scripts/check.sh` → `CHECK OK`, 65 test files, 1000 tests, smoke ok.
+
+## 2026-11-11 · User requests: Ghostty, a CRT look, more colours, the editor on the panel's background · done
+
+- The user installed Ghostty 1.3.1. The probe there: 24-bit colour, mode 2031 (it
+  answered "light" when started from this shell, although the desktop says
+  prefer-dark - started from the desktop it may differ, not checked), grapheme mode
+  2027 on, kitty keyboard, synchronized output, XTVERSION "ghostty 1.3.1";
+  `tmide --caps` agrees on everything.
+- Asked for a CRT effect: a terminal-cell program cannot draw glow or curvature, so
+  (with the user's yes) Ghostty got one: a shader written for this,
+  `~/.config/ghostty/shaders/crt.glsl` (curvature, scanlines, glow, vignette, a faint
+  flicker; the strengths are constants at the top), named in the user's Ghostty
+  config with `custom-shader-animation = true`. `ghostty +validate-config` accepts it
+  and Ghostty's log says it loaded the shader; how it looks was not seen.
+- In TurboMojo: themes can set `scanlines = true` (Palette.scanlines): after
+  everything is drawn, every other row's background is 22% darker. `ui.scanlines`
+  (true / false) overrides every theme. Hacker Matrix has it on.
+- Hacker Matrix: the editor and its gutter on the agent panel's green (#031A08, as
+  the user asked), the current line and rulers a shade lighter. For code the user
+  first got more colours (pink, cyan, violet, teal, orange) and scanlines on; then
+  asked for no lines and only green with blue, yellow, red and brown "with the same
+  effect" - so the theme now has scanlines off and those four bright accents: blue
+  (types #3FA9F5, built-ins and modules #6CB8FF), yellow (definitions, numbers,
+  warnings, hot keys #FFE45C), red (errors, decorators #FF4A3D, `self` #FF6B5B),
+  brown (strings #D2964A); all at least 5:1 on the background.
+- Tests (test_themes, now 10): the matrix values (editor background = panel
+  background, no scanlines, green and the four accents), the darkening, odd rows
+  darker in a drawn editor with ui.scanlines = true, ui.scanlines false.
+- Looked at in tmux (truecolor) with scanlines on: the rows alternated #031A08 /
+  #021406 (before the user turned them down).
+- Verified: `scripts/check.sh` → `CHECK OK`, 65 test files, 1001 tests, smoke ok.

@@ -11,6 +11,7 @@ Example:
                                 # in ~/.config/turbomojo/themes/ | "auto" (follow the terminal)
     theme_dark = "midnight"     # with "auto": on a dark terminal
     theme_light = "light"       #   and on a light one
+    # scanlines = false         # every other row darker (a CRT look); unset: as the theme has it
     keymap = "modern"           # modern | turbo (WordStar keys) | emacs
     layout = "classic"          # classic (overlapping windows) | tiled (panes with tabs, splits)
     restore_session = true      # started without a file: open what was open in this project last time
@@ -124,6 +125,7 @@ struct Settings(Copyable, Movable):
     var theme: String           # a theme id, or "auto"
     var theme_dark: String      # for "auto"
     var theme_light: String
+    var scanlines: Int          # ui.scanlines: -1 as the theme has it, 0 off, 1 on
     var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var tiled: Bool      # ui.layout = "tiled"
     var restore_session: Bool
@@ -161,6 +163,7 @@ struct Settings(Copyable, Movable):
         self.theme = "classic"
         self.theme_dark = "midnight"
         self.theme_light = "light"
+        self.scanlines = -1
         self.keymap = 0
         self.tiled = False
         self.restore_session = True
@@ -273,6 +276,12 @@ struct Settings(Copyable, Movable):
                     self.theme_dark = doc.vals[ti].s
                 else:
                     self.theme_light = doc.vals[ti].s
+        var sli = doc.find("ui.scanlines")
+        if sli >= 0:
+            if doc.vals[sli].kind != T_BOOL:
+                self.warnings.append("ui.scanlines must be true or false")
+            else:
+                self.scanlines = 1 if doc.vals[sli].b else 0
         var ci = doc.find("tools.compiler")
         if ci >= 0:
             if doc.vals[ci].kind != T_STR or doc.vals[ci].s.byte_length() == 0:
@@ -339,7 +348,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

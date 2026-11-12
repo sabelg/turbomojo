@@ -53,6 +53,16 @@ from app_input import *
 from app_mouse import *
 
 
+def scanline_dim(rgb: Int) -> Int:
+    """A background colour 22% darker (the dark line of a scanline)."""
+    if rgb < 0:
+        return rgb
+    var r = ((rgb >> 16) & 255) * 78 // 100
+    var g = ((rgb >> 8) & 255) * 78 // 100
+    var b = (rgb & 255) * 78 // 100
+    return (r << 16) | (g << 8) | b
+
+
 __extension App:
     # ================================================================= draw
     def draw_status(mut self, items: List[String], cmds: List[Int]):
@@ -318,6 +328,18 @@ __extension App:
                 self.scr.cy = c[1]
                 self.scr.cvis = True
                 self.scr.cblock = False
+        if p.scanlines:
+            self.draw_scanlines()
+
+    def draw_scanlines(mut self):
+        """A CRT look: the background of every other row a little darker (the theme's
+        `scanlines`, or ui.scanlines)."""
+        self.scr.no_clip()
+        var y = 1
+        while y < self.scr.h:
+            for x in range(self.scr.w):
+                self.scr.set_bg(x, y, scanline_dim(self.scr.bg_at(x, y)))
+            y += 2
 
     def draw_window(mut self, i: Int, active: Bool):
         var p = self.pal.copy()

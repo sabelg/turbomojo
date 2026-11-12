@@ -156,6 +156,7 @@ struct App(Movable):
     var theme_id: String        # ui.theme as set ("auto": follow the terminal)
     var theme_dark_id: String
     var theme_light_id: String
+    var scanlines_cfg: Int      # ui.scanlines: -1 the theme's, 0 off, 1 on
     var scheme_seen: Int        # the terminal's light/dark that the theme follows (0: none yet)
     var desktop_scheme: Int     # the desktop's (COLORFGBG, GNOME's setting) when the terminal is silent
     var desktop_checked_ns: Int
@@ -537,6 +538,7 @@ struct App(Movable):
         self.theme_id = "classic"
         self.theme_dark_id = "midnight"
         self.theme_light_id = "light"
+        self.scanlines_cfg = -1
         self.scheme_seen = 0
         self.desktop_scheme = 0
         self.desktop_checked_ns = 0
@@ -964,6 +966,8 @@ struct App(Movable):
             k = 0
         self.theme_idx = k
         self.pal = self.themes.pals[k].copy()
+        if self.scanlines_cfg >= 0:
+            self.pal.scanlines = self.scanlines_cfg == 1
 
     def desktop_scheme_now(self) -> Int:
         var g = String("")
@@ -1069,6 +1073,7 @@ struct App(Movable):
         self.theme_id = s.theme
         self.theme_dark_id = s.theme_dark
         self.theme_light_id = s.theme_light
+        self.scanlines_cfg = s.scanlines
         self.scheme_seen = 0
         self.line_numbers = s.line_numbers
         self.auto_indent = s.auto_indent

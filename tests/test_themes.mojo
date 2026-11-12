@@ -8,9 +8,10 @@ from palette import Palette, theme
 from config import load_settings
 from term import Terminal, key_event, KEY_ENTER, KEY_DOWN
 from app import *
+from app_draw import scanline_dim
 from appstate import App, M_DIALOG, M_NORMAL, now_ns
 from dialog import D_THEME
-from commands import CM_THEME_PICK, CM_THEME1
+from commands import CM_THEME_PICK, CM_THEME1, CM_NEW
 from signals import own_pid
 from util import env_or, run_system, shell_quote, write_file, str_bytes, bytes_to_str, read_file, getcwd
 
@@ -47,9 +48,19 @@ def test_the_built_in_files_are_the_shipped_files() raises:
     assert_equal(t.ids[4], "contrast")
     assert_equal(t.ids[5], "matrix")
     assert_equal(t.pals[5].name, "Hacker Matrix")
-    assert_equal(t.pals[5].ed_bg, 0x020A04)
-    assert_equal(t.pals[5].diag_err, 0xFF3B3B)         # red, amber and blue beside the green
-    assert_equal(t.pals[5].diag_warn, 0xFFB000)
+    assert_equal(t.pals[5].ed_bg, 0x031A08)
+    assert_equal(t.pals[5].ed_bg, t.pals[5].doc_bg)    # the editor as the agent panel
+    assert_equal(t.pals[5].gutter_bg, t.pals[5].ed_bg)
+    assert_false(t.pals[5].scanlines)                  # (the user did not want the lines)
+    assert_false(t.pals[0].scanlines)
+    assert_false(t.pals[t.find("light")].scanlines)
+    # green, and four accents: blue, yellow, red, brown
+    assert_equal(t.pals[5].syn[10], 0xFFE45C)          # def: yellow
+    assert_equal(t.pals[5].syn[8], 0x6CB8FF)           # builtin: blue
+    assert_equal(t.pals[5].syn[4], 0xD2964A)           # string: brown
+    assert_equal(t.pals[5].syn[6], 0xFF4A3D)           # decorator: red
+    assert_equal(t.pals[5].diag_err, 0xFF4A3D)         # red, yellow and blue beside the green
+    assert_equal(t.pals[5].diag_warn, 0xFFE45C)
     assert_equal(t.pals[5].diag_note, 0x3FA9F5)
     var light = t.pals[t.find("light")].copy()
     assert_equal(light.name, "Paper Light")
@@ -144,6 +155,32 @@ def test_the_terminal_says_light_or_dark() raises:
     evs = term.feed(str_bytes("\x1b[?997;1nx"), False)
     assert_equal(term.scheme, 1)
     assert_equal(len(evs), 1)                       # what follows is still read
+
+
+def test_scanlines() raises:
+    assert_equal(scanline_dim(0x646464), 0x4E4E4E)
+    assert_equal(scanline_dim(-1), -1)
+    var app = App()
+    app.scr.resize(80, 20)
+    app.apply_settings(load_settings("[ui]\ntheme = \"matrix\"\n", ""))
+    assert_false(app.pal.scanlines)                    # Hacker Matrix has none of its own
+    app.apply_settings(load_settings("[ui]\ntheme = \"matrix\"\nscanlines = true\n", ""))
+    assert_true(app.pal.scanlines)
+    app.exec(CM_NEW)
+    app.draw()
+    # inside the editor: an odd row is the even row above, darker
+    var bg2 = app.scr.bg_at(40, 4)
+    var bg3 = app.scr.bg_at(40, 5)
+    assert_equal(bg2, app.pal.ed_bg)
+    assert_equal(bg3, scanline_dim(app.pal.ed_bg))
+    # ui.scanlines = false: none (a terminal's own CRT shader draws its own)
+    app.apply_settings(load_settings("[ui]\ntheme = \"matrix\"\nscanlines = false\n", ""))
+    assert_false(app.pal.scanlines)
+    app.draw()
+    assert_equal(app.scr.bg_at(40, 5), app.pal.ed_bg)
+    # and true puts them on any theme
+    app.apply_settings(load_settings("[ui]\ntheme = \"classic\"\nscanlines = true\n", ""))
+    assert_true(app.pal.scanlines)
 
 
 def test_the_desktops_light_or_dark() raises:
