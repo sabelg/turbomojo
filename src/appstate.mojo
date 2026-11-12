@@ -121,6 +121,7 @@ struct Job(Copyable, Movable):
     var t0: Int
     var path: String
     var exe: String
+    var cmd: String         # the shell command, as started
     var cancelled: Bool
     var version: Int
 
@@ -134,6 +135,7 @@ struct Job(Copyable, Movable):
         self.t0 = 0
         self.path = ""
         self.exe = ""
+        self.cmd = ""
         self.cancelled = False
         self.version = -1
 

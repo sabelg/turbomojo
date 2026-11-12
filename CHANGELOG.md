@@ -4,7 +4,7 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.1: UI clarity and calm (in progress: 15 tasks to go)
+## 2.1: UI clarity and calm (in progress: 14 tasks to go)
 
 - Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1] (P10-01)
 - Never colour-only diagnostics: E/W/i glyphs in the gutter and the Problems page, and undercurl with an SGR 58 colour where the terminal supports it (probed), else a plain underline [2] (P10-02)
@@ -13,6 +13,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - Calm by default: screen-reader mode implies reduced motion; a test that toasts and background events never take focus or move the hardware cursor; modal dialogs only for decisions [5, 13] (P10-05)
 - Response-time ladder for build, run, tests and the agent: nothing under 1 s, a status-line spinner 1-10 s, beyond 10 s what is done so far and the cancel key in the Compiling box [6] (P10-06)
 - OSC 8 links on every file:line in the Message, Search and Problems pages and agent output [7] (P10-07)
+- Show the exact toolchain command at the top of each Message page run [8] (P10-08)
 
 ## 2.0: Release engineering - 2026-11-12
 

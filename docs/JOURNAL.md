@@ -4457,3 +4457,24 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   over two rows is not found; a file is checked with stat each frame for every
   visible reference that is not a known place.
 - Gate: scripts/check.sh printed CHECK OK (93 test files, 1112 tests, 776 s).
+
+## 2026-11-12 · P10-08 The exact command on each Message page run · done
+- What changed: a job keeps the shell command it was started with (`Job.cmd`);
+  `job_heading()` is the page's header and, under it, `$ ` and the command as
+  `shown_command` gives it - the same command without the IDE's plumbing (`exec`,
+  `2>&1`, `</dev/null`), so pasted into a shell it does the same. Builds, debug
+  builds, formatting, pixi tasks (and exercises) and test runs show it. `fill_messages` counts the header's lines so the error
+  places still point at their rows; the output filter keeps both first lines.
+  The one-line `job_header` stays for the notification centre's list.
+- Verified: `tests/test_command_line.mojo` (2 tests): the command as shown for a
+  build, a task and a format; a real build of a file with an error - `$ cd '<dir>' &&
+  ... build ... '<dir>/bad.mojo' ...` on line 1 from the start and at the end, the
+  first error place on an `error:` line, the filter keeping header and command with
+  the places right, and the shown command run in a shell from / failing with the same
+  error.
+- Not done / unverified: the documentation download writes no Message page (its
+  progress is on the status line), so its command is not shown; the debugger's own session page ("Debugging ...") shows the
+  adapter's output, not its command; Run in the terminal window shows the program in
+  the terminal (its build has the command); environment variables the IDE passes are
+  part of the command only where it sets them inline.
+- Gate: scripts/check.sh printed CHECK OK (94 test files, 1114 tests, 782 s).

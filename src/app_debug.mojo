@@ -111,7 +111,7 @@ __extension App:
         var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.compiler_cmd() + " build -g -O0" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
         if self.start_job(JOB_DEBUG, cmd, path, exe):
             self.panel_write(PG_MESSAGE)
-            _ = self.fill_messages(self.job_header(), List[UInt8](), "Compiling...")
+            _ = self.fill_messages(self.job_heading(), List[UInt8](), "Compiling...")
             self.say("Building " + basename(path) + " for debugging - keep editing, " + self.reg.key_label(CM_CANCEL) + " cancels")
 
     def finish_debug_build(mut self, status: Int, secs: Float64) raises:
@@ -119,7 +119,7 @@ __extension App:
             self.finish_build(status, secs)         # the messages, as for any build
             return
         self.panel_write(PG_MESSAGE)
-        _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Starting the debugger...")
+        _ = self.fill_messages(self.job_heading(), self.job.data.copy(), "Starting the debugger...")
         var exe = self.job.exe
         var source = self.job.path
         self.debug_launch(exe, source)

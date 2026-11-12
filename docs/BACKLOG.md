@@ -159,7 +159,7 @@ brackets; where TurboMojo already did part of it, only the rest is a task).
 - [x] P10-05 Calm by default: screen-reader mode implies reduced motion; a test that toasts and background events never take focus or move the hardware cursor; modal dialogs only for decisions [5, 13]
 - [x] P10-06 Response-time ladder for build, run, tests and the agent: nothing under 1 s, a status-line spinner 1-10 s, beyond 10 s what is done so far and the cancel key in the Compiling box [6]
 - [x] P10-07 OSC 8 links on every file:line in the Message, Search and Problems pages and agent output [7]
-- [ ] P10-08 Show the exact toolchain command at the top of each Message page run [8]
+- [x] P10-08 Show the exact toolchain command at the top of each Message page run [8]
 - [ ] P10-09 Key-hint boxes after ~200 ms (now 600), never over the cursor, with on/off state for toggles [9]
 - [ ] P10-10 Probe hardening: ask CSI ? 996 n for the colour scheme, OSC 11 luminance fallback, DECRQSS truecolor and XTGETTCAP Smulx/Setulc, no DCS under GNU screen, trust tmux's answers, drain late replies, always pop kitty keyboard flags and close synchronized output on error paths [10]
 - [ ] P10-11 Glyph tiers `glyphs = ascii | unicode | nerd` (default unicode) and a half-block fallback for the braille minimap; no emoji or ambiguous-width characters in the chrome [11]

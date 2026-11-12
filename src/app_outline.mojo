@@ -281,7 +281,7 @@ __extension App:
         """The running (or finished) task's output on the Message page."""
         self.panel_write(PG_MESSAGE)
         self.msg_base = self.job.path
-        _ = self.fill_messages(self.job_header(), self.job.data.copy(), footer)
+        _ = self.fill_messages(self.job_heading(), self.job.data.copy(), footer)
         self.msg_base = ""
 
     def finish_task(mut self, status: Int, secs: Float64):

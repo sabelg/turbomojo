@@ -200,12 +200,14 @@ __extension App:
             self.out_filter = ""
         else:
             var keep = filter_lines(self.out_full, text)
-            if len(self.out_full) > 0:
-                shown.append(self.out_full[0])
+            # the header stays, and the command under it
+            var head = 2 if len(self.out_full) > 1 and self.out_full[1].startswith("$ ") else min(1, len(self.out_full))
+            for k in range(head):
+                shown.append(self.out_full[k])
             for k in keep:
-                if k > 0:
+                if k >= head:
                     shown.append(self.out_full[k])
-            shown.append("(" + String(len(shown) - 1) + " of " + String(max(0, len(self.out_full) - 1)) + " lines contain \"" + text + "\"; C shows all)")
+            shown.append("(" + String(len(shown) - head) + " of " + String(max(0, len(self.out_full) - head)) + " lines contain \"" + text + "\"; C shows all)")
             self.out_filtered = True
             self.out_filter = text
         var t = List[Int]()

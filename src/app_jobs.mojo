@@ -50,6 +50,19 @@ from app_draw import *
 from app_plugins import *
 
 
+
+def shown_command(cmd: String) -> String:
+    """A job's command as the Message page shows it: the same shell command without
+    the plumbing the IDE adds (`exec`, `2>&1`, `</dev/null`), so pasted into a shell
+    it does the same."""
+    var c = cmd.replace(" && exec ", " && ")
+    if c.startswith("exec "):
+        var rest = String(c[byte=5:])
+        c = rest
+    for tail in [" </dev/null", " 2>&1"]:
+        c = c.replace(String(tail), "")
+    return String(c.strip())
+
 __extension App:
     # ======================================================= compile & run
     def ensure_saved(mut self, i: Int) raises -> Bool:
@@ -91,6 +104,10 @@ __extension App:
         var all = decode_list(data)
         var text = decode(header)
         text.append(10)
+        var head_rows = 1                   # (the header may have the command under it)
+        for c in text[0:len(text) - 1]:
+            if c == 10:
+                head_rows += 1
         var cur = List[Int]()
         var lines = List[List[Int]]()
         for c in all:
@@ -109,7 +126,7 @@ __extension App:
             self.out_filter = ""
         var errors = 0
         var warnings = 0
-        var row = 1
+        var row = head_rows
         for l in lines:
             var s = to_str(l)
             var is_err = str_contains(s, "error:") and not s.startswith("mojo: ")
@@ -157,6 +174,7 @@ __extension App:
         self.job.t0 = Int(perf_counter_ns())
         self.job.path = path
         self.job.exe = exe
+        self.job.cmd = cmd
         self.job.cancelled = False
         var i = self.find_editor(path)
         self.job.version = self.wins[i].buf.version if i >= 0 else -1
@@ -266,6 +284,12 @@ __extension App:
     def job_elapsed(self) -> Float64:
         return Float64(Int(perf_counter_ns()) - self.job.t0) / 1e9
 
+    def job_heading(self) -> String:
+        """The Message page's first lines for this job: what it is, then the exact
+        command, as it can be pasted into a shell."""
+        var c = shown_command(self.job.cmd)
+        return self.job_header() + (("\n$ " + c) if c.byte_length() > 0 else String(""))
+
     def job_header(self) -> String:
         if self.job.kind == JOB_DOCS:
             return "Downloading the Mojo documentation into " + self.job.path
@@ -314,7 +338,7 @@ __extension App:
                 self.job.data = rest^
         if got and (self.job.kind == JOB_BUILD or self.job.kind == JOB_DEBUG) and self.job.pid != 0:
             self.panel_write(PG_MESSAGE)
-            _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Compiling...")
+            _ = self.fill_messages(self.job_heading(), self.job.data.copy(), "Compiling...")
         if got and self.job.kind == JOB_TESTS and self.job.pid != 0:
             self.tests_take_output(False)
         if got and (self.job.kind == JOB_TASK or self.job.kind == JOB_DOCS) and self.job.pid != 0:
@@ -354,7 +378,7 @@ __extension App:
         var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.compiler_cmd() + " build" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
         if self.start_job(JOB_BUILD, cmd, path, exe):
             self.panel_write(PG_MESSAGE)
-            _ = self.fill_messages(self.job_header(), List[UInt8](), "Compiling...")
+            _ = self.fill_messages(self.job_heading(), List[UInt8](), "Compiling...")
             self.say("Building " + basename(path) + " - keep editing, Ctrl-F2 cancels")
 
     def finish_build(mut self, status: Int, secs: Float64) raises:
@@ -369,7 +393,7 @@ __extension App:
         else:
             footer = "Build failed (exit " + String(status >> 8) + ")"
         self.panel_write(PG_MESSAGE)
-        var counts = self.fill_messages(self.job_header(), self.job.data.copy(), footer)
+        var counts = self.fill_messages(self.job_heading(), self.job.data.copy(), footer)
         if not self.job.cancelled:
             # the Problems page shows the build's errors too (behind this page)
             self.prob_build = parse_compiler_output(bytes_to_str(self.job.data), self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd))
@@ -459,7 +483,7 @@ __extension App:
             return
         if status != 0:
             self.panel_write(PG_MESSAGE)
-            _ = self.fill_messages(self.job_header(), self.job.data.copy(), "Format failed")
+            _ = self.fill_messages(self.job_heading(), self.job.data.copy(), "Format failed")
             self.say("mojo format failed - see the Message window")
             return
         var i = self.find_editor(path)

@@ -298,7 +298,7 @@ __extension App:
         var what = ("Listing the tests of " if list_only else "Running ") + (basename(self.test_files[files[0]].path) if len(files) == 1 else count_of(len(files), "test file"))
         if self.start_job(JOB_TESTS, cmd, self.symidx_root(), what):
             self.panel_write(PG_MESSAGE)
-            _ = self.fill_messages(what, List[UInt8](), "Running...")
+            _ = self.fill_messages(self.job_heading(), List[UInt8](), "Running...")
             self.say(what + " - " + self.reg.key_label(CM_CANCEL) + " stops")
 
     def tests_run_target(mut self) raises:
@@ -392,8 +392,7 @@ __extension App:
         var footer = ("Listed" if self.test_list_only else "Tests: " + String(passed) + " passed, " + String(failed) + " failed") + " (" + String(Int(secs * 10) // 10) + "." + String(Int(secs * 10) % 10) + " s)"
         if self.job.cancelled:
             footer = "Stopped"
-        var header = self.job.exe
-        _ = self.fill_messages(header, self.job.data.copy(), footer)
+        _ = self.fill_messages(self.job_heading(), self.job.data.copy(), footer)
         self.problems_show(False)           # failed tests are problems too
         if not self.test_list_only:
             self.notify(NL_INFO if self.job.cancelled else (NL_ERROR if failed > 0 else NL_DONE), "Tests" if failed == 0 else "Tests failed", footer, True)

@@ -113,7 +113,7 @@ on, problems appear as you type - underlined in the code, and on the Problems pa
 ## Building, running and testing
 
 **F9** builds the file in front in the background: you keep editing, the output streams
-into the Message page, **Ctrl-F2** cancels. Each `file:line` there is a terminal link
+into the Message page under the exact command (`$ ...`, ready to paste into a shell), **Ctrl-F2** cancels. Each `file:line` there is a terminal link
 (Shift- or Ctrl-Shift-click, as your terminal has it). After a second the status line shows the
 time; after ten a box at the bottom right shows the output so far. Its errors are on the Problems page too: Enter
 goes to one, **F1** on it explains the message. **Ctrl-F9** runs the program in the Run
