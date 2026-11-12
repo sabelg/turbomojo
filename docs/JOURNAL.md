@@ -4478,3 +4478,26 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   the terminal (its build has the command); environment variables the IDE passes are
   part of the command only where it sets them inline.
 - Gate: scripts/check.sh printed CHECK OK (94 test files, 1114 tests, 782 s).
+
+## 2026-11-12 · P10-09 Key-hint boxes: sooner, off the cursor, with option states · done
+- What changed: KEY_BOX_MS 600 -> 200 ms. `chord_box_place` puts the box above the
+  status line at the left, or - when this frame's cursor (the front editor's cursor
+  cell; the screen's is placed only after the boxes) would be under it or its shadow
+  - at the top left, the bottom right or the top right. `toggle_cmds()` (beside
+  `checked()`) names the commands that switch something on or off; their entries in
+  the box and in the screen reader's status line end in ": on" / ": off". The Turbo
+  keymap gets Turbo's Ctrl-O I (auto-indent on / off), so Ctrl-O starts a sequence
+  there; Open keeps F3 and Ctrl-K R. KEYMAP.md regenerated, README says so.
+- Verified: tests/test_keybox.mojo, 2 new tests: no box at 150 ms, a box at 201; with
+  the cursor near the bottom left (checked to be inside where the box would be) the
+  box moves and the cursor cell is not covered and is still where the terminal cursor
+  goes - a mutant that never moves the box fails this test; Ctrl-O lists "I  Auto
+  indent: on", Ctrl-O I switches it off and the box then says ": off"; Save has no
+  state; the screen reader's line has the state. The three earlier tests pass.
+- Not done / unverified: no other option has a two-key binding by default, so the
+  state shows for Ctrl-O I and for options users bind to sequences in [keys]; 200 ms
+  was not tried on people (it is the backlog's figure; other tools' defaults not
+  checked);
+  the box can still cover the cursor when it is taller than half the screen in a
+  small terminal.
+- Gate: scripts/check.sh printed CHECK OK (94 test files, 1116 tests, 786 s).

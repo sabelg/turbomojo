@@ -74,7 +74,8 @@ comptime M_DIALOG = 2
 comptime M_COMPLETE = 3
 comptime PG_MESSAGE = 0                 # pages of the bottom panel: compiler and program output,
 comptime PG_SEARCH = 1                  # search results and lists of places,
-comptime KEY_BOX_MS = 600                # after a prefix key, the box of the next keys comes this late
+comptime KEY_BOX_MS = 200                # after a prefix key, the box of the next keys comes this late
+                                        # (a typed sequence is quicker; a hesitation is about this long)
 comptime PG_PROBLEMS = 2                # what the language server reports
 comptime PG_COUNT = 3
 comptime M_DOCS = 5                     # the documentation reader fills the screen

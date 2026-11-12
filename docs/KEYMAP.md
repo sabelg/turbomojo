@@ -19,7 +19,7 @@ This file is made by `tmide --keys` (TurboMojo 2.0.0).
 | Command | Modern | Turbo | Emacs |
 |---|---|---|---|
 | New | Ctrl-N | Ctrl-N | - |
-| Open | F3, Ctrl-O | F3, Ctrl-O, Ctrl-K R | F3, Ctrl-O, Ctrl-X Ctrl-F |
+| Open | F3, Ctrl-O | F3, Ctrl-K R | F3, Ctrl-O, Ctrl-X Ctrl-F |
 | Save | F2, Ctrl-S | F2, Ctrl-K S, Ctrl-K D | F2, Ctrl-X Ctrl-S |
 | Save as | - | Ctrl-K W | Ctrl-X Ctrl-W |
 | Save all | - | - | Ctrl-X S |
@@ -116,6 +116,7 @@ This file is made by `tmide --keys` (TurboMojo 2.0.0).
 
 | Command | Modern | Turbo | Emacs |
 |---|---|---|---|
+| Auto indent | - | Ctrl-O I | - |
 | Soft wrap | Alt-Z | Alt-Z | Alt-Z |
 
 ## Window

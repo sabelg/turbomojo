@@ -116,6 +116,10 @@ __extension App:
                 self.key_used(cmd)
                 self.exec(cmd)
 
+    def toggle_cmds(self) -> List[Int]:
+        """The commands that switch something on or off (checked() has those on)."""
+        return [CM_LINENUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
+
     def checked(self) -> List[Int]:
         var out = List[Int]()
         if self.line_numbers:

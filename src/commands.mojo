@@ -612,6 +612,8 @@ def apply_keymap(mut r: Registry, which: Int):
         r.bind(CM_MATCH, chord(q, 93))
         r.bind(CM_GOTO, chord(q, 103))
         r.bind(CM_SELALL, chord(q, 98))
+        # Ctrl-O: the editor's options, as Turbo's (Ctrl-O I: auto-indent on / off)
+        r.bind(CM_AUTOINDENT, chord(ctrl(111), 105))
     elif which == 2:
         # Emacs, the common subset
         r.bind(CM_CUR_LINE_START, ctrl(97))
