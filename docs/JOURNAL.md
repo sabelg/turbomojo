@@ -4118,3 +4118,22 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   Python scripting beyond plugins (any language works); the page is in the repository,
   not in the help viewer.
 - Gate: scripts/check.sh printed CHECK OK (83 test files, 1071 tests, 704 s).
+
+## 2026-11-12 · P9-01 fuzz harnesses · done (Phase 8 complete before it)
+- What changed: `tests/test_fuzz.mojo` - a seeded xorshift generator (FUZZ_SEED,
+  FUZZ_ITERS) and five harnesses with properties: the key parser gives the same events
+  whether bytes come at once or split at random places (input biased to CSI, SS3, SGR
+  mouse, kitty keys, paste brackets, UTF-8, control bytes, garbage), and plain text is
+  one key per character; generated JSON (nesting, escapes, UTF-8, numbers) parses and
+  its dump is stable, mutated JSON never crashes, nesting past the limit is refused;
+  the rope agrees with a plain model through random inserts (some of 3000 characters)
+  and deletes on a 3000-line text, and undo-all / redo-all restore start and end; the
+  VT parser keeps the cursor on the screen and the screen its size through random
+  output, titles, the alternate screen and resizes. `scripts/fuzz.sh [rounds] [iters]`
+  runs long passes with new seeds and prints the seed of a failure. README says so.
+- Verified: the gate's pass (default sizes) and five seeds at 5000 iterations each, then
+  two rounds of the script, all passed. No bug was found.
+- Not done / unverified: not coverage-guided (random, with hand-made biases); the rope
+  pass is capped at 400 edits per run (undo history); the VT harness checks invariants,
+  not the screen against another emulator; the TOML and Markdown parsers are not fuzzed.
+- Gate: scripts/check.sh printed CHECK OK (84 test files, 1076 tests, 712 s).

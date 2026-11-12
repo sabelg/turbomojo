@@ -140,7 +140,7 @@ P7-07 to P7-16 come from the research report "Help that keeps users working" (re
 
 ## Phase 9: Release engineering (2.0)
 
-- [ ] P9-01 Fuzz harnesses: key parser, JSON, rope, VT parser
+- [x] P9-01 Fuzz harnesses: key parser, JSON, rope, VT parser
 - [ ] P9-02 Performance benchmarks script and budgets checked in `scripts/check.sh` (startup, keystroke-to-frame, 1M-line open)
 - [ ] P9-03 macOS portability layer for termios/ioctl constants (compile-time selected; untestable here, mark what is unverified)
 - [ ] P9-04 Packaging recipe (conda `recipe.yaml`), install instructions, version flag

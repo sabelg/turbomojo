@@ -235,6 +235,13 @@ the nightly toolchain as an early warning for upcoming changes:
 pixi run canary
 ```
 
+`scripts/fuzz.sh [rounds] [iterations]` fuzzes the key parser, the JSON parser, the rope and
+the terminal emulator with new random seeds (tests/test_fuzz.mojo, which the gate runs
+briefly with a fixed seed). Each checks a property - the same key events however the
+input is split, JSON that survives a round trip, a buffer that agrees with a simple model
+and undoes back to its start, a terminal screen that keeps its size and cursor - and a
+failure prints the seed that replays it.
+
 `scripts/bench-open.sh` generates a 1,000,000-line file and a 60 MB file under `build/big/` and
 times how long the editor's loader takes to open them (it fails above 1 s for the first).
 
