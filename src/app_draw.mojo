@@ -50,6 +50,7 @@ from app_gitdiff import *
 from app_gitcmd import *
 from app_explain import *
 from app_keybox import *
+from app_plugins import *
 from app_git import *
 from app_jobs import *
 from app_input import *
@@ -115,6 +116,7 @@ __extension App:
                 right += "LSP  "
             if self.dbg.active():
                 right += self.debug_badge() + "  "
+            right += self.plugins_status()       # the plugins' status items
             right += "INS" if self.insert_mode else "OVR"
             right = busy + right
 

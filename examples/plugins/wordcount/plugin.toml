@@ -1,0 +1,4 @@
+# An example TurboMojo plugin. To use it, copy this folder to
+# ~/.config/turbomojo/plugins/wordcount and start TurboMojo again.
+name = "wordcount"
+command = "python3 plugin.py"

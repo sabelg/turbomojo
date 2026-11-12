@@ -46,6 +46,7 @@ from app_tests import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
+from app_plugins import *
 
 
 __extension App:
@@ -379,6 +380,7 @@ __extension App:
             self.say("Build cancelled after " + tstr)
             self.notify(NL_INFO, "Build cancelled", name, True)
             return
+        self.plugins_event("build", path, ok)
         if ok:
             self.notify(NL_DONE if counts[1] == 0 else NL_WARN, "Build succeeded", name + " in " + tstr + ((", " + String(counts[1]) + " warning(s)") if counts[1] > 0 else String("")), True)
         else:

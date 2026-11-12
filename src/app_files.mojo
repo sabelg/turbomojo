@@ -47,6 +47,7 @@ from app_jobs import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
+from app_plugins import *
 
 
 __extension App:
@@ -94,6 +95,7 @@ __extension App:
             self.say("New file: " + p)
         self.apply_editorconfig(i)
         self.note_disk_state(i)
+        self.plugins_event("open", p)
 
     def apply_buffer_settings(mut self, i: Int, ec: EcProps):
         """Give a buffer its indentation and line-ending rules: user defaults first, then
@@ -147,6 +149,8 @@ __extension App:
         self.drop_swap(i)
         self.git_saved()
         self.say("Saved " + self.wins[i].path + note)
+        var saved = self.wins[i].path
+        self.plugins_event("save", saved)
         return True
 
     # ------------------------------------------------- history between sessions

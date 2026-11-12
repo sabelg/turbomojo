@@ -16,6 +16,7 @@ from themes import ThemeSet, scheme_from, animations_off
 from strings import apply_strings, language_from
 from notify import NotifyCenter, TYPING_PAUSE_MS
 from tips import TipRules
+from plugins import Plugin, register_plugins
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, ACT_OTHER, ACT_TYPE
@@ -182,6 +183,11 @@ struct App(Movable):
     var tips_shown: List[String]  # the tips given already (never twice)
     var tips_file: String       # where those are kept ('' in tests: nowhere)
     var ex_home: String         # the exercises' copies (set by main; tests use their own)
+    var plugins: List[Plugin]   # src/plugins.mojo
+    var plugins_dir: String     # where they are (set by main: ~/.config/turbomojo/plugins)
+    var plugins_log_dir: String # their stderr goes there ('' : nowhere)
+    var plugins_on: Bool        # tools.plugins
+    var plugin_warnings: List[String]   # what registering their commands could not do
     var key_uses: Dict[String, Int]  # how often each command was run by its key
     var key_uses_path: String   # where those counts are kept ('' in tests)
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
@@ -593,6 +599,11 @@ struct App(Movable):
         self.tips_shown = List[String]()
         self.tips_file = ""
         self.ex_home = ""
+        self.plugins = List[Plugin]()
+        self.plugins_dir = ""
+        self.plugins_log_dir = ""
+        self.plugins_on = True
+        self.plugin_warnings = List[String]()
         self.chord_since = 0
         self.typed_ns = 0
         self.chord_box = False
@@ -1160,6 +1171,7 @@ struct App(Movable):
         self.breadcrumbs = s.breadcrumbs
         self.key_hints = s.key_hints
         self.tips_on = s.tips
+        self.plugins_on = s.plugins
         self.sticky_scroll = s.sticky_scroll
         self.minimap_on = s.minimap
         self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1"
@@ -1256,6 +1268,8 @@ struct App(Movable):
                 if warn:
                     for x in w:
                         self.config_warnings.append(x)
+        # the commands of the running plugins (in the ≡ menu)
+        self.plugin_warnings = register_plugins(self.reg, self.plugins)
         self.menus = build_menus(self.reg)
 
     def load_config(mut self):

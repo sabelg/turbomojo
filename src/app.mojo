@@ -55,6 +55,7 @@ from app_mouse import *
 from app_draw import *
 from app_docpane import *
 from app_keybox import *
+from app_plugins import *
 
 
 __extension App:
@@ -158,6 +159,8 @@ __extension App:
                 fds.append(self.agent.fd())
             for af in self.agent_term_fds():
                 fds.append(af)
+            for pf in self.plugin_fds():
+                fds.append(pf)
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -187,6 +190,7 @@ __extension App:
             self.docpane_tick(now_ns())
             self.chord_tick(now_ns())
             self.notes_tick(now_ns())
+            self.plugins_tick(now_ns())
             self.symidx_tick()
             self.quick_tick()
             self.explorer_tick(now_ns())
@@ -214,6 +218,7 @@ __extension App:
         self.dbg.finish()           # a program being debugged does not outlive the IDE
         _ = self.git_proc.stop()
         self.agent.stop()           # nor the coding agent
+        self.plugins_stop()         # nor the plugins
         self.agent_services_end()   # and its commands
         _ = self.tshell.pty.stop()  # nor the terminals' programs (they get SIGHUP)
         _ = self.trun.pty.stop()

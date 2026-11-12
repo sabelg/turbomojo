@@ -49,6 +49,8 @@ from app_docpane import *
 from app_agentexplain import *
 from app_tips import *
 from app_exercises import *
+from app_plugins import *
+from plugins import CM_PLUGIN0
 from tips import TK_FIND
 from app_jobs import *
 from app_input import *
@@ -196,6 +198,9 @@ __extension App:
         self.say("Macro played (" + String(done) + (" step)" if done == 1 else " steps)"))
 
     def exec(mut self, cmd: Int) raises:
+        if cmd >= CM_PLUGIN0:
+            self.plugin_run(cmd)            # a plugin's command
+            return
         if trust_needed(cmd) and not self.trust_gate(cmd):
             return                      # the question is on screen; the command runs after a yes
         self.exec_command(cmd)

@@ -48,6 +48,7 @@ Example:
     lsp_server = "mojo-lsp-server"
     debug_adapter = "mojo-lldb-dap"     # Run > Debug; a command with arguments is used as it is
     agent = ""                  # a coding agent that speaks ACP, for File > Agent panel
+    plugins = true              # start the plugins in ~/.config/turbomojo/plugins
                                 # (e.g. "claude-agent-acp", "gemini --experimental-acp", "codex-acp")
     include_paths = []          # extra -I folders for the compiler and the language server;
                                 # relative ones are taken from the folder of the config file
@@ -138,6 +139,7 @@ struct Settings(Copyable, Movable):
     var language: String        # ui.language ('' = from LANG)
     var key_hints: Bool         # ui.key_hints
     var tips: Bool              # ui.tips
+    var plugins: Bool           # tools.plugins
     var reduced_motion: Int     # ui.reduced_motion: -1 auto (the desktop's setting), 0 off, 1 on
     var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var tiled: Bool      # ui.layout = "tiled"
@@ -184,6 +186,7 @@ struct Settings(Copyable, Movable):
         self.language = ""
         self.key_hints = True
         self.tips = True
+        self.plugins = True
         self.reduced_motion = -1
         self.keymap = 0
         self.tiled = False
@@ -253,6 +256,7 @@ struct Settings(Copyable, Movable):
         self.auto_pairs = self.take_bool(doc, "editor.auto_pairs", self.auto_pairs)
         self.key_hints = self.take_bool(doc, "ui.key_hints", self.key_hints)
         self.tips = self.take_bool(doc, "ui.tips", self.tips)
+        self.plugins = self.take_bool(doc, "tools.plugins", self.plugins)
         self.breadcrumbs = self.take_bool(doc, "editor.breadcrumbs", self.breadcrumbs)
         self.sticky_scroll = self.take_bool(doc, "editor.sticky_scroll", self.sticky_scroll)
         self.minimap = self.take_bool(doc, "editor.minimap", self.minimap)
@@ -397,7 +401,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

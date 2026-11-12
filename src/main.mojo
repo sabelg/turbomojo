@@ -38,6 +38,8 @@ def main() raises:
     app.key_uses_load(state_dir() + "/key-uses")
     app.tips_load(state_dir() + "/tips-shown")
     app.ex_home = state_dir() + "/exercises"
+    app.plugins_dir = config_home() + "/plugins"
+    app.plugins_log_dir = state_dir()
     app.whats_new_check(state_dir() + "/seen-version")
     for i in range(1, len(args)):
         try:
@@ -53,6 +55,7 @@ def main() raises:
             print("cannot restore the session:", String(e))
     if app.top_editor() < 0:
         app.exec(CM_NEW)
+    app.plugins_start()             # (they answer in the background)
     app.show_config_warnings()
     app.offer_recovery()
     try:

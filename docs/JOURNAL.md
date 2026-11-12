@@ -4019,3 +4019,34 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   defaults, not read from an installed VS Code; only "coming from Python" (no C++ or
   Rust page); the f-string error has no explanation page of its own.
 - Gate: scripts/check.sh printed CHECK OK (79 test files, 1061 tests, 667 s).
+
+## 2026-11-12 · P8-01 plugin host · done
+- What changed: `src/plugins.mojo` - plugin folders with plugin.toml (name, command)
+  in the plugins folder (main: ~/.config/turbomojo/plugins; never a project's), the
+  Plugin state (starting, ready, stopped and why), and `register_plugins`: commands in
+  the ≡ menu below a line and in the palette, ids from CM_PLUGIN0, a key only when no
+  command has it. `src/app_plugins.mojo`: start each over the line-framed RpcConn (in
+  its folder through `sh -c`, stderr to the state folder's plugin-<name>.log),
+  `initialize` with its registrations, polled with the event loop (their descriptors
+  wake it); requests editor/get, editor/insert, ui/message, ui/notify, status/set (the
+  status line shows the items), unknown ones answered -32601; events open (open_path),
+  save (save_window) and build (finish_build); commands as `command` requests. A
+  plugin that ends, fails initialize or does not answer within 10 s is stopped with a
+  notice and its commands leave the menu; running one says it is not running and why.
+  Stopped at exit. tools.plugins = false starts none. Example
+  `examples/plugins/wordcount` (Python: word count status item, Count words on
+  Ctrl-Alt-W, Insert today's date). docs/PLUGINS.md (short; P8-04 is the full API).
+- Verified: `tests/test_plugins.mojo` (3 tests): finding (one without a command is
+  reported), registering (a free key bound, F2 left to Save); in the IDE with the
+  example and three bad plugins: the commands in the ≡ menu, the taken key reported,
+  the status item "4 words" after an open, Ctrl-Alt-W giving "4 words, 2 lines in
+  a.txt" (the plugin's editor/get), the date inserted at the cursor, the silent plugin
+  stopped after the time limit, the crasher stopped when its command runs - its item
+  gone, "not running (it ended)" - while the others go on; switched off: none started.
+  Two bugs found by the test and fixed: Proc already execs the command (the `cd`
+  needed its own shell), and the example counted a final newline as a line.
+- Not done / unverified: panels (P8-02); a plugin cannot answer while it waits for
+  its own request (the example's simple client drops what comes meanwhile); no
+  restart of a stopped plugin short of restarting TurboMojo; not tried in a real
+  session.
+- Gate: scripts/check.sh printed CHECK OK (80 test files, 1064 tests, 664 s).
