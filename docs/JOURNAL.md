@@ -4323,3 +4323,37 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   any theme.
 - First gate: test_themes counted the built-in themes (6, now 8).
 - Gate: scripts/check.sh printed CHECK OK (89 test files, 1092 tests, 795 s).
+
+## 2026-11-12 · P10-04 Contrast gate for every theme · done
+- What changed: `src/contrast.mojo` measures a pair of colours by the WCAG 2 ratio and
+  by APCA Lc (0.0.98G-4g), lists each theme's pairs with a role (text: the six
+  window kinds, menu, status line, the four selections, buttons, hot letters, error
+  and warning colours, every syntax token; secondary: comments, line numbers, dim doc
+  text; disabled: inactive frames and disabled menu items) and says which fall short
+  of their floor. Colours that failed were changed, as little as reached the floor:
+  Turbo Classic - selected text black (blue on cyan was Lc 40), the Message and list
+  selections black on green (white was 3.1:1), menu hot letters dark red, errors in
+  the editor a lighter red, errors and warnings in the Message window dark red and
+  dark brown (red and brown on cyan were 2.7 and 1.8:1), numbers a shade lighter;
+  Midnight Neon - line numbers, comments, dim doc text, inactive frames and button
+  text lighter (line numbers were 1.7:1); Amber CRT - the middle and low tones
+  lighter (comments and line numbers were 2.9:1), disabled menu items their own dark
+  tone, a lighter error red; Paper Light - darker hot letters; Hacker Matrix - a
+  lighter red and symbol green; High Contrast - its red #FF6060 became #FF9494 (Lc 46
+  on black, now 60). test_themes uses the shared ratio.
+- Verified: `tests/test_contrast.mojo` (4 tests): the two measures against the
+  reference values (21:1, #767676 on white 4.54:1, APCA black on white 106.04, white
+  on black -107.88, #888 on white 63.06); every built-in theme has no problem (over
+  200 RGB pairs measured; Terminal ANSI and Mono are skipped, their colours are the
+  terminal's); High Contrast's text pairs reach 7:1 and Lc 60; a palette made worse
+  is caught with the pair and the numbers.
+- Not done / unverified: the floors are lower than the backlog line asked (Lc 75 for
+  text and code, 60 secondary, 30 disabled). Measured at those: 121 pairs fail -
+  Turbo Classic 20 (CGA's own black on cyan and on grey are Lc 49 and 58), Midnight
+  Neon 35 (its body text is Lc 73), Amber CRT 30, Hacker Matrix 23, Paper Light 7,
+  High Contrast 6. Meeting them would change the look of every theme, so the gate
+  uses APCA's minimum for readable non-body text (Lc 45) together with WCAG AA, and
+  the stricter level only for High Contrast; raising it per theme is open. Colour-blind
+  safety is not measured here (P10-06 and later). The new colours were not looked at
+  in a real terminal; Turbo Classic's Message-window colours are no longer CGA ones.
+- Gate: scripts/check.sh printed CHECK OK (90 test files, 1096 tests, 718 s).

@@ -6,6 +6,7 @@ from std.math import sqrt
 from themes import *
 from palette import Palette, theme
 from config import load_settings
+from contrast import wcag_ratio
 from term import Terminal, key_event, KEY_ENTER, KEY_DOWN
 from app import *
 from app_draw import scanline_dim
@@ -58,8 +59,8 @@ def test_the_built_in_files_are_the_shipped_files() raises:
     assert_equal(t.pals[5].syn[10], 0xFFE45C)          # def: yellow
     assert_equal(t.pals[5].syn[8], 0x6CB8FF)           # builtin: blue
     assert_equal(t.pals[5].syn[4], 0xD2964A)           # string: brown
-    assert_equal(t.pals[5].syn[6], 0xFF4A3D)           # decorator: red
-    assert_equal(t.pals[5].diag_err, 0xFF4A3D)         # red, yellow and blue beside the green
+    assert_equal(t.pals[5].syn[6], 0xFF6054)           # decorator: red
+    assert_equal(t.pals[5].diag_err, 0xFF6054)         # red, yellow and blue beside the green
     assert_equal(t.pals[5].diag_warn, 0xFFE45C)
     assert_equal(t.pals[5].diag_note, 0x3FA9F5)
     var light = t.pals[t.find("light")].copy()
@@ -75,20 +76,8 @@ def test_the_built_in_files_are_the_shipped_files() raises:
         assert_true(palette_get(light, k) != palette_get(base, k) or palette_get(base, k) == palette_get(t.pals[t.find("contrast")], k), "light leaves " + k + " as its base has it")
 
 
-def lum(c: Int) -> Float64:
-    var out = 0.0
-    var w = [0.2126, 0.7152, 0.0722]
-    for k in range(3):
-        var v = Float64((c >> (16 - 8 * k)) & 255) / 255.0
-        v = v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
-        out += w[k] * v
-    return out
-
-
 def contrast(a: Int, b: Int) -> Float64:
-    var la = lum(a)
-    var lb = lum(b)
-    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    return wcag_ratio(a, b)
 
 
 def test_contrast_of_the_new_themes() raises:

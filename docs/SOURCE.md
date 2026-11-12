@@ -55,6 +55,7 @@ struct of `appstate.mojo`, one area each.
 | `src/codequery.mojo` | What a search for help looks like, so one box can take code as well as words: a name (`append`), a dotted path (`List.append`, `std.collections.list`), or a pasted error line (`x.mojo:3:5: error: use of unknown declaration 'y'`), besides the finder's own syntax (words, "a phrase", @api, #heading, `code, in:book). |
 | `src/commands.mojo` | Command registry: the single table of commands, their titles, hints and default keys. |
 | `src/config.mojo` | User and project settings. |
+| `src/contrast.mojo` | Contrast of a theme's colours, by two measures. |
 | `src/cpuview.mojo` | What the CPU window shows: the machine code around the instruction the program is stopped at, the general purpose registers, and a piece of memory. |
 | `src/crash.mojo` | Crash guard: restore the terminal and write a crash log when the IDE dies hard. |
 | `src/dap.mojo` | Debug Adapter Protocol client. |

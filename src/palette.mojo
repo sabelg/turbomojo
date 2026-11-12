@@ -116,7 +116,7 @@ struct Palette(Copyable, Movable):
         self.desk_ch = 0x2591
         self.menu_fg = BLACK
         self.menu_bg = LGRAY
-        self.menu_hot = RED
+        self.menu_hot = 0x800000            # (darker than CGA red: 4.5:1 on the grey menu bar)
         self.menu_sel_fg = BLACK
         self.menu_sel_bg = GREEN
         self.menu_dis = DGRAY
@@ -128,7 +128,7 @@ struct Palette(Copyable, Movable):
         self.frame_act = WHITE
         self.frame_inact = LGRAY
         self.title_fg = WHITE
-        self.sel_fg = BLUE
+        self.sel_fg = BLACK                 # (blue on cyan was 4.6:1 but Lc 40)
         self.sel_bg = CYAN
         self.curline_bg = 0x0000C4
         self.gutter_fg = CYAN
@@ -139,7 +139,7 @@ struct Palette(Copyable, Movable):
         self.match_bg = BROWN
         self.ruler_bg = 0x000080
         self.word_bg = 0x005F87
-        self.diag_err = LRED
+        self.diag_err = 0xFF7979
         self.doc_fg = BLACK
         self.doc_bg = CYAN
         self.doc_bold = WHITE
@@ -153,18 +153,18 @@ struct Palette(Copyable, Movable):
         self.syn = List[Int]()
         # text kw type cmt str num deco sym builtin self def
         # ... then parameter, property, namespace (known only from the language server)
-        for c in [YELLOW, WHITE, LGREEN, LGRAY, LCYAN, LMAGENTA, LGREEN, YELLOW, LCYAN, WHITE, WHITE, LGRAY, LCYAN, LGREEN]:
+        for c in [YELLOW, WHITE, LGREEN, LGRAY, LCYAN, 0xFF5AFF, LGREEN, YELLOW, LCYAN, WHITE, WHITE, LGRAY, LCYAN, LGREEN]:
             self.syn.append(c)
         self.msg_fg = BLACK
         self.msg_bg = CYAN
-        self.msg_err = RED
-        self.msg_warn = BROWN
+        self.msg_err = 0x4E0000             # (red and brown on cyan were 2.7 and 1.8:1)
+        self.msg_warn = 0x412000
         self.msg_note = BLUE
         self.msg_ok = GREEN
         self.git_add = LGREEN
         self.git_mod = YELLOW
         self.git_del = LRED
-        self.msg_sel_fg = WHITE
+        self.msg_sel_fg = BLACK             # (white on green was 3.1:1)
         self.msg_sel_bg = GREEN
         self.msg_frame = WHITE
         self.dlg_fg = BLACK
@@ -181,7 +181,7 @@ struct Palette(Copyable, Movable):
         self.btn_shadow = BLACK
         self.list_fg = BLACK
         self.list_bg = CYAN
-        self.list_sel_fg = WHITE
+        self.list_sel_fg = BLACK
         self.list_sel_bg = GREEN
         self.shadow_fg = DGRAY
         self.shadow_bg = BLACK
@@ -206,12 +206,12 @@ def theme(n: Int) -> Palette:
         p.ed_fg = 0xC0CAF5
         p.ed_bg = 0x1A1B26
         p.frame_act = 0x7AA2F7
-        p.frame_inact = 0x3B4261
+        p.frame_inact = 0x4F5571
         p.title_fg = 0xC0CAF5
         p.sel_fg = 0xC0CAF5
         p.sel_bg = 0x33467C
         p.curline_bg = 0x222436
-        p.gutter_fg = 0x3B4261
+        p.gutter_fg = 0x74798F             # (line numbers were 1.7:1)
         p.gutter_bg = 0x1A1B26
         p.bracket_fg = 0xFFFFFF
         p.bracket_bg = 0x3D59A1
@@ -224,14 +224,14 @@ def theme(n: Int) -> Palette:
         p.doc_bg = 0x24283B
         p.doc_bold = 0xFFFFFF
         p.doc_code = 0x9ECE6A
-        p.doc_dim = 0x565F89
+        p.doc_dim = 0x767D9F
         p.diag_warn = 0xE0AF68
         p.diag_note = 0x7DCFFF
         p.icon_fg = 0xF7768E
         p.scroll_fg = 0x3B4261
         p.scroll_bg = 0x1A1B26
         p.syn.clear()
-        for c in [0xC0CAF5, 0xBB9AF7, 0x2AC3DE, 0x565F89, 0x9ECE6A, 0xFF9E64, 0xE0AF68, 0x89DDFF, 0x7DCFFF, 0xF7768E, 0x7AA2F7, 0xE0AF68, 0x73DACA, 0x2AC3DE]:
+        for c in [0xC0CAF5, 0xBB9AF7, 0x2AC3DE, 0x767D9F, 0x9ECE6A, 0xFF9E64, 0xE0AF68, 0x89DDFF, 0x7DCFFF, 0xF7768E, 0x7AA2F7, 0xE0AF68, 0x73DACA, 0x2AC3DE]:
             p.syn.append(c)
         p.msg_fg = 0xA9B1D6
         p.msg_bg = 0x16161E
@@ -252,7 +252,7 @@ def theme(n: Int) -> Palette:
         p.dlg_hot = 0xFF9E64
         p.in_fg = 0xC0CAF5
         p.in_bg = 0x1A1B26
-        p.btn_fg = 0xC0CAF5
+        p.btn_fg = 0xCBD3F7
         p.btn_bg = 0x3D59A1
         p.btn_focus_fg = 0xFFFFFF
         p.btn_hot = 0xFF9E64
@@ -265,8 +265,8 @@ def theme(n: Int) -> Palette:
         p.shadow_bg = 0x0B0B10
     elif n == 2:
         var hi = 0xFFB000
-        var md = 0xCC8800
-        var lo = 0x7A5200
+        var md = 0xCE8C08
+        var lo = 0x957533                    # (comments and line numbers were 2.9:1)
         var bk = 0x0A0700
         var dim = 0x2A1C00
         p.name = "Amber CRT"
@@ -278,7 +278,7 @@ def theme(n: Int) -> Palette:
         p.menu_hot = 0x000000
         p.menu_sel_fg = hi
         p.menu_sel_bg = bk
-        p.menu_dis = lo
+        p.menu_dis = 0x6B4A00                # (dimmer than the menu bar, not the light low tone)
         p.status_fg = bk
         p.status_bg = md
         p.status_hot = 0x000000
@@ -298,7 +298,7 @@ def theme(n: Int) -> Palette:
         p.match_bg = lo
         p.ruler_bg = 0x241800
         p.word_bg = 0x4A3200
-        p.diag_err = 0xFF5533
+        p.diag_err = 0xFF5C3B
         p.doc_fg = md
         p.doc_bg = 0x241800
         p.doc_bold = hi
