@@ -4569,3 +4569,42 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   is of the screens drawn in the test (a menu, About, explorer, notices, editor),
   not every dialog; the 🔥 in the sources is the `.🔥` file extension, not drawn.
 - Gate: scripts/check.sh printed CHECK OK (96 test files, 1128 tests, 782 s).
+
+## 2026-11-12 · P10-12 Muted and disabled text, dimmed while unfocused · done
+- What changed: src/contrast.mojo gets `text_muted(fg, bg)` (fg 60% toward bg, then
+  back toward fg in 5% steps until WCAG 3:1 and Lc 30), `text_disabled(pal, fg, bg)`
+  (the theme's `menu_dis` on the menu and status surfaces, elsewhere 35% toward
+  Lc 15) and `dimmed` (55% toward the background); colours that are not RGB stay
+  (or use `menu_dis`). `App.cmd_unavailable(cmd)`: the debugger's steps when not
+  stopped, Pause when not running, Reset when not debugging, Cancel with nothing to
+  cancel, Next / Previous message with none, Play macro with none, Undo / Redo with
+  nothing to undo / redo, Save, Save as, Format, Go to line, Comment and Toggle
+  breakpoint without an editor. The menus draw those items in the disabled colour
+  without their hot letter and every item's key muted; the command palette (Dialog
+  `off`, `muted_col`, reset by `set_items`) draws them disabled and the keys, a
+  file's folder and a symbol's line muted; the status line draws such hints
+  disabled and the file facts muted. Chosen anyway they run as before (each already
+  says why it cannot). Focus reports: mode 1004 asked for in `enter()`, switched off
+  in `restore_sequence()` and `CRASH_RESTORE`; CSI I / CSI O become EV_FOCUS events;
+  `App.focused`; `ui.dim_unfocused` (default true) dims every cell's text after the
+  frame is drawn while unfocused, never in screen-reader mode; macros do not record
+  focus events. README: a Quiet text row.
+- Verified: tests/test_quiet_text.mojo (5 tests): for every built-in theme on the
+  menu, status, list and dialog surfaces, muted is at or above its floor and not
+  brighter than the text, disabled likewise; availability without and with an
+  editor and before / after typing; Save on the status line and in the File menu
+  in the disabled colour, Open's text normal and its key muted; in the palette Save
+  disabled on a row that is not selected and the keys of available commands muted;
+  the file facts muted; CSI O / CSI I parsed (with a key after), 1004l before the
+  alternate screen is left and in the crash sequence; a cell dimmed while
+  unfocused and back after, not with the setting off, not recorded in a macro.
+  Mutants without the palette's disabled or muted colour, the menu's muted keys,
+  the status line's disabled hints or the dimming each fail.
+- Not done / unverified: not tried in a real terminal (which ones send focus
+  reports is from their documentation: xterm, kitty, WezTerm, foot, iTerm2, tmux
+  with focus-events on); the availability rules are the clear cases - others
+  (Paste with an empty clipboard, Git commands outside a repository) are not
+  dimmed; Toggle breakpoint is dimmed without an editor although the exec path did
+  not check that before; the dim is decorative and not measured; dialogs other than
+  the palette have no muted text.
+- Gate: scripts/check.sh printed CHECK OK (97 test files, 1133 tests, 827 s).

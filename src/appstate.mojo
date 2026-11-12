@@ -182,6 +182,8 @@ struct App(Movable):
     var sticky_scroll: Bool     # editor.sticky_scroll
     var minimap_on: Bool        # editor.minimap
     var minimap_blocks: Bool    # editor.minimap_style: half blocks instead of braille
+    var focused: Bool           # the terminal has the focus (mode 1004 reports; true until told)
+    var dim_unfocused: Bool     # ui.dim_unfocused
     var scopes_stale: Bool      # a long file's scopes wait to be scanned again
     var language: String        # the UI's language (strings file); "en": built in
     var strings_dir: String     # where strings files are ('' in tests: English only)
@@ -606,6 +608,8 @@ struct App(Movable):
         self.sticky_scroll = True
         self.minimap_on = False
         self.minimap_blocks = False
+        self.focused = True
+        self.dim_unfocused = True
         self.scopes_stale = False
         self.language = "en"
         self.strings_dir = ""
@@ -1209,6 +1213,7 @@ struct App(Movable):
         self.minimap_on = s.minimap
         self.minimap_blocks = s.minimap_style == "blocks" or (s.minimap_style == "auto" and env_or("TERM", "") == "linux")
         self.scr.glyphs = glyphs_of(s.glyphs)
+        self.dim_unfocused = s.dim_unfocused
         self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1"
         self.reduced_motion_cfg = s.reduced_motion
         self.motion_apply()

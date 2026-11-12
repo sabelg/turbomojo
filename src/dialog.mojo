@@ -2,6 +2,7 @@
 from std.collections import List
 from screen import Screen
 from palette import Palette
+from contrast import text_muted, text_disabled
 from util import cp_len, decode, to_str, fuzzy_score, char_width
 
 comptime D_NONE = 0
@@ -87,6 +88,8 @@ struct Dialog(Copyable, Movable):
     var shown: List[Int]
     var keys: List[String]   # if given (one per item): what typing is matched against instead of the item's text
     var boost: List[Int]     # if given (one per item): added to the score of items that match
+    var muted_col: Int       # items: the text from this column on is secondary (muted); -1 none
+    var off: List[Bool]      # if given (one per item): the item can do nothing now (disabled colour)
     var use_pat: Bool        # the pattern is `pat` (set by the owner), not the whole field
     var pat: String
     var list_sel: Int
@@ -130,6 +133,8 @@ struct Dialog(Copyable, Movable):
         self.shown = List[Int]()
         self.keys = List[String]()
         self.boost = List[Int]()
+        self.muted_col = -1
+        self.off = List[Bool]()
         self.use_pat = False
         self.pat = ""
         self.list_sel = 0
@@ -197,6 +202,8 @@ struct Dialog(Copyable, Movable):
     def set_items(mut self, var items: List[String], var data: List[Int]):
         self.items = items^
         self.item_data = data^
+        self.muted_col = -1         # (the caller sets these again if it has them)
+        self.off = List[Bool]()
         self.has_list = True
         self.refilter()
 
@@ -390,7 +397,16 @@ struct Dialog(Copyable, Movable):
                 var ifg = pal.list_sel_fg if sel else pal.list_fg
                 var ibg = pal.list_sel_bg if sel else pal.list_bg
                 scr.fill(lx, yy + i, lw - 1, 1, 32, ifg, ibg)
-                _ = scr.text(lx + 1, yy + i, self.items[self.shown[k]], ifg, ibg)
+                var it = self.shown[k]
+                if not sel and it < len(self.off) and self.off[it]:
+                    _ = scr.text(lx + 1, yy + i, self.items[it], text_disabled(pal, ifg, ibg), ibg)
+                elif not sel and self.muted_col >= 0:
+                    var cps = decode(self.items[it])
+                    var cut = min(self.muted_col, len(cps))
+                    var xx = scr.cps(lx + 1, yy + i, List[Int](cps[0:cut]), ifg, ibg)
+                    _ = scr.cps(xx, yy + i, List[Int](cps[cut:]), text_muted(ifg, ibg), ibg)
+                else:
+                    _ = scr.text(lx + 1, yy + i, self.items[it], ifg, ibg)
             scr.no_clip()
             # scrollbar
             var sx = lx + lw - 1

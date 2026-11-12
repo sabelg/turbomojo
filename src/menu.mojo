@@ -2,6 +2,7 @@
 from std.collections import List
 from screen import Screen
 from palette import Palette
+from contrast import text_muted, text_disabled
 from util import cp_len, decode
 from commands import Registry, CM_NONE
 
@@ -90,7 +91,9 @@ def dropdown_top(scr_h: Int, m: Menu, sel: Int) -> Int:
     return max(0, min(sel - rows // 2, len(m.items) - rows))
 
 
-def draw_dropdown(mut scr: Screen, pal: Palette, m: Menu, sel: Int, checks: List[Int]):
+def draw_dropdown(mut scr: Screen, pal: Palette, m: Menu, sel: Int, checks: List[Int], off: List[Int] = List[Int]()):
+    """A menu's items: the keys muted, items that can do nothing now (`off`) in the
+    disabled colour without their hot letter."""
     var w = m.width()
     var rows = dropdown_rows(scr.h, m)
     var top = dropdown_top(scr.h, m, sel)
@@ -116,12 +119,14 @@ def draw_dropdown(mut scr: Screen, pal: Palette, m: Menu, sel: Int, checks: List
         var bg = pal.menu_sel_bg if s else pal.menu_bg
         scr.fill(x + 1, yy, w - 2, 1, 32, fg, bg)
         var cmd = m.items[i].cmd
+        var dis = cmd in off
+        var lfg = fg if s or not dis else text_disabled(pal, fg, bg)
         for c in checks:
             if c == cmd:
-                scr.put(x + 1, yy, 0x221A, fg, bg)
-        _ = scr.hot_text(x + 2, yy, m.items[i].label, fg, pal.menu_hot if not s else fg, bg)
+                scr.put(x + 1, yy, 0x221A, lfg, bg)
+        _ = scr.hot_text(x + 2, yy, m.items[i].label, lfg, lfg if s or dis else pal.menu_hot, bg)
         var k = m.items[i].key
-        _ = scr.text(x + w - 2 - cp_len(k), yy, k, fg, bg)
+        _ = scr.text(x + w - 2 - cp_len(k), yy, k, lfg if s or dis else text_muted(fg, bg), bg)
     scr.shadow(x, y, w, h, pal.shadow_fg, pal.shadow_bg)
 
 

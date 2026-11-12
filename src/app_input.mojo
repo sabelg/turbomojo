@@ -3,7 +3,7 @@ from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
 from term import (
-    Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE, K_BASE, KEY_ESC, KEY_ENTER, KEY_TAB,
+    Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE, EV_FOCUS, K_BASE, KEY_ESC, KEY_ENTER, KEY_TAB,
     KEY_BACKSPACE, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_PGUP,
     KEY_PGDN, KEY_INSERT, KEY_DELETE, MOD_SHIFT, MOD_ALT, MOD_CTRL, KEY_MASK, fkey, ctrl, alt,
     MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN,
@@ -59,7 +59,7 @@ from app_draw import *
 __extension App:
     # ================================================================ input
     def handle(mut self, e: Event) raises:
-        var recording = self.macro_rec and not self.macro_playing and e.kind != EV_MOUSE and self.mode != M_MENU
+        var recording = self.macro_rec and not self.macro_playing and e.kind != EV_MOUSE and e.kind != EV_FOCUS and self.mode != M_MENU
         var at = len(self.macro)
         if recording:
             if self.chord == 0:
@@ -86,6 +86,9 @@ __extension App:
             self.find_refresh()
 
     def handle_event(mut self, e: Event) raises:
+        if e.kind == EV_FOCUS:
+            self.focused = e.key == 1           # (the next frame is drawn dimmed or not)
+            return
         if e.kind == EV_MOUSE:
             self.handle_mouse(e)
             return

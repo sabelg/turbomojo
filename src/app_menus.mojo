@@ -1,4 +1,5 @@
 """Menu bar navigation."""
+from dap import DS_STOPPED, DS_RUNNING
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
@@ -115,6 +116,39 @@ __extension App:
                 self.macro_note_cmd(cmd)
                 self.key_used(cmd)
                 self.exec(cmd)
+
+    def cmd_unavailable(self, cmd: Int) -> Bool:
+        """Commands that can do nothing now - shown dimmed in the menus, the command
+        palette and the status line. Chosen anyway, each says why (as before)."""
+        if cmd == CM_STEP_INTO or cmd == CM_STEP_OVER or cmd == CM_STEP_OUT:
+            return self.dbg.state != DS_STOPPED
+        if cmd == CM_PAUSE:
+            return self.dbg.state != DS_RUNNING
+        if cmd == CM_RESET:
+            return not self.dbg.active()
+        if cmd == CM_CANCEL:
+            return not self.job.active and not self.fsearch.active and not self.dbg.active()
+        if cmd == CM_NEXTERR or cmd == CM_PREVERR:
+            return len(self.errs) == 0
+        if cmd == CM_MACRO_PLAY:
+            return len(self.macro) == 0 and not self.macro_rec
+        var te = self.top_editor()
+        if cmd == CM_UNDO:
+            return te < 0 or len(self.wins[te].buf.undos) == 0
+        if cmd == CM_REDO:
+            return te < 0 or len(self.wins[te].buf.redos) == 0
+        if cmd == CM_SAVE or cmd == CM_SAVEAS or cmd == CM_FORMAT or cmd == CM_GOTO or cmd == CM_COMMENT or cmd == CM_BP_TOGGLE:
+            return te < 0
+        return False
+
+    def unavailable_cmds(self) -> List[Int]:
+        """cmd_unavailable for every command of the menus (for drawing them)."""
+        var out = List[Int]()
+        for m in self.menus:
+            for it in m.items:
+                if it.cmd != CM_NONE and self.cmd_unavailable(it.cmd) and not (it.cmd in out):
+                    out.append(it.cmd)
+        return out^
 
     def toggle_cmds(self) -> List[Int]:
         """The commands that switch something on or off (checked() has those on)."""

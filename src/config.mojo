@@ -28,6 +28,7 @@ Example:
     hyperlinks = true           # file:line in the Message window and the agent panel as links (OSC 8)
     hyperlink_format = "file://{host}{path}"   # or e.g. "vscode://file{path}:{line}:{column}"
     glyphs = "unicode"          # unicode (box drawing, arrows) | ascii (only ASCII) | nerd (+ Nerd Font icons)
+    dim_unfocused = true        # dim the screen while the terminal window does not have the focus
 
     [editor]
     auto_indent = true
@@ -167,6 +168,7 @@ struct Settings(Copyable, Movable):
     var hyperlinks: Bool        # ui.hyperlinks
     var hyperlink_format: String    # ui.hyperlink_format: {host} {path} {line} {column}
     var glyphs: String              # ui.glyphs: unicode | ascii | nerd
+    var dim_unfocused: Bool         # ui.dim_unfocused
     var minimap_style: String       # editor.minimap_style: auto | braille | blocks
     var run_in_terminal: Bool
     var show_whitespace: Bool
@@ -223,6 +225,7 @@ struct Settings(Copyable, Movable):
         self.hyperlinks = True
         self.hyperlink_format = "file://{host}{path}"
         self.glyphs = "unicode"
+        self.dim_unfocused = True
         self.minimap_style = "auto"
         self.run_in_terminal = True
         self.show_whitespace = False
@@ -293,6 +296,7 @@ struct Settings(Copyable, Movable):
         else:
             self.minimap_style = ms
         self.run_in_terminal = self.take_bool(doc, "ui.run_in_terminal", self.run_in_terminal)
+        self.dim_unfocused = self.take_bool(doc, "ui.dim_unfocused", self.dim_unfocused)
         self.show_whitespace = self.take_bool(doc, "ui.show_whitespace", self.show_whitespace)
         self.soft_wrap = self.take_bool(doc, "editor.soft_wrap", self.soft_wrap)
         self.semantic_colors = self.take_bool(doc, "editor.semantic_colors", self.semantic_colors)
@@ -479,7 +483,7 @@ struct Settings(Copyable, Movable):
                 self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):

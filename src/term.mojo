@@ -32,6 +32,7 @@ comptime KEY_MASK = (1 << 24) - 1
 comptime EV_KEY = 1
 comptime EV_MOUSE = 2
 comptime EV_PASTE = 3
+comptime EV_FOCUS = 4         # the terminal got (key 1) or lost (key 0) the focus (mode 1004)
 
 comptime MB_LEFT = 0
 comptime MB_RIGHT = 2
@@ -173,8 +174,9 @@ struct Terminal(Movable):
             append_str(self.out, "\x1b[?2027h")
         if self.kitty_on:
             append_str(self.out, KITTY_PUSH)
-        # tell us when the terminal turns light or dark, and ask what it is now
-        append_str(self.out, "\x1b[?2031h\x1b[?996n")
+        # tell us when the terminal turns light or dark, and ask what it is now; and
+        # when it gets and loses the focus
+        append_str(self.out, "\x1b[?2031h\x1b[?996n\x1b[?1004h")
         self.flush()
 
     def set_kitty(mut self, on: Bool):
@@ -202,7 +204,7 @@ struct Terminal(Movable):
             s += KITTY_POP
         if self.grapheme_on:
             s += "\x1b[?2027l"
-        s += "\x1b[?2031l"
+        s += "\x1b[?2031l\x1b[?1004l"
         s += "\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l"
         return s
 
@@ -621,6 +623,10 @@ struct Terminal(Movable):
     def csi(mut self, final: Int, params: List[Int], mut evs: List[Event]):
         if self.event_type == 3:
             return                      # a key release: only presses and repeats matter
+        if (final == 73 or final == 79) and len(params) == 0:
+            # focus in (CSI I) / out (CSI O), mode 1004
+            evs.append(Event(EV_FOCUS, 1 if final == 73 else 0, 0, 0, 0, False, False, List[Int]()))
+            return
         var mods = 0
         if len(params) >= 2:
             var m = params[1] - 1

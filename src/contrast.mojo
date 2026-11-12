@@ -14,7 +14,7 @@ Mono) depends on the terminal and is skipped.
 """
 from std.collections import List
 from std.math import pow
-from palette import Palette, is_rgb
+from palette import Palette, is_rgb, mix
 
 comptime ROLE_TEXT = 0          # body text, code and selections: WCAG 4.5:1 and Lc 45
 comptime ROLE_SECONDARY = 1     # comments, line numbers, dim text: WCAG 3:1 and Lc 30
@@ -150,3 +150,43 @@ def contrast_problems(p: Palette) -> List[String]:
         if w < f[0] or l < f[1]:
             out.append(c.what + ": " + one_decimal(w) + ":1, Lc " + String(Int(l)) + " (needs " + one_decimal(f[0]) + ":1, Lc " + String(Int(f[1])) + ")")
     return out^
+
+
+# ------------------------------------------------- muted and disabled text
+def toned(fg: Int, bg: Int, start_pct: Int, role: Int) -> Int:
+    """`fg` moved toward `bg` - `start_pct` percent of fg left - but no further than
+    the floors of `role` allow (closer to fg in steps of 5 until they are met)."""
+    var f = floors(role)
+    var pct = start_pct
+    while pct < 100:
+        var c = mix(fg, bg, pct)
+        if wcag_ratio(c, bg) >= f[0] and abs(apca_lc(c, bg)) >= f[1]:
+            return c
+        pct += 5
+    return fg
+
+
+def text_muted(fg: Int, bg: Int) -> Int:
+    """Secondary text on a surface whose text is `fg` (key labels in menus and the
+    palette, a file's folder, the status line's file facts): as dim as the
+    secondary floor (WCAG 3:1, Lc 30) allows. A colour that is not RGB stays."""
+    if not is_rgb(fg) or not is_rgb(bg):
+        return fg
+    return toned(fg, bg, 60, ROLE_SECONDARY)
+
+
+def text_disabled(p: Palette, fg: Int, bg: Int) -> Int:
+    """Text of something that cannot be used now: the theme's `menu_dis` on the menu
+    bar's and the status line's surfaces (where it is measured), elsewhere `fg`
+    toward `bg` down to the disabled floor (Lc 15); `menu_dis` for colours that are
+    not RGB."""
+    if bg == p.menu_bg or bg == p.status_bg or not is_rgb(fg) or not is_rgb(bg):
+        return p.menu_dis
+    return toned(fg, bg, 35, ROLE_DISABLED)
+
+
+def dimmed(fg: Int, bg: Int) -> Int:
+    """A cell's text while the terminal does not have the focus (ui.dim_unfocused)."""
+    if not is_rgb(fg) or not is_rgb(bg):
+        return fg
+    return mix(fg, bg, 55)

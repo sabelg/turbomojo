@@ -139,7 +139,10 @@ __extension App:
         var data = List[Int]()
         var keys = List[String]()
         var boost = List[Int]()
+        var off = List[Bool]()
+        var mcol = -1
         if mode == QM_COMMANDS:
+            mcol = 40                               # the keys
             var seen = List[Int]()
             for m in self.menus:
                 var title = plain(m.title)
@@ -151,6 +154,7 @@ __extension App:
                     seen.append(it.cmd)
                     items.append(pad_right(title + ": " + plain(it.label), 40) + self.reg.all_keys_label(it.cmd))
                     data.append(it.cmd)
+                    off.append(self.cmd_unavailable(it.cmd))
         elif mode == QM_FILES:
             self.quick_files = self.fidx.files.copy() if self.fidx.built else self.fidx.fresh.copy()
             self.quick_building = self.fidx.building
@@ -168,6 +172,7 @@ __extension App:
                 var name = basename(path)
                 var where = dirname(rel) if rel != name else String("")
                 items.append(pad_right(name, 30) + " " + where)
+                mcol = 31                           # the folder
                 keys.append(name + "  " + rel)
                 boost.append(self.frec.score(path, now_s))
                 data.append(k)
@@ -176,6 +181,7 @@ __extension App:
             self.quick_syms = scan_outline(self.wins[te].buf) if te >= 0 else List[OutlineItem]()
             for k in range(len(self.quick_syms)):
                 items.append(pad_right(outline_line(self.quick_syms[k]), 50) + ":" + String(self.quick_syms[k].row + 1))
+                mcol = 50                           # the line
                 keys.append(self.quick_syms[k].name)
                 data.append(k)
         elif mode == QM_WSYMBOLS:
@@ -192,6 +198,8 @@ __extension App:
         self.dlg.keys = keys^
         self.dlg.boost = boost^
         self.dlg.set_items(items^, data^)
+        self.dlg.muted_col = mcol
+        self.dlg.off = off^
 
     def quick_refresh(mut self):
         """After every key in the palette: see what the field asks for now."""

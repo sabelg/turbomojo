@@ -44,7 +44,7 @@ comptime SIGSEGV = 11
 # What the crash handler sends: a frame cut short ended, the kitty keyboard flags popped
 # (harmless if none were pushed) before the alternate screen is left, then the rest of
 # Terminal.leave().
-comptime CRASH_RESTORE = "\x1b[?2026l\x1b[<u\x1b[?2027l\x1b[?2031l\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l"
+comptime CRASH_RESTORE = "\x1b[?2026l\x1b[<u\x1b[?2027l\x1b[?2031l\x1b[?1004l\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l"
 
 def crash_slot(sig: Int) -> Int:
     if sig == SIGSEGV:

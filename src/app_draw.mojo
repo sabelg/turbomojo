@@ -10,6 +10,7 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
+from contrast import text_muted, text_disabled, dimmed
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, ACT_OTHER, ACT_TYPE
@@ -95,12 +96,17 @@ __extension App:
         else:
             for i in range(len(items)):
                 var x0 = x
-                x = self.scr.hot_text(x, y, items[i], p.status_fg, p.status_hot, p.status_bg)
+                if self.cmd_unavailable(cmds[i]):
+                    var dis = text_disabled(p, p.status_fg, p.status_bg)
+                    x = self.scr.hot_text(x, y, items[i], dis, dis, p.status_bg)
+                else:
+                    x = self.scr.hot_text(x, y, items[i], p.status_fg, p.status_hot, p.status_bg)
                 self.st_x0.append(x0)
                 self.st_x1.append(x)
                 self.st_cmd.append(cmds[i])
                 x += 2
         var right = String("")
+        var facts = False               # the file's facts and the modes: muted
         var running = len(self.running_tasks())
         var busy = ("⟳" + String(running) + "  ") if running > 0 else String("")   # Shift-F10 lists them
         if self.status_until > now_ns():
@@ -122,6 +128,7 @@ __extension App:
             right += self.plugins_status()       # the plugins' status items
             right += "INS" if self.insert_mode else "OVR"
             right = busy + right
+            facts = True
 
         if self.macro_rec:
             right = "● REC  " + right
@@ -146,7 +153,14 @@ __extension App:
             self.scr.clip(0, y, self.scr.w, 1)
             if rx > x:
                 self.scr.put(rx - 2, y, 0x2502, p.status_fg, p.status_bg)
-            _ = self.scr.text(rx, y, right, p.status_fg, p.status_bg)
+            if facts:
+                # what is in progress and the macro mark stand out; the facts are muted
+                var lead = cp_len(prog) + cp_len(busy) + (cp_len("● REC  ") if self.macro_rec else 0)
+                var rc = decode(right)
+                var xx = self.scr.text(rx, y, slice_str(rc, 0, lead), p.status_fg, p.status_bg)
+                _ = self.scr.text(xx, y, slice_str(rc, lead, len(rc)), text_muted(p.status_fg, p.status_bg), p.status_bg)
+            else:
+                _ = self.scr.text(rx, y, right, p.status_fg, p.status_bg)
             self.scr.no_clip()
 
     def draw(mut self):
@@ -323,7 +337,7 @@ __extension App:
             cmds.append(-1)
         self.draw_status(items, cmds)
         if self.mode == M_MENU:
-            draw_dropdown(self.scr, p, self.menus[self.menu_idx], self.menu_item, self.checked())
+            draw_dropdown(self.scr, p, self.menus[self.menu_idx], self.menu_item, self.checked(), self.unavailable_cmds())
         # cursor
         self.scr.cvis = False
         var t = self.top()
@@ -353,8 +367,16 @@ __extension App:
                 self.scr.cblock = False
         if p.scanlines and not self.reader:
             self.draw_scanlines()
+        if not self.focused and self.dim_unfocused and not self.reader:
+            self.draw_unfocused()
         if self.reader:
             self.reader_cursor()
+
+    def draw_unfocused(mut self):
+        """The terminal does not have the focus (mode 1004): every cell's text half way
+        to its background, so it is plain that keys go elsewhere (ui.dim_unfocused)."""
+        for k in range(self.scr.w * self.scr.h):
+            self.scr.fg[k] = dimmed(self.scr.fg[k], self.scr.bg[k])
 
     def scopes_update(mut self, i: Int):
         """Window i's breadcrumbs, pinned scope headers and minimap, as the settings and

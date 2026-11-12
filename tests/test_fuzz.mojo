@@ -14,7 +14,7 @@ random start; scripts/fuzz.sh runs long passes with new seeds and prints the see
 failure. Every failure message names the seed."""
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
-from term import Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE
+from term import Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE, EV_FOCUS
 from json import json_parse, json_parse_bytes, json_quote, JSON_MAX_DEPTH
 from buffer import TextBuffer
 from vt import VtTerm
@@ -138,7 +138,7 @@ def test_key_parser_split_anywhere() raises:
             b.append(e.copy())
         assert_equal(events_text(b), events_text(a), "seed " + String(sd) + ", input " + String(n))
         for e in a:
-            assert_true(e.kind == EV_KEY or e.kind == EV_MOUSE or e.kind == EV_PASTE, "seed " + String(sd))
+            assert_true(e.kind == EV_KEY or e.kind == EV_MOUSE or e.kind == EV_PASTE or e.kind == EV_FOCUS, "seed " + String(sd))
 
 
 def test_plain_text_is_one_key_per_character() raises:
