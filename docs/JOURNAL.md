@@ -4501,3 +4501,40 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   the box can still cover the cursor when it is taller than half the screen in a
   small terminal.
 - Gate: scripts/check.sh printed CHECK OK (94 test files, 1116 tests, 786 s).
+
+## 2026-11-12 · P10-10 Probe hardening · done
+- What changed: `caps_query(dcs)` (src/caps.mojo) asks, before DA1 (still last): the
+  modes, kitty's flags, OSC 11 (the background colour) and - unless
+  `under_gnu_screen(TERM, STY, TMUX)` - DECRQSS after setting a 24-bit background
+  (truecolor) and XTGETTCAP Smulx;Setulc (styled underlines). CSI ? 996 n (the colour
+  scheme) was already asked in `enter()` and still is. `Terminal.parse_one` takes OSC
+  and DCS replies in (`string_reply`: first byte a digit or '>', BEL or ST, at most
+  4096 bytes, waiting across reads), so a reply that comes late - between keys - is
+  swallowed instead of typed; ESC ] / ESC P followed by anything else stay Alt keys.
+  OSC 11 sets `caps.background` and `bg_scheme` (luminance > 0.18 is light);
+  `theme = "auto"` uses the terminal's word (2031/996), then `bg_scheme`, then the
+  desktop. `Caps.settle` lets a yes from DECRQSS raise the colour depth to 24-bit
+  and one from XTGETTCAP switch styled underlines on - inside tmux too, where the
+  answer is tmux's own - but never lowers anything and never overrides
+  TURBOMOJO_COLORS or `ui.underline`. Leaving (`restore_sequence()`) and the crash
+  handler (`CRASH_RESTORE`) both start by ending synchronized output (2026l) and pop
+  the kitty keyboard flags before leaving the alternate screen. `--caps` shows the
+  background. README says what is asked and why.
+- Verified: tests/test_probe.mojo (6 tests): what is asked and in which order, DCS
+  only outside GNU screen; OSC 11 parsing (1-, 2-, 4-digit, invalid, foreground) and
+  light/dark of known backgrounds; an OSC 11 reply split over two reads between "a"
+  and "b" gives just those two keys and sets the background, BEL also ends it; DECRQSS
+  yes with ':' separators, no, and an empty answer; XTGETTCAP not found / found; a
+  ">|" reply; Alt-] and Alt-Shift-P stay keys and an unfinished reply becomes keys
+  when the input goes stale; `settle` raises, keeps the user's override, does not
+  lower, trusts tmux, respects `underline = "plain"`; the leave and crash sequences'
+  order. test_themes: auto follows the background when the terminal does not say,
+  and the terminal's word wins (a mutant ignoring `bg_scheme` fails it). test_caps:
+  `describe` lists the background. test_term, test_crash pass.
+- Not done / unverified: not tried in real terminals, GNU screen or tmux - which of
+  them answer DECRQSS / XTGETTCAP / OSC 11, and whether tmux passes OSC 11 from the
+  outer terminal, is from their documentation, not checked here; replies that arrive
+  after the start-up wait are swallowed but do not change the colour depth (a late
+  OSC 11 does change the auto theme); the 0.18 luminance cut-off is a judgement, not
+  measured on people.
+- Gate: scripts/check.sh printed CHECK OK (95 test files, 1122 tests, 786 s).

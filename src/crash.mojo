@@ -41,6 +41,11 @@ comptime SIGFPE = 8
 comptime SIGSEGV = 11
 
 
+# What the crash handler sends: a frame cut short ended, the kitty keyboard flags popped
+# (harmless if none were pushed) before the alternate screen is left, then the rest of
+# Terminal.leave().
+comptime CRASH_RESTORE = "\x1b[?2026l\x1b[<u\x1b[?2027l\x1b[?2031l\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l"
+
 def crash_slot(sig: Int) -> Int:
     if sig == SIGSEGV:
         return 0
@@ -70,7 +75,7 @@ def crash_handler_c(sig: Int32):
         Int(0), Int(PAGE_SIZE), Int32(3), Int32(1), Int32(CRASH_PAGE_FD), Int(0)
     )
     if p[unsafe_offset=OFF_TUI_FLAG] == 1:
-        var esc = "\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l"
+        var esc = CRASH_RESTORE
         _ = external_call["write", Int](Int32(1), esc.unsafe_ptr(), esc.byte_length())
         _ = external_call["tcsetattr", Int32](Int32(0), Int32(0), p)
     var note = "\nTurboMojo crashed. The terminal has been restored; see the crash log:\n  "

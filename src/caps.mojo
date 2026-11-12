@@ -17,6 +17,77 @@ comptime MODE_INBAND_RESIZE = 2048
 
 # Sent once at startup. The DA1 request ("CSI c") must stay last.
 comptime CAPS_QUERY = "\x1b[?2026$p\x1b[?2027$p\x1b[?2031$p\x1b[?2048$p\x1b[?u\x1b[c"
+# The background colour (OSC 11): light or dark when mode 2031 gets no answer.
+comptime OSC11_QUERY = "\x1b]11;?\x1b\\"
+# DCS queries, left out under GNU screen (it shows them or passes them on mangled):
+# truecolor by setting an RGB background and asking for it back (DECRQSS "m"), and
+# styled underlines from the terminfo entries the terminal itself has (XTGETTCAP
+# Smulx: curly; Setulc: coloured).
+comptime TRUECOLOR_QUERY = "\x1b[48;2;1;2;3m\x1bP$qm\x1b\\\x1b[0m"
+comptime UNDERLINE_QUERY = "\x1bP+q536d756c78;536574756c63\x1b\\"
+
+
+def caps_query(dcs: Bool) -> String:
+    """All the questions, DA1 last (every terminal answers it: then we stop waiting)."""
+    var q = String("\x1b[?2026$p\x1b[?2027$p\x1b[?2031$p\x1b[?2048$p\x1b[?u") + OSC11_QUERY
+    if dcs:
+        q += String(TRUECOLOR_QUERY) + UNDERLINE_QUERY
+    return q + "\x1b[c"
+
+
+def under_gnu_screen(term: String, sty: String, tmux: String) -> Bool:
+    """GNU screen (it sets STY; tmux, which can also call itself "screen", sets TMUX)."""
+    if tmux.byte_length() > 0:
+        return False
+    return sty.byte_length() > 0 or term.startswith("screen")
+
+
+def hex_val(b: Int) -> Int:
+    if b >= 48 and b <= 57:
+        return b - 48
+    if b >= 97 and b <= 102:
+        return b - 87
+    if b >= 65 and b <= 70:
+        return b - 55
+    return -1
+
+
+def osc11_rgb(body: String) -> Int:
+    """The colour in an OSC 11 reply's body ("11;rgb:RRRR/GGGG/BBBB", 1 to 4 hex digits
+    each) as 0xRRGGBB, or -1."""
+    var at = body.find("rgb:")
+    if not body.startswith("11;") or at < 0:
+        return -1
+    var parts = String(body[byte=at + 4:]).split("/")
+    if len(parts) != 3:
+        return -1
+    var out = 0
+    for p in parts:
+        var s = String(p)
+        var n = s.byte_length()
+        if n < 1 or n > 4:
+            return -1
+        var v = 0
+        for b in s.as_bytes():
+            var h = hex_val(Int(b))
+            if h < 0:
+                return -1
+            v = v * 16 + h
+        var full = (1 << (4 * n)) - 1
+        out = out * 256 + (v * 255 + full // 2) // full
+    return out
+
+
+def scheme_of_background(rgb: Int) -> Int:
+    """1 dark, 2 light: light when the background's relative luminance is above 0.18
+    (CIE L* 50, halfway between black and white as the eye sees it)."""
+    var y = 0.0
+    var w = [0.2126, 0.7152, 0.0722]
+    for k in range(3):
+        var v = Float64((rgb >> (16 - 8 * k)) & 255) / 255.0
+        v = v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+        y += w[k] * v
+    return 2 if y > 0.18 else 1
 
 
 struct Caps(Copyable, Movable):
@@ -28,6 +99,9 @@ struct Caps(Copyable, Movable):
     var kitty_keyboard: Bool   # progressive keyboard enhancement protocol
     var styled_underline: Bool # curly and coloured underlines (guessed from the environment)
     var answered: Bool         # the terminal replied to the final DA1 request
+    var background: Int        # OSC 11: the terminal's background colour (-1: not said)
+    var truecolor_said: Int    # DECRQSS: 1 the RGB colour came back, 2 it did not, 0 no answer
+    var underline_said: Int    # XTGETTCAP Smulx / Setulc: 1 the terminal has them, 0 no answer
 
     def __init__(out self):
         self.color = COLOR_TRUE
@@ -38,6 +112,30 @@ struct Caps(Copyable, Movable):
         self.kitty_keyboard = False
         self.styled_underline = False
         self.answered = False
+        self.background = -1
+        self.truecolor_said = 0
+        self.underline_said = 0
+
+    def dcs_reply(mut self, body: String):
+        """A DCS reply's body (between ESC P and ST)."""
+        if body.startswith("1$r") or body.startswith("0$r"):
+            # DECRQSS "m": the RGB background we set, if the terminal kept it as RGB
+            var ok = body.startswith("1$r") and (body.find("48;2;1;2;3") >= 0 or body.find("48:2:1:2:3") >= 0 or body.find("48:2::1:2:3") >= 0)
+            self.truecolor_said = 1 if ok else 2
+        elif body.startswith("1+r"):
+            # XTGETTCAP: names hex-encoded; Smulx (536d756c78) or Setulc (536574756c63)
+            if body.find("536d756c78") >= 0 or body.find("536574756c63") >= 0:
+                self.underline_said = 1
+
+    def settle(mut self, color_override: String, underline_override: String):
+        """What the answers add to what the environment said. Answers only add: a
+        terminal that says it keeps RGB colours gets them, one that has curly underlines
+        in its terminfo (tmux too, when it is set up to pass them on) gets them; the
+        user's TURBOMOJO_COLORS / TURBOMOJO_UNDERLINE still decide."""
+        if self.truecolor_said == 1 and color_override.byte_length() == 0:
+            self.color = COLOR_TRUE
+        if self.underline_said == 1 and underline_override.byte_length() == 0:
+            self.styled_underline = True
 
     def mode_report(mut self, mode: Int, value: Int):
         """A DECRPM reply: value 1/2 = supported (set/reset), 3/4 = fixed, 0 = unknown.
@@ -61,9 +159,19 @@ struct Caps(Copyable, Movable):
         out.append("colour-scheme notify: " + yes_no(self.color_scheme))
         out.append("in-band resize      : " + yes_no(self.inband_resize))
         out.append("kitty keyboard      : " + yes_no(self.kitty_keyboard))
-        out.append("curly underlines    : " + yes_no(self.styled_underline) + " (guessed)")
+        out.append("curly underlines    : " + yes_no(self.styled_underline) + (" (the terminal says so)" if self.underline_said == 1 else " (guessed)"))
+        out.append("background          : " + (("#" + hex6(self.background)) if self.background >= 0 else String("not said")))
         out.append("answered queries    : " + yes_no(self.answered))
         return out^
+
+
+def hex6(rgb: Int) -> String:
+    var d = "0123456789abcdef"
+    var s = String("")
+    for k in range(6):
+        var v = (rgb >> (20 - 4 * k)) & 15
+        s += String(d[byte=v:v + 1])
+    return s
 
 
 def yes_no(b: Bool) -> String:

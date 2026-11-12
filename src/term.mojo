@@ -3,9 +3,9 @@ from platform import raw_termios, TIOCGWINSZ, TCSAFLUSH
 from std.ffi import external_call
 from std.collections import List
 from std.time import perf_counter_ns
-from util import decode_list, append_str, env_or
+from util import decode_list, append_str, env_or, bytes_to_str
 from crash import CrashGuard
-from caps import Caps, CAPS_QUERY, detect_color_level, detect_styled_underline
+from caps import Caps, CAPS_QUERY, caps_query, under_gnu_screen, osc11_rgb, scheme_of_background, detect_color_level, detect_styled_underline
 
 comptime K_BASE = 0x110000
 comptime KEY_ESC = K_BASE + 1
@@ -128,6 +128,7 @@ struct Terminal(Movable):
     var kitty_on: Bool        # kitty keyboard protocol flags are pushed
     var event_type: Int       # of the sequence being parsed: 0/1 press, 2 repeat, 3 release
     var scheme: Int           # the terminal's colour scheme (mode 2031): 0 unknown, 1 dark, 2 light
+    var bg_scheme: Int        # the same, judged from its background colour (OSC 11)
 
     def __init__(out self):
         self.saved = List[UInt8](length=128, fill=0)
@@ -146,6 +147,7 @@ struct Terminal(Movable):
         self.kitty_on = False
         self.event_type = 0
         self.scheme = 0
+        self.bg_scheme = 0
 
     # ------------------------------------------------------------- modes
     def raw(mut self):
@@ -191,16 +193,21 @@ struct Terminal(Movable):
         self.grapheme_on = on
         append_str(self.out, "\x1b[?2027h" if on else "\x1b[?2027l")
 
-    def leave(mut self):
+    def restore_sequence(self) -> String:
+        """What leave() sends: synchronized output ended first (a frame cut short would
+        leave it on), the kitty keyboard flags popped while still on the alternate
+        screen (each screen has its own stack), then the modes back as they were."""
+        var s = String("\x1b[?2026l")
         if self.kitty_on:
-            append_str(self.out, KITTY_POP)
+            s += KITTY_POP
         if self.grapheme_on:
-            append_str(self.out, "\x1b[?2027l")
-        append_str(self.out, "\x1b[?2031l")
-        append_str(
-            self.out,
-            "\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l",
-        )
+            s += "\x1b[?2027l"
+        s += "\x1b[?2031l"
+        s += "\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[0 q\x1b[?25h\x1b[?1049l"
+        return s
+
+    def leave(mut self):
+        append_str(self.out, self.restore_sequence())
         self.flush()
         self.cooked()
         self.guard.set_tui(False)
@@ -214,7 +221,7 @@ struct Terminal(Movable):
         )
         if not is_terminal():
             return self.caps.copy()     # nobody there to answer
-        append_str(self.out, CAPS_QUERY)
+        append_str(self.out, caps_query(not under_gnu_screen(env_or("TERM", ""), env_or("STY", ""), env_or("TMUX", ""))))
         self.flush()
         var deadline = Int(perf_counter_ns()) + timeout_ms * 1000000
         var fds = List[Int]()
@@ -227,6 +234,7 @@ struct Terminal(Movable):
                 break
             for e in self.poll():
                 self.early.append(e.copy())
+        self.caps.settle(env_or("TURBOMOJO_COLORS", ""), env_or("TURBOMOJO_UNDERLINE", ""))
         return self.caps.copy()
 
     def take_early(mut self) -> List[Event]:
@@ -493,6 +501,14 @@ struct Terminal(Movable):
             if d == 27:
                 evs.append(key_event(KEY_ESC))
                 return 1
+            if d == 93 or d == 80:
+                # OSC (ESC ]) or DCS (ESC P): a reply to a query, whenever it comes - never
+                # keys. Alt-] or Alt-Shift-P followed by typing has no terminator.
+                var used = self.string_reply(i, d, stale)
+                if used > 0:
+                    return used
+                if used == 0:
+                    return 0                # (wait for the rest)
             var l = self.plain_len(i + 1)
             if i + 1 + l > n:
                 return 0
@@ -556,6 +572,39 @@ struct Terminal(Movable):
         if p < 32 or (p >= 57344 and p <= 63743):
             return 0                    # lock keys, modifier keys, media keys...
         return p
+
+    def string_reply(mut self, i: Int, kind: Int, stale: Bool) -> Int:
+        """An OSC or DCS reply from inbuf[i]: the bytes it takes, 0 to wait for more, -1
+        if it is not one (then it is a key). It starts with a digit (OSC "11;...", DCS
+        "1$r..." / "1+r...") or ">" (DCS XTVERSION) and ends with BEL or ESC \\."""
+        var n = len(self.inbuf)
+        if i + 2 >= n:
+            return -1 if stale else 0
+        var first = Int(self.inbuf[i + 2])
+        if not ((first >= 48 and first <= 57) or first == 62):
+            return -1
+        var j = i + 2
+        while j < n:
+            var b = Int(self.inbuf[j])
+            if b == 7 or (b == 27 and j + 1 < n and Int(self.inbuf[j + 1]) == 92):
+                var body = List[UInt8]()
+                for k in range(i + 2, j):
+                    body.append(self.inbuf[k])
+                var text = bytes_to_str(body)
+                if kind == 93:
+                    var rgb = osc11_rgb(text)
+                    if rgb >= 0:
+                        self.caps.background = rgb
+                        self.bg_scheme = scheme_of_background(rgb)
+                else:
+                    self.caps.dcs_reply(text)
+                return (j + 1 if b == 7 else j + 2) - i
+            if b == 27 and j + 1 >= n:
+                break                       # ESC at the end: maybe the ST's first half
+            j += 1
+        if j - i > 4096:
+            return -1                       # no terminator in sight: not a reply
+        return -1 if stale else 0
 
     def terminal_reply(mut self, final: Int, params: List[Int]):
         """Replies to our capability queries ("CSI ? ... final"). They produce no events."""

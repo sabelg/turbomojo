@@ -89,10 +89,17 @@ def test_describe_lists_every_capability() raises:
     var c = Caps()
     c.sync_output = True
     var lines = c.describe()
-    assert_equal(len(lines), 8)
+    assert_equal(len(lines), 9)
     assert_true(lines[0].endswith("24-bit colour"))
     assert_true(lines[1].endswith(": yes"))
     assert_true(lines[2].endswith(": no"))
+    var bg = -1
+    for k in range(len(lines)):
+        if lines[k].startswith("background"):
+            bg = k
+    assert_true(bg >= 0 and lines[bg].endswith("not said"))
+    c.background = 0x1A1B26
+    assert_true(c.describe()[bg].endswith("#1a1b26"), c.describe()[bg])
 
 
 # ------------------------------------------------------------ colour depth

@@ -161,7 +161,7 @@ brackets; where TurboMojo already did part of it, only the rest is a task).
 - [x] P10-07 OSC 8 links on every file:line in the Message, Search and Problems pages and agent output [7]
 - [x] P10-08 Show the exact toolchain command at the top of each Message page run [8]
 - [x] P10-09 Key-hint boxes after ~200 ms (now 600), never over the cursor, with on/off state for toggles [9]
-- [ ] P10-10 Probe hardening: ask CSI ? 996 n for the colour scheme, OSC 11 luminance fallback, DECRQSS truecolor and XTGETTCAP Smulx/Setulc, no DCS under GNU screen, trust tmux's answers, drain late replies, always pop kitty keyboard flags and close synchronized output on error paths [10]
+- [x] P10-10 Probe hardening: ask CSI ? 996 n for the colour scheme, OSC 11 luminance fallback, DECRQSS truecolor and XTGETTCAP Smulx/Setulc, no DCS under GNU screen, trust tmux's answers, drain late replies, always pop kitty keyboard flags and close synchronized output on error paths [10]
 - [ ] P10-11 Glyph tiers `glyphs = ascii | unicode | nerd` (default unicode) and a half-block fallback for the braille minimap; no emoji or ambiguous-width characters in the chrome [11]
 - [ ] P10-12 text-muted and text-disabled colours used consistently in menus, the palette and the status line; dim the UI while the terminal loses focus (mode 1004) [12]
 - [ ] P10-13 Counts and filters in titles: Problems "(3 E, 7 W)", the explorer's filter, the palette's "12/340" [14]

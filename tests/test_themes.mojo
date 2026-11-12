@@ -208,6 +208,17 @@ def test_auto_follows_the_terminal() raises:
     app.term.scheme = 1
     app.theme_tick()
     assert_equal(app.pal.name, "Midnight Neon")
+    # a terminal that does not say, but answers what its background is (OSC 11):
+    # that decides, the desktop does not; the terminal's own word still wins
+    app.term.scheme = 0
+    app.desktop_scheme = 1
+    app.desktop_checked_ns = Int(now_ns())
+    _ = app.term.feed(str_bytes("\x1b]11;rgb:fdfd/f6f6/e3e3\x1b\\"), False)
+    app.theme_tick()
+    assert_equal(app.pal.name, "High Contrast")
+    app.term.scheme = 1
+    app.theme_tick()
+    assert_equal(app.pal.name, "Midnight Neon")
     # a theme that does not exist: said, and classic used
     app.apply_settings(load_settings("[ui]\ntheme = \"nosuch\"\n", ""))
     assert_equal(app.theme_idx, 0)

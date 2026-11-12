@@ -1062,8 +1062,9 @@ struct App(Movable):
         terminal says; dark until it has said)."""
         var id = self.theme_id
         if id == "auto":
-            # the terminal's word first; else the desktop's (GNOME Terminal does not say)
-            var scheme = self.term.scheme if self.term.scheme != 0 else self.desktop_scheme
+            # the terminal's word first (mode 2031); else its background's lightness
+            # (OSC 11); else the desktop's (GNOME Terminal does not say)
+            var scheme = self.term.scheme if self.term.scheme != 0 else (self.term.bg_scheme if self.term.bg_scheme != 0 else self.desktop_scheme)
             id = self.theme_light_id if scheme == 2 else self.theme_dark_id
             self.scheme_seen = scheme
         var k = self.themes.find(id)
@@ -1086,12 +1087,12 @@ struct App(Movable):
         the desktop's, looked at every half minute."""
         if self.theme_id != "auto":
             return
-        if self.term.scheme == 0:
+        if self.term.scheme == 0 and self.term.bg_scheme == 0:
             var now = Int(now_ns())
             if self.desktop_checked_ns == 0 or now - self.desktop_checked_ns > 30 * 1000000000:
                 self.desktop_checked_ns = now
                 self.desktop_scheme = self.desktop_scheme_now()
-        var scheme = self.term.scheme if self.term.scheme != 0 else self.desktop_scheme
+        var scheme = self.term.scheme if self.term.scheme != 0 else (self.term.bg_scheme if self.term.bg_scheme != 0 else self.desktop_scheme)
         if scheme != self.scheme_seen:
             self.theme_apply()
 
