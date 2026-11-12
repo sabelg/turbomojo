@@ -36,6 +36,7 @@ def main() raises:
     app.enable_history()
     app.help_dir = state_dir() + "/help"
     app.key_uses_load(state_dir() + "/key-uses")
+    app.tips_load(state_dir() + "/tips-shown")
     app.whats_new_check(state_dir() + "/seen-version")
     for i in range(1, len(args)):
         try:

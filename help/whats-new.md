@@ -9,6 +9,9 @@
   are elsewhere; Help > Notifications (Shift-F10) shows what is running. Toasts that
   come while you type wait for a pause, a save or the debugger stopping; your own
   build, tests and commits come at once and first.
+- **Tips when they help**: paging to a function, a long run of arrows or Backspace,
+  or Find again and again brings one tip, once, at a pause; Help > No more tips stops
+  them.
 - **Ask the agent, with local help**: Help > Ask agent about this error / this code
   sends the code, the message, TurboMojo's explanation and the documentation pages
   that fit, and asks for an answer that names its pages; imports in the answer are

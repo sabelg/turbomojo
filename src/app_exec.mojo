@@ -47,6 +47,8 @@ from app_gitcmd import *
 from app_explain import *
 from app_docpane import *
 from app_agentexplain import *
+from app_tips import *
+from tips import TK_FIND
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -384,7 +386,10 @@ __extension App:
         elif cmd == CM_COMPLETE:
             self.start_complete()
         elif cmd == CM_FIND or cmd == CM_REPLACE:
+            self.tip_feed(TK_FIND)
             self.open_find(cmd == CM_REPLACE)
+        elif cmd == CM_TIPS_OFF:
+            self.tips_off()
         elif cmd == CM_FINDFILES:
             self.open_find_files()
         elif cmd == CM_AGAIN:

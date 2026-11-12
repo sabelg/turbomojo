@@ -15,6 +15,7 @@ from palette import Palette, theme, THEME_COUNT
 from themes import ThemeSet, scheme_from, animations_off
 from strings import apply_strings, language_from
 from notify import NotifyCenter, TYPING_PAUSE_MS
+from tips import TipRules
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, ACT_OTHER, ACT_TYPE
@@ -176,6 +177,10 @@ struct App(Movable):
     var language: String        # the UI's language (strings file); "en": built in
     var strings_dir: String     # where strings files are ('' in tests: English only)
     var key_hints: Bool         # ui.key_hints: "Next time: <key>" after a menu or the palette, the box after a prefix key
+    var tips_on: Bool           # ui.tips
+    var tip_rules: TipRules     # what the keys have been doing (src/tips.mojo)
+    var tips_shown: List[String]  # the tips given already (never twice)
+    var tips_file: String       # where those are kept ('' in tests: nowhere)
     var key_uses: Dict[String, Int]  # how often each command was run by its key
     var key_uses_path: String   # where those counts are kept ('' in tests)
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
@@ -582,6 +587,10 @@ struct App(Movable):
         self.language = "en"
         self.strings_dir = ""
         self.key_hints = True
+        self.tips_on = True
+        self.tip_rules = TipRules()
+        self.tips_shown = List[String]()
+        self.tips_file = ""
         self.chord_since = 0
         self.typed_ns = 0
         self.chord_box = False
@@ -1148,6 +1157,7 @@ struct App(Movable):
         self.scanlines_cfg = s.scanlines
         self.breadcrumbs = s.breadcrumbs
         self.key_hints = s.key_hints
+        self.tips_on = s.tips
         self.sticky_scroll = s.sticky_scroll
         self.minimap_on = s.minimap
         self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1"

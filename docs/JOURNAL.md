@@ -3952,3 +3952,23 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
 - Not done / unverified: other TM_JOBS values were not measured; a failing compile is
   only reported after all compiles end (no early stop); the tests themselves still
   run one by one.
+
+## 2026-11-12 · P7-14 behaviour-triggered tips · done
+- What changed: `src/tips.mojo` - four rules over the keys (6 PgUp/PgDn within 10 s,
+  20 plain Left/Right in a row, 12 plain Backspaces in a row, Find opened 3 times
+  within 2 min), each naming the quick way. `src/app_tips.mojo`: the editor's keys and
+  the Find command feed them; a tip is a notice ("Tip"), so while typing it waits for
+  the pause (P7-12) and a screen reader hears it then; the key is the keymap's own
+  (no tip when the keymap has no key for it); each tip once, kept in the state
+  folder's tips-shown; Help > No more tips (CM_TIPS_OFF) or ui.tips = false stops them,
+  the command writing the setting. README and what's new say so.
+- Verified: `tests/test_tips.mojo` (4 tests): the rules (a slow spread and a broken
+  run give no tip); in the app twenty Rights give the word tip only after the pause,
+  never a second time, paging gives "Ctrl-T goes to a function by its name", the file
+  keeps both and a new app reading it gives none; Backspaces and Find again give
+  theirs; No more tips writes tips = false to the config file given and no tip comes
+  after it.
+- Not done / unverified: the thresholds are my guesses, not measured on real use;
+  the word-move and Ctrl-Backspace keys are the editor's built-in ones, the same in
+  every keymap; no tip has a "show me" action.
+- Gate: scripts/check.sh printed CHECK OK (77 test files, 1054 tests, 638 s).

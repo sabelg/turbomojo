@@ -15,6 +15,7 @@ Example:
     screen_reader = false       # plain, linear screen for screen readers (also TURBOMOJO_SCREEN_READER=1)
     language = ""               # the UI's words from strings/<language>.toml ("" = from LANG)
     key_hints = true            # "Next time: <key>" on the status line after a menu or the palette
+    tips = true                 # a tip, once, when a slow way is used where there is a quick one
     reduced_motion = "auto"     # no spinner animation; "auto": as the desktop's animations setting
     keymap = "modern"           # modern | turbo (WordStar keys) | emacs
     layout = "classic"          # classic (overlapping windows) | tiled (panes with tabs, splits)
@@ -136,6 +137,7 @@ struct Settings(Copyable, Movable):
     var screen_reader: Bool     # ui.screen_reader: plain, linear drawing for screen readers
     var language: String        # ui.language ('' = from LANG)
     var key_hints: Bool         # ui.key_hints
+    var tips: Bool              # ui.tips
     var reduced_motion: Int     # ui.reduced_motion: -1 auto (the desktop's setting), 0 off, 1 on
     var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var tiled: Bool      # ui.layout = "tiled"
@@ -181,6 +183,7 @@ struct Settings(Copyable, Movable):
         self.screen_reader = False
         self.language = ""
         self.key_hints = True
+        self.tips = True
         self.reduced_motion = -1
         self.keymap = 0
         self.tiled = False
@@ -249,6 +252,7 @@ struct Settings(Copyable, Movable):
         self.inlay_hints = self.take_bool(doc, "editor.inlay_hints", self.inlay_hints)
         self.auto_pairs = self.take_bool(doc, "editor.auto_pairs", self.auto_pairs)
         self.key_hints = self.take_bool(doc, "ui.key_hints", self.key_hints)
+        self.tips = self.take_bool(doc, "ui.tips", self.tips)
         self.breadcrumbs = self.take_bool(doc, "editor.breadcrumbs", self.breadcrumbs)
         self.sticky_scroll = self.take_bool(doc, "editor.sticky_scroll", self.sticky_scroll)
         self.minimap = self.take_bool(doc, "editor.minimap", self.minimap)
@@ -393,7 +397,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

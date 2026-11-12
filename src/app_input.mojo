@@ -49,6 +49,7 @@ from app_gitcmd import *
 from app_explain import *
 from app_docpane import *
 from app_keybox import *
+from app_tips import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -240,6 +241,7 @@ __extension App:
 
     def editor_key(mut self, k: Int) raises:
         self.typed_ns = now_ns()                # (toasts wait while the editor has the keys)
+        self.tip_feed(self.tip_kind_of_key(k))
         var t = self.top()
         var shift = (k & MOD_SHIFT) != 0
         var ctl = (k & MOD_CTRL) != 0
