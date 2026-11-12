@@ -129,12 +129,11 @@ __extension App:
                     self.chat.note("Allowed (this session): " + self.agent_what(e))
                 else:
                     if self.top() != self.agent_index():
-                        self.notify(NL_WARN, "The agent asks for permission", self.agent_what(e))
+                        # (the panel does not come to the front by itself: a key typed
+                        # for the editor would answer)
+                        self.notify(NL_WARN, "The agent asks for permission", self.agent_what(e) + " - " + self.reg.key_label(CM_AGENT) + " to answer")
                     self.agent_perms.append(e.copy())
                     self.chat.note("The agent asks to " + self.agent_what(e) + ": Y allows it once, A for this session, N refuses")
-                    var pi = self.agent_index()
-                    if pi >= 0:
-                        self.focus(pi)
             elif e.kind == AE_TURN_END:
                 self.chat.cancel_open_tools()
                 self.agent_check_answer()
@@ -315,6 +314,8 @@ __extension App:
         var t = self.top()
         if t < 0 or self.wins[t].kind != WK_AGENT:
             return False
+        # typing here too: nothing pops up under it (sending is a pause, like a save)
+        self.typed_ns = 0 if k == KEY_ENTER else now_ns()
         var n = len(self.agent_input)
         if len(self.agent_perms) > 0:
             # the agent waits for a permission

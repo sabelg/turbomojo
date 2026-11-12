@@ -16,6 +16,8 @@ from helpbook import TURBOMOJO_VERSION
 from app_notify import *
 
 
+comptime PANEL_ANSWER_MS = 3000      # a panel this soon after the user ran the plugin's command answers it
+
 __extension App:
     def plugins_start(mut self):
         """Find and start the plugins (at start-up, once the screen is up)."""
@@ -215,6 +217,8 @@ __extension App:
         if self.plugins[k].state != PL_READY:
             self.say("The plugin " + self.plugins[k].name + " is not running (" + self.plugins[k].why + ")")
             return
+        self.plugin_asked = k
+        self.plugin_asked_ns = now_ns()
         _ = self.plugins[k].conn.request("command", "{\"id\":" + json_quote(self.plugins[k].cmds[c].id) + "}", now_ns())
 
     def plugins_event(mut self, name: String, path: String, ok: Bool = True):
@@ -261,9 +265,13 @@ __extension App:
 
     def panel_open(mut self, k: Int, id: String, title: String, table: Bool, d: Json, columns: Int):
         """panel/open: a window at the right edge (the editors make room), or the panel
-        that is open already, brought to the front."""
+        that is open already. It comes to the front only as the answer to one of the
+        plugin's commands the user ran (within PANEL_ANSWER_MS) and not while typing;
+        a panel a plugin opens by itself stays beside the window the user works in."""
         if id.byte_length() == 0:
             return
+        var asked = self.plugin_asked == k and now_ns() - self.plugin_asked_ns < PANEL_ANSWER_MS * 1000000 and not self.typing(now_ns())
+        var prev = self.top()
         var pi = self.panel_find(k, id)
         if pi < 0:
             self.panels.append(PluginPanel(k, id))
@@ -288,7 +296,9 @@ __extension App:
             self.wins.append(win^)
             self.panels[pi].x = x
             self.panels[pi].w = w
-        else:
+            if not asked and prev >= 0:
+                self.focus(prev)
+        elif asked:
             self.focus(wi)
         self.ppanel_show(pi)
 

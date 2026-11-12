@@ -25,6 +25,7 @@ from app_outline import *
 from app_gitdiff import *
 from app_files import *
 from app_jobs import *
+from app_notify import *
 from agentsvc import allow_key
 
 comptime ERR_NOT_FOUND = -32002
@@ -90,7 +91,10 @@ __extension App:
                 return
             self.chat.note("The agent proposes " + ("changes to " if got[1] else "a new file ") + self.agent_rel(path) + ": A accepts, S accepts its writes for this session, R rejects (in the diff view; Enter in the empty prompt shows it again)")
             if len(self.agent_props) == 1:
-                self.agent_show_proposal()
+                if self.may_take_focus(self.agent_index()):
+                    self.agent_show_proposal()
+                else:
+                    self.notify(NL_WARN, "The agent proposes a change", self.agent_rel(path) + " - " + self.reg.key_label(CM_AGENT) + ", then Enter, to review it")
             return
         if m == "terminal/create":
             var cmd = doc.str(doc.get(0, "command"))
@@ -131,9 +135,8 @@ __extension App:
                 self.agent_ask_answer(True)
                 return
             self.chat.note("The agent wants to run `" + title + "` in " + cwd + ": Y runs it, A always (this session), N refuses")
-            var ai = self.agent_index()
-            if ai >= 0:
-                self.focus(ai)
+            if self.top() != self.agent_index():
+                self.notify(NL_WARN, "The agent asks to run a command", title + " - " + self.reg.key_label(CM_AGENT) + " to answer")
             return
         var tid = doc.str(doc.get(0, "terminalId"))
         var ti = self.agent_term_index(tid)

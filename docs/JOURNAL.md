@@ -4357,3 +4357,41 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   safety is not measured here (P10-06 and later). The new colours were not looked at
   in a real terminal; Turbo Classic's Message-window colours are no longer CGA ones.
 - Gate: scripts/check.sh printed CHECK OK (90 test files, 1096 tests, 718 s).
+
+## 2026-11-12 · P10-05 Calm by default · done
+- What changed: an audit of everything the main loop's background handlers (agent,
+  plugins, language servers, debugger, jobs, file watcher) can open or focus. Found
+  and fixed: the agent asking for permission or to run a command moved the focus to
+  its panel, where Y / A / N answer - a user typing in the editor could allow a
+  command with a stray letter; a proposed change opened the diff view (A accepts) on
+  top in the same way; a panel a plugin opened by itself took the focus; the build's
+  "Compiling" box ("press any key") and the jump to the Message window came over
+  someone who had gone on typing. Now `may_take_focus(owner)`: a background event
+  brings a window up only when the user is already in that window and not typing;
+  otherwise a notice names the key (Ctrl-F11 for the agent). Keys in the agent panel
+  count as typing, sending (Enter) as a pause. A plugin panel comes to the front only
+  as the answer to a command of that plugin run in the last 3 s (PANEL_ANSWER_MS).
+  `waited_for_job()`: the result box and the Message window come only when no key
+  went to an editor since the job began. The debugger failing to start or ending
+  with an error is a notice, no longer a box. Screen-reader mode already implied
+  reduced motion; now tested with reduced_motion = false too. README, user guide and
+  PLUGINS.md say so.
+- Verified: `tests/test_calm.mojo` (6 tests): reader means no animation; info, error
+  and own notices, and a notice held while typing, leave the window in front, the mode
+  and the terminal cursor alone and the next key goes into the editor; who may take
+  the focus; a failed build shows the box (and the Message window behind it) to who
+  waited and leaves the editor in front for who typed; a plugin panel opened by itself
+  stays behind and comes up as an answer; with the scripted agent, a permission ask
+  and a proposal while the editor is in front leave it in front, a notice gives the
+  key, a typed "y" goes into the editor and does not answer, and Enter in the panel
+  shows the proposal. The agent, plugin, debugger, problems and notification tests
+  pass; test_dap expected the debugger's box and now expects the notice.
+- Not done / unverified: still allowed, as answers to the user or decisions: rename
+  and code-action dialogs (they answer a request), the "file changed on disk" question
+  (a decision; it can still come while typing), completion and hover popups (made
+  for typing; whether a hover that arrives late takes a key was not checked). "Modal only for decisions" is not enforced for every info() call
+  made from a key the user pressed (Turbo-style results of their own commands).
+  Focus-in/out terminal events are not used.
+- First gate: test_dap failed - it expected the box for a program that cannot start
+  (not run before the gate); changed to the notice.
+- Gate: scripts/check.sh printed CHECK OK (91 test files, 1102 tests, 348 s).

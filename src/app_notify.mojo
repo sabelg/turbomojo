@@ -36,6 +36,20 @@ __extension App:
     def typing(self, now: Int) -> Bool:
         return self.typed_ns > 0 and now - self.typed_ns < TYPING_PAUSE_MS * 1000000
 
+    def waited_for_job(self) -> Bool:
+        """No key went to an editor since the build or task began: the user is waiting
+        for it, and its result box and the Message window may come up. Someone who went
+        on typing gets the toast only (the box's "press any key" would take a key)."""
+        return self.typed_ns <= self.job.t0
+
+    def may_take_focus(self, owner: Int) -> Bool:
+        """Calm by default: something that happens in the background (the agent asks,
+        a plugin opens a panel) brings a window to the front only when the user already
+        works with `owner` (it is in front) and is not typing; otherwise it is a notice,
+        which says the key to go there. A key meant for one window never lands in
+        another that came up under the fingers (the agent panel's Y allows a command)."""
+        return owner >= 0 and self.top() == owner and not self.typing(now_ns())
+
     def notes_release(mut self, now: Int):
         """A moment to look up: the held toasts come."""
         var got = self.notes.release(now)

@@ -208,7 +208,10 @@ are shown left of the insert / overwrite mark, when no message is on the line.
 
 A panel at the right edge of the desktop; the editors next to it make room. `kind` is
 `list` (default) or `table`; a table has `columns`, its column titles. Opening one
-that is open already brings it to the front (and changes its title and columns).
+that is open already changes its title and columns. A panel comes to the front only as
+the answer to one of the plugin's commands the user ran in the last 3 seconds (and
+not while they type); one a plugin opens on its own, after a save say, stays beside
+the window the user works in.
 
 ```json
 {"jsonrpc": "2.0", "method": "panel/open", "params": {"id": "words", "title": "Most used words", "kind": "table", "columns": ["Word", "Times"]}}

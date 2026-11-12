@@ -165,7 +165,9 @@ checks the imports of its answer against your Mojo.
 - Help > Exercises: small programs that are wrong until you fix them.
 - Help > Cheat sheet, Keyboard reference (**F1** elsewhere), Tutorial, What's new.
 - Notifications that come while you type wait for a pause; **Shift-F10** lists them and
-  what is running.
+  what is running. Nothing that happens in the background takes the keyboard: when the
+  agent asks something while you are in the editor, a notice says so and **Ctrl-F11**
+  goes to it.
 
 ## Settings, themes and keymaps
 

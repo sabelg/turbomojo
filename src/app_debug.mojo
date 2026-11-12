@@ -24,6 +24,7 @@ from dialog import *
 from util import *
 from appstate import *
 from app_lsp import *
+from app_notify import *
 from lsp import *
 from markdown import *
 from app_watch import *
@@ -141,7 +142,8 @@ __extension App:
             self.dbg.set_config("", "setFunctionBreakpoints", self.bps.function_request())
         if not self.dbg.begin(cmd, exe, dirname(source), args, log):
             var why = self.dbg.error
-            self.info("Debug", why)
+            self.notify(NL_ERROR, "The debugger did not start", why, True)
+            self.say("The debugger did not start: " + why)
             return
         self.debug_show("Starting " + basename(exe) + " under the debugger...")
         self.say("Starting the debugger...")
@@ -318,12 +320,12 @@ __extension App:
             footer = "The debugger ended"
         self.debug_show(footer)
         self.say(footer)
-        if failed.byte_length() > 0 and self.mode == M_NORMAL:
+        if failed.byte_length() > 0:
             # what the debugger said last usually explains it
             var tail = String("")
             if len(self.dbg.console) > 0:
                 tail = " - " + String(self.dbg.console[len(self.dbg.console) - 1].strip())
-            self.info("Debug", failed + tail)
+            self.notify(NL_ERROR, "Debugging failed", failed + tail, True)
 
     # ========================================================== breakpoints
     def bp_file(self) -> String:

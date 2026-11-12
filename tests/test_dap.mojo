@@ -564,8 +564,13 @@ def test_debug_explains_what_went_wrong() raises:
     app.debug_launch(d + "/build/nostart", d + "/nostart.mojo")
     settle(app, True)
     assert_false(app.dbg.active())
-    assert_equal(app.mode, M_DIALOG)
-    assert_true(screen(app).find("The program could not be started: no such file: nostart") > 0, screen(app))
+    # a report, not a decision: a notice, no box (P10-05)
+    assert_equal(app.mode, M_NORMAL)
+    var said = False
+    for n in app.notes.notices:
+        if n.text.find("The program could not be started: no such file: nostart") >= 0:
+            said = True
+    assert_true(said, screen(app))
     # no adapter installed: said before anything is built
     var bare = App()
     bare.scr.resize(110, 30)

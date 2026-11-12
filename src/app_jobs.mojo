@@ -386,7 +386,8 @@ __extension App:
             self.notify(NL_DONE if counts[1] == 0 else NL_WARN, "Build succeeded", name + " in " + tstr + ((", " + String(counts[1]) + " warning(s)") if counts[1] > 0 else String("")), True)
         else:
             self.notify(NL_ERROR, "Build failed", name + ": " + String(counts[0]) + " error(s)", True)
-        if self.mode == M_NORMAL:
+        var waited = self.waited_for_job()
+        if self.mode == M_NORMAL and waited:
             var d = Dialog(D_RESULT, "Compiling", 52, 13)
             d.lines.append("Main file:  " + name)
             d.lines.append("Output:     build/" + stem(path))
@@ -405,7 +406,7 @@ __extension App:
             self.say(("Build succeeded" if ok else "Build failed: " + String(counts[0]) + " error(s)") + " in " + tstr)
         if not ok or counts[1] > 0:
             var mi = self.msg_index()
-            if self.mode == M_NORMAL or self.mode == M_DIALOG:
+            if (self.mode == M_NORMAL or self.mode == M_DIALOG) and waited:
                 self.focus(mi)
             mi = self.msg_index()
             if len(self.errs) > 0:
