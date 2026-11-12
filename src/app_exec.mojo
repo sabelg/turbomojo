@@ -581,6 +581,14 @@ __extension App:
             self.theme_id = self.themes.ids[cmd - CM_THEME0]
             self.theme_apply()
             self.say("Theme: " + self.pal.name)
+        elif cmd == CM_HELP_GUIDE:
+            self.help_page("guide.md")
+        elif cmd == CM_HELP_CHEAT:
+            self.help_page("cheatsheet.md")
+        elif cmd == CM_HELP_NEW:
+            self.help_page("whats-new.md")
+        elif cmd == CM_HELP_TUTORIAL:
+            self.tutorial_open()
         elif cmd == CM_NOTICES:
             self.notices_dialog()
         elif cmd == CM_THEME_PICK:

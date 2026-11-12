@@ -12,6 +12,7 @@ from appstate import *
 from util import *
 from dialog import *
 from notify import *
+from helpbook import TURBOMOJO_VERSION
 from acp import AS_STARTING, AS_OPENING
 from lsp import LSP_STARTING
 from app_jobs import *
@@ -122,3 +123,12 @@ __extension App:
         self.notes.unread = 0
         self.notes.dismiss_all()
         self.show(d^)
+
+    def whats_new_check(mut self, seen_file: String):
+        """After an upgrade, once: a notice that Help > What's new tells what changed."""
+        var seen = String(read_text(seen_file).strip())
+        if seen == TURBOMOJO_VERSION:
+            return
+        if seen.byte_length() > 0:
+            self.notify(NL_INFO, "TurboMojo " + TURBOMOJO_VERSION, "What changed: Help > What's new")
+        _ = write_file(seen_file, str_bytes(TURBOMOJO_VERSION + "\n"))

@@ -112,12 +112,24 @@ Status marks: `[ ]` todo · `[x]` done and verified · `[!]` blocked (reason on 
 
 ## Phase 7: UX polish and accessibility (v1.8)
 
+P7-07 to P7-16 come from the research report "Help that keeps users working" (reports/, kept out of git; the user asked for all ten on 2026-11-11).
+
 - [x] P7-01 Themes as TOML files; light and high-contrast themes; follow terminal light/dark (mode 2031)
 - [x] P7-02 Notification toasts and progress centre
-- [ ] P7-03 Help: tutorial file, cheat sheet, searchable help, What's new
+- [x] P7-03 Help: tutorial file, cheat sheet, searchable help, What's new
 - [ ] P7-04 Accessibility: screen-reader (linear) mode, reduced motion
 - [ ] P7-05 Breadcrumbs and sticky scope header; optional minimap
 - [ ] P7-06 Externalised UI strings
+- [ ] P7-07 Calm key echo: "Next time: <key>" on the status line (active keymap) after a command is run from a menu, the palette or the mouse; stops once its key is used; never takes focus
+- [ ] P7-08 Hand-written explanations for the most frequent Mojo diagnostics (what, why, fix, runnable before/after), keyed by message pattern; F1 on a Problems row or the cursor's problem opens one in a split
+- [ ] P7-09 Docs pane beside the code that follows the cursor (Ctrl-F1 and hover results docked, updated on idle; full-screen viewer kept for study)
+- [ ] P7-10 Key-hint boxes after a prefix key (WordStar Ctrl-K / Ctrl-Q, Emacs C-x, chords): the next keys with their command names
+- [ ] P7-11 One search box for code-shaped queries: Alt-F1 takes identifiers, dotted paths and pasted error text; one-line answers in the results; cross-linked with the palette
+- [ ] P7-12 Breakpoint-aware notifications: toasts held while typing, delivered after a save, build or pause; the user's own job first
+- [ ] P7-13 Grounded "Explain" actions into the agent panel (this error, this code): send the diagnostic, code, explanation and local doc excerpts; answers cite the pages; imports checked against the installed stdlib
+- [ ] P7-14 Behaviour-triggered tips instead of random tips: a few rules (e.g. many page presses to a function → Go to symbol), once, at a pause, dismissible for good
+- [ ] P7-15 Interactive tutorial, opt-in: exercise files that fail until fixed (Rustlings style), with error-and-recovery steps; skip by experience; no launch tour
+- [ ] P7-16 "Coming from" pages: Python → Mojo 1.x differences (def, ownership, var; no fn) and key equivalents per keymap; linked from explanations of Python-habit errors
 
 ## Phase 8: Extensibility (v1.9)
 

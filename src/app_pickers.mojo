@@ -316,6 +316,17 @@ __extension App:
     def help_dialog(mut self):
         """Keyboard reference generated from the command registry."""
         var d = Dialog(D_HELP, "Keyboard Reference", min(72, self.scr.w - 4), min(24, self.desk_h()))
+        var items = self.keyboard_lines()
+        var data = List[Int]()
+        for _ in range(len(items)):
+            data.append(0)
+        d.set_items(items^, data^)
+        d.focus = 0
+        d.buttons.append("~O~K")
+        self.show(d^)
+
+    def keyboard_lines(self) -> List[String]:
+        """Every key of the menus' commands (as the keymap has them) and the fixed ones."""
         var items = List[String]()
         for mi in range(1, len(self.reg.menu_titles)):
             var lines = List[String]()
@@ -361,13 +372,7 @@ __extension App:
             "  [■] / [↑]               Close / zoom a window",
         ]:
             items.append(String(l))
-        var data = List[Int]()
-        for _ in range(len(items)):
-            data.append(0)
-        d.set_items(items^, data^)
-        d.focus = 0
-        d.buttons.append("~O~K")
-        self.show(d^)
+        return items^
 
     # ============================================================ completion
     def collect_completions(self, ai: Int, prefix: String) -> List[String]:

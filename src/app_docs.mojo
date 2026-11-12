@@ -23,6 +23,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from helpbook import write_help, HELP_TUTORIAL
 from app_notify import *
 from app_lsp import *
 from lsp import *
@@ -79,12 +80,50 @@ __extension App:
             if why.byte_length() > 0:
                 self.say("Standard library reference: " + why)
         self.doc_lib = DocLibrary()
+        # TurboMojo's own book first (written anew: this version's pages, your keys)
+        if self.help_dir.byte_length() > 0 and write_help(self.help_dir, self.keys_markdown()):
+            self.doc_lib.help_dir = self.help_dir
         self.doc_lib.load(self.doc_home)
         self.doc_loaded = True
         self.doc_index = DocIndex()
         if len(self.doc_open_books) == 0 and len(self.doc_lib.pages) > 0:
             self.doc_open_books.append(self.doc_lib.pages[0].title)
         self.docs_rows()
+
+    def keys_markdown(self) -> String:
+        var md = String("# Keyboard reference\n\nThe keys as your keymap has them (Options > Keys). Help > Keyboard reference (F1) shows the same in a box; Ctrl-P finds any command by name.\n\n```text\n")
+        for l in self.keyboard_lines():
+            md += l + "\n"
+        return md + "```\n"
+
+    def help_page(mut self, file: String):
+        """Help > a page of the TurboMojo book, in the documentation viewer."""
+        self.doc_loaded = False                 # (written anew: the keys may have changed)
+        self.docs_open()
+        var path = self.doc_lib.help_dir + "/" + file
+        if self.doc_lib.help_dir.byte_length() == 0 or not path_exists(path):
+            self.say("The help pages could not be written" + ((" to " + self.help_dir) if self.help_dir.byte_length() > 0 else String("")))
+            return
+        if "TurboMojo" not in self.doc_open_books:
+            self.doc_open_books.append("TurboMojo")
+            self.docs_rows()
+        self.docs_show(path, "", True)
+        self.doc_focus = 1
+
+    def tutorial_open(mut self) raises:
+        """Help > Tutorial: a copy of the tutorial to practise in (a fresh one unless
+        the copy is open already)."""
+        if self.help_dir.byte_length() == 0:
+            self.say("No folder for the tutorial")
+            return
+        var path = dirname(self.help_dir) + "/tutorial/tutorial.mojo"
+        if self.find_editor(path) < 0:
+            _ = run_system("mkdir -p " + shell_quote(dirname(path)))
+            if not write_file(path, str_bytes(HELP_TUTORIAL)):
+                self.say("Could not write " + path)
+                return
+        self.open_path(path)
+        self.say("Your copy of the tutorial: change anything (Help > Tutorial again after closing it makes a fresh one)")
 
     def docs_rows(mut self):
         """The lines of the contents: search results first (if any), then every book,
@@ -131,7 +170,7 @@ __extension App:
         self.doc_width = w
         var md = path_markdown(self.doc_path)
         if self.doc_path.byte_length() == 0 or md.byte_length() == 0:
-            md = doc_welcome(self.doc_home, len(self.doc_lib.pages) > 0)
+            md = doc_welcome(self.doc_home, len(self.doc_lib.pages) > self.doc_lib.help_count)
             if self.doc_path.byte_length() > 0:
                 md = "# Not found\n\nThe file `" + self.doc_path + "` is no longer there. Help > Download documentation fetches it again."
         self.doc_links.clear()

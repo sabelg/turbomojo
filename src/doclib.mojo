@@ -1,6 +1,7 @@
 """The documentation library: the folders `scripts/fetch-docs.sh` downloads, seen as
 books with a table of contents, and their pages cleaned up for the reader (front
 matter, includes, admonitions and web-only markup turned into plain Markdown)."""
+from helpbook import help_pages
 from std.collections import List
 from json import Json, json_parse
 from util import (
@@ -785,10 +786,14 @@ def source_markdown(path: String) -> String:
 struct DocLibrary(Copyable, Movable):
     var home: String
     var pages: List[DocPage]    # every book, one after the other; a book starts with its DK_BOOK line
+    var help_dir: String        # TurboMojo's own help pages ('' for none): the first book
+    var help_count: Int         # how many of `pages` are that book
 
     def __init__(out self):
         self.home = ""
         self.pages = List[DocPage]()
+        self.help_dir = ""
+        self.help_count = 0
 
     def book(mut self, title: String):
         self.pages.append(DocPage(title, "", 0, DK_BOOK))
@@ -1059,6 +1064,16 @@ struct DocLibrary(Copyable, Movable):
         simply missing."""
         self.home = home
         self.pages.clear()
+        self.help_count = 0
+        if self.help_dir.byte_length() > 0 and path_exists(self.help_dir + "/guide.md"):
+            self.book("TurboMojo")
+            var hp = help_pages()
+            var k = 0
+            while k + 1 < len(hp):
+                if path_exists(self.help_dir + "/" + hp[k]):
+                    self.add_page(self.help_dir + "/" + hp[k], 1, hp[k + 1])
+                k += 2
+            self.help_count = len(self.pages)
         var mojo_site = home + "/modular/Mojo/docs/site"
         var mojo_bars = mojo_site + "/docs_root/sidebars.json"
         self.add_sidebar("Mojo Manual", mojo_site, mojo_bars, "manualSidebar")

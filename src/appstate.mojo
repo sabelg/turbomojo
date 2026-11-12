@@ -165,6 +165,7 @@ struct App(Movable):
     var toast_y0: List[Int]
     var toast_y1: List[Int]
     var toast_x: Int
+    var help_dir: String        # where the help pages are written ('' in tests: no help book)
     var hl: Highlighter
     var wins: List[Window]
     var reg: Registry
@@ -547,6 +548,7 @@ struct App(Movable):
         self.toast_y0 = List[Int]()
         self.toast_y1 = List[Int]()
         self.toast_x = 1 << 30
+        self.help_dir = ""
         self.pal = theme(0)
         self.hl = Highlighter()
         self.wins = List[Window]()

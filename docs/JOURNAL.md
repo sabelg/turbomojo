@@ -3619,3 +3619,54 @@ files).
 - Looked at in tmux (truecolor) with scanlines on: the rows alternated #031A08 /
   #021406 (before the user turned them down).
 - Verified: `scripts/check.sh` → `CHECK OK`, 65 test files, 1001 tests, smoke ok.
+
+## 2026-11-11 · P7-03 Help: tutorial file, cheat sheet, searchable help, What's new · done
+
+- `help/` (new): guide.md (how TurboMojo works, in short), cheatsheet.md (the keys used
+  most, Modern keymap), whats-new.md (1.8 back to 1.4), tutorial.mojo (seven lessons as
+  comments and a small program). Every key they name was checked against the
+  registry while writing: three were wrong in the first draft (Find in files is
+  Shift-F3; Alt-- folds one block; Ctrl-Backspace is bound to nothing, so lesson 1
+  uses Shift-Right and Delete).
+- `src/helpbook.mojo`: the four files built in (generated text; a test keeps them equal
+  to help/), the book's pages and titles, `write_help`, TURBOMOJO_VERSION = "1.8".
+- The documentation viewer gets a first book, "TurboMojo" (`DocLibrary.help_dir`,
+  `help_count`): the guide, the cheat sheet, a Keyboard reference page made from the
+  registry each time the viewer loads (so it shows the user's keymap; the dialog and
+  the page share `keyboard_lines`), What's new. They are written to the state folder
+  first, so the finder (/) indexes and searches them like the Mojo pages. The welcome
+  page still says the documentation is not downloaded when only this book is there.
+  The folder is a setting (`App.help_dir`) that only the real program sets, so the
+  viewer's own tests see no extra book and nothing is written outside test folders.
+- Help menu: TurboMojo guide, Cheat sheet, Tutorial, What's new (and Notifications).
+  Tutorial copies the file to the state folder and opens it; a copy that is open (with
+  your changes) is not replaced.
+- What's new: on start, a version different from the one noted last gives one notice
+  "TurboMojo 1.8 - What changed: Help > What's new"; the first start ever gives none.
+- Tests (`tests/test_help.mojo`, 7): the built-in text equals help/; every key in the
+  cheat sheet's table is bound in the default keymap (F10 is the IDE's own menu key;
+  the debugging row's F7/F8 are debug keys, Shift-F8 a command key) - this catches a
+  sheet that drifts from the program; the tutorial program builds and prints what it
+  says; the book comes first and the guide's headings are in the finder's index; the
+  Help commands open the pages, the keyboard page shows the registry's keys, the
+  welcome page without a download; the tutorial copy kept while open; the notice after
+  an upgrade only. test_docs_reader still passes (21).
+- Looked at in tmux: the palette's "Cheat sheet" opens the viewer with the TurboMojo book
+  above the Mojo books and the table drawn as a table.
+- Not done / unverified: the guide is short (no screenshots, no page per feature); the
+  What's new text is written by hand, not from the journal.
+- Verified: `scripts/check.sh` → `CHECK OK`, 66 test files, 1008 tests, smoke ok.
+
+## 2026-11-11 · Research: help that keeps users working; ten new Phase 7 tasks
+
+The user asked for in-depth research on how help can help while one keeps working.
+Four research notes and a report (reports/Help that keeps users working.md, with the
+notes in research_notes/; both kept out of git through .git/info/exclude) found: help
+the user pulls or that waits quietly at the edge works, launch tours and modal tips do
+not; feedback at the moment of use teaches shortcuts (28.9% -> 66-94% in lab studies),
+labels in menus alone do not; error messages are the help users read, and expert
+explanations beat stock messages and GPT-4; most trips out of the editor are quick
+reminders; AI explanations are often wrong (48% correct in one study), more so for
+small-corpus languages. The user asked for all ten of its recommendations as tasks:
+P7-07 to P7-16 (the report's "coming from Python" item said def/fn; the task says
+Mojo 1.x has no fn).
