@@ -4137,3 +4137,21 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   pass is capped at 400 edits per run (undo history); the VT harness checks invariants,
   not the screen against another emulator; the TOML and Markdown parsers are not fuzzed.
 - Gate: scripts/check.sh printed CHECK OK (84 test files, 1076 tests, 712 s).
+
+## 2026-11-12 · P9-02 performance budgets in the gate · done
+- What changed: `scripts/perf.py` (run by `scripts/perf.sh`, which makes the 1M-line
+  file and builds bench/open_bench when needed) measures start-up (launch until the
+  file's first line is in the tmux pane, median of 5), key to frame (a key sent until it
+  is shown, median of 30, minus tmux's own round trip through `cat`), the 1M-line open
+  (open_bench's "open total") and idle CPU over 10 s, each against a budget (400 ms,
+  30 ms, 1000 ms, 100 ms), on a tmux server of its own (-L tmperf) with XDG config,
+  state and cache folders of its own. Results go to build/perf-history.csv. The gate
+  runs it after the smoke test (SKIP_PERF=1 skips it). README has the table.
+- Verified: three runs on this machine: start-up 49 / 46 / 47 ms, key 1.9 / 1.0 /
+  1.7 ms beyond tmux (5.6 / 5.2 / 5.6 ms in all), open 115 / 115 / 123 ms, idle 10 / 0
+  / 0 ms - all well inside; no tmux server or state left behind.
+- Not done / unverified: the budgets are about 8x the measurements so a loaded CI
+  machine does not fail: a small regression passes them, only the history shows it;
+  key-to-frame is measured through tmux, not a real terminal; no CI dashboard (there is
+  no CI here), only the CSV.
+- Gate: scripts/check.sh printed CHECK OK with PERF OK (84 test files, 1076 tests, 725 s; in the gate: start-up 52 ms, key 2.9 ms beyond tmux, open 124 ms, idle 10 ms).

@@ -242,6 +242,20 @@ input is split, JSON that survives a round trip, a buffer that agrees with a sim
 and undoes back to its start, a terminal screen that keeps its size and cursor - and a
 failure prints the seed that replays it.
 
+`scripts/perf.sh` checks the performance budgets, and `pixi run check` runs it at the end
+(`SKIP_PERF=1` leaves it out). Measured on the development machine (aarch64, 20 cores) and
+the budget each must stay under:
+
+| | Measured | Budget |
+|---|---|---|
+| Start-up, until the file is on screen | 46-49 ms | 400 ms |
+| A key until it is on screen, beyond tmux's own round trip (about 4 ms) | 1-2 ms | 30 ms |
+| Opening a 1,000,000-line file | 115-123 ms | 1000 ms |
+| CPU while idle for 10 s | 0-10 ms | 100 ms |
+
+Each run is added to `build/perf-history.csv`. The IDE runs with configuration and state
+folders of its own there, so nothing of yours is read or changed.
+
 `scripts/bench-open.sh` generates a 1,000,000-line file and a 60 MB file under `build/big/` and
 times how long the editor's loader takes to open them (it fails above 1 s for the first).
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Single gate for the roadmap runner and CI: build, run every test file, smoke-test the TUI.
+# Single gate for the roadmap runner and CI: build, run every test file, smoke-test the TUI,
+# check the performance budgets (scripts/perf.sh; SKIP_PERF=1 leaves them out).
 # Ends with "CHECK OK" only if everything passed.
 #
 # The test programs are compiled in parallel (TM_JOBS at a time, default half the CPUs:
@@ -67,6 +68,13 @@ echo "$count test file(s) passed"
 if [ "${SKIP_SMOKE:-0}" != "1" ] && command -v tmux >/dev/null; then
   echo "== smoke"
   scripts/smoke.sh
+fi
+
+# performance budgets (start-up, key to frame, 1M-line open, idle CPU): after the tests,
+# when the machine is quiet again
+if [ "${SKIP_PERF:-0}" != "1" ] && command -v tmux >/dev/null; then
+  echo "== perf"
+  scripts/perf.sh
 fi
 
 echo "CHECK OK"
