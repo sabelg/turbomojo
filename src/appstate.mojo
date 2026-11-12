@@ -174,6 +174,9 @@ struct App(Movable):
     var scopes_stale: Bool      # a long file's scopes wait to be scanned again
     var language: String        # the UI's language (strings file); "en": built in
     var strings_dir: String     # where strings files are ('' in tests: English only)
+    var key_hints: Bool         # ui.key_hints: "Next time: <key>" after a menu or the palette
+    var key_uses: Dict[String, Int]  # how often each command was run by its key
+    var key_uses_path: String   # where those counts are kept ('' in tests)
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
     var reduced_motion_cfg: Int # ui.reduced_motion: -1 auto, 0 off, 1 on
     var hl: Highlighter
@@ -566,6 +569,9 @@ struct App(Movable):
         self.scopes_stale = False
         self.language = "en"
         self.strings_dir = ""
+        self.key_hints = True
+        self.key_uses = Dict[String, Int]()
+        self.key_uses_path = ""
         self.reduce_motion = False
         self.reduced_motion_cfg = -1
         self.pal = theme(0)
@@ -1112,6 +1118,7 @@ struct App(Movable):
         self.theme_light_id = s.theme_light
         self.scanlines_cfg = s.scanlines
         self.breadcrumbs = s.breadcrumbs
+        self.key_hints = s.key_hints
         self.sticky_scroll = s.sticky_scroll
         self.minimap_on = s.minimap
         self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1"

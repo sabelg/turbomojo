@@ -3766,3 +3766,24 @@ Mojo 1.x has no fn).
   language); dialog texts, messages, help pages and the tutorial are English only;
   right-to-left scripts are not handled.
 - Verified: `scripts/check.sh` → `CHECK OK`, 69 test files, 1023 tests, smoke ok.
+
+## 2026-11-11 · P7-07 Calm key echo · done
+
+From the research report's first recommendation (feedback at the moment of use moved
+lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
+- `src/app_keyecho.mojo`: `key_echo(cmd)` after a command run from a menu (Enter or
+  its hot letter), a menu click, the palette, or a click on the status line: "Next
+  time: <key>" in the keymap in use (`key_label` of the rebuilt registry), appended
+  to the command's own status message when it left one ("Saved x   (Next time: F2)").
+  Commands without a key, or only F10, say nothing. `key_used(cmd)` when a command is
+  run by its key or a two-key sequence (also from an open menu); after three uses that
+  command is not echoed again. The counts are kept as "name count" lines in
+  `state/key-uses` (written until they reach three; only the real program keeps them).
+  `ui.key_hints = false` turns it off.
+- Tests (`tests/test_keyecho.mojo`, 5): a menu pick runs the command and names Ctrl-D
+  on the status line, three uses of the key end it; the palette; a command's own
+  message kept; the setting; the hint in the Turbo keymap equals that keymap's key;
+  the counts written, read back by a new app, and a broken file read without harm.
+- Not done / unverified: commands without a key do not suggest binding one; the echo
+  is not measured (the report's local counters) - the counts are the only trace.
+- Verified: scripts/check.sh printed CHECK OK (70 test files, 1028 tests).

@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_keyecho import *
 from app_notify import *
 from app_lsp import *
 from lsp import *
@@ -174,7 +175,9 @@ __extension App:
                 if m.items[it].cmd != CM_NONE:
                     self.mode = M_NORMAL
                     self.macro_note_cmd(m.items[it].cmd)
-                    self.exec(m.items[it].cmd)
+                    var mc = m.items[it].cmd
+                    self.exec(mc)
+                    self.key_echo(mc)
                 return
             if y != 0:
                 self.mode = M_NORMAL
@@ -197,7 +200,9 @@ __extension App:
                         self.open_menu(1)
                     else:
                         self.macro_note_cmd(self.st_cmd[i])
-                        self.exec(self.st_cmd[i])
+                        var sc = self.st_cmd[i]
+                        self.exec(sc)
+                        self.key_echo(sc)
                     return
             return
         # ---- windows

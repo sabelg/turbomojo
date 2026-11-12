@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_keyecho import *
 from app_lsp import *
 from lsp import *
 from app_watch import *
@@ -89,6 +90,7 @@ __extension App:
             self.mode = M_NORMAL
             self.macro_note_cmd(cmd)
             self.exec(cmd)
+            self.key_echo(cmd)
         elif (k & MOD_ALT) != 0:
             var m = self.menu_for_letter(lower(k & KEY_MASK))
             if m >= 0:
@@ -104,12 +106,14 @@ __extension App:
                     self.mode = M_NORMAL
                     self.macro_note_cmd(cmd)
                     self.exec(cmd)
+                    self.key_echo(cmd)
                     return
         else:
             var cmd = self.shortcut(k)
             if cmd != CM_NONE:
                 self.mode = M_NORMAL
                 self.macro_note_cmd(cmd)
+                self.key_used(cmd)
                 self.exec(cmd)
 
     def checked(self) -> List[Int]:

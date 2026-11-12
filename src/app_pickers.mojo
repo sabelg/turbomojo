@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_keyecho import *
 from app_lsp import *
 from lsp import *
 from markdown import *
@@ -243,7 +244,9 @@ __extension App:
             self.say("Nothing in the list matches")
             return
         if mode == QM_COMMANDS:
-            self.exec(self.dlg.item_data[s])
+            var pc = self.dlg.item_data[s]
+            self.exec(pc)
+            self.key_echo(pc)
         elif mode == QM_FILES:
             var k = self.dlg.item_data[s]
             if k < 0 or k >= len(self.quick_files):

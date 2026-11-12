@@ -35,6 +35,7 @@ def main() raises:
         external_call["exit", NoneType](Int32(2))
     app.enable_history()
     app.help_dir = state_dir() + "/help"
+    app.key_uses_load(state_dir() + "/key-uses")
     app.whats_new_check(state_dir() + "/seen-version")
     for i in range(1, len(args)):
         try:

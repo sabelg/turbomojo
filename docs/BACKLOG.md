@@ -120,7 +120,7 @@ P7-07 to P7-16 come from the research report "Help that keeps users working" (re
 - [x] P7-04 Accessibility: screen-reader (linear) mode, reduced motion
 - [x] P7-05 Breadcrumbs and sticky scope header; optional minimap
 - [x] P7-06 Externalised UI strings
-- [ ] P7-07 Calm key echo: "Next time: <key>" on the status line (active keymap) after a command is run from a menu, the palette or the mouse; stops once its key is used; never takes focus
+- [x] P7-07 Calm key echo: "Next time: <key>" on the status line (active keymap) after a command is run from a menu, the palette or the mouse; stops once its key is used; never takes focus
 - [ ] P7-08 Hand-written explanations for the most frequent Mojo diagnostics (what, why, fix, runnable before/after), keyed by message pattern; F1 on a Problems row or the cursor's problem opens one in a split
 - [ ] P7-09 Docs pane beside the code that follows the cursor (Ctrl-F1 and hover results docked, updated on idle; full-screen viewer kept for study)
 - [ ] P7-10 Key-hint boxes after a prefix key (WordStar Ctrl-K / Ctrl-Q, Emacs C-x, chords): the next keys with their command names

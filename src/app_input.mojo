@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_keyecho import *
 from app_agent import *
 from app_problems import *
 from app_lsp import *
@@ -132,6 +133,7 @@ __extension App:
             var ccmd = self.reg.find_chord(first, k)
             if ccmd != CM_NONE:
                 self.say("")
+                self.key_used(ccmd)
                 self.exec(ccmd)
             else:
                 self.say(key_name(first) + " " + key_name(k) + " is not a command")
@@ -145,6 +147,7 @@ __extension App:
             return
         var cmd = self.shortcut(k)
         if cmd != CM_NONE:
+            self.key_used(cmd)
             self.exec(cmd)
             return
         if (k & MOD_ALT) != 0 and (k & (MOD_CTRL | MOD_SHIFT)) == 0:

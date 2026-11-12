@@ -23,6 +23,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from app_keyecho import *
 from app_notify import *
 from app_agent import *
 from app_problems import *
