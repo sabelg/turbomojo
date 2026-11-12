@@ -6,6 +6,7 @@ from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
 from watch import FileSig
 from git import GB_KNOWN
+from outline import OutlineItem
 from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT, line_state, scan_states
@@ -23,6 +24,7 @@ comptime WK_DEBUG = 4        # the call stack and variables of the program being
 comptime WK_CPU = 5          # machine code, registers and memory of the program being debugged
 comptime WK_TERM = 6         # a terminal: a program on a pty (the shell, or the program Run started)
 comptime WK_TESTS = 7        # the test explorer
+comptime MINIMAP_W = 10       # cells of the minimap (2 x 4 braille dots each)
 comptime WK_AGENT = 10       # the conversation with a coding agent (ACP)
 comptime WK_BLAME = 9        # who last changed each line of a file
 comptime WK_DIFF = 8         # a file's changes against git's index (or the index's against HEAD)
@@ -79,6 +81,12 @@ struct Window(Copyable, Movable):
     var ac: Int
     var number: Int
     var git_rows: List[Int]     # explorer: GS_* of each row's file or folder
+    var crumbs: String          # " › Counter › add": where the cursor is, after the title
+    var sticky: List[Int]       # lines pinned at the top: headers of the scopes scrolled away
+    var minimap: Bool           # a minimap column at the right edge
+    var scopes_ver: Int         # buffer version `scope_items` were made for
+    var scopes_ns: Int          # when they were made (long files: at most every half second)
+    var scope_items: List[OutlineItem]  # the file's defs and structs (for crumbs, sticky)
     var wid: Int             # a lasting identity (the tiled layout keeps windows by it); 0 = none yet
     var hidden: Bool         # a tab that is not the one its pane shows: not drawn, not clickable
     var gseq: Int
@@ -137,6 +145,12 @@ struct Window(Copyable, Movable):
         self.ac = 0
         self.number = number
         self.git_rows = List[Int]()
+        self.crumbs = ""
+        self.sticky = List[Int]()
+        self.minimap = False
+        self.scopes_ver = -1
+        self.scopes_ns = 0
+        self.scope_items = List[OutlineItem]()
         self.gseq = 0
         self.cur_group = 0
         self.last_act = ACT_NONE
@@ -181,7 +195,7 @@ struct Window(Copyable, Movable):
         return max(1, self.h - 2)
 
     def cols(self) -> Int:
-        return max(1, self.w - 2 - self.gut)
+        return max(1, self.w - 2 - self.gut - (MINIMAP_W if self.minimap else 0))
 
     def gutter_for(self, line_numbers: Bool) -> Int:
         if not line_numbers or self.kind != WK_EDITOR:
@@ -607,6 +621,11 @@ struct Window(Copyable, Movable):
         self.follow = False
 
     def screen_to_pos(self, px: Int, py: Int) -> Pos:
+        var sy = py - self.y - 1
+        if sy >= 0 and sy < len(self.sticky):
+            # a pinned scope header: its own line
+            var hr = self.sticky[sy]
+            return Pos(hr, self.col_at_vcol(hr, max(0, px - self.x - 1 - self.gut)))
         if self.rowwise():
             var at = self.pos_at_screen_row(max(0, py - self.y - 1))
             var wr = max(0, min(at.r, self.buf.count() - 1))

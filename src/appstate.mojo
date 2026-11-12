@@ -167,6 +167,10 @@ struct App(Movable):
     var toast_x: Int
     var help_dir: String        # where the help pages are written ('' in tests: no help book)
     var reader: Bool            # screen-reader mode: plain drawing, the cursor on what has focus
+    var breadcrumbs: Bool       # editor.breadcrumbs
+    var sticky_scroll: Bool     # editor.sticky_scroll
+    var minimap_on: Bool        # editor.minimap
+    var scopes_stale: Bool      # a long file's scopes wait to be scanned again
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
     var reduced_motion_cfg: Int # ui.reduced_motion: -1 auto, 0 off, 1 on
     var hl: Highlighter
@@ -553,6 +557,10 @@ struct App(Movable):
         self.toast_x = 1 << 30
         self.help_dir = ""
         self.reader = False
+        self.breadcrumbs = True
+        self.sticky_scroll = True
+        self.minimap_on = False
+        self.scopes_stale = False
         self.reduce_motion = False
         self.reduced_motion_cfg = -1
         self.pal = theme(0)
@@ -1048,6 +1056,8 @@ struct App(Movable):
             t = min(t, max(1, (self.act_retry_due - now) // 1000000 + 1))
         if self.git.root.byte_length() > 0:
             t = min(t, 2000)        # look at git's index now and then (see git_tick)
+        if self.scopes_stale:
+            t = min(t, 500)
         var tn = self.notes.next_change_ns(now)
         if tn > 0:
             t = min(t, max(1, (tn - now) // 1000000 + 1))     # a toast is due to go
@@ -1096,6 +1106,9 @@ struct App(Movable):
         self.theme_dark_id = s.theme_dark
         self.theme_light_id = s.theme_light
         self.scanlines_cfg = s.scanlines
+        self.breadcrumbs = s.breadcrumbs
+        self.sticky_scroll = s.sticky_scroll
+        self.minimap_on = s.minimap
         self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1"
         self.reduced_motion_cfg = s.reduced_motion
         self.motion_apply()

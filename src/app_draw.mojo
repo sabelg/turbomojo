@@ -22,6 +22,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from outline import scan_outline, scope_path, breadcrumbs, sticky_rows
 from app_notify import *
 from app_agent import *
 from app_problems import *
@@ -152,10 +153,12 @@ __extension App:
         self.scr.no_clip()
         self.scr.fill(0, 1, self.scr.w, self.scr.h - 2, p.desk_ch, p.desk_fg, p.desk_bg)
         self.git_diff_refresh()
+        self.scopes_stale = False
         var n = len(self.wins)
         for i in range(n):
             if self.wins[i].kind == WK_EDITOR:
                 self.git_marks_update(i)
+                self.scopes_update(i)
             if self.wins[i].kind == WK_AGENT:
                 self.wins[i].title = self.agent_title()     # (before the frame is drawn)
             self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers)
@@ -333,6 +336,30 @@ __extension App:
             self.draw_scanlines()
         if self.reader:
             self.reader_cursor()
+
+    def scopes_update(mut self, i: Int):
+        """Window i's breadcrumbs, pinned scope headers and minimap, as the settings and
+        the cursor have them (the file's scopes are scanned again only after an edit)."""
+        self.wins[i].minimap = self.minimap_on and not self.reader and self.wins[i].w >= 60
+        if (not self.breadcrumbs and not self.sticky_scroll) or self.wins[i].buf.large:
+            self.wins[i].crumbs = ""
+            self.wins[i].sticky.clear()
+            return
+        if self.wins[i].scopes_ver != self.wins[i].buf.version:
+            # a long file (scanning 20,000 lines takes about 30 ms) at most every half second
+            var now = Int(now_ns())
+            if self.wins[i].buf.count() <= 5000 or now - self.wins[i].scopes_ns > 500 * 1000000:
+                self.wins[i].scope_items = scan_outline(self.wins[i].buf)
+                self.wins[i].scopes_ver = self.wins[i].buf.version
+                self.wins[i].scopes_ns = now
+            else:
+                self.scopes_stale = True
+        var items = self.wins[i].scope_items.copy()
+        self.wins[i].crumbs = breadcrumbs(items, scope_path(items, self.wins[i].cr)) if self.breadcrumbs else String("")
+        self.wins[i].sticky.clear()
+        if self.sticky_scroll and not self.wins[i].wrap and len(self.wins[i].buf.folds) == 0:
+            var top = self.wins[i].top
+            self.wins[i].sticky = sticky_rows(items, scope_path(items, top), top, self.wins[i].cr, 3)
 
     def reader_cursor(mut self):
         """Screen-reader mode: the terminal's cursor on what has the focus - the menu

@@ -30,6 +30,9 @@ Example:
     inlay_hints = true          # the language server's notes (inferred types) after the line
     persistent_undo = true      # keep undo history and cursor position between sessions
     auto_pairs = true           # typing ( [ { " ' also inserts the closing one
+    breadcrumbs = true          # the title shows where the cursor is: file › struct › def
+    sticky_scroll = true        # the headers of the scopes scrolled away stay on the top rows
+    minimap = false             # the whole file in braille dots at the right edge
     highlight_word = true       # show the other uses of the word the cursor is on
     trim_trailing_whitespace = false   # on save (.editorconfig overrides)
     rulers = []                 # e.g. [80, 100]: vertical guides after these columns
@@ -143,6 +146,9 @@ struct Settings(Copyable, Movable):
     var semantic_colors: Bool
     var inlay_hints: Bool
     var auto_pairs: Bool
+    var breadcrumbs: Bool
+    var sticky_scroll: Bool
+    var minimap: Bool
     var highlight_word: Bool
     var persistent_undo: Bool
     var trim_trailing: Bool
@@ -183,6 +189,9 @@ struct Settings(Copyable, Movable):
         self.semantic_colors = True
         self.inlay_hints = True
         self.auto_pairs = True
+        self.breadcrumbs = True
+        self.sticky_scroll = True
+        self.minimap = False
         self.highlight_word = True
         self.persistent_undo = True
         self.trim_trailing = False
@@ -233,6 +242,9 @@ struct Settings(Copyable, Movable):
         self.semantic_colors = self.take_bool(doc, "editor.semantic_colors", self.semantic_colors)
         self.inlay_hints = self.take_bool(doc, "editor.inlay_hints", self.inlay_hints)
         self.auto_pairs = self.take_bool(doc, "editor.auto_pairs", self.auto_pairs)
+        self.breadcrumbs = self.take_bool(doc, "editor.breadcrumbs", self.breadcrumbs)
+        self.sticky_scroll = self.take_bool(doc, "editor.sticky_scroll", self.sticky_scroll)
+        self.minimap = self.take_bool(doc, "editor.minimap", self.minimap)
         self.highlight_word = self.take_bool(doc, "editor.highlight_word", self.highlight_word)
         self.persistent_undo = self.take_bool(doc, "editor.persistent_undo", self.persistent_undo)
         self.trim_trailing = self.take_bool(doc, "editor.trim_trailing_whitespace", self.trim_trailing)
@@ -368,7 +380,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

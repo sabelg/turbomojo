@@ -3,7 +3,7 @@ from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
 from screen import Screen
 from palette import Palette
-from highlight import Highlighter, C_TEXT
+from highlight import Highlighter, C_TEXT, C_DEF
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
 from grapheme import cluster_end
 from git import GB_KNOWN, GS_NONE, GS_CONFLICT, GS_DELETED, GS_UNTRACKED, GS_ADDED
@@ -59,7 +59,84 @@ def word_spans(line: List[Int], word: List[Int]) -> List[Int]:
         i += 1
     return out^
 
+def braille(bits: Int) -> Int:
+    """The braille character with these dots (bit 0 = dot 1 ... bit 7 = dot 8)."""
+    return 0x2800 + (bits & 255)
+
+
+def braille_dot(col: Int, row: Int) -> Int:
+    """The bit of the braille dot in column 0-1, row 0-3 of a cell."""
+    if row == 3:
+        return 0x40 if col == 0 else 0x80
+    return (1 << row) if col == 0 else (8 << row)
+
+
 __extension Window:
+    def draw_sticky(self, mut scr: Screen, pal: Palette, cx0: Int, cls: Int):
+        """The headers of the scopes the view is in, pinned on the top rows."""
+        for i in range(len(self.sticky)):
+            var r = self.sticky[i]
+            if r < 0 or r >= self.buf.count() or i >= self.rows() - 1:
+                break
+            var yy = self.y + 1 + i
+            scr.fill(self.x + 1, yy, self.gut + cls, 1, 32, pal.ed_fg, pal.curline_bg)
+            if self.gut > 0:
+                var num = String(r + 1)
+                _ = scr.text(self.x + max(1, self.gut - cp_len(num)), yy, num, pal.gutter_fg, pal.curline_bg)
+            var ln = self.buf.line(r)
+            scr.clip(cx0, yy, cls, 1)
+            var xx = cx0
+            for c in ln:
+                if xx >= cx0 + cls:
+                    break
+                if c == 9:
+                    xx += self.buf.tab_width - (xx - cx0) % self.buf.tab_width
+                    continue
+                xx = scr.draw_cp(xx, yy, c, pal.syn[C_DEF] if not scr.plain else pal.ed_fg, pal.curline_bg)
+            scr.no_clip()
+            if i == len(self.sticky) - 1:
+                # the last pinned line is underlined: the code goes on below it
+                for ux in range(self.x + 1, self.x + 1 + self.gut + cls):
+                    scr.underline(ux, yy, False, pal.frame_inact)
+
+    def draw_minimap(self, mut scr: Screen, pal: Palette, rws: Int):
+        """The whole file at the right edge in braille dots: each dot a few columns of a
+        line that has text; the rows the window shows on a lighter background."""
+        var n = self.buf.count()
+        var x0 = self.x + self.w - 1 - MINIMAP_W
+        var per = max(1, (n + rws * 4 - 1) // (rws * 4))     # lines per dot row
+        var colw = 4                                          # text columns per dot
+        for cy in range(rws):
+            var masks = List[Int]()                          # per dot row: the dot columns with text
+            var first = cy * 4 * per
+            for dy in range(4):
+                var li = (cy * 4 + dy) * per
+                var m = 0
+                if li < n:
+                    var ln = self.buf.line(li)
+                    var col = 0
+                    for c in ln:
+                        if c == 9:
+                            col += self.buf.tab_width - col % self.buf.tab_width
+                            continue
+                        if c != 32:
+                            var d = col // colw
+                            if d < MINIMAP_W * 2:
+                                m |= 1 << d
+                        col += 1
+                        if col >= MINIMAP_W * 2 * colw:
+                            break
+                masks.append(m)
+            var shown = first < self.top + rws and first + 4 * per > self.top
+            var bg = pal.curline_bg if shown else pal.ed_bg
+            for cx in range(MINIMAP_W):
+                var bits = 0
+                for dy in range(4):
+                    for dx in range(2):
+                        if masks[dy] & (1 << (cx * 2 + dx)) != 0:
+                            bits |= braille_dot(dx, dy)
+                scr.put(x0 + cx, self.y + 1 + cy, braille(bits) if bits != 0 else 32, pal.gutter_fg, bg)
+
     # --------------------------------------------------------------- draw
     def draw(
         self, mut scr: Screen, pal: Palette, hl: Highlighter, active: Bool, hl_line: Bool, insert_mode: Bool, show_ws: Bool
@@ -72,7 +149,7 @@ __extension Window:
         scr.fill(self.x, self.y, self.w, self.h, 32, fg, bg)
         scr.frame(self.x, self.y, self.w, self.h, active, ffg, bg)
         # title
-        var t = " " + self.title + (" (large file) " if self.buf.large else " ")
+        var t = " " + self.title + self.crumbs + (" (large file) " if self.buf.large else " ")
         var tl = cp_len(t)
         var tx = self.x + max(1, (self.w - tl) // 2)
         scr.clip(self.x + 1, self.y, self.w - 2, 1)
@@ -337,6 +414,10 @@ __extension Window:
                 r = nr
                 seg = 0
         scr.no_clip()
+        if not is_msg and len(self.sticky) > 0:
+            self.draw_sticky(scr, pal, cx0, cls)
+        if not is_msg and self.minimap and not scr.plain:
+            self.draw_minimap(scr, pal, rws)
 
         # bottom: position + modified marker
         if not is_msg:

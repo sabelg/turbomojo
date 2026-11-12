@@ -187,3 +187,46 @@ def parse_symbols(doc: Json, result: Int) -> List[OutlineItem]:
                 items[b - 1] = tmp^
                 b -= 1
     return items^
+
+
+def scope_path(items: List[OutlineItem], row: Int) -> List[Int]:
+    """The items (indices, outermost first) whose block holds line `row`: an item's block
+    runs from its line to the line before the next item of the same or a lower depth."""
+    var out = List[Int]()
+    for k in range(len(items)):
+        if items[k].row > row:
+            break
+        # where does item k's block end?
+        var end = 1 << 40
+        for j in range(k + 1, len(items)):
+            if items[j].depth <= items[k].depth:
+                end = items[j].row
+                break
+        if row < end:
+            while len(out) > 0 and items[out[len(out) - 1]].depth >= items[k].depth:
+                _ = out.pop()
+            out.append(k)
+    return out^
+
+
+def breadcrumbs(items: List[OutlineItem], path: List[Int]) -> String:
+    """" › Counter › add" for a path (empty for none)."""
+    var s = String("")
+    for k in path:
+        s += " › " + items[k].name
+    return s^
+
+
+def sticky_rows(items: List[OutlineItem], path: List[Int], top: Int, cursor: Int, most: Int) -> List[Int]:
+    """The header lines to pin at the top of the view: those of the scopes the top line
+    is in whose own line has scrolled away (outermost first, at most `most`), and never
+    so many that the cursor's line would be covered."""
+    var out = List[Int]()
+    for k in path:
+        if items[k].row < top + len(out):
+            out.append(items[k].row)
+    while len(out) > most:
+        _ = out.pop(0)
+    while len(out) > 0 and cursor - top < len(out):
+        _ = out.pop(0)
+    return out^

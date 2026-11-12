@@ -3704,3 +3704,36 @@ Mojo 1.x has no fn).
   menus and dialogs are still drawn as boxes of text (blank-framed), not as a linear
   list.
 - Verified: `scripts/check.sh` → `CHECK OK`, 67 test files, 1014 tests, smoke ok.
+
+## 2026-11-11 · P7-05 Breadcrumbs and sticky scope header; optional minimap · done
+
+- `outline.mojo`: `scope_path` (the items whose block holds a line: from an item's line
+  to the next item of the same or a lower depth), `breadcrumbs` (" › Counter › add"),
+  `sticky_rows` (the headers of the scopes the top line is in whose own line scrolled
+  away, at most three, dropped from the outside so the cursor's line is never covered).
+  They work on `scan_outline` (the Outline window's own scanner, no language server).
+- Windows keep their file's scope items per buffer version (`scope_items`); the pass
+  before drawing sets `crumbs` (shown after the title, where the bottom frame has no
+  room: the horizontal scrollbar is there) and `sticky` (drawn over the top rows with
+  the line number, the current-line background, the definition colour and an underline
+  under the last). Clicking a pinned header goes to its line (`screen_to_pos`). Not with
+  soft wrap or folds (rows and lines differ then).
+- Minimap (`editor.minimap`, off by default): 10 cells at the right of the text, each a
+  braille cell of 2 x 4 dots - a dot is 4 columns of a line that has text there; the
+  file is scaled to the window's height; the rows in view on the current-line
+  background. The text area is narrower by 10 (`cols`). Off in screen-reader mode and
+  in windows under 60 columns.
+- Measured: scanning 20,000 lines takes 28 ms, too much for every key; files over 5,000
+  lines are scanned again at most every 500 ms (the loop wakes once more after typing
+  stops so the breadcrumbs catch up).
+- Tests (`tests/test_scopes.mojo`, 3): scopes, breadcrumbs and pinned rows on a source
+  with a struct, methods and main (nesting, blank lines, the cursor rule, the limit);
+  on screen: the title with breadcrumbs, the two pinned headers over the code, a click
+  on one, both settings off; the minimap: braille bits, dots drawn, the narrower text
+  area, not for a screen reader or a narrow window.
+- Looked at in tmux on src/agentchat.mojo at line 130 with the minimap on: title
+  "agentchat.mojo › AgentChat › plan", `struct AgentChat` and `def plan` pinned, the
+  minimap in braille.
+- Not done / unverified: clicking the minimap does not jump; sticky scroll is off with
+  soft wrap and folds.
+- Verified: `scripts/check.sh` → `CHECK OK`, 68 test files, 1017 tests, smoke ok.
