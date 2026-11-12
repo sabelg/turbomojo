@@ -33,6 +33,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_keybox.mojo` | After a prefix key (WordStar's Ctrl-K and Ctrl-Q, Emacs's C-x, any two-key binding): if the second key does not come within a moment, a box above the status line lists the keys that may follow, with their commands. |
 | `src/app_keyecho.mojo` | The calm key echo (P7-07): after a command is run from a menu, the command palette or a click, the status line says which key does it - "Next time: Ctrl-K B" - in the keymap in use. |
 | `src/app_layout.mojo` | The tiled layout in the application: panes with tabs that share the screen. |
+| `src/app_links.mojo` | Hyperlinks (OSC 8) on the file:line references the IDE shows: every row of the Message window's pages (Message, Search, Problems) and of the agent panel. |
 | `src/app_lsp.mojo` | Language server integration in the IDE (first slice: live diagnostics for one file). |
 | `src/app_lspextra.mojo` | Language servers for other languages, by configuration ([lsp.<name>] in the config file: command, extensions, language). |
 | `src/app_menus.mojo` | Menu bar navigation. |
@@ -82,6 +83,7 @@ struct of `appstate.mojo`, one area each.
 | `src/json.mojo` | JSON reader and writer (RFC 8259). |
 | `src/layout.mojo` | The tiled layout: a tree of splits whose leaves are tab groups. |
 | `src/linediff.mojo` | Line diff: which lines of an old text became which lines of a new one. |
+| `src/links.mojo` | Hyperlinks on file:line references (OSC 8). |
 | `src/lsp.mojo` | Language Server Protocol client (first slice: lifecycle, document sync, diagnostics). |
 | `src/lspextra.mojo` | Language servers for other languages ([lsp.<name>] in the config file): what one is, and making the list from the settings (src/app_lspextra.mojo does the rest). |
 | `src/main.mojo` | TurboMojo - a Turbo C++ style TUI IDE for Mojo, written in Mojo. |

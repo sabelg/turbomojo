@@ -4425,3 +4425,35 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   already shows; a screen reader is not told when ten seconds pass. Not looked at
   in a real terminal.
 - Gate: scripts/check.sh printed CHECK OK (92 test files, 1106 tests, 806 s).
+
+## 2026-11-12 · P10-07 OSC 8 links on file:line · done
+- What changed: the renderer keeps a hyperlink per cell (`Screen.link`, ids interned
+  so unchanged cells are not sent again; the pool starts over past 4,096 with a full
+  redraw) and sends OSC 8 only where links begin and end, closing any open one at
+  the end of the frame; a cell drawn over loses its link. `src/links.mojo` finds
+  `path:line[:column]` in a row (a path needs a dot or a slash, so times, ports and
+  "note: 3" are not references; a trailing full stop is not part of the path) and
+  makes the URI from `ui.hyperlink_format` ({host} {path} {line} {column}, as
+  ripgrep's --hyperlink-format; default `file://{host}{path}`, the path
+  percent-encoded). `src/app_links.mojo`: after the Message window and the agent
+  panel are drawn, rows the page knows the place of (App.errs: build errors, search
+  hits, problems) link to it, on the reference as shown or else the whole row; other
+  references link when the file exists (absolute, ~/, or under the folder, the
+  project, the messages' base). `ui.hyperlinks = false` sends none; a format without
+  {path} is a warning. README and the user guide say how to follow one.
+- Verified: `tests/test_links.mojo` (6 tests): references and non-references (a
+  time, a port, `note: 3`, no colon, non-ASCII paths) with their spans; the URI and
+  its encoding, the host name; the OSC 8 bytes around the linked text, nothing sent
+  for an unchanged frame, the text sent again without its link, nothing when
+  switched off; the Message window with a build error (linked to its place, the
+  message after it not), a note naming an existing file (linked) and a missing one
+  (not), the vscode format with line and column, switched off; the agent panel with
+  an existing and a missing file; the settings.
+- Not done / unverified: not followed in a real terminal (tmux capture does not
+  show links; kitty, WezTerm, iTerm2, GNOME Terminal and foot document OSC 8, tmux
+  passes it on from 3.4 with `terminal-features hyperlinks`); the default file://
+  link opens the file, not the line - the line needs an editor's format; editors
+  (their own text), the docs pane and terminals are not scanned; a reference broken
+  over two rows is not found; a file is checked with stat each frame for every
+  visible reference that is not a known place.
+- Gate: scripts/check.sh printed CHECK OK (93 test files, 1112 tests, 776 s).

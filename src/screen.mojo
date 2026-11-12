@@ -1,12 +1,13 @@
 """Double-buffered cell screen with truecolor diff rendering."""
 from palette import ANSI_BASE, COLOR_DEFAULT
-from std.collections import List
+from std.collections import List, Dict
 from util import decode, encode_cp, append_str, append_int, char_width
 from caps import COLOR_16, COLOR_256, COLOR_TRUE, rgb_to_256, rgb_to_16, sgr_16
 
 comptime CONT = -5  # a further cell of a character wider than one cell
 comptime XBASE = 0x1000000  # cmb values from here on are indexes into Screen.xseq
 comptime XSEQ_MAX = 2048
+comptime LINK_MAX = 4096  # links interned before the pool starts over
 
 
 comptime BOLD_BIT = 1 << 30        # in a cell's underline word: the character is bold
@@ -29,6 +30,11 @@ struct Screen(Movable):
     var pcmb: List[Int]
     var ul: List[Int]           # underline per cell: 0 none, else (kind << 24) | colour; kind 1 straight, 3 curly
     var pul: List[Int]
+    var lk: List[Int]           # hyperlink per cell (OSC 8): 0 none, else an index + 1 into links
+    var plk: List[Int]
+    var links: List[String]     # the links' URIs, interned so a cell's id stays the same
+    var link_ids: Dict[String, Int]
+    var hyperlinks: Bool        # send them (ui.hyperlinks; a terminal without OSC 8 ignores it)
     var styled_ul: Bool         # the terminal draws curly and coloured underlines
     var xseq: List[List[Int]]   # pool of multi-codepoint cell extras (see intern)
     var clustered: Bool         # terminal draws grapheme clusters as one glyph (mode 2027)
@@ -58,6 +64,11 @@ struct Screen(Movable):
         self.pcmb = List[Int]()
         self.ul = List[Int]()
         self.pul = List[Int]()
+        self.lk = List[Int]()
+        self.plk = List[Int]()
+        self.links = List[String]()
+        self.link_ids = Dict[String, Int]()
+        self.hyperlinks = True
         self.styled_ul = False
         self.xseq = List[List[Int]]()
         self.clustered = False
@@ -89,6 +100,8 @@ struct Screen(Movable):
         self.pcmb = List[Int](length=n, fill=0)
         self.ul = List[Int](length=n, fill=0)
         self.pul = List[Int](length=n, fill=0)
+        self.lk = List[Int](length=n, fill=0)
+        self.plk = List[Int](length=n, fill=0)
         self.force = True
         self.no_clip()
 
@@ -167,6 +180,7 @@ struct Screen(Movable):
             self.ch[k + j] = CONT if j > 0 else c
             self.cmb[k + j] = 0
             self.ul[k + j] = 0
+            self.lk[k + j] = 0
             self.fg[k + j] = fg
             self.bg[k + j] = bg
         self.cmb[k] = xid
@@ -255,6 +269,24 @@ struct Screen(Movable):
     def ul_at(self, x: Int, y: Int) -> Int:
         """0 = not underlined, else UL_* (1 straight, 3 curly, 4 dotted, 5 dashed)."""
         return (self.ul[self.head_of(y * self.w + x)] >> 24) & 7
+
+    def link(mut self, x: Int, y: Int, n: Int, uri: String):
+        """Make `n` cells from (x, y) a hyperlink to `uri` (drawn as OSC 8)."""
+        if uri.byte_length() == 0 or y < 0 or y >= self.h:
+            return
+        var id = self.link_ids.get(uri, 0)
+        if id == 0:
+            self.links.append(uri)
+            id = len(self.links)
+            self.link_ids[uri] = id
+        for j in range(n):
+            var xx = x + j
+            if xx >= 0 and xx < self.w:
+                self.lk[y * self.w + xx] = id
+
+    def link_at(self, x: Int, y: Int) -> String:
+        var id = self.lk[y * self.w + x]
+        return self.links[id - 1] if id > 0 else String("")
 
     def bold(mut self, x: Int, y: Int, n: Int = 1):
         """Make the `n` characters already drawn from (x, y) bold (drawing a character
@@ -400,6 +432,7 @@ struct Screen(Movable):
         var lastfg = -1
         var lastbg = -1
         var lastul = 0          # every frame ends with underlining switched off
+        var lastlk = 0          # and outside any hyperlink
         var px = -1
         var py = -1
         for y in range(self.h):
@@ -410,10 +443,12 @@ struct Screen(Movable):
                     self.pch[k] = CONT
                     self.pfg[k] = self.fg[k]
                     self.pbg[k] = self.bg[k]
+                    self.plk[k] = self.lk[k]
                     continue
                 if (
                     not self.force and self.ch[k] == self.pch[k] and self.cmb[k] == self.pcmb[k]
                     and self.fg[k] == self.pfg[k] and self.bg[k] == self.pbg[k] and self.ul[k] == self.pul[k]
+                    and self.lk[k] == self.plk[k]
                 ):
                     continue
                 if py != y or px != x:
@@ -450,6 +485,14 @@ struct Screen(Movable):
                     else:
                         append_str(out, "\x1b[4m")
                     lastul = u
+                var l = self.lk[k] if self.hyperlinks else 0
+                if l != lastlk:
+                    # OSC 8: the cells written from here on open this link (or none)
+                    append_str(out, "\x1b]8;;")
+                    if l > 0:
+                        append_str(out, self.links[l - 1])
+                    append_str(out, "\x1b\\")
+                    lastlk = l
                 var c = self.ch[k]
                 if c < 32:
                     c = 32
@@ -468,9 +511,12 @@ struct Screen(Movable):
                 py = y
                 self.pcmb[k] = self.cmb[k]
                 self.pul[k] = u
+                self.plk[k] = self.lk[k]
                 self.pch[k] = self.ch[k]
                 self.pfg[k] = f
                 self.pbg[k] = b
+        if lastlk != 0:
+            append_str(out, "\x1b]8;;\x1b\\")
         if (lastul & ~BOLD_BIT) != 0:
             append_str(out, "\x1b[24m")
         if (lastul & BOLD_BIT) != 0:
@@ -483,6 +529,14 @@ struct Screen(Movable):
                 if self.cmb[k] >= XBASE:
                     self.cmb[k] = 0
                     self.pcmb[k] = 0
+            self.force = True
+        if len(self.links) > LINK_MAX:
+            # the same for links: ids start over, everything is drawn again
+            self.links.clear()
+            self.link_ids = Dict[String, Int]()
+            for k in range(len(self.lk)):
+                self.lk[k] = 0
+                self.plk[k] = 0
             self.force = True
         if self.cvis:
             append_str(out, "\x1b[")

@@ -25,6 +25,7 @@ from appstate import *
 from outline import scan_outline, scope_path, breadcrumbs, sticky_rows
 from app_notify import *
 from app_progress import *
+from app_links import *
 from app_agent import *
 from app_problems import *
 from app_lsp import *
@@ -191,8 +192,10 @@ __extension App:
                 self.term_draw(i)
             if self.wins[i].kind == WK_AGENT:
                 self.agent_draw(i, i == n - 1)
+                self.link_rows(i)               # file:line as hyperlinks (OSC 8)
             if self.wins[i].kind == WK_MESSAGE:
                 self.draw_pages(i, i == n - 1)
+                self.link_rows(i)
             if self.tiled and self.wins[i].kind == WK_EDITOR:
                 self.draw_tabs(i, i == n - 1)
                 continue                        # panes lie side by side: no shadow

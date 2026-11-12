@@ -210,6 +210,8 @@ struct App(Movable):
     var chord: Int             # first key of a two-key binding, waiting for the second
     var chord_since: Int       # when that key was pressed
     var typed_ns: Int          # the last key the editor had (toasts that come while typing wait)
+    var link_format: String    # ui.hyperlink_format
+    var link_host: String      # this machine's name, for file:// links
     var plugin_asked: Int      # the plugin whose command the user ran last, and when (its panel
     var plugin_asked_ns: Int   # may come to the front as the answer)
     var chord_box: Bool        # the box of the keys that may follow is shown
@@ -618,6 +620,8 @@ struct App(Movable):
         self.chord_since = 0
         self.typed_ns = 0
         self.plugin_asked = -1
+        self.link_format = "file://{host}{path}"
+        self.link_host = ""
         self.plugin_asked_ns = 0
         self.chord_box = False
         self.key_uses = Dict[String, Int]()
@@ -1204,6 +1208,8 @@ struct App(Movable):
         self.auto_indent = s.auto_indent
         self.hl_line = s.highlight_line
         self.show_clock = s.clock
+        self.scr.hyperlinks = s.hyperlinks
+        self.link_format = s.hyperlink_format
         self.run_in_terminal = s.run_in_terminal
         self.show_ws = s.show_whitespace
         self.soft_wrap = s.soft_wrap

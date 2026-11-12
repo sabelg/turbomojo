@@ -25,6 +25,8 @@ Example:
     clock = true
     run_in_terminal = true      # Run shows the program in a terminal window; false: on the user screen
     show_whitespace = false
+    hyperlinks = true           # file:line in the Message window and the agent panel as links (OSC 8)
+    hyperlink_format = "file://{host}{path}"   # or e.g. "vscode://file{path}:{line}:{column}"
 
     [editor]
     auto_indent = true
@@ -159,6 +161,8 @@ struct Settings(Copyable, Movable):
     var auto_indent: Bool
     var highlight_line: Bool
     var clock: Bool
+    var hyperlinks: Bool        # ui.hyperlinks
+    var hyperlink_format: String    # ui.hyperlink_format: {host} {path} {line} {column}
     var run_in_terminal: Bool
     var show_whitespace: Bool
     var soft_wrap: Bool
@@ -211,6 +215,8 @@ struct Settings(Copyable, Movable):
         self.auto_indent = True
         self.highlight_line = True
         self.clock = True
+        self.hyperlinks = True
+        self.hyperlink_format = "file://{host}{path}"
         self.run_in_terminal = True
         self.show_whitespace = False
         self.soft_wrap = False
@@ -264,6 +270,11 @@ struct Settings(Copyable, Movable):
         self.line_numbers = self.take_bool(doc, "ui.line_numbers", self.line_numbers)
         self.highlight_line = self.take_bool(doc, "ui.highlight_line", self.highlight_line)
         self.clock = self.take_bool(doc, "ui.clock", self.clock)
+        self.hyperlinks = self.take_bool(doc, "ui.hyperlinks", self.hyperlinks)
+        self.hyperlink_format = doc.get_str("ui.hyperlink_format", self.hyperlink_format)
+        if self.hyperlink_format.find("{path}") < 0:
+            self.warnings.append("ui.hyperlink_format must contain {path}")
+            self.hyperlink_format = "file://{host}{path}"
         self.run_in_terminal = self.take_bool(doc, "ui.run_in_terminal", self.run_in_terminal)
         self.show_whitespace = self.take_bool(doc, "ui.show_whitespace", self.show_whitespace)
         self.soft_wrap = self.take_bool(doc, "editor.soft_wrap", self.soft_wrap)
@@ -451,7 +462,7 @@ struct Settings(Copyable, Movable):
                 self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):
