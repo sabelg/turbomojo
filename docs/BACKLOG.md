@@ -146,3 +146,31 @@ P7-07 to P7-16 come from the research report "Help that keeps users working" (re
 - [x] P9-04 Packaging recipe (conda `recipe.yaml`), install instructions, version flag
 - [x] P9-05 User guide, keymap reference, changelog; README refreshed to match reality
 - [x] P9-06 Soak script (scripted editing for a long run) and leak check; final full `scripts/check.sh` pass
+
+## Phase 10: UI clarity and calm (v2.1)
+
+From reports/TurboMojo UI improvements.md (the recommendation each task comes from in
+brackets; where TurboMojo already did part of it, only the rest is a task).
+
+- [ ] P10-01 Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1]
+- [ ] P10-02 Never colour-only diagnostics: E/W/i glyphs in the gutter and the Problems page, and undercurl with an SGR 58 colour where the terminal supports it (probed), else a plain underline [2]
+- [ ] P10-03 A "Terminal ANSI" theme using only the 16 palette colours and the default foreground/background, and honour NO_COLOR [3]
+- [ ] P10-04 Contrast gate for every theme and token in the tests (WCAG ratio floor plus APCA Lc 75 code / 60 secondary / 30 disabled), extending the Paper Light / High Contrast test; fix what fails [4]
+- [ ] P10-05 Calm by default: screen-reader mode implies reduced motion; a test that toasts and background events never take focus or move the hardware cursor; modal dialogs only for decisions [5, 13]
+- [ ] P10-06 Response-time ladder for build, run, tests and the agent: nothing under 1 s, a status-line spinner 1-10 s, beyond 10 s what is done so far and the cancel key in the Compiling box [6]
+- [ ] P10-07 OSC 8 links on every file:line in the Message, Search and Problems pages and agent output [7]
+- [ ] P10-08 Show the exact toolchain command at the top of each Message page run [8]
+- [ ] P10-09 Key-hint boxes after ~200 ms (now 600), never over the cursor, with on/off state for toggles [9]
+- [ ] P10-10 Probe hardening: ask CSI ? 996 n for the colour scheme, OSC 11 luminance fallback, DECRQSS truecolor and XTGETTCAP Smulx/Setulc, no DCS under GNU screen, trust tmux's answers, drain late replies, always pop kitty keyboard flags and close synchronized output on error paths [10]
+- [ ] P10-11 Glyph tiers `glyphs = ascii | unicode | nerd` (default unicode) and a half-block fallback for the braille minimap; no emoji or ambiguous-width characters in the chrome [11]
+- [ ] P10-12 text-muted and text-disabled colours used consistently in menus, the palette and the status line; dim the UI while the terminal loses focus (mode 1004) [12]
+- [ ] P10-13 Counts and filters in titles: Problems "(3 E, 7 W)", the explorer's filter, the palette's "12/340" [14]
+- [ ] P10-14 Screen-reader mode as a true linear mode: labelled lines (error:, build:, agent:), numbered menus and dialogs, typed y/n, the bell when a build or the agent finishes, OSC 133 marks; turned on by TERM=dumb or an environment variable [A]
+- [ ] P10-15 Cursor discipline in the full UI: the hardware cursor always on the focused caret or row; status, minimap, spinner and toast updates never leave it elsewhere; unchanged cells never rewritten [B]
+- [ ] P10-16 Responsive layout: stacking on narrow terminals, one-key zoom of the focused pane (normal/half/full), minimap, breadcrumbs and gutter hidden below widths, a "terminal too small" screen [C]
+- [ ] P10-17 Navigation memory: most-recent ordering in the palette and F6, per-tab cursor, scroll and fold state that survives pane moves and restarts (back/forward exists: Alt-, Alt-.) [D]
+- [ ] P10-18 Semantic colour roles under all themes (surface, panel, text, text-muted, text-disabled, border, border-blurred, cursor, cursor-blurred, diag-error, diag-warn) with designed truecolor, 256 and 16 values; an Okabe-Ito colour-blind theme with its own contrast test [E]
+- [ ] P10-19 A restrained syntax palette (4-6 token classes, errors, search hits and the current line most salient) as the default's alternative, richer colouring stays a theme option [F]
+- [ ] P10-20 Theme follows the terminal live (2031 / 996 / OSC 11) and a muted low-saturation Turbo variant; the first run asks, with a preview [G]
+- [ ] P10-21 Grapheme-width discipline: mode 2027 where reported, else the width table plus a cursor-position measurement for doubtful glyphs; Unicode-safe hot letters [H]
+- [ ] P10-22 Inline images in the docs pane (kitty graphics with Unicode placeholders under tmux, sixel), with a text fallback [I]
