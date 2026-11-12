@@ -51,6 +51,7 @@ comptime D_PANEL_FILTER = 42    # the text the Problems or Message page's lines 
 comptime D_THEME = 43           # Options > Colour theme
 comptime D_NOTICES = 44         # Help > Notifications
 comptime D_EXERCISES = 45       # Help > Exercises
+comptime D_EX_FILTER = 46       # the explorer's filter (/ in the explorer)
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1
@@ -90,6 +91,7 @@ struct Dialog(Copyable, Movable):
     var boost: List[Int]     # if given (one per item): added to the score of items that match
     var muted_col: Int       # items: the text from this column on is secondary (muted); -1 none
     var off: List[Bool]      # if given (one per item): the item can do nothing now (disabled colour)
+    var show_count: Bool     # the title says how many items the typing leaves: "Go to 12/340"
     var use_pat: Bool        # the pattern is `pat` (set by the owner), not the whole field
     var pat: String
     var list_sel: Int
@@ -135,6 +137,7 @@ struct Dialog(Copyable, Movable):
         self.boost = List[Int]()
         self.muted_col = -1
         self.off = List[Bool]()
+        self.show_count = False
         self.use_pat = False
         self.pat = ""
         self.list_sel = 0
@@ -307,6 +310,8 @@ struct Dialog(Copyable, Movable):
         scr.put(x + 3, y, 0x25A0, pal.icon_fg, bg)
         _ = scr.text(x + 4, y, "]", pal.dlg_frame, bg)
         var t = " " + self.title + " "
+        if self.show_count and self.has_list:
+            t = " " + self.title + "  " + String(len(self.shown)) + "/" + String(len(self.items)) + " "
         _ = scr.text(x + max(5, (w - cp_len(t)) // 2), y, t, pal.dlg_title, bg)
         var cur_x = -1
         var cur_y = -1

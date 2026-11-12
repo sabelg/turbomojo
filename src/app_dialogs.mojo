@@ -252,6 +252,8 @@ __extension App:
             var sel = self.dlg.selected_item()
             if sel >= 0:
                 self.theme_chosen(self.dlg.item_data[sel])
+        elif kind == D_EX_FILTER and b == 0:
+            self.explorer_filter(String(self.dlg.field_text(0).strip()))
         elif kind == D_PANEL_FILTER and b == 0:
             self.panel_filter_set(String(self.dlg.field_text(0).strip()))
         elif kind == D_GIT_COMMIT and b == 0:

@@ -164,7 +164,7 @@ brackets; where TurboMojo already did part of it, only the rest is a task).
 - [x] P10-10 Probe hardening: ask CSI ? 996 n for the colour scheme, OSC 11 luminance fallback, DECRQSS truecolor and XTGETTCAP Smulx/Setulc, no DCS under GNU screen, trust tmux's answers, drain late replies, always pop kitty keyboard flags and close synchronized output on error paths [10]
 - [x] P10-11 Glyph tiers `glyphs = ascii | unicode | nerd` (default unicode) and a half-block fallback for the braille minimap; no emoji or ambiguous-width characters in the chrome [11]
 - [x] P10-12 text-muted and text-disabled colours used consistently in menus, the palette and the status line; dim the UI while the terminal loses focus (mode 1004) [12]
-- [ ] P10-13 Counts and filters in titles: Problems "(3 E, 7 W)", the explorer's filter, the palette's "12/340" [14]
+- [x] P10-13 Counts and filters in titles: Problems "(3 E, 7 W)", the explorer's filter, the palette's "12/340" [14]
 - [ ] P10-14 Screen-reader mode as a true linear mode: labelled lines (error:, build:, agent:), numbered menus and dialogs, typed y/n, the bell when a build or the agent finishes, OSC 133 marks; turned on by TERM=dumb or an environment variable [A]
 - [ ] P10-15 Cursor discipline in the full UI: the hardware cursor always on the focused caret or row; status, minimap, spinner and toast updates never leave it elsewhere; unchanged cells never rewritten [B]
 - [ ] P10-16 Responsive layout: stacking on narrow terminals, one-key zoom of the focused pane (normal/half/full), minimap, breadcrumbs and gutter hidden below widths, a "terminal too small" screen [C]

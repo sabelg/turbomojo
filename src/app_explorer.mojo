@@ -120,9 +120,9 @@ __extension App:
             for c in decode(line):
                 text.append(c)
         self.wins[xi].git_rows = codes^
-        self.wins[xi].title = "Files" if self.git.branch.byte_length() == 0 else "Files (" + self.git.branch + ")"
+        self.wins[xi].title = explorer_title(self.git.branch, self.ex.filter, len(self.ex.rows), self.ex.hidden_rows)
         if len(self.ex.rows) == 0:
-            text = decode("(no files)")
+            text = decode("(no files)" if self.ex.filter.byte_length() == 0 else "(no names contain \"" + self.ex.filter + "\" - C shows all)")
         if text == self.wins[xi].buf.all_text():
             return
         var keep = self.wins[xi].cr
@@ -212,6 +212,18 @@ __extension App:
             self.explorer_refresh(self.ex.rows[row].path if has else String(""))
             self.say("Hidden and ignored files are " + ("shown" if self.ex.show_all else "left out"))
             return True
+        if k == 47:                             # "/": show only names containing ...
+            var d = Dialog(D_EX_FILTER, "Filter files", min(60, self.scr.w - 4), 9)
+            d.lines.append("Show the names containing (any case; empty: all):")
+            d.fields.append(Field("~T~ext", self.ex.filter))
+            d.fields[0].fresh = True
+            d.buttons.append("~O~K")
+            d.buttons.append("Cancel")
+            self.show(d^)
+            return True
+        if (k == 99 or k == 67) and self.ex.filter.byte_length() > 0:      # "c": all again
+            self.explorer_filter("")
+            return True
         if k == 117 or k == 85:                 # "u": read the folders again
             self.explorer_refresh(self.ex.rows[row].path if has else String(""))
             return True
@@ -262,6 +274,17 @@ __extension App:
             self.show(d^)
             return True
         return k < K_BASE and k >= 32           # other letters are not typed into the list
+
+    def explorer_filter(mut self, text: String):
+        """Show only the files and folders whose name contains `text` ('' all)."""
+        var t = self.top()
+        var keep = String("")
+        if t >= 0 and self.wins[t].kind == WK_EXPLORER and self.wins[t].cr < len(self.ex.rows):
+            keep = self.ex.rows[self.wins[t].cr].path
+        self.ex.filter = text
+        self.explorer_refresh(keep)
+        if text.byte_length() > 0:
+            self.say(String(len(self.ex.rows)) + " shown, " + String(self.ex.hidden_rows) + " left out - C shows all")
 
     def explorer_rel(self, path: String) -> String:
         """A path as shown to the user: from the project folder."""
@@ -350,3 +373,11 @@ __extension App:
                 still += 1
         self.explorer_refresh("")
         self.say("Moved " + basename(path) + " to the trash" + (" - still open here, Save writes it back" if still > 0 else ""))
+
+
+def explorer_title(branch: String, filter: String, shown: Int, hidden: Int) -> String:
+    """The explorer's title: "Files (main)"; with a filter its count first, then the
+    filter - "2/9 /test" - so a narrow panel still shows the count."""
+    if filter.byte_length() > 0:
+        return String(shown) + "/" + String(shown + hidden) + " /" + filter
+    return String("Files") if branch.byte_length() == 0 else "Files (" + branch + ")"

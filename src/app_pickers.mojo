@@ -200,6 +200,7 @@ __extension App:
         self.dlg.set_items(items^, data^)
         self.dlg.muted_col = mcol
         self.dlg.off = off^
+        self.dlg.show_count = mode != QM_LINE
 
     def quick_refresh(mut self):
         """After every key in the palette: see what the field asks for now."""

@@ -403,7 +403,7 @@ def test_explorer_shows_git_status() raises:
     for r in range(app.wins[xi].buf.count()):
         assert_equal(app.wins[xi].git_rows[r], GS_NONE)
     var screen = to_str(app.scr.to_text())
-    assert_true(screen.find("Files (work)") > 0)
+    assert_true(screen.find("Files (work)") > 0, screen)
     _ = run_system("rm -rf " + shell_quote(d))
 
 

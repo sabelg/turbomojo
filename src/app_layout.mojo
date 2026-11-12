@@ -345,12 +345,17 @@ __extension App:
         var fg = p.msg_frame if active else p.frame_inact
         var bg = p.msg_bg
         var y = self.wins[i].y
-        var names = ["Message", "Search", "Problems"]
+        var names = [String("Message"), String("Search"), problems_tab(self.prob_counts[0], self.prob_counts[1], self.prob_counts[2])]
+        var x0 = self.wins[i].x + 6
+        var x1 = self.wins[i].x + self.wins[i].w - 6
         var total = 0
         for nm in names:
             total += cp_len(nm) + 3
-        var x0 = self.wins[i].x + 6
-        var x1 = self.wins[i].x + self.wins[i].w - 6
+        if x1 - x0 < total:
+            names[2] = "Problems"               # (narrow: the counts give way first)
+            total = 0
+            for nm in names:
+                total += cp_len(nm) + 3
         if x1 - x0 < total:
             return                              # too narrow: the plain title stays
         for x in range(x0, x1):

@@ -1,5 +1,6 @@
 """The file explorer's model: the project folder as a tree of which only the opened
 folders are listed, and the file operations (create, rename, move, delete to trash)."""
+from util import lower_str, str_contains
 from glyphs import nerd_file_icon
 from std.collections import List
 from std.os import listdir
@@ -29,6 +30,8 @@ struct ExplorerTree(Movable):
     var show_all: Bool              # also what .gitignore and the dot rule hide (never .git)
     var rules: FileSearch           # used for its ignore rules
     var cut: Bool                   # more rows than EX_MAX_ROWS: the list was cut
+    var filter: String              # only names containing this (any case), with their folders
+    var hidden_rows: Int            # rows the filter left out
 
     def __init__(out self):
         self.root = ""
@@ -37,6 +40,8 @@ struct ExplorerTree(Movable):
         self.show_all = False
         self.rules = FileSearch()
         self.cut = False
+        self.filter = ""
+        self.hidden_rows = 0
 
     def set_root(mut self, root: String):
         self.root = root
@@ -102,6 +107,48 @@ struct ExplorerTree(Movable):
             if is_dir(o):
                 kept.append(o)
         self.opened = kept^
+        self.apply_filter()
+
+    def apply_filter(mut self):
+        """Keep the rows whose name contains the filter, and the folders above them
+        (a folder whose name matches keeps its listed content too)."""
+        self.hidden_rows = 0
+        if self.filter.byte_length() == 0:
+            return
+        var f = lower_str(self.filter)
+        var n = len(self.rows)
+        var keep = List[Bool](length=n, fill=False)
+        var below = List[Bool]()            # by depth: a kept row under the folder being closed
+        for _ in range(66):
+            below.append(False)
+        # a matching folder keeps what is listed inside it: mark those first
+        var inside = -1                     # depth of the matching folder we are in (-1 none)
+        for k in range(n):
+            var d = self.rows[k].depth
+            if inside >= 0 and d <= inside:
+                inside = -1
+            if inside >= 0:
+                keep[k] = True
+            elif str_contains(lower_str(self.rows[k].name), f):
+                keep[k] = True
+                if self.rows[k].dir:
+                    inside = d
+        # folders with something kept below them, from the bottom up
+        var k = n - 1
+        while k >= 0:
+            var d = min(self.rows[k].depth, 64)
+            if self.rows[k].dir and below[d + 1]:
+                keep[k] = True
+            below[d + 1] = False
+            if keep[k]:
+                below[d] = True
+            k -= 1
+        var out = List[ExRow]()
+        for j in range(n):
+            if keep[j]:
+                out.append(self.rows[j].copy())
+        self.hidden_rows = n - len(out)
+        self.rows = out^
 
     def toggle(mut self, k: Int):
         """Open or close the folder on row k."""

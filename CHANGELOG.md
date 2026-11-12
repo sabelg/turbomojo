@@ -4,7 +4,7 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.1: UI clarity and calm (in progress: 10 tasks to go)
+## 2.1: UI clarity and calm (in progress: 9 tasks to go)
 
 - Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1] (P10-01)
 - Never colour-only diagnostics: E/W/i glyphs in the gutter and the Problems page, and undercurl with an SGR 58 colour where the terminal supports it (probed), else a plain underline [2] (P10-02)
@@ -18,6 +18,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - Probe hardening: ask CSI ? 996 n for the colour scheme, OSC 11 luminance fallback, DECRQSS truecolor and XTGETTCAP Smulx/Setulc, no DCS under GNU screen, trust tmux's answers, drain late replies, always pop kitty keyboard flags and close synchronized output on error paths [10] (P10-10)
 - Glyph tiers `glyphs = ascii | unicode | nerd` (default unicode) and a half-block fallback for the braille minimap; no emoji or ambiguous-width characters in the chrome [11] (P10-11)
 - text-muted and text-disabled colours used consistently in menus, the palette and the status line; dim the UI while the terminal loses focus (mode 1004) [12] (P10-12)
+- Counts and filters in titles: Problems "(3 E, 7 W)", the explorer's filter, the palette's "12/340" [14] (P10-13)
 
 ## 2.0: Release engineering - 2026-11-12
 

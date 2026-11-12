@@ -309,6 +309,7 @@ struct App(Movable):
     var blame_rows: List[BlameLine]
     var prob_build: List[Problem]   # the last build's errors and warnings (Problems page)
     var prob_filter: ProblemFilter  # what the Problems page shows
+    var prob_counts: Tuple[Int, Int, Int]   # errors, warnings, shown - for the page's tab
     var out_filter: String          # the Message page shows only lines with this
     var out_filtered: Bool
     var out_full: List[String]      # the Message page's lines before filtering
@@ -735,6 +736,7 @@ struct App(Movable):
         self.blame_rows = List[BlameLine]()
         self.prob_build = List[Problem]()
         self.prob_filter = ProblemFilter()
+        self.prob_counts = (0, 0, -1)          # (-1: the filter hides none)
         self.out_filter = ""
         self.out_filtered = False
         self.out_full = List[String]()

@@ -5,7 +5,7 @@ from buffer import TextBuffer, Pos, TAB_WIDTH
 from screen import Screen, UL_CURLY, UL_DASHED, UL_DOTTED
 from palette import Palette, mix
 from highlight import Highlighter, C_TEXT, C_DEF
-from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
+from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width, slice_str
 from grapheme import cluster_end
 from git import GB_KNOWN, GS_NONE, GS_CONFLICT, GS_DELETED, GS_UNTRACKED, GS_ADDED
 from linediff import LM_NONE, LM_ADDED, LM_CHANGED, LM_DELETED_ABOVE
@@ -163,6 +163,22 @@ __extension Window:
         var t = " " + self.title + self.crumbs + (" (large file) " if self.buf.large else " ")
         var tl = cp_len(t)
         var tx = self.x + max(1, (self.w - tl) // 2)
+        if self.w > 12:
+            # keep clear of the close icon and "[■]" on the left, the number and the
+            # zoom icon on the right: a longer title is cut short
+            var lo = self.x + (5 if active else 1)
+            var hi = self.x + self.w - (7 if self.number > 0 and self.number < 10 else (5 if active else 1))
+            if tx < lo or tx + tl > hi:
+                var room = hi - lo
+                if tl > room and tl - 2 <= room:
+                    var bare = String(t[byte=1:t.byte_length() - 1])     # without its padding it fits
+                    t = bare
+                    tl -= 2
+                if tl > room and room > 3:
+                    var tc = decode(t)
+                    t = slice_str(tc, 0, room - 2) + "… "
+                    tl = cp_len(t)
+                tx = max(lo, min(tx, hi - tl))
         scr.clip(self.x + 1, self.y, self.w - 2, 1)
         var tend = scr.text(tx, self.y, t, pal.title_fg if active else ffg, bg)
         if active:

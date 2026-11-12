@@ -253,7 +253,7 @@ __extension App:
             items.append("~F1~ Help")
             cmds.append(CM_HELP)
             if t >= 0 and self.wins[t].kind == WK_EXPLORER:
-                for h in ["~Enter~ Open", "~N~ New file", "~F~ Folder", "~R~ Rename", "~M~ Move", "~Del~ Trash"]:
+                for h in ["~Enter~ Open", "~/~ Filter", "~N~ New file", "~F~ Folder", "~R~ Rename", "~M~ Move", "~Del~ Trash"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_CPU:

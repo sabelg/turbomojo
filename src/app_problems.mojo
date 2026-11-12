@@ -97,6 +97,7 @@ __extension App:
             lines.append(v.rows[r])
         var total = v.errors + v.warnings + v.infos
         var hidden = total - v.shown
+        self.prob_counts = (v.errors, v.warnings, v.shown if hidden > 0 else -1)
         var footer = String("No problems found")
         if v.shown > 0:
             footer = String(v.shown) + " problem(s)" + (" in " + String(v.files) + " files" if v.files > 1 else "")
@@ -230,3 +231,20 @@ __extension App:
         self.wins[mi].cr = 0
         self.wins[mi].top = 0
         self.wins[mi].follow = True
+
+
+def problems_tab(errors: Int, warnings: Int, shown: Int) -> String:
+    """The Problems page's tab: "Problems (3 E, 7 W)", "; 4 shown" when the filter
+    hides some (`shown` -1: it hides none)."""
+    var parts = List[String]()
+    if errors > 0:
+        parts.append(String(errors) + " E")
+    if warnings > 0:
+        parts.append(String(warnings) + " W")
+    var t = String("Problems")
+    if len(parts) > 0 or shown >= 0:
+        t += " (" + ", ".join(parts)
+        if shown >= 0:
+            t += ("; " if len(parts) > 0 else "") + String(shown) + " shown"
+        t += ")"
+    return t

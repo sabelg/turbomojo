@@ -4608,3 +4608,36 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   not check that before; the dim is decorative and not measured; dialogs other than
   the palette have no muted text.
 - Gate: scripts/check.sh printed CHECK OK (97 test files, 1133 tests, 827 s).
+
+## 2026-11-12 · P10-13 Counts and filters in titles · done
+- What changed: the Problems tab is `problems_tab(errors, warnings, shown)` -
+  "Problems (3 E, 7 W)", "; 4 shown" while the filter hides some (App.prob_counts,
+  set by problems_show); in a panel too narrow for it the counts give way before the
+  tabs do. The explorer gets a filter (it had none): `/` asks for a text (D_EX_FILTER),
+  `ExplorerTree.apply_filter` keeps the names containing it in any case, the folders
+  above them and what is listed inside a matching folder, `C` shows all; the title
+  is then the count first and the filter, "2/9 /test" (count first so a 30-column
+  panel still shows it); with nothing left the list says so. The palette's title
+  reads "Go to  12/340" (Dialog.show_count; not for a line number). Found on the way:
+  a window title longer than the room between the frame's icons ran under the
+  window number and the zoom icon - it now keeps clear of what the frame draws
+  (the icons on the active window, the number if it has one), first losing its two
+  padding blanks and only then being cut with "…". The first gate run failed in
+  test_git: the room was reserved for a number and icons the window did not show,
+  so a 24-column explorer cut "Files (work)"; reserved only for what is drawn now.
+  The second failed in test_panel: App.prob_counts started at (0, 0, 0), so before
+  any problems came the tab read "Problems (0 shown)" and the tabs moved once the
+  page was made; it starts at (0, 0, -1) now, and test_title_counts checks it.
+  The explorer's status hints gain "/ Filter"; README updated.
+- Verified: tests/test_title_counts.mojo (5 tests): the tab and title texts; a
+  build's error and warning give "Problems (1 E, 1 W)" on screen, E hides the error
+  and the tab says "1 shown", C brings it back, a narrow panel drops the counts; the
+  explorer filter through its keys and dialog - a file under an open folder kept with
+  the folder, a folder's name keeping its content, case ignored, nothing matching,
+  C - and its title on screen; a long title cut and the window number still drawn
+  with frame before it; the palette count before and after typing, none for ":".
+  Mutants without the title cut, the tab counts or the filter each fail.
+- Not done / unverified: the filter only looks at what is listed - files in closed
+  folders are not searched (Ctrl-P is for that); the filter is not kept between
+  sessions; the Message page's filter is not shown in its tab.
+- Gate: scripts/check.sh printed CHECK OK (98 test files, 1138 tests, 837 s).
