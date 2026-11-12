@@ -12,7 +12,7 @@ from util import SIGHUP, SIGINT, SIGTERM, SIGCONT, SIGTSTP, SIGWINCH
 
 comptime SIGNAL_EVENT_FD = 250      # fixed descriptor the handler writes to
 comptime EFD_FLAGS = 0x80800        # EFD_NONBLOCK | EFD_CLOEXEC
-comptime O_CLOEXEC = 0x80000
+from platform import dup_cloexec, HAVE_EVENTFD
 
 
 def signal_slot(sig: Int) -> Int:
@@ -42,7 +42,8 @@ def managed_signals() -> List[Int]:
 def on_signal_c(sig: Int32):
     """The C-level handler: record the signal in the eventfd and return."""
     var slot = signal_slot(Int(sig))
-    _ = external_call["eventfd_write", Int32](Int32(SIGNAL_EVENT_FD), UInt64(1) << UInt64(8 * slot))
+    comptime if HAVE_EVENTFD:
+        _ = external_call["eventfd_write", Int32](Int32(SIGNAL_EVENT_FD), UInt64(1) << UInt64(8 * slot))
 
 
 struct SignalFd(Copyable, Movable):
@@ -62,10 +63,12 @@ struct SignalFd(Copyable, Movable):
         # refuse to clobber a descriptor that is already in use
         if Int(external_call["fcntl", Int32](Int32(SIGNAL_EVENT_FD), Int32(1), Int32(0))) != -1:
             return False
+        comptime if not HAVE_EVENTFD:
+            return False                    # (no eventfd: the loop polls the terminal size instead)
         var e = external_call["eventfd", Int32](UInt32(0), Int32(EFD_FLAGS))
         if Int(e) < 0:
             return False
-        var d = external_call["dup3", Int32](e, Int32(SIGNAL_EVENT_FD), Int32(O_CLOEXEC))
+        var d = dup_cloexec(e, SIGNAL_EVENT_FD)
         _ = external_call["close", Int32](e)
         if Int(d) != SIGNAL_EVENT_FD:
             return False
@@ -80,8 +83,9 @@ struct SignalFd(Copyable, Movable):
         if self.fd < 0:
             return out^
         var v = List[UInt64](length=1, fill=0)
-        if Int(external_call["eventfd_read", Int32](Int32(self.fd), v.unsafe_ptr())) != 0:
-            return out^
+        comptime if HAVE_EVENTFD:
+            if Int(external_call["eventfd_read", Int32](Int32(self.fd), v.unsafe_ptr())) != 0:
+                return out^
         for s in managed_signals():
             if (v[0] >> UInt64(8 * signal_slot(s))) & UInt64(255) != 0:
                 out.append(s)

@@ -5,6 +5,7 @@ here: the shell that popen starts redirects its stdin from that pipe's read end,
 parent keeps the write end. Output is read through popen's stream. Both ends are
 non-blocking: reads return what is there, and writes go through a queue that is flushed as
 the child accepts data, so a busy or dead child can never stall the IDE."""
+from platform import make_nonblocking
 from std.ffi import external_call
 from std.collections import List
 from util import popen_read, shell_quote, str_bytes, bytes_to_str, SIGTERM
@@ -22,8 +23,7 @@ def ignore_sigpipe():
 
 
 def set_nonblocking(fd: Int):
-    var fl = external_call["fcntl", Int32](Int32(fd), Int32(3), Int32(0))
-    _ = external_call["fcntl", Int32](Int32(fd), Int32(4), fl | Int32(2048))
+    make_nonblocking(fd)
 
 
 struct Proc(Copyable, Movable):

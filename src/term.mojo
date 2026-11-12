@@ -1,4 +1,5 @@
 """Raw terminal I/O: termios, window size, key + SGR mouse + bracketed paste parsing."""
+from platform import raw_termios, TIOCGWINSZ, TCSAFLUSH
 from std.ffi import external_call
 from std.collections import List
 from std.time import perf_counter_ns
@@ -150,22 +151,12 @@ struct Terminal(Movable):
     def raw(mut self):
         if Int(external_call["tcgetattr", Int32](Int32(0), self.saved.unsafe_ptr())) == 0:
             self.have_saved = True
-        var t = self.saved.copy()
-        # iflag: BRKINT | ICRNL | INPCK | ISTRIP | IXON
-        set_u32(t, 0, get_u32(t, 0) & ~(0x2 | 0x100 | 0x10 | 0x20 | 0x400))
-        # oflag: OPOST
-        set_u32(t, 4, get_u32(t, 4) & ~0x1)
-        # cflag: CS8
-        set_u32(t, 8, get_u32(t, 8) | 0x30)
-        # lflag: ECHO | ICANON | IEXTEN | ISIG
-        set_u32(t, 12, get_u32(t, 12) & ~(0x8 | 0x2 | 0x8000 | 0x1))
-        t[17 + 6] = 0  # VMIN
-        t[17 + 5] = 0  # VTIME: reads never block; the event loop waits in poll()
-        _ = external_call["tcsetattr", Int32](Int32(0), Int32(2), t.unsafe_ptr())
+        var t = raw_termios(self.saved)   # (the layout and flags of this system: platform.mojo)
+        _ = external_call["tcsetattr", Int32](Int32(0), Int32(TCSAFLUSH), t.unsafe_ptr())
 
     def cooked(mut self):
         if self.have_saved:
-            _ = external_call["tcsetattr", Int32](Int32(0), Int32(2), self.saved.unsafe_ptr())
+            _ = external_call["tcsetattr", Int32](Int32(0), Int32(TCSAFLUSH), self.saved.unsafe_ptr())
 
     def enter(mut self):
         self.raw()
@@ -247,7 +238,7 @@ struct Terminal(Movable):
 
     def size(self) -> Tuple[Int, Int]:
         var ws = List[UInt16](length=4, fill=0)
-        var r = external_call["ioctl", Int32](Int32(1), UInt64(0x5413), ws.unsafe_ptr())
+        var r = external_call["ioctl", Int32](Int32(1), UInt64(TIOCGWINSZ), ws.unsafe_ptr())
         if Int(r) != 0 or Int(ws[1]) == 0:
             return (80, 25)
         return (Int(ws[1]), Int(ws[0]))

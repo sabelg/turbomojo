@@ -21,7 +21,7 @@ from std.sys.info import CompilationTarget
 
 comptime VT_REPLY_FD = 978          # the write end of the replies pipe
 comptime VT_REPLY_READ_FD = 979     # its read end
-comptime O_CLOEXEC = 0x80000
+from platform import dup_cloexec, make_nonblocking
 
 comptime VF_BOLD = 1
 comptime VF_ITALIC = 2
@@ -74,13 +74,12 @@ def vt_replies_open() -> Bool:
     var fds = List[Int32](length=2, fill=0)
     if Int(external_call["pipe", Int32](fds.unsafe_ptr())) != 0:
         return False
-    _ = external_call["dup3", Int32](fds[1], Int32(VT_REPLY_FD), Int32(O_CLOEXEC))
-    _ = external_call["dup3", Int32](fds[0], Int32(VT_REPLY_READ_FD), Int32(O_CLOEXEC))
+    _ = dup_cloexec(fds[1], VT_REPLY_FD)
+    _ = dup_cloexec(fds[0], VT_REPLY_READ_FD)
     _ = external_call["close", Int32](fds[0])
     _ = external_call["close", Int32](fds[1])
     for fd in [VT_REPLY_FD, VT_REPLY_READ_FD]:
-        var fl = external_call["fcntl", Int32](Int32(fd), Int32(3), Int32(0))
-        _ = external_call["fcntl", Int32](Int32(fd), Int32(4), fl | Int32(2048))
+        make_nonblocking(fd)
     return True
 
 

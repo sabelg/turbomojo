@@ -13,6 +13,7 @@ guard installs a handler for the fatal signals that
 The handler cannot use any program state, so everything it needs lives behind fixed file
 descriptors: a memory page (memfd) with the saved termios and signal actions, the log, and
 a copy of the original stderr. It performs only system calls and allocates nothing."""
+from platform import dup_cloexec, HAVE_MEMFD
 from std.ffi import external_call
 from std.collections import List
 from util import run_system, shell_quote, dirname, str_bytes
@@ -97,7 +98,7 @@ def move_fd(fd: Int32, target: Int) -> Bool:
     """Move a descriptor to a fixed number (close-on-exec) and close the original."""
     if Int(fd) < 0:
         return False
-    var d = external_call["dup3", Int32](fd, Int32(target), Int32(0x80000))
+    var d = dup_cloexec(fd, target)
     _ = external_call["close", Int32](fd)
     return Int(d) == target
 
@@ -122,6 +123,8 @@ struct CrashGuard(Copyable, Movable):
         if fd_in_use(CRASH_PAGE_FD) or fd_in_use(CRASH_LOG_FD) or fd_in_use(SAVED_STDERR_FD):
             return False
         _ = run_system("mkdir -p " + shell_quote(dirname(log_path)))
+        comptime if not HAVE_MEMFD:
+            return False                    # (no memfd: no crash page; the terminal is not restored on a crash)
         var name = String("turbomojo-crash")
         if not move_fd(external_call["memfd_create", Int32](name.as_c_string_span(), UInt32(1)), CRASH_PAGE_FD):
             return False

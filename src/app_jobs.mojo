@@ -1,4 +1,5 @@
 """Compiler integration: background build/format jobs, messages, run."""
+from platform import make_nonblocking
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
@@ -146,7 +147,7 @@ __extension App:
             return False
         var fd = Int(external_call["fileno", Int32](fp))
         var fl = external_call["fcntl", Int32](Int32(fd), Int32(3), Int32(0))
-        _ = external_call["fcntl", Int32](Int32(fd), Int32(4), fl | Int32(2048))  # O_NONBLOCK
+        make_nonblocking(fd)
         self.job.active = True
         self.job.kind = kind
         self.job.fp = fp

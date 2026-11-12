@@ -23,7 +23,7 @@ pixi run build                         # -> build/tmide
 pixi run ./build/tmide examples/hello.mojo
 ```
 
-Requirements: Linux with glibc 2.34 or newer. pixi fetches everything else: the Mojo toolchain and, from conda-forge, `libghostty-vt` (Ghostty's terminal emulator core, MIT licence), which the build links in statically for the integrated terminal - the built program does not need it at run time.
+Requirements: Linux with glibc 2.34 or newer. pixi fetches everything else: the Mojo toolchain and, from conda-forge, `libghostty-vt` (Ghostty's terminal emulator core, MIT licence), which the build links in statically for the integrated terminal - the built program does not need it at run time. macOS: the system-dependent parts are selected at compile time (`src/platform.mojo`) and the whole IDE compiles for `arm64-apple-macosx`, but it has never been linked or run on a Mac, and the project's pixi environments are Linux only, so macOS is not supported yet.
 
 `pixi run` puts the Mojo toolchain on `PATH`. The IDE also works when started directly, as long
 as `mojo` is on `PATH`: it then works out the toolchain's environment (`MODULAR_HOME`) itself.

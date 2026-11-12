@@ -1,4 +1,5 @@
 """Small helpers: UTF-8 codecs, byte buffers, processes and the filesystem."""
+import platform
 from std.ffi import external_call
 from std.collections import List
 
@@ -378,13 +379,13 @@ struct CmdResult(Movable):
 
 
 # ------------------------------------------------------------------ signals
-comptime SIGHUP = 1
-comptime SIGINT = 2
-comptime SIGTERM = 15
-comptime SIGCONT = 18
-comptime SIGSTOP = 19
-comptime SIGTSTP = 20
-comptime SIGWINCH = 28
+comptime SIGHUP = platform.SIGHUP          # (the numbers differ between systems: platform.mojo)
+comptime SIGINT = platform.SIGINT
+comptime SIGTERM = platform.SIGTERM
+comptime SIGCONT = platform.SIGCONT
+comptime SIGSTOP = platform.SIGSTOP
+comptime SIGTSTP = platform.SIGTSTP
+comptime SIGWINCH = platform.SIGWINCH
 
 
 def popen_read(cmd: String) -> Int:

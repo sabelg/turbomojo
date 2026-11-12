@@ -5,6 +5,7 @@ same on every Linux architecture. `Watcher` wraps inotify: it watches the direct
 open files and becomes readable when something in them changes. The watcher is only a
 wake-up call; what actually changed is decided by comparing signatures, so the logic also
 works by plain periodic checking when inotify is unavailable."""
+from platform import stat_size_mtime, HAVE_INOTIFY
 from std.ffi import external_call
 from std.collections import List
 
@@ -53,16 +54,13 @@ def file_sig(path: String) -> FileSig:
     var sig = FileSig()
     if path.byte_length() == 0:
         return sig^
-    var p = String(path)
-    var buf = List[UInt8](length=256, fill=0)
-    # statx(AT_FDCWD, path, flags=0, mask, &buf)
-    var r = external_call["statx", Int32](Int32(-100), p.as_c_string_span(), Int32(0), UInt32(STATX_WANT), buf.unsafe_ptr())
-    if Int(r) != 0:
+    var st = stat_size_mtime(path)          # (statx on Linux, stat on macOS: platform.mojo)
+    if not st[0]:
         return sig^
     sig.exists = True
-    sig.size = u64_at(buf, 40)
-    sig.mtime_s = u64_at(buf, 112)
-    sig.mtime_ns = u32_at(buf, 120)
+    sig.size = st[1]
+    sig.mtime_s = st[2]
+    sig.mtime_ns = st[3]
     return sig^
 
 
@@ -80,6 +78,8 @@ struct Watcher(Copyable, Movable):
     def open(mut self) -> Bool:
         if self.fd >= 0:
             return True
+        comptime if not HAVE_INOTIFY:
+            return False                    # (files are then checked by size and time now and then)
         self.fd = Int(external_call["inotify_init1", Int32](Int32(IN_FLAGS)))
         if self.fd < 0:
             self.fd = -1
@@ -99,6 +99,8 @@ struct Watcher(Copyable, Movable):
             self.dirs.append(dir)
             return False
         var d = String(dir)
+        comptime if not HAVE_INOTIFY:
+            return False
         var wd = external_call["inotify_add_watch", Int32](Int32(self.fd), d.as_c_string_span(), UInt32(IN_MASK))
         if Int(wd) < 0:
             return False

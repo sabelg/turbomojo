@@ -4155,3 +4155,36 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   key-to-frame is measured through tmux, not a real terminal; no CI dashboard (there is
   no CI here), only the CSV.
 - Gate: scripts/check.sh printed CHECK OK with PERF OK (84 test files, 1076 tests, 725 s; in the gate: start-up 52 ms, key 2.9 ms beyond tmux, open 124 ms, idle 10 ms).
+
+## 2026-11-12 · P9-03 macOS portability layer · done (macOS side unverified)
+- What changed: `src/platform.mojo` holds everything that differs between Linux and
+  macOS, selected at compile time (`CompilationTarget.is_macos()`, `comptime if`): open
+  and fcntl flags (O_NONBLOCK, O_NOCTTY, O_CLOEXEC), TIOCGWINSZ / TIOCSWINSZ, signal
+  numbers (SIGSTOP, SIGTSTP, SIGCONT, SIGCHLD differ), EAGAIN, the layout of struct
+  termios (60 bytes with 32-bit flags vs 72 with 64-bit; c_cc offset and the VMIN /
+  VTIME indexes) and the flag bits (ICANON, ISIG, IEXTEN, IXON, CS8 differ), with
+  `raw_termios` building raw mode from them; and helpers: dup_cloexec (dup3, or dup2 +
+  FD_CLOEXEC), make_nonblocking, stat_size_mtime (statx, or stat with Darwin's layout).
+  Every hard-coded number in term, util, proc, pty, app_jobs, vt, crash, watch and
+  signals now comes from it. Linux-only facilities are guarded: without eventfd the
+  loop polls the window size (the existing fallback), without inotify files are
+  checked by size and time (existing), without memfd the crash handler is not
+  installed.
+- Verified on Linux: `tests/test_platform.mojo` (3 tests): all 37 constants equal the
+  system's own (from its C headers, read through Python's termios / os / fcntl /
+  signal / errno); raw_termios read and written through tcgetattr / tcsetattr on a real
+  pseudo-terminal at our offsets gives exactly raw mode (echo, line editing, signals,
+  CR mapping, flow control and output processing off, CS8 on, VMIN = VTIME = 0, read
+  back by Python); stat_size_mtime works. The whole IDE compiles for
+  arm64-apple-macosx14.0 (`mojo build --target-triple ... --emit object`), and the
+  object references no Linux-only function - that check found an unguarded
+  inotify_add_watch, now guarded.
+- Not verified (would need a Mac): linking (libghostty-vt has no osx package in this
+  project; pixi.toml lists Linux platforms only); every macOS value (taken from
+  Darwin's headers as I know them: sys/termios.h, sys/ttycom.h, fcntl.h, signal.h,
+  errno.h); struct stat offsets (st_mtimespec at 48, st_size at 96); whether a pty
+  child gets its controlling terminal (macOS may need ioctl TIOCSCTTY after setsid);
+  ptsname_r (macOS 10.13.4 and later); the sigaction-based SIG_IGN / SIG_DFL resets
+  (portable in principle: the handler is the first field on both); terminal and
+  keyboard behaviour in macOS terminals. On macOS no crash handler is installed.
+- Gate: scripts/check.sh printed CHECK OK with PERF OK (85 test files, 1079 tests, 684 s).

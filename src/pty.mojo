@@ -16,13 +16,8 @@ from std.ffi import external_call
 from std.collections import List
 from util import bytes_to_str
 
-comptime O_RDWR = 2
-comptime O_NOCTTY = 0x100
-comptime TIOCSWINSZ = 0x5414     # Linux
+from platform import O_RDWR, O_NOCTTY, TIOCSWINSZ, SIGHUP, SIGKILL, SIGPIPE, make_nonblocking
 comptime WNOHANG = 1
-comptime SIGHUP = 1
-comptime SIGKILL = 9
-comptime SIGPIPE = 13
 
 
 def c_string(s: String) -> List[UInt8]:
@@ -134,7 +129,7 @@ struct Pty(Copyable, Movable):
             self.master = -1
             return False
         var fl = external_call["fcntl", Int32](Int32(m), Int32(3), Int32(0))
-        _ = external_call["fcntl", Int32](Int32(m), Int32(4), fl | Int32(2048))     # O_NONBLOCK
+        make_nonblocking(m)
         self.pid = pid
         self.running = True
         self.eof = False
