@@ -35,3 +35,6 @@ canary = "TM_ENV=nightly scripts/check.sh"
 
 [dependencies]
 libghostty-vt = ">=1.0.0,<2"
+# a language server for Python (`ruff server`): what tests/test_lsp_extra.mojo checks the
+# configurable language servers with, and one to use for Python files
+ruff = ">=0.5"

@@ -4072,3 +4072,29 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
 - Not done / unverified: one panel slot at the right edge (two panels overlap there);
   no mouse selection message; cells are plain text (no per-cell style).
 - Gate: scripts/check.sh printed CHECK OK (81 test files, 1066 tests, 657 s).
+
+## 2026-11-12 · P8-03 language servers for other languages by configuration · done
+- What changed: `[lsp.<name>]` tables (command, extensions, language - the languageId,
+  default the name) read into Settings with warnings for missing or unknown fields; a
+  project file overrides the user's. `src/lspextra.mojo`: ExtraServer (its own
+  LspClient, with a `language_id` field the client now uses in didOpen instead of a
+  fixed "mojo") and configure_servers (running ones still configured alike keep
+  running). `src/app_lspextra.mojo`: F7 on a file whose ending a server claims starts
+  or stops that server (F7 is trust-gated, so a project file cannot run a command in
+  an untrusted folder); it follows the open files of its kind (whole-text changes after
+  the usual pause), its diagnostics become underlines and Problems rows, a crash is
+  notified; Describe symbol (Alt-I) is routed to it (hover_srv tells whose answer is
+  whose). The loop wakes on its pipe; the status line shows LSP; it is stopped at exit.
+  `ruff` (conda-forge) added to the project's dependencies as the real non-Mojo server.
+- Verified: `tests/test_lsp_extra.mojo` (2 tests): the settings (default language, the
+  project winning, a server without extensions and a misspelt field reported); with
+  the real `ruff server` 0.17.4: F7 on x.py starts it and not the Mojo server, the
+  unused `os` import comes back as a Problems row and an underline on line 1, LSP on
+  the status line, an edit adding `import sys` gets its problem after the pause,
+  hover is advertised and Alt-I on a noqa code opens the description from ruff, F7
+  again stops it and clears the marks; a .mojo file is not claimed. test_lsp (85),
+  test_problems and test_config still pass.
+- Not done / unverified: completion, definition, references, rename, code actions,
+  semantic colours and inlay hints are Mojo-only; changes are sent as whole texts;
+  no automatic restart of a crashed extra server; tried with ruff only.
+- Gate: scripts/check.sh printed CHECK OK (82 test files, 1068 tests, 675 s).

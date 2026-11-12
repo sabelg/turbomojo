@@ -924,6 +924,7 @@ struct LspClient(Copyable, Movable):
     var last_error: String
     var log: List[String]              # window/logMessage and showMessage texts (latest last)
     var replies: List[RpcMessage]      # answers to feature requests, waiting for the IDE to take them
+    var language_id: String            # what documents are said to be ("mojo", or another server's)
 
     def __init__(out self):
         self.conn = RpcConn()
@@ -945,6 +946,7 @@ struct LspClient(Copyable, Movable):
         self.last_error = ""
         self.log = List[String]()
         self.replies = List[RpcMessage]()
+        self.language_id = "mojo"
 
     # ------------------------------------------------------------ lifecycle
     def start(mut self, cmd: String, root_dir: String, stderr_path: String, pid: Int, now: Int) -> Bool:
@@ -1156,7 +1158,7 @@ struct LspClient(Copyable, Movable):
         w.key("textDocument")
         w.begin_obj()
         w.kv_str("uri", uri)
-        w.kv_str("languageId", "mojo")
+        w.kv_str("languageId", self.language_id)
         w.kv_int("version", version)
         w.kv_str("text", text)
         w.end_obj()

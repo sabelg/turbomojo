@@ -9,6 +9,9 @@
   are elsewhere; Help > Notifications (Shift-F10) shows what is running. Toasts that
   come while you type wait for a pause, a save or the debugger stopping; your own
   build, tests and commits come at once and first.
+- **Plugins and other languages**: plugins in `~/.config/turbomojo/plugins` add
+  commands, status items and panels (docs/PLUGINS.md); `[lsp.<name>]` in the config
+  file adds a language server for other files (F7 starts it).
 - **Coming from Python**: Help > Coming from Python lists what is different in Mojo
   1.x, and the book has VS Code's keys next to TurboMojo's; explanations of Python
   habits link to it (P).

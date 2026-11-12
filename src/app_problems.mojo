@@ -32,6 +32,17 @@ __extension App:
                 for j in range(1, len(lines)):
                     p.more.append(String(lines[j]))
                 out.append(p^)
+        # the other language servers' problems ([lsp.<name>])
+        for x in range(len(self.lsp_extra)):
+            ref c = self.lsp_extra[x].client
+            for k in range(len(c.diags)):
+                var path = uri_to_path(c.diags[k].uri)
+                for d in c.diags[k].items:
+                    var lines = d.message.split("\n")
+                    var p = Problem(PS_SERVER, d.severity if d.severity >= 1 and d.severity <= 4 else SEV_ERROR, path, d.line + 1, d.ch + 1, String(lines[0]) if len(lines) > 0 else String(""))
+                    for j in range(1, len(lines)):
+                        p.more.append(String(lines[j]))
+                    out.append(p^)
         for p in self.prob_build:
             out.append(p.copy())
         for f in self.test_files:

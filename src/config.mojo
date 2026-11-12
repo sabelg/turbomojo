@@ -49,6 +49,12 @@ Example:
     debug_adapter = "mojo-lldb-dap"     # Run > Debug; a command with arguments is used as it is
     agent = ""                  # a coding agent that speaks ACP, for File > Agent panel
     plugins = true              # start the plugins in ~/.config/turbomojo/plugins
+
+# Language servers for other languages: F7 on such a file starts its server (in a
+# trusted folder), for problems as you type and Describe symbol (Alt-I).
+# [lsp.python]
+# command = "ruff server"
+# extensions = [".py"]
                                 # (e.g. "claude-agent-acp", "gemini --experimental-acp", "codex-acp")
     include_paths = []          # extra -I folders for the compiler and the language server;
                                 # relative ones are taken from the folder of the config file
@@ -140,6 +146,10 @@ struct Settings(Copyable, Movable):
     var key_hints: Bool         # ui.key_hints
     var tips: Bool              # ui.tips
     var plugins: Bool           # tools.plugins
+    var lsp_names: List[String]         # [lsp.<name>]: other language servers
+    var lsp_cmds: List[String]          #   their command
+    var lsp_exts: List[List[String]]    #   the file endings they are for (".py")
+    var lsp_langs: List[String]         #   the languageId they are told (default: the name)
     var reduced_motion: Int     # ui.reduced_motion: -1 auto (the desktop's setting), 0 off, 1 on
     var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var tiled: Bool      # ui.layout = "tiled"
@@ -187,6 +197,10 @@ struct Settings(Copyable, Movable):
         self.key_hints = True
         self.tips = True
         self.plugins = True
+        self.lsp_names = List[String]()
+        self.lsp_cmds = List[String]()
+        self.lsp_exts = List[List[String]]()
+        self.lsp_langs = List[String]()
         self.reduced_motion = -1
         self.keymap = 0
         self.tiled = False
@@ -399,12 +413,45 @@ struct Settings(Copyable, Movable):
                 continue
             self.key_commands.append(name)
             self.key_names.append(doc.get_list("keys." + name))
+        # [lsp.<name>]: language servers for other languages
+        var seen = List[String]()
+        for key in doc.keys_in("lsp"):
+            var dot = key.find(".")
+            if dot <= 0:
+                self.warnings.append("lsp." + key + ": a language server is a table, [lsp." + key + "]")
+                continue
+            var name = String(key[byte=0:dot])
+            var field = String(key[byte=dot + 1:])
+            if field != "command" and field != "extensions" and field != "language":
+                self.warnings.append("unknown setting lsp." + key + " (a server has command, extensions and language)")
+            if name in seen:
+                continue
+            seen.append(name)
+            var cmd = doc.get_str("lsp." + name + ".command", "")
+            var exts = doc.get_list("lsp." + name + ".extensions")
+            if cmd.byte_length() == 0 or len(exts) == 0:
+                self.warnings.append("lsp." + name + " needs a command and extensions (for example extensions = [\".py\"])")
+                continue
+            var at = -1
+            for j in range(len(self.lsp_names)):
+                if self.lsp_names[j] == name:
+                    at = j
+            var lang = doc.get_str("lsp." + name + ".language", name)
+            if at >= 0:                 # (the project's file overrides the user's)
+                self.lsp_cmds[at] = cmd
+                self.lsp_exts[at] = exts.copy()
+                self.lsp_langs[at] = lang
+            else:
+                self.lsp_names.append(name)
+                self.lsp_cmds.append(cmd)
+                self.lsp_exts.append(exts.copy())
+                self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
         for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
-            if k.startswith("keys.") or k.startswith("run."):
+            if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):
                 continue                # [run.<name>] tables are the run configurations
             if not (k in known):
                 var msg = "unknown setting " + k

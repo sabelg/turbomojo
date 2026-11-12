@@ -17,6 +17,7 @@ from strings import apply_strings, language_from
 from notify import NotifyCenter, TYPING_PAUSE_MS
 from tips import TipRules
 from plugins import Plugin, PluginPanel, register_plugins
+from lspextra import ExtraServer, configure_servers
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, ACT_OTHER, ACT_TYPE
@@ -189,6 +190,8 @@ struct App(Movable):
     var plugins_on: Bool        # tools.plugins
     var plugin_warnings: List[String]   # what registering their commands could not do
     var panels: List[PluginPanel]       # the plugins' open panels
+    var lsp_extra: List[ExtraServer]    # language servers for other languages ([lsp.<name>])
+    var hover_srv: Int                  # who the hover question went to (-1: the Mojo server)
     var key_uses: Dict[String, Int]  # how often each command was run by its key
     var key_uses_path: String   # where those counts are kept ('' in tests)
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
@@ -606,6 +609,8 @@ struct App(Movable):
         self.plugins_on = True
         self.plugin_warnings = List[String]()
         self.panels = List[PluginPanel]()
+        self.lsp_extra = List[ExtraServer]()
+        self.hover_srv = -1
         self.chord_since = 0
         self.typed_ns = 0
         self.chord_box = False
@@ -1174,6 +1179,7 @@ struct App(Movable):
         self.key_hints = s.key_hints
         self.tips_on = s.tips
         self.plugins_on = s.plugins
+        configure_servers(self.lsp_extra, s)
         self.sticky_scroll = s.sticky_scroll
         self.minimap_on = s.minimap
         self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1"

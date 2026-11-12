@@ -50,6 +50,7 @@ from app_input import *
 from app_mouse import *
 from app_draw import *
 from app_docpane import *
+from app_lspextra import *
 
 
 comptime QM_FILES = 0
@@ -688,6 +689,14 @@ __extension App:
             return
         self.wins[ai].collapse()
         self.hover_retries = 0
+        var xk = self.extra_for(self.wins[ai].path)
+        if xk >= 0:
+            # a file of another language: its own server answers
+            if self.extra_hover(xk, ai):
+                self.say("Asking " + self.lsp_extra[xk].name + "...")
+            else:
+                self.say("Start its language server first (" + self.reg.key_label(CM_LSP) + ")")
+            return
         if not self.hover_request(ai):
             if self.lsp.state == LSP_READY and not self.lsp.table.hover:
                 self.say("This language server does not describe symbols")
@@ -713,6 +722,7 @@ __extension App:
         if id < 0:
             return False
         self.hover_req_id = id
+        self.hover_srv = -1
         self.hover_req_path = path
         self.hover_req_row = self.wins[ai].cr
         self.hover_req_col = self.wins[ai].cc

@@ -16,6 +16,7 @@ from app_problems import *
 from app_files import *
 from app_dialogs import *
 from app_jobs import *
+from app_lspextra import *
 
 comptime LSP_DEBOUNCE_MS = 300     # quiet time after the last edit before the server is told
 
@@ -57,6 +58,10 @@ __extension App:
             return
         if self.wins[i].buf.large:
             self.say("The language server is off in large-file mode")
+            return
+        var xk = self.extra_for(self.wins[i].path)
+        if xk >= 0:
+            self.extra_toggle(xk, i)            # a file of another language: its own server
             return
         if self.lsp_restart_due > 0 and self.lsp_restart_path == self.wins[i].path:
             # asked again while a restart was pending: that cancels it
@@ -411,7 +416,7 @@ __extension App:
                 self.completion_arrived(m)
             elif m.id == self.comp_resolve_id:
                 self.resolve_arrived(m)
-            elif m.id == self.hover_req_id:
+            elif m.id == self.hover_req_id and self.hover_srv < 0:
                 self.hover_arrived(m)
             elif m.id == self.sig_req_id:
                 self.sig_arrived(m)

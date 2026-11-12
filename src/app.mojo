@@ -56,6 +56,7 @@ from app_draw import *
 from app_docpane import *
 from app_keybox import *
 from app_plugins import *
+from app_lspextra import *
 
 
 __extension App:
@@ -161,6 +162,8 @@ __extension App:
                 fds.append(af)
             for pf in self.plugin_fds():
                 fds.append(pf)
+            for xf in self.extra_fds():
+                fds.append(xf)
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -191,6 +194,7 @@ __extension App:
             self.chord_tick(now_ns())
             self.notes_tick(now_ns())
             self.plugins_tick(now_ns())
+            self.extra_tick(now_ns())
             self.symidx_tick()
             self.quick_tick()
             self.explorer_tick(now_ns())
@@ -219,6 +223,7 @@ __extension App:
         _ = self.git_proc.stop()
         self.agent.stop()           # nor the coding agent
         self.plugins_stop()         # nor the plugins
+        self.extra_stop_all()       # nor the other language servers
         self.agent_services_end()   # and its commands
         _ = self.tshell.pty.stop()  # nor the terminals' programs (they get SIGHUP)
         _ = self.trun.pty.stop()

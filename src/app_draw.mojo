@@ -51,6 +51,7 @@ from app_gitcmd import *
 from app_explain import *
 from app_keybox import *
 from app_plugins import *
+from app_lspextra import *
 from app_git import *
 from app_jobs import *
 from app_input import *
@@ -112,7 +113,7 @@ __extension App:
                 if self.wins[ti].buf.mixed_eol:
                     right += "Mixed>"          # both kinds in the file; saving writes this one
                 right += ("CRLF" if self.wins[ti].buf.crlf else "LF") + "  " + (("Tabs:" + String(self.wins[ti].buf.tab_width)) if self.wins[ti].buf.use_tabs else ("Spaces:" + String(self.wins[ti].buf.indent_size))) + "  "
-            if self.lsp.active():
+            if self.lsp.active() or self.extra_active():
                 right += "LSP  "
             if self.dbg.active():
                 right += self.debug_badge() + "  "
