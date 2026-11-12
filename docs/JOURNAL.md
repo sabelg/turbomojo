@@ -3817,3 +3817,30 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   "before" program as a scratch file from the window.
 - Gate: scripts/check.sh printed CHECK OK (71 test files, 1034 tests), after test_help was
   updated for the new help-book page (and now also checks the finder reaches it).
+
+## 2026-11-11 · P7-09 docs pane beside the code · done
+- What changed: Help > Docs pane (CM_DOCS_PANE, `src/app_docpane.mojo`) opens a window
+  (WK_DOCPANE) at the right edge, left of the outline if it is open; editors make room
+  and get it back on close, and the tiled layout leaves room for it. After each round
+  of events the name at the cursor is noted; once it has rested 350 ms the pane looks
+  it up: project doc comments (only `mojo doc` answers already cached for the file as
+  saved - resting never compiles), else the downloaded standard library reference's
+  section for that declaration (`src/docpane.mojo` md_section, the index's heading
+  names), else a language-server hover whose answer is routed to the pane. Ctrl-F1
+  and Alt-I answer in the pane while it is open (Ctrl-F1 runs `mojo doc` if needed);
+  Enter opens the page in the full viewer, Esc returns to the code. The event loop
+  wakes for the pending lookup. Guide, what's new and README say so.
+- Verified: `tests/test_docpane.mojo` (2 tests): sections (code-block headings
+  ignored, repeated headings by number, long sections cut with the code fence closed);
+  in the app with a fake downloaded reference: the pane beside the editor, the struct's
+  section (and not the next declaration's), nothing before the cursor rests, no
+  `mojo doc` run while resting, Ctrl-F1 running it once and the answer in the pane
+  without a popup, later rests reusing it, Enter opening the viewer on the right page,
+  closing giving the editor its width back. test_docs, test_tiled, test_strings,
+  test_help and test_errhelp still pass.
+- Not done / unverified: the language-server path (hover into the pane) is not tested
+  - there is no fake server for hover in the tests; opening the outline while the pane
+  is open puts the outline over it; a terminal resize does not re-dock the pane; the
+  pane's text is plain (no colours); opening the pane builds the documentation index
+  at once, which takes a moment on the full download (not measured).
+- Gate: scripts/check.sh printed CHECK OK (72 test files, 1036 tests).

@@ -97,6 +97,9 @@ __extension App:
         var oi = self.outline_index()
         if oi >= 0 and self.wins[oi].x >= 20:
             w = self.wins[oi].x
+        var dpi = self.docpane_index()
+        if dpi >= 0 and self.wins[dpi].x >= 20 and self.wins[dpi].x < w:
+            w = self.wins[dpi].x
         var x0 = 0
         var xi = self.explorer_index()
         if xi >= 0 and w - self.wins[xi].w >= 20:

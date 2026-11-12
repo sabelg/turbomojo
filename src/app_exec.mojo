@@ -45,6 +45,7 @@ from app_tests import *
 from app_gitdiff import *
 from app_gitcmd import *
 from app_explain import *
+from app_docpane import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -660,7 +661,14 @@ __extension App:
             if not self.explain_command() and not self.docs_at_cursor(False):
                 self.help_dialog()
         elif cmd == CM_DOCS:
-            _ = self.docs_at_cursor(True)
+            var ai = self.active_editor()
+            if self.docpane_index() >= 0 and ai >= 0 and self.word_under(ai).byte_length() > 0:
+                var name = self.word_under(ai)
+                self.docpane_lookup(name, True)
+            else:
+                _ = self.docs_at_cursor(True)
+        elif cmd == CM_DOCS_PANE:
+            self.docpane_toggle()
         elif cmd == CM_ABOUT:
             var d = Dialog(D_ABOUT, "About", 52, 14)
             d.lines.append("")

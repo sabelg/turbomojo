@@ -49,6 +49,7 @@ from app_tests import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
+from app_docpane import *
 
 
 comptime QM_FILES = 0
@@ -679,6 +680,10 @@ __extension App:
             else:
                 self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
             return
+        if self.docpane_index() >= 0:
+            self.hover_pane = True              # the answer goes to the docs pane
+            self.docpane_name = self.word_under(ai)
+            self.docpane_show("Docs: " + self.docpane_name, "Asking the language server...")
         self.say("Asking the language server...")
 
     def hover_request(mut self, ai: Int) -> Bool:
@@ -708,6 +713,10 @@ __extension App:
     def hover_arrived(mut self, m: RpcMessage):
         self.hover_req_id = -1
         if not self.hover_still_wanted():
+            self.hover_pane = False
+            return
+        if m.kind == RPC_ERROR and self.hover_pane and not (retry_later(m) and self.hover_retries < COMP_MAX_RETRIES):
+            self.docpane_hover("")
             return
         if m.kind == RPC_ERROR:
             if retry_later(m) and self.hover_retries < COMP_MAX_RETRIES:
@@ -717,6 +726,9 @@ __extension App:
             self.say("Language server: " + m.error_message())
             return
         var text = hover_markdown(m.doc, m.result())
+        if self.hover_pane:
+            self.docpane_hover(text)
+            return
         if text.byte_length() == 0:
             self.say("Nothing is known about this place")
             return

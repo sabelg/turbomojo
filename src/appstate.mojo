@@ -17,7 +17,7 @@ from strings import apply_strings, language_from
 from notify import NotifyCenter
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -266,6 +266,11 @@ struct App(Movable):
     var git_branches: List[String]  # the branch dialog's branches
     var blame_path: String     # the blame window's file
     var explain_path: String   # the editor an error explanation stands beside
+    var docpane_key: String    # the file and name the docs pane was last asked about
+    var docpane_due: Int       # when the docs pane looks up the name at the cursor (0: not waiting)
+    var docpane_entry: Int     # the documentation index entry the pane shows (-1: none)
+    var docpane_name: String   # the name it shows
+    var hover_pane: Bool       # the language server's answer goes to the docs pane
     var explain_rect: List[Int]  # that editor's place before it made room (x, y, w, h)
     var blame_rows: List[BlameLine]
     var prob_build: List[Problem]   # the last build's errors and warnings (Problems page)
@@ -663,6 +668,11 @@ struct App(Movable):
         self.git_branches = List[String]()
         self.blame_path = ""
         self.explain_path = ""
+        self.docpane_key = ""
+        self.docpane_due = 0
+        self.docpane_entry = -1
+        self.docpane_name = ""
+        self.hover_pane = False
         self.explain_rect = List[Int]()
         self.blame_rows = List[BlameLine]()
         self.prob_build = List[Problem]()
@@ -1073,6 +1083,8 @@ struct App(Movable):
             t = min(t, 2000)        # look at git's index now and then (see git_tick)
         if self.scopes_stale:
             t = min(t, 500)
+        if self.docpane_due > 0:
+            t = min(t, max(1, (self.docpane_due - now) // 1000000 + 1))
         var tn = self.notes.next_change_ns(now)
         if tn > 0:
             t = min(t, max(1, (tn - now) // 1000000 + 1))     # a toast is due to go
@@ -1312,6 +1324,12 @@ struct App(Movable):
     def explorer_index(self) -> Int:
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EXPLORER:
+                return i
+        return -1
+
+    def docpane_index(self) -> Int:
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_DOCPANE:
                 return i
         return -1
 

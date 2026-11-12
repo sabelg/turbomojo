@@ -27,6 +27,7 @@ comptime WK_TESTS = 7        # the test explorer
 comptime MINIMAP_W = 10       # cells of the minimap (2 x 4 braille dots each)
 comptime WK_AGENT = 10       # the conversation with a coding agent (ACP)
 comptime WK_BLAME = 9        # who last changed each line of a file
+comptime WK_DOCPANE = 12     # the docs pane: documentation of the name at the cursor, at the right edge
 comptime WK_EXPLAIN = 11     # the explanation of a Mojo error message, beside the code
 comptime WK_DIFF = 8         # a file's changes against git's index (or the index's against HEAD)
 

@@ -163,6 +163,7 @@ comptime CM_HELP_TUTORIAL = 220
 comptime CM_HELP_NEW = 221
 comptime CM_SCREEN_READER = 222     # Options > Screen-reader mode
 comptime CM_HELP_ERRORS = 223       # Help > Error messages
+comptime CM_DOCS_PANE = 224         # Help > Docs pane
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -801,6 +802,7 @@ def build_registry() -> Registry:
     # ---- Help / system
     r.cmd(CM_HELP, "help.keyboard", "~K~eyboard reference", "Show the keyboard reference", [fkey(1)])
     r.cmd(CM_DOCS, "help.topicSearch", "~T~opic search", "Show the documentation of the name at the cursor", [fkey(1) | MOD_CTRL])
+    r.cmd(CM_DOCS_PANE, "help.docsPane", "Docs ~p~ane", "Show the documentation of the name at the cursor beside the code, following the cursor (again: close it)")
     r.cmd(CM_MOJODOCS, "help.mojoDocs", "~M~ojo documentation", "Read the Mojo manual, reference, standard library, examples and courses", [fkey(1) | MOD_SHIFT])
     r.cmd(CM_DOCFIND, "help.findInDocs", "~F~ind in documentation...", "Search the Mojo documentation: words, phrases, standard library names, headings, code", [fkey(1) | MOD_ALT])
     r.cmd(CM_DOCFETCH, "help.downloadDocs", "Do~w~nload documentation...", "Download or update the Mojo documentation from Modular's public repositories")
@@ -996,6 +998,7 @@ def build_registry() -> Registry:
     r.item(CM_HELP_NEW)
     r.item(CM_NOTICES)
     r.item(CM_DOCS)
+    r.item(CM_DOCS_PANE)
     r.item(CM_MOJODOCS)
     r.item(CM_DOCFIND)
     r.item(CM_DOCFETCH)

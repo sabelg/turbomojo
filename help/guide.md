@@ -35,6 +35,8 @@ Files are in the Edit, Text and Search menus.
 - Run > Test explorer runs `std.testing` suites and shows what failed where.
 - **Ctrl-F1** shows the documentation of the name at the cursor; Help > Mojo
   documentation reads the manual, the reference and the standard library.
+- Help > Docs pane keeps that documentation beside the code, following the cursor;
+  Ctrl-F1 and Alt-I answer there while it is open, Enter opens the full page.
 
 ## Git
 

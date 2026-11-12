@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -252,6 +252,10 @@ __extension App:
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_AGENT:
                 for h in ["~Enter~ Send", "~Esc~ Stop / editor", "~PgUp~ Back", "@file:1-9 Mention"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_DOCPANE:
+                for h in ["~Enter~ Open the page", "~Esc~ Back to the code", "~PgDn~ Read on"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_EXPLAIN:
