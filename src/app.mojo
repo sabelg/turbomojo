@@ -186,6 +186,7 @@ __extension App:
             self.outline_tick(now_ns())
             self.docpane_tick(now_ns())
             self.chord_tick(now_ns())
+            self.notes_tick(now_ns())
             self.symidx_tick()
             self.quick_tick()
             self.explorer_tick(now_ns())

@@ -239,6 +239,7 @@ __extension App:
         self.wins[t].follow = True
 
     def editor_key(mut self, k: Int) raises:
+        self.typed_ns = now_ns()                # (toasts wait while the editor has the keys)
         var t = self.top()
         var shift = (k & MOD_SHIFT) != 0
         var ctl = (k & MOD_CTRL) != 0

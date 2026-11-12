@@ -14,7 +14,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from themes import ThemeSet, scheme_from, animations_off
 from strings import apply_strings, language_from
-from notify import NotifyCenter
+from notify import NotifyCenter, TYPING_PAUSE_MS
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, ACT_OTHER, ACT_TYPE
@@ -191,6 +191,7 @@ struct App(Movable):
     var macro_cmd_start: Int   # where the keys of the command being typed begin in `macro`
     var chord: Int             # first key of a two-key binding, waiting for the second
     var chord_since: Int       # when that key was pressed
+    var typed_ns: Int          # the last key the editor had (toasts that come while typing wait)
     var chord_box: Bool        # the box of the keys that may follow is shown
     var user_key_cmds: List[String]         # [keys] from the config files
     var user_key_names: List[List[String]]
@@ -581,6 +582,7 @@ struct App(Movable):
         self.strings_dir = ""
         self.key_hints = True
         self.chord_since = 0
+        self.typed_ns = 0
         self.chord_box = False
         self.key_uses = Dict[String, Int]()
         self.key_uses_path = ""
@@ -1092,6 +1094,8 @@ struct App(Movable):
             t = min(t, max(1, (self.chord_since + KEY_BOX_MS * 1000000 - now) // 1000000 + 1))
         if self.docpane_due > 0:
             t = min(t, max(1, (self.docpane_due - now) // 1000000 + 1))
+        if self.typed_ns > 0 and self.notes.held_count() > 0:
+            t = min(t, max(1, (self.typed_ns + TYPING_PAUSE_MS * 1000000 - now) // 1000000 + 1))
         var tn = self.notes.next_change_ns(now)
         if tn > 0:
             t = min(t, max(1, (tn - now) // 1000000 + 1))     # a toast is due to go

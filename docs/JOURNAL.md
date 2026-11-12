@@ -3890,3 +3890,23 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   search only and found nothing. Fixed: a name now lists the declarations and then the
   ordinary word results. Two of its expectations were updated for the one-line answers.
 - Gate: scripts/check.sh printed CHECK OK (74 test files, 1043 tests).
+
+## 2026-11-12 · P7-12 toasts held while typing · done
+- What changed: a notice may be `own` (a job the user started: builds, tests, pixi
+  tasks, commits, branch switches) and `held`. `notify` holds the others while the
+  editor had a key in the last TYPING_PAUSE_MS (2.5 s); `NotifyCenter.release` gives
+  them their toast time from that moment. Pauses: no key for 2.5 s (the event loop
+  wakes for it), a save, the debugger stopping, or an own job's notice (shown at once,
+  and it brings the held ones). Toasts list own jobs first. A screen reader hears held
+  notices at the pause ("... and N more: Shift-F10"). The centre lists held ones as
+  usual. README and what's new say so.
+- Verified: `tests/test_notify_hold.mojo` (4 tests): the model (held not shown,
+  release restarting the time, own first, a dismissed held notice not coming back);
+  in the app a key then an agent notice - no toast, still none while typing, the toast
+  after the pause; an own build failure shown at once first, bringing a held one; a
+  save releasing; the screen reader's status line only at the pause, and at once when
+  not typing. test_notify still passes.
+- Not done / unverified: the debugger-stop release is not tested (it needs a running
+  debug session); keys in other windows (the agent panel's prompt, the terminal) do
+  not count as typing; there is no "N waiting" mark on the status line.
+- Gate: scripts/check.sh printed CHECK OK (75 test files, 1047 tests). The user chose to keep the pause (asked how VS Code compares: it shows toasts at once).

@@ -377,12 +377,12 @@ __extension App:
         var tstr = String(Int(secs * 10) // 10) + "." + String(Int(secs * 10) % 10) + " s"
         if self.job.cancelled:
             self.say("Build cancelled after " + tstr)
-            self.notify(NL_INFO, "Build cancelled", name)
+            self.notify(NL_INFO, "Build cancelled", name, True)
             return
         if ok:
-            self.notify(NL_DONE if counts[1] == 0 else NL_WARN, "Build succeeded", name + " in " + tstr + ((", " + String(counts[1]) + " warning(s)") if counts[1] > 0 else String("")))
+            self.notify(NL_DONE if counts[1] == 0 else NL_WARN, "Build succeeded", name + " in " + tstr + ((", " + String(counts[1]) + " warning(s)") if counts[1] > 0 else String("")), True)
         else:
-            self.notify(NL_ERROR, "Build failed", name + ": " + String(counts[0]) + " error(s)")
+            self.notify(NL_ERROR, "Build failed", name + ": " + String(counts[0]) + " error(s)", True)
         if self.mode == M_NORMAL:
             var d = Dialog(D_RESULT, "Compiling", 52, 13)
             d.lines.append("Main file:  " + name)

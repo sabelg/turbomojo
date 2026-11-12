@@ -20,11 +20,32 @@ from app_dialogs import *
 
 
 __extension App:
-    def notify(mut self, level: Int, title: String, text: String):
-        self.notes.add(level, title, text, now_ns(), clock_hm())
-        if self.reader:
+    def notify(mut self, level: Int, title: String, text: String, own: Bool = False):
+        """A notice. `own`: about a job the user started - it comes at once, first, and
+        brings any held ones with it. Others that come while the user is typing are
+        held until a pause (a save, the debugger stopping, a few seconds without keys)."""
+        var now = now_ns()
+        var hold = not own and self.typing(now)
+        self.notes.add_held(level, title, text, now, clock_hm(), own, hold)
+        if own:
+            self.notes_release(now)
+        if self.reader and not hold:
             # no toast for a screen reader: the status line, which it reads
             self.say(title + ((": " + text) if text.byte_length() > 0 else String("")))
+
+    def typing(self, now: Int) -> Bool:
+        return self.typed_ns > 0 and now - self.typed_ns < TYPING_PAUSE_MS * 1000000
+
+    def notes_release(mut self, now: Int):
+        """A moment to look up: the held toasts come."""
+        var got = self.notes.release(now)
+        if self.reader and len(got) > 0:
+            ref n = self.notes.notices[got[len(got) - 1]]
+            self.say(n.title + ((": " + n.text) if n.text.byte_length() > 0 else String("")) + ((" (and " + String(len(got) - 1) + " more: Shift-F10)") if len(got) > 1 else String("")))
+
+    def notes_tick(mut self, now: Int):
+        if self.notes.held_count() > 0 and not self.typing(now):
+            self.notes_release(now)
 
     def running_tasks(self) -> List[String]:
         """What is going on in the background now, one line each."""

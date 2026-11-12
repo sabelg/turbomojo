@@ -116,6 +116,7 @@ __extension App:
             self.apply_buffer_settings(i, EcProps())
 
     def save_window(mut self, i: Int, next: Int) raises -> Bool:
+        self.typed_ns = 0                       # a save is a pause: held toasts come now
         if self.wins[i].path.byte_length() == 0:
             self.saveas_dialog(i, next)
             return False

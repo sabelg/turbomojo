@@ -190,6 +190,7 @@ __extension App:
                 self.cpu_running()
                 self.say("Debugging " + basename(self.dbg_source) + " - " + self.reg.key_label(CM_CANCEL) + " ends it")
             elif e == DE_STOPPED:
+                self.typed_ns = 0               # the program stopped: a moment to look up (held toasts come)
                 self.say("Stopped: " + self.dbg.stop_text)
                 self.debug_temp_clear()
             elif e == DE_LOCATED:

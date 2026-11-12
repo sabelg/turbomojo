@@ -396,6 +396,6 @@ __extension App:
         _ = self.fill_messages(header, self.job.data.copy(), footer)
         self.problems_show(False)           # failed tests are problems too
         if not self.test_list_only:
-            self.notify(NL_INFO if self.job.cancelled else (NL_ERROR if failed > 0 else NL_DONE), "Tests" if failed == 0 else "Tests failed", footer)
+            self.notify(NL_INFO if self.job.cancelled else (NL_ERROR if failed > 0 else NL_DONE), "Tests" if failed == 0 else "Tests failed", footer, True)
         self.say(footer)
 

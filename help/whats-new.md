@@ -6,7 +6,9 @@
   Classic, Midnight Neon and Amber CRT; your own in `~/.config/turbomojo/themes/`;
   `theme = "auto"` follows the terminal's (or GNOME's) light or dark.
 - **Notifications**: toasts when a build, tests, a commit or the agent finish while you
-  are elsewhere; Help > Notifications (Shift-F10) shows what is running.
+  are elsewhere; Help > Notifications (Shift-F10) shows what is running. Toasts that
+  come while you type wait for a pause, a save or the debugger stopping; your own
+  build, tests and commits come at once and first.
 - **One search box**: Find in documentation (Alt-F1) takes a name, `List.append` or
   a pasted error line, answers in one line, and lists the commands that fit; `?`
   in the palette hands the text over.
