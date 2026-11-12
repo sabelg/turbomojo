@@ -9,7 +9,7 @@ is made from the command registry each time, so it shows the keys of your keymap
 from std.collections import List
 from util import write_file, str_bytes, path_exists, run_system, shell_quote
 from errhelp import errors_book
-from commands import Registry, plain, build_registry, apply_keymap, keymap_name, CM_SAVE, CM_OPEN, CM_CLOSE, CM_QUICK, CM_PALETTE, CM_FIND, CM_REPLACE, CM_AGAIN, CM_FINDFILES, CM_GOTO, CM_UNDO, CM_REDO, CM_CUT, CM_COPY, CM_PASTE, CM_COMMENT, CM_DUPLINE, CM_LINEUP, CM_LINEDOWN, CM_DEFINITION, CM_REFERENCES, CM_RENAME, CM_BUILD, CM_RUN, CM_DEBUG, CM_BP_TOGGLE, CM_TERMINAL, CM_EXPLORER
+from commands import Registry, plain, build_registry, apply_keymap, CM_NONE, keymap_name, CM_SAVE, CM_OPEN, CM_CLOSE, CM_QUICK, CM_PALETTE, CM_FIND, CM_REPLACE, CM_AGAIN, CM_FINDFILES, CM_GOTO, CM_UNDO, CM_REDO, CM_CUT, CM_COPY, CM_PASTE, CM_COMMENT, CM_DUPLINE, CM_LINEUP, CM_LINEDOWN, CM_DEFINITION, CM_REFERENCES, CM_RENAME, CM_BUILD, CM_RUN, CM_DEBUG, CM_BP_TOGGLE, CM_TERMINAL, CM_EXPLORER
 
 from version import TURBOMOJO_VERSION
 
@@ -124,3 +124,58 @@ def editors_markdown() -> String:
         out += row + " |\n"
     out += "\nThe keys of your keymap, all of them: Help > Keyboard reference (F1).\n"
     return out^
+
+
+def keymap_markdown() -> String:
+    """docs/KEYMAP.md: every command that has a key in one of the three keymaps, menu by
+    menu, then those that are only in the palette - made from the command registry, so
+    `tmide --keys` always prints the keys of this version."""
+    var regs = List[Registry]()
+    for m in range(3):
+        var r = build_registry()
+        apply_keymap(r, m)
+        regs.append(r^)
+    var out = String("# TurboMojo keymap reference\n\nThe keys of every command in the three keymaps (Options > Keys: Modern, the default;\nTurbo, WordStar's as in Turbo C++; Emacs). Two keys with a space between are pressed one\nafter the other (Ctrl-K B). A dash: no key in that keymap - the menus and the command\npalette (Ctrl-P, then >) have every command. Your own keys (`[keys]` in the config file)\ncome on top; Help > Keyboard reference (F1) shows the keys as you have them.\n\nThis file is made by `tmide --keys` (TurboMojo " + TURBOMOJO_VERSION + ").\n")
+    var listed = List[Int]()
+    for mi in range(len(regs[0].menu_titles)):
+        var rows = String("")
+        for p in regs[0].layout:
+            if p.menu != mi or p.cmd == CM_NONE or p.cmd in listed:
+                continue
+            var row = keymap_row(regs, p.cmd)
+            if row.byte_length() > 0:
+                rows += row
+                listed.append(p.cmd)
+        if rows.byte_length() > 0:
+            var title = plain(regs[0].menu_titles[mi])
+            out += "\n## " + ("System (≡)" if title == "≡" else title) + "\n\n| Command | Modern | Turbo | Emacs |\n|---|---|---|---|\n" + rows
+    var rest = String("")
+    for c in regs[0].cmds:
+        if c.id in listed:
+            continue
+        var row = keymap_row(regs, c.id)
+        if row.byte_length() > 0:
+            rest += row
+            listed.append(c.id)
+    if rest.byte_length() > 0:
+        out += "\n## Not in a menu\n\n| Command | Modern | Turbo | Emacs |\n|---|---|---|---|\n" + rest
+    out += "\n## Always\n\n| Key | What it does |\n|---|---|\n| F10 | The menu bar |\n| Alt and a menu's letter | That menu |\n| Alt-1 to Alt-9 | The window with that number |\n| Esc | Close a menu, a dialog or a box; cancel a key sequence |\n| F1 on a problem | Its explanation |\n"
+    return out^
+
+
+def keymap_row(regs: List[Registry], cmd: Int) -> String:
+    var keys = List[String]()
+    var any = False
+    for m in range(3):
+        var k = regs[m].all_keys_label(cmd)
+        if k.byte_length() > 0:
+            any = True
+        keys.append(k.replace("|", "\\|") if k.byte_length() > 0 else String("-"))
+    if not any:
+        return ""
+    var ci = regs[0].index_of(cmd)
+    var title = plain(regs[0].cmds[ci].title)
+    if title.endswith("..."):
+        var short = String(title[byte=0:title.byte_length() - 3])
+        title = short
+    return "| " + title + " | " + keys[0] + " | " + keys[1] + " | " + keys[2] + " |\n"

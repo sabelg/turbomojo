@@ -8,6 +8,7 @@ from strings import strings_template
 from config import config_home
 from util import state_dir
 from version import TURBOMOJO_VERSION
+from helpbook import keymap_markdown
 from std.sys.info import CompilationTarget
 
 
@@ -19,6 +20,7 @@ FOLDER opens the Open dialog there.
 
   -h, --help      this text
   -V, --version   the version
+  --keys          every command's keys in the three keymaps (docs/KEYMAP.md)
   --strings       the UI's English words, as a strings file to translate
   --caps          what this terminal reports it can do
 
@@ -40,6 +42,9 @@ def main() raises:
         return
     if len(pre) == 2 and (String(pre[1]) == "--help" or String(pre[1]) == "-h"):
         print(USAGE)
+        return
+    if len(pre) == 2 and String(pre[1]) == "--keys":
+        print(keymap_markdown(), end="")   # docs/KEYMAP.md
         return
     if len(pre) == 2 and String(pre[1]) == "--strings":
         # the UI's English words as a strings file to translate (see src/strings.mojo)

@@ -2,12 +2,15 @@
 
 A text-mode IDE for [Mojo](https://www.modular.com/mojo), written entirely in Mojo and modelled on
 Borland Turbo C++ 3.0 (1992). It has the blue desktop, double-line windows, drop shadows,
-menus with highlighted hotkeys and the "Compiling… Press any key" box. Under that look it
-adds a few modern features: truecolor themes, a mouse, a fuzzy command palette, grouped
-undo/redo, word completion and OSC 52 system clipboard copy.
+menus with highlighted hotkeys and the "Compiling… Press any key" box. Under that look it is
+a full IDE: the Mojo language server (problems as you type, completion, hover, go to
+definition, references, rename, quick fixes), build and run, a debugger, integrated
+terminals and the REPL, a test explorer, git, coding agents (ACP), plugins, help that
+explains Mojo's error messages, and a fuzzy command palette - in a program that starts in
+about 50 ms and uses about 12 MB of memory.
 
 ```
- ≡  File  Edit  Search  Run  Compile  Options  Window  Help                 02:31
+ ≡  File  Edit  Text  Search  Run  Compile  Options  Window  Help           02:31
 ╔═[■]════════════════════════ hello.mojo ══════════════════════════════1═[↑]═╗
 ║  1 """A tiny demo program for TurboMojo."""                                 ▲
 ║  2 from std.collections import List                                         ■
@@ -186,7 +189,7 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Command palette | Ctrl-P fuzzy-searches every menu command |
 | Completion | Ctrl-Space completes identifiers from the buffer plus Mojo keywords, types and builtins |
 | Compile | F9 runs `mojo build` **in the background**: you keep editing while a spinner and timer show progress, output streams into the Message window, and Ctrl-F2 cancels. When it finishes you get the Turbo-style result box. In the Message window, Enter or Alt-F8/F7 jumps to the error's line and column |
-| Language server | **F7** starts live checking of the current file with `mojo-lsp-server`: errors and warnings appear in the Message window about half a second after you stop typing, and Enter or Alt-F8/F7 jumps to them. F7 again stops it. (First slice; completion, hover and go-to-definition come with roadmap phase 2) |
+| Language server | **F7** starts `mojo-lsp-server` for the current file (in a trusted folder); F7 again stops it. Problems appear as you type, underlined in the code and on the Problems page of the bottom panel (Enter goes to one, F1 explains it). It also gives completion (**Ctrl-Space**, and by itself after a `.`), **Alt-I** describe symbol, **Alt-P** parameter info, **F12** go to definition, **Shift-F12** find references, **Shift-F2** rename, **Alt-Enter** quick fixes, the outline (**Ctrl-F12**), semantic colours and inlay hints. Other languages get their own server by configuration (`[lsp.<name>]`, see Other languages) |
 | Terminal | **Alt-F11** (File ▸ Terminal) opens your shell (`$SHELL`) in a window at the bottom, running in the project folder. Everything you type goes to the program in it - Ctrl-C, Ctrl-K, Esc, function keys, arrows (also in full-screen programs), pasted text (bracketed when the program asks for it); the IDE keeps only F10 (menu), F6 / Shift-F6 (next window), Alt-digits and Alt-F11. Colours (256 and truecolor), bold, underline, wide characters and full-screen programs are shown as a terminal would (libghostty-vt). **Shift-PgUp / Shift-PgDn** or the mouse wheel scroll back; typing returns to the live screen. A mouse drag selects lines, letting go copies them. Alt-F11 again (from the terminal) closes the window - the shell keeps running and is there when you open it again; when the shell ends, Enter starts it again, Esc closes |
 | Test explorer | Run ▸ Test explorer lists the project's test files - programs that run a `std.testing` TestSuite (Mojo 1.2 has no `mojo test`) - and their `test_*` functions, at the right edge. **A** runs every file, **R** the file or the single test under the cursor (with `--only`; the others keep their results), **L** asks the programs themselves for their tests (`--skip-all`), **T** looks for files again. Each test shows ✓ passed, ✗ failed, - skipped, … running, · not run, with its time; a failure shows its message, a file that did not compile shows the compiler's message. **Enter** on a failed test opens the file at the failing assertion (a raised error: at the test's `def`). Runs happen in the background (Ctrl-F2 stops) with the full output on the Message page |
 | Mojo REPL | Run ▸ Mojo REPL starts `mojo repl` in a window at the bottom (type to it like in a terminal; an expression ends with a blank line). **Ctrl-F10** in the editor sends the selection - or, without one, the cursor's line, moving on to the next line - to the REPL, starting it if needed; the keyboard stays in the editor. What is sent waits until the REPL shows its prompt (while it starts or is still printing, typed input would be lost). Modular calls the REPL unstable; it can crash, then Enter in its window starts it again |
@@ -206,40 +209,33 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 | Robustness | **Unsaved work survives crashes:** every modified buffer is copied to a swap file 2 seconds after a change, and after a crash, `kill -9` or power loss the next start offers to recover it (Recover / Discard / Later). Being killed politely (`kill`, closing the terminal, logging out) keeps the buffers the same way and restores the terminal. Your own files are never written without a save. **Files changed by other programs** are noticed at once: an unmodified buffer reloads quietly (undoable), and if you have unsaved changes you are asked whether to reload or keep your version. Resizing is picked up instantly; `kill -TSTP` / `fg` suspends and resumes cleanly. If the IDE itself crashes, the terminal is restored and a stack trace goes to `~/.local/state/turbomojo/crash.log`. An idle IDE uses no CPU |
 | Rendering | Double-buffered diff renderer with 24-bit colour and synchronized output (no tearing) |
 
-Press **F1** inside the IDE for the full keyboard reference.
+Press **F1** inside the IDE for the keyboard reference of your keymap; [docs/KEYMAP.md](docs/KEYMAP.md) has all three keymaps. The [user guide](docs/USER_GUIDE.md) walks through the IDE.
 
-## Source layout (all Mojo, no dependencies)
+## Documentation
 
-| File | Purpose |
+| | |
 |---|---|
-| `src/term.mojo` | termios raw mode via FFI, window size, key / SGR mouse / bracketed-paste parser |
-| `src/screen.mojo` | Cell buffer, box drawing, shadows, truecolor diff renderer, text dump for tests |
-| `src/rope.mojo` | Text storage: UTF-8 rope on a B-tree with byte/character/line/UTF-16 summaries |
-| `src/buffer.mojo` | Text buffer on the rope: (row, column) editing, grouped undo/redo, per-file settings |
-| `src/highlight.mojo` | Mojo tokenizer with multi-line string state |
-| `src/window.mojo` | Editor/message window state, movement and editing commands |
-| `src/window_multi.mojo` | Multi-cursor editing (extends `Window`) |
-| `src/window_search.mojo`, `src/window_draw.mojo` | Find/replace/bracket matching and window drawing (extend `Window`) |
-| `src/commands.mojo` | Command registry: ids, titles, hints, default keys, menu layout |
-| `src/menu.mojo` | Menu structures and drawing (contents generated from the registry) |
-| `src/dialog.mojo` | Turbo Vision-style dialogs: input lines, check boxes, list boxes, buttons |
-| `src/palette.mojo`, `src/themes.mojo`, `themes/` | Colour themes: the built-in palettes, theme files, the theme set |
-| `src/appstate.mojo` | The `App` struct: all application state and small helpers |
-| `src/app_*.mojo` | `App` behaviour as extensions: files, dialogs, menus, exec (command dispatch), pickers, jobs (build/format/run), input, mouse, draw, swap, watch, lsp |
-| `src/app.mojo` | Event loop; `from app import *` gives `App` with all extensions |
-| `src/signals.mojo`, `src/crash.mojo` | Signal handling via an event descriptor; crash guard that restores the terminal |
-| `src/caps.mojo` | Terminal capability detection and colour-depth mapping |
-| `src/toml.mojo`, `src/config.mojo`, `src/editorconfig.mojo` | Config file reader/writer, layered settings, EditorConfig rules |
-| `src/swap.mojo`, `src/watch.mojo` | Swap files for crash recovery; detection of files changed by other programs |
-| `src/grapheme.mojo` | Grapheme cluster boundaries (UAX #29) and cluster widths |
-| `src/regex.mojo` | Regular expressions: parser, compiler and a Pike VM (no backtracking, captures, lazy quantifiers) |
-| `src/grep.mojo` | Find in files: incremental folder walk and search |
-| `src/markdown.mojo` | Markdown to styled, wrapped lines (hover windows, documentation panels) |
-| `src/search.mojo` | A search request: text or regular expression plus the Find options, matched line by line |
-| `src/json.mojo` | JSON reader and writer (for the language-server, debugger and agent protocols) |
-| `src/proc.mojo`, `src/rpc.mojo` | Two-way non-blocking child processes; JSON-RPC with Content-Length framing |
-| `src/lsp.mojo` | Language Server Protocol client: lifecycle, document sync, diagnostics |
-| `src/util.mojo` | UTF-8, display widths, paths, popen/system, base64 |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | The user guide: a walk through the IDE, task by task |
+| [docs/KEYMAP.md](docs/KEYMAP.md) | Every command's keys in the Modern, Turbo and Emacs keymaps (made by `tmide --keys`) |
+| [CHANGELOG.md](CHANGELOG.md) | What each version brought |
+| [docs/PLUGINS.md](docs/PLUGINS.md) | The plugin API |
+| [docs/SOURCE.md](docs/SOURCE.md) | Every source file and what it is |
+| [docs/ROADMAP.md](docs/ROADMAP.md), [docs/BACKLOG.md](docs/BACKLOG.md), [docs/JOURNAL.md](docs/JOURNAL.md) | The plan, its tasks, and for each task what changed, how it was checked and what is not done |
+
+Inside the IDE, Help has the guide, a cheat sheet, the keyboard reference, the error
+explanations, Coming from Python, exercises and What's new; Help > Mojo documentation reads
+Modular's manual and the standard library reference once downloaded.
+
+## Source layout
+
+All Mojo, over 40,000 lines in more than a hundred modules; the only library linked in is
+libghostty-vt, the terminal emulator of the integrated terminal. The screen (`screen.mojo`)
+and the terminal's input (`term.mojo`) at the bottom; the text (`rope.mojo`, `buffer.mojo`)
+and its windows (`window*.mojo`); the protocols, each a client of its own - language servers
+(`lsp.mojo`), the debugger (`dap.mojo`), coding agents (`acp.mojo`), plugins (`plugins.mojo`)
+over one JSON-RPC layer (`rpc.mojo`); and the application, the `App` struct of
+`appstate.mojo` extended area by area by the `app_*.mojo` files. System differences are in
+`platform.mojo`. [docs/SOURCE.md](docs/SOURCE.md) lists every file.
 
 ## Testing
 
@@ -306,4 +302,4 @@ scripts/tui-test.sh stop
 - Auto-closing pairs do not look at syntax: they also act inside strings and comments. Rulers are not drawn while soft wrap is on.
 - Key sequences are at most two keys long. The Turbo keymap has no block markers (Ctrl-K B / Ctrl-K K): Ctrl-K C/V/Y act on the ordinary selection. In the Emacs keymap Alt-F and Alt-W keep opening the File and Window menus rather than moving by word or copying. Some key combinations never reach a terminal program (Ctrl-M, Ctrl-I, Ctrl-H are Enter, Tab and Backspace).
 - A macro is kept only until the IDE exits, there is one of it, mouse actions are not recorded, and each recorded step is its own undo step.
-- Ctrl-F9 Run hands the terminal to your program on purpose, the way Turbo's user screen did. Build and Format run in the background.
+- Ctrl-F9 runs the program in the Run window, a terminal of its own; with `run_in_terminal = false` it gets the whole terminal instead, the way Turbo's user screen did. Build, Format and tests run in the background.

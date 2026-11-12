@@ -144,5 +144,5 @@ P7-07 to P7-16 come from the research report "Help that keeps users working" (re
 - [x] P9-02 Performance benchmarks script and budgets checked in `scripts/check.sh` (startup, keystroke-to-frame, 1M-line open)
 - [x] P9-03 macOS portability layer for termios/ioctl constants (compile-time selected; untestable here, mark what is unverified)
 - [x] P9-04 Packaging recipe (conda `recipe.yaml`), install instructions, version flag
-- [ ] P9-05 User guide, keymap reference, changelog; README refreshed to match reality
+- [x] P9-05 User guide, keymap reference, changelog; README refreshed to match reality
 - [ ] P9-06 Soak script (scripted editing for a long run) and leak check; final full `scripts/check.sh` pass

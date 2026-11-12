@@ -4213,3 +4213,29 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
 - First gate: test_project expected the exact list of this project's pixi tasks; it now checks the known ones are parsed (the new package task among them).
 - Second gate: all 86 test files passed but the smoke test failed - its own state folder (build/state) remembered version 1.8, so the version bump brought the What's new notice over the window title. smoke.sh now clears that folder's seen-version first (as it does its old recovery files). The user's own state was not touched (still 1.8).
 - Gate: scripts/check.sh printed CHECK OK with PERF OK (86 test files, 1081 tests, 721 s).
+
+## 2026-11-12 · P9-05 user guide, keymap reference, changelog, README · done
+- What changed: `docs/USER_GUIDE.md` (written: starting, the screen, finding commands,
+  editing, projects, the language server, build/run/test, debugging, terminals, git,
+  agents, help, settings, plugins, troubles - Modern keys throughout).
+  `docs/KEYMAP.md` is made by the new `tmide --keys` (`keymap_markdown` in
+  helpbook.mojo): every command with a key in the Modern, Turbo or Emacs keymap, menu by
+  menu, then the palette-only ones. `scripts/gen_docs.py` makes `CHANGELOG.md` (the
+  finished tasks per phase under the roadmap's version, dated from the journal) and
+  `docs/SOURCE.md` (all 116 modules with their docstring's first sentence); `--check`
+  says whether they are current. README: the introduction says what the IDE is now
+  (it said "a few modern features"), the menu bar sample has the Text menu, the
+  language server row no longer says completion and go to definition are to come and
+  names the real keys, Run is no longer said to hand over the terminal, a
+  Documentation section links the documents, and the Source layout is a summary with the
+  full list in docs/SOURCE.md. Two claims in my first drafts were checked and corrected:
+  completion opens on Ctrl-Space and after a `.` (not on every key), and the project
+  folder is found by pixi.toml only (not .git or .turbomojo.toml).
+- Verified: `tests/test_docs_files.mojo` (3 tests): KEYMAP.md equals `tmide --keys`;
+  gen_docs.py --check passes and every src/*.mojo is in SOURCE.md; every bold key in
+  the user guide (50+) is a key the Modern keymap binds.
+- Not done / unverified: the guide is not shown inside the IDE (help/guide.md is the
+  short in-app one); the README's long feature table was corrected where it was found
+  wrong, not rewritten line by line; the changelog lists tasks as the backlog words
+  them.
+- Gate: scripts/check.sh printed CHECK OK with PERF OK (87 test files, 1084 tests, 695 s).
