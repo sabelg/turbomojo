@@ -9,6 +9,10 @@
   are elsewhere; Help > Notifications (Shift-F10) shows what is running. Toasts that
   come while you type wait for a pause, a save or the debugger stopping; your own
   build, tests and commits come at once and first.
+- **Ask the agent, with local help**: Help > Ask agent about this error / this code
+  sends the code, the message, TurboMojo's explanation and the documentation pages
+  that fit, and asks for an answer that names its pages; imports in the answer are
+  built with your Mojo, and made-up ones are reported.
 - **One search box**: Find in documentation (Alt-F1) takes a name, `List.append` or
   a pasted error line, answers in one line, and lists the commands that fit; `?`
   in the palette hands the text over.

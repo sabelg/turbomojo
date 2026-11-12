@@ -275,6 +275,7 @@ struct App(Movable):
     var docpane_entry: Int     # the documentation index entry the pane shows (-1: none)
     var docpane_name: String   # the name it shows
     var hover_pane: Bool       # the language server's answer goes to the docs pane
+    var agent_explaining: Bool # the agent's turn answers an explain request (its imports get checked)
     var explain_rect: List[Int]  # that editor's place before it made room (x, y, w, h)
     var blame_rows: List[BlameLine]
     var prob_build: List[Problem]   # the last build's errors and warnings (Problems page)
@@ -680,6 +681,7 @@ struct App(Movable):
         self.docpane_entry = -1
         self.docpane_name = ""
         self.hover_pane = False
+        self.agent_explaining = False
         self.explain_rect = List[Int]()
         self.blame_rows = List[BlameLine]()
         self.prob_build = List[Problem]()

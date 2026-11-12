@@ -3910,3 +3910,30 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   debug session); keys in other windows (the agent panel's prompt, the terminal) do
   not count as typing; there is no "N waiting" mark on the status line.
 - Gate: scripts/check.sh printed CHECK OK (75 test files, 1047 tests). The user chose to keep the pause (asked how VS Code compares: it shows toasts at once).
+
+## 2026-11-12 · P7-13 grounded "explain" actions into the agent panel · done
+- What changed: `src/agentexplain.mojo` builds the prompts (rules: answer from the
+  material, cite pages as [page: title], say when it does not cover something, Mojo
+  1.x - def, comptime, std. imports), numbers code lines, picks the names a text uses
+  (the compiler's quoted names first), extracts import lines from an answer's code
+  blocks and reads which ones failed to build. `src/app_agentexplain.mojo`: Help > Ask
+  agent about this error (CM_AGENT_EXPLAIN: the Problems row or the cursor line's
+  problem, ±6 lines of code, the P7-08 explanation, up to 3 standard library sections
+  of 1500 characters) and about this code (CM_AGENT_EXPLAIN_CODE: the selection or
+  the enclosing function, up to 80 lines). The chat shows a one-line request with how
+  many local pages went along. At the end of that turn the answer's imports are
+  written to a small program in the state folder and built with the configured
+  compiler; ones that fail are reported in the panel ("✗ Not in the installed Mojo").
+- Verified: `tests/test_agentexplain.mojo` (3 tests): the pieces (names, numbering,
+  imports only from code blocks and once, the compiler's failing lines, the prompt's
+  rules and pages, excerpts capped); with the fake ACP agent (taught an "explain"
+  reply) and a fake downloaded reference: the one-line request with 2 pages, the
+  agent receiving 2 pages, the rules and numbered lines, the made-up import reported
+  by a real build and the real one not; Ask about this code sending the function's
+  lines; nothing to explain - a message and no panel. test_agentpanel, test_agentperm,
+  test_commands and test_strings still pass; the Help menu's hot letters are unique.
+- Not done / unverified: whether a real agent follows the citation rule is not
+  checked (only asked for); not tried with claude-agent-acp; the import check runs the
+  compiler in the foreground (about half a second, only when the answer has
+  imports); project names are not looked up (only standard library pages).
+- Gate: scripts/check.sh printed CHECK OK (76 test files, 1050 tests).

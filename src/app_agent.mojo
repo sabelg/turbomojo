@@ -25,6 +25,7 @@ from markdown import MdLine, md_render
 from app_outline import *
 from agentsvc import allow_key, option_of
 from app_agentsvc import *
+from app_agentexplain import *
 
 
 __extension App:
@@ -136,6 +137,7 @@ __extension App:
                         self.focus(pi)
             elif e.kind == AE_TURN_END:
                 self.chat.cancel_open_tools()
+                self.agent_check_answer()
                 if self.top() != self.agent_index():
                     self.notify(NL_DONE if e.stop_reason == "end_turn" else NL_WARN, (self.agent.agent_name if self.agent.agent_name.byte_length() > 0 else String("The agent")) + " has finished", "" if e.stop_reason == "end_turn" else e.stop_reason)
                 if e.stop_reason == "error":

@@ -49,7 +49,9 @@ or unstage one change), Commit, Branch and Blame.
 
 File > Agent panel (Ctrl-F11) talks to an agent that speaks the Agent Client Protocol,
 named by `agent` under `[tools]`. It asks before every change and command unless you
-allow it for the session; `@file:12-20` in a prompt sends those lines along.
+allow it for the session; `@file:12-20` in a prompt sends those lines along. Help >
+Ask agent about this error (or this code) sends the code with the local explanation
+and documentation pages, and checks the imports of the answer.
 
 ## Settings
 

@@ -46,6 +46,7 @@ from app_gitdiff import *
 from app_gitcmd import *
 from app_explain import *
 from app_docpane import *
+from app_agentexplain import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -669,6 +670,10 @@ __extension App:
                 _ = self.docs_at_cursor(True)
         elif cmd == CM_DOCS_PANE:
             self.docpane_toggle()
+        elif cmd == CM_AGENT_EXPLAIN:
+            self.agent_explain_error()
+        elif cmd == CM_AGENT_EXPLAIN_CODE:
+            self.agent_explain_code()
         elif cmd == CM_ABOUT:
             var d = Dialog(D_ABOUT, "About", 52, 14)
             d.lines.append("")

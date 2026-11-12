@@ -95,6 +95,11 @@ def ask(method, params):
 
 
 def turn(rid, text):
+    if text.startswith("Explain this"):
+        # an "explain" request: say what it was given, answer with one real import and one made up
+        chunk("pages given: %d; rules: %s; numbered: %s|" % (text.count("### Page: "), "[page:" in text, "\n3: " in text))
+        chunk("Use this:\n\n```mojo\nfrom std.collections import List\nfrom std.collections import NoSuchThing\n```\n")
+        return "end_turn"
     if "noise" in text:
         sys.stderr.write("fake agent: a log line on stderr\n")
         sys.stderr.flush()
