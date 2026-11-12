@@ -3,12 +3,20 @@ from std.sys import argv
 from std.ffi import external_call
 from app import *
 from term import is_terminal
-from commands import CM_NEW
+from commands import CM_NEW, build_registry
+from strings import strings_template
+from config import config_home
 from util import state_dir
 
 
 def main() raises:
+    var pre = argv()
+    if len(pre) == 2 and String(pre[1]) == "--strings":
+        # the UI's English words as a strings file to translate (see src/strings.mojo)
+        print(strings_template(build_registry()), end="")
+        return
     var app = App()
+    app.strings_dir = config_home() + "/strings"
     app.trust_enable(state_dir() + "/trusted")
     app.bp_enable(state_dir() + "/breakpoints")
     app.load_config()

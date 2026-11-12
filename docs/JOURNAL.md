@@ -3737,3 +3737,32 @@ Mojo 1.x has no fn).
 - Not done / unverified: clicking the minimap does not jump; sticky scroll is off with
   soft wrap and folds.
 - Verified: `scripts/check.sh` → `CHECK OK`, 68 test files, 1017 tests, smoke ok.
+
+## 2026-11-11 · P7-06 Externalised UI strings · done
+
+- Scope chosen: the words of the command registry - the menu bar, every command's
+  title and its hint - which the menus, the palette, the status line's hints and the
+  keyboard reference all take from there. Dialog texts, messages and the status
+  line's fixed key hints (a few hundred literals across the app) stay in the code:
+  moving them is mechanical but large; noted below.
+- `src/strings.mojo`: `strings_template` (every string in English as TOML: [menus]
+  keyed by the English menu name, "≡" as `system`; [titles] and [hints] keyed by the
+  commands' stable names), `apply_strings` (puts a file's words into the registry and
+  says what is wrong: unknown menus or commands, a visible title without a hot letter,
+  the same hot letter twice in the menu bar or in one menu - the test that keeps the
+  English menus right, now for translations at run time), `language_from` (ui.language,
+  else LANG's language: de_DE.UTF-8 -> de; C, POSIX, nothing -> en).
+- The app applies `strings/<language>.toml` from the config folder after the keymap
+  (`rebuild_keys`, so translated titles and user keys go together); English needs no
+  file; a language without a file is English without a warning. `App.strings_dir` is
+  set only by the real program. `tmide --strings` prints the template.
+- Tests (`tests/test_strings.mojo`, 6): the English template parses and, applied back,
+  changes nothing and warns of nothing, and holds every command and menu; a German
+  sample (menu bar, titles, a hint; the rest English) in the registry and the menus;
+  every kind of mistake reported; languages from LANG and the setting; the app drawing
+  "Datei" and "Bearbeiten" in the menu bar and the keyboard reference in German, a
+  language without a file; `tmide --strings` printing exactly the template.
+- Not done / unverified: no translation ships (none written by a speaker of another
+  language); dialog texts, messages, help pages and the tutorial are English only;
+  right-to-left scripts are not handled.
+- Verified: `scripts/check.sh` → `CHECK OK`, 69 test files, 1023 tests, smoke ok.

@@ -13,6 +13,7 @@ Example:
     theme_light = "light"       #   and on a light one
     # scanlines = false         # every other row darker (a CRT look); unset: as the theme has it
     screen_reader = false       # plain, linear screen for screen readers (also TURBOMOJO_SCREEN_READER=1)
+    language = ""               # the UI's words from strings/<language>.toml ("" = from LANG)
     reduced_motion = "auto"     # no spinner animation; "auto": as the desktop's animations setting
     keymap = "modern"           # modern | turbo (WordStar keys) | emacs
     layout = "classic"          # classic (overlapping windows) | tiled (panes with tabs, splits)
@@ -132,6 +133,7 @@ struct Settings(Copyable, Movable):
     var theme_light: String
     var scanlines: Int          # ui.scanlines: -1 as the theme has it, 0 off, 1 on
     var screen_reader: Bool     # ui.screen_reader: plain, linear drawing for screen readers
+    var language: String        # ui.language ('' = from LANG)
     var reduced_motion: Int     # ui.reduced_motion: -1 auto (the desktop's setting), 0 off, 1 on
     var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var tiled: Bool      # ui.layout = "tiled"
@@ -175,6 +177,7 @@ struct Settings(Copyable, Movable):
         self.theme_light = "light"
         self.scanlines = -1
         self.screen_reader = False
+        self.language = ""
         self.reduced_motion = -1
         self.keymap = 0
         self.tiled = False
@@ -300,6 +303,12 @@ struct Settings(Copyable, Movable):
                 self.warnings.append("ui.scanlines must be true or false")
             else:
                 self.scanlines = 1 if doc.vals[sli].b else 0
+        var lgi = doc.find("ui.language")
+        if lgi >= 0:
+            if doc.vals[lgi].kind != T_STR:
+                self.warnings.append("ui.language must be a language code such as \"de\"")
+            else:
+                self.language = doc.vals[lgi].s
         var sri = doc.find("ui.screen_reader")
         if sri >= 0:
             if doc.vals[sri].kind != T_BOOL:
@@ -380,7 +389,7 @@ struct Settings(Copyable, Movable):
             self.key_names.append(doc.get_list("keys." + name))
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run."):

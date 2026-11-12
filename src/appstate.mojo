@@ -13,6 +13,7 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from themes import ThemeSet, scheme_from, animations_off
+from strings import apply_strings, language_from
 from notify import NotifyCenter
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
@@ -171,6 +172,8 @@ struct App(Movable):
     var sticky_scroll: Bool     # editor.sticky_scroll
     var minimap_on: Bool        # editor.minimap
     var scopes_stale: Bool      # a long file's scopes wait to be scanned again
+    var language: String        # the UI's language (strings file); "en": built in
+    var strings_dir: String     # where strings files are ('' in tests: English only)
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
     var reduced_motion_cfg: Int # ui.reduced_motion: -1 auto, 0 off, 1 on
     var hl: Highlighter
@@ -561,6 +564,8 @@ struct App(Movable):
         self.sticky_scroll = True
         self.minimap_on = False
         self.scopes_stale = False
+        self.language = "en"
+        self.strings_dir = ""
         self.reduce_motion = False
         self.reduced_motion_cfg = -1
         self.pal = theme(0)
@@ -1158,6 +1163,7 @@ struct App(Movable):
             self.config_warnings.append("theme " + pr)
         self.theme_apply()
         self.keymap = s.keymap
+        self.language = language_from(s.language, env_or("LANG", ""))
         self.restore_session = s.restore_session
         if s.docs_home.byte_length() > 0 and s.docs_home != self.doc_home:
             self.doc_home = s.docs_home
@@ -1194,6 +1200,14 @@ struct App(Movable):
                 continue
             if not self.reg.rebind(self.user_key_cmds[i], keys^) and warn:
                 self.config_warnings.append("keys: unknown command \"" + self.user_key_cmds[i] + "\"")
+        # the UI's words in the chosen language
+        if self.language != "en" and self.strings_dir.byte_length() > 0:
+            var sp = self.strings_dir + "/" + self.language + ".toml"
+            if path_exists(sp):
+                var w = apply_strings(self.reg, toml_parse(read_text(sp)), "strings/" + self.language + ".toml")
+                if warn:
+                    for x in w:
+                        self.config_warnings.append(x)
         self.menus = build_menus(self.reg)
 
     def load_config(mut self):
