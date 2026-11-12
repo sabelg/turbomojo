@@ -3937,3 +3937,18 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   compiler in the foreground (about half a second, only when the answer has
   imports); project names are not looked up (only standard library pages).
 - Gate: scripts/check.sh printed CHECK OK (76 test files, 1050 tests).
+
+## 2026-11-12 · faster gate: test programs compiled in parallel · done
+- Asked by the user ("why is the compiler so slow?"). The gate had grown to about
+  44 minutes (the last two runs: 02:32-03:16 and 01:27-02:10): 76 test programs, most
+  importing the whole IDE, compiled one after another on a 20-core machine.
+- What changed: `scripts/check.sh` asks pixi once for mojo, MODULAR_HOME and the vt
+  library, then compiles every test program in parallel (`xargs -P`, TM_JOBS at a
+  time, default half the CPUs), each one's messages in build/tests/<name>.log and a
+  failure printed with its errors; then runs the tests one after another as before
+  (several start tmux, agents or language servers), then the smoke test.
+- Verified: the new gate printed CHECK OK with the same 76 files and 1050 tests in
+  618 s (10.3 min: about 7 compiling with 10 jobs, 3 running) instead of about 44 min.
+- Not done / unverified: other TM_JOBS values were not measured; a failing compile is
+  only reported after all compiles end (no early stop); the tests themselves still
+  run one by one.
