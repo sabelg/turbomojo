@@ -1,6 +1,7 @@
 """Application state: the App struct, its fields and small shared helpers.
 
 Behaviour lives in the app_*.mojo modules, which extend App."""
+from glyphs import glyphs_of
 from progress import QUIET_MS
 from version import TURBOMOJO_VERSION
 from std.collections import List, Dict
@@ -180,6 +181,7 @@ struct App(Movable):
     var breadcrumbs: Bool       # editor.breadcrumbs
     var sticky_scroll: Bool     # editor.sticky_scroll
     var minimap_on: Bool        # editor.minimap
+    var minimap_blocks: Bool    # editor.minimap_style: half blocks instead of braille
     var scopes_stale: Bool      # a long file's scopes wait to be scanned again
     var language: String        # the UI's language (strings file); "en": built in
     var strings_dir: String     # where strings files are ('' in tests: English only)
@@ -603,6 +605,7 @@ struct App(Movable):
         self.breadcrumbs = True
         self.sticky_scroll = True
         self.minimap_on = False
+        self.minimap_blocks = False
         self.scopes_stale = False
         self.language = "en"
         self.strings_dir = ""
@@ -1204,6 +1207,8 @@ struct App(Movable):
         configure_servers(self.lsp_extra, s)
         self.sticky_scroll = s.sticky_scroll
         self.minimap_on = s.minimap
+        self.minimap_blocks = s.minimap_style == "blocks" or (s.minimap_style == "auto" and env_or("TERM", "") == "linux")
+        self.scr.glyphs = glyphs_of(s.glyphs)
         self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1"
         self.reduced_motion_cfg = s.reduced_motion
         self.motion_apply()

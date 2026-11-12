@@ -76,6 +76,7 @@ struct of `appstate.mojo`, one area each.
 | `src/frecency.mojo` | Which files were opened how often and how recently ("frecency"), to rank the files in the quick-open palette. |
 | `src/git.mojo` | Git, as the editor sees it: which repository a file is in, what `git status` says about the files (for the explorer), and the commands that ask git for them. |
 | `src/gitdiff.mojo` | The diff view's model: a unified diff of two versions of a file, and what staging, unstaging or reverting one change (hunk) of it makes of them. |
+| `src/glyphs.mojo` | Glyph tiers (`ui.glyphs`): which characters the IDE's own chrome is drawn with. |
 | `src/grapheme.mojo` | Grapheme clusters: what a user perceives as one character. |
 | `src/grep.mojo` | Find in files: walks a folder and searches every text file, a little at a time so the editor stays responsive (call `step` from the event loop until `done`). |
 | `src/helpbook.mojo` | TurboMojo's own help: the "TurboMojo" book of the documentation viewer (the guide, the cheat sheet, the keyboard reference, what's new) and the tutorial file. |

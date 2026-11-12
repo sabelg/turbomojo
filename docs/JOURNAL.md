@@ -4538,3 +4538,34 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   OSC 11 does change the auto theme); the 0.18 luminance cut-off is a judgement, not
   measured on people.
 - Gate: scripts/check.sh printed CHECK OK (95 test files, 1122 tests, 786 s).
+
+## 2026-11-12 · P10-11 Glyph tiers and a half-block minimap · done
+- What changed: `ui.glyphs = "unicode" | "ascii" | "nerd"` (src/glyphs.mojo, default
+  unicode). `ascii_look` gives every symbol the chrome uses - box drawing, blocks
+  and shading, braille (by dot count), arrows and triangles, bullets, ✓ ✗, √, ≡,
+  ellipses, control pictures, Nerd Font icons - a one-cell ASCII look-alike; letters
+  keep theirs. Screen.render applies it in the ascii tier, so every path that puts a
+  character on the screen is covered and nothing moves. The nerd tier puts Font
+  Awesome / Devicons icons (Private Use Area, one cell) before the explorer's files
+  and folders (`Explorer.line(k, icons)`, `nerd_file_icon`) and before notices
+  (`level_mark(level, nerd)`). `editor.minimap_style = "auto" | "braille" |
+  "blocks"`: blocks draws each minimap cell as ▀ ▄ █ (two dot rows per half, both
+  dot columns); auto picks blocks when TERM=linux; in the ascii tier the braille
+  path is used, so its dots become . : #. Both settings warn on unknown values.
+  README: a Glyphs row and the minimap style.
+- Verified: tests/test_glyphs.mojo (6 tests): every chrome symbol is one cell wide
+  and has an ASCII look-alike, letters (é ж λ 中) stay; the IDE with an editor and
+  its minimap, the explorer, two notifications, the About dialog and an open menu
+  sends no byte >= 128 in ascii (and > 100 in unicode); in unicode and nerd no cell
+  of that screen is wide, and none carries a combining character or variation
+  selector; nerd icons for .mojo, .md and folders, none in unicode; the half-block
+  minimap's full, upper and lower cells, braille by default, dots in ascii; the
+  settings and their warnings. Mutants that skip the render mapping or the blocks
+  branch fail. test_explorer, test_notify, test_config, test_scopes pass.
+- Not done / unverified: the Nerd Font code points are from the Nerd Fonts cheat
+  sheet as I know it, not checked against an installed font; box drawing is East
+  Asian "ambiguous" width, so a CJK terminal set to draw those wide needs `ascii` -
+  it is not detected; `auto` minimap detection is only TERM=linux; the chrome audit
+  is of the screens drawn in the test (a menu, About, explorer, notices, editor),
+  not every dialog; the 🔥 in the sources is the `.🔥` file extension, not drawn.
+- Gate: scripts/check.sh printed CHECK OK (96 test files, 1128 tests, 782 s).

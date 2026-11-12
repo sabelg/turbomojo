@@ -27,6 +27,7 @@ Example:
     show_whitespace = false
     hyperlinks = true           # file:line in the Message window and the agent panel as links (OSC 8)
     hyperlink_format = "file://{host}{path}"   # or e.g. "vscode://file{path}:{line}:{column}"
+    glyphs = "unicode"          # unicode (box drawing, arrows) | ascii (only ASCII) | nerd (+ Nerd Font icons)
 
     [editor]
     auto_indent = true
@@ -38,6 +39,7 @@ Example:
     breadcrumbs = true          # the title shows where the cursor is: file › struct › def
     sticky_scroll = true        # the headers of the scopes scrolled away stay on the top rows
     minimap = false             # the whole file in braille dots at the right edge
+    minimap_style = "auto"      # braille | blocks (half blocks, for fonts without braille); auto: blocks on the Linux console
     highlight_word = true       # show the other uses of the word the cursor is on
     trim_trailing_whitespace = false   # on save (.editorconfig overrides)
     rulers = []                 # e.g. [80, 100]: vertical guides after these columns
@@ -71,6 +73,7 @@ Example:
 
 Options changed from the Options menu are written back to the user file; everything else
 in that file (comments, order, other keys) is left as it is."""
+from glyphs import glyphs_of
 from std.collections import List
 from commands import keymap_from_name
 from toml import TomlDoc, toml_parse, T_STR, T_BOOL, T_LIST, T_INT
@@ -163,6 +166,8 @@ struct Settings(Copyable, Movable):
     var clock: Bool
     var hyperlinks: Bool        # ui.hyperlinks
     var hyperlink_format: String    # ui.hyperlink_format: {host} {path} {line} {column}
+    var glyphs: String              # ui.glyphs: unicode | ascii | nerd
+    var minimap_style: String       # editor.minimap_style: auto | braille | blocks
     var run_in_terminal: Bool
     var show_whitespace: Bool
     var soft_wrap: Bool
@@ -217,6 +222,8 @@ struct Settings(Copyable, Movable):
         self.clock = True
         self.hyperlinks = True
         self.hyperlink_format = "file://{host}{path}"
+        self.glyphs = "unicode"
+        self.minimap_style = "auto"
         self.run_in_terminal = True
         self.show_whitespace = False
         self.soft_wrap = False
@@ -275,6 +282,16 @@ struct Settings(Copyable, Movable):
         if self.hyperlink_format.find("{path}") < 0:
             self.warnings.append("ui.hyperlink_format must contain {path}")
             self.hyperlink_format = "file://{host}{path}"
+        var g = doc.get_str("ui.glyphs", self.glyphs)
+        if glyphs_of(g) < 0:
+            self.warnings.append("ui.glyphs must be unicode, ascii or nerd")
+        else:
+            self.glyphs = g
+        var ms = doc.get_str("editor.minimap_style", self.minimap_style)
+        if ms != "auto" and ms != "braille" and ms != "blocks":
+            self.warnings.append("editor.minimap_style must be auto, braille or blocks")
+        else:
+            self.minimap_style = ms
         self.run_in_terminal = self.take_bool(doc, "ui.run_in_terminal", self.run_in_terminal)
         self.show_whitespace = self.take_bool(doc, "ui.show_whitespace", self.show_whitespace)
         self.soft_wrap = self.take_bool(doc, "editor.soft_wrap", self.soft_wrap)
@@ -462,7 +479,7 @@ struct Settings(Copyable, Movable):
                 self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):

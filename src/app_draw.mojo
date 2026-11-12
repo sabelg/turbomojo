@@ -360,6 +360,7 @@ __extension App:
         """Window i's breadcrumbs, pinned scope headers and minimap, as the settings and
         the cursor have them (the file's scopes are scanned again only after an edit)."""
         self.wins[i].minimap = self.minimap_on and not self.reader and self.wins[i].w >= 60
+        self.wins[i].minimap_blocks = self.minimap_blocks
         if (not self.breadcrumbs and not self.sticky_scroll) or self.wins[i].buf.large:
             self.wins[i].crumbs = ""
             self.wins[i].sticky.clear()

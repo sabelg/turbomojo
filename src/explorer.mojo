@@ -1,5 +1,6 @@
 """The file explorer's model: the project folder as a tree of which only the opened
 folders are listed, and the file operations (create, rename, move, delete to trash)."""
+from glyphs import nerd_file_icon
 from std.collections import List
 from std.os import listdir
 from std.os.path import isdir, islink
@@ -159,7 +160,9 @@ struct ExplorerTree(Movable):
             return self.rows[k].path
         return dirname(self.rows[k].path)
 
-    def line(self, k: Int) -> String:
+    def line(self, k: Int, icons: Bool = False) -> String:
+        """Row k as shown: indented, an arrow on a folder; with `icons` (ui.glyphs =
+        "nerd") a Nerd Font icon before the name."""
         var s = String("")
         for _ in range(self.rows[k].depth):
             s += "  "
@@ -167,6 +170,8 @@ struct ExplorerTree(Movable):
             s += ("▾ " if self.rows[k].open else "▸ ")
         else:
             s += "  "
+        if icons:
+            s += chr(nerd_file_icon(self.rows[k].name, self.rows[k].dir, self.rows[k].open)) + " "
         return s + self.rows[k].name
 
 

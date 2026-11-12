@@ -7,6 +7,7 @@ downloads. Toasts stand at the top right for a few seconds (errors longer); a cl
 takes one away. Help > Notifications (Shift-F10) lists what is running now (made from
 the IDE's state, so nothing has to be registered) and the notices of this session.
 """
+from glyphs import GLYPHS_NERD
 from std.collections import List
 from appstate import *
 from util import *
@@ -99,7 +100,7 @@ __extension App:
         for k in self.notes.toasts(now_ns()):
             var n = self.notes.notices[k].copy()
             var lines = List[String]()
-            lines.append(level_mark(n.level) + " " + n.title)
+            lines.append(level_mark(n.level, self.scr.glyphs == GLYPHS_NERD) + " " + n.title)
             if n.text.byte_length() > 0:
                 var wrapped = wrap_plain(n.text, w - 4)
                 for q in range(min(2, len(wrapped))):
@@ -149,7 +150,7 @@ __extension App:
         var k = len(self.notes.notices) - 1
         while k >= 0:
             var n = self.notes.notices[k].copy()
-            items.append(n.clock + " " + level_mark(n.level) + " " + n.title + ((" - " + n.text) if n.text.byte_length() > 0 else String("")))
+            items.append(n.clock + " " + level_mark(n.level, self.scr.glyphs == GLYPHS_NERD) + " " + n.title + ((" - " + n.text) if n.text.byte_length() > 0 else String("")))
             data.append(k)
             k -= 1
         var d = Dialog(D_NOTICES, "Notifications", min(78, self.scr.w - 4), min(self.scr.h - 2, max(10, len(items) + 7)))

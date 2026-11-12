@@ -1,4 +1,5 @@
 """Window drawing: frame, gutter, highlighted text, selection, scrollbars."""
+from glyphs import GLYPHS_ASCII
 from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
 from screen import Screen, UL_CURLY, UL_DASHED, UL_DOTTED
@@ -101,7 +102,9 @@ __extension Window:
 
     def draw_minimap(self, mut scr: Screen, pal: Palette, rws: Int):
         """The whole file at the right edge in braille dots: each dot a few columns of a
-        line that has text; the rows the window shows on a lighter background."""
+        line that has text; the rows the window shows on a lighter background. In half
+        blocks (editor.minimap_style = "blocks") a cell has an upper and a lower half
+        only, each for two dot rows and both dot columns."""
         var n = self.buf.count()
         var x0 = self.x + self.w - 1 - MINIMAP_W
         var per = max(1, (n + rws * 4 - 1) // (rws * 4))     # lines per dot row
@@ -130,6 +133,14 @@ __extension Window:
             var shown = first < self.top + rws and first + 4 * per > self.top
             var bg = pal.curline_bg if shown else pal.ed_bg
             for cx in range(MINIMAP_W):
+                if self.minimap_blocks and scr.glyphs != GLYPHS_ASCII:   # (ascii: braille -> . : #)
+                    # half blocks: the upper and the lower two dot rows of the cell
+                    var cols = 3 << (cx * 2)
+                    var up = (masks[0] | masks[1]) & cols != 0
+                    var dn = (masks[2] | masks[3]) & cols != 0
+                    var hb = 0x2588 if up and dn else (0x2580 if up else (0x2584 if dn else 32))
+                    scr.put(x0 + cx, self.y + 1 + cy, hb, pal.gutter_fg, bg)
+                    continue
                 var bits = 0
                 for dy in range(4):
                     for dx in range(2):

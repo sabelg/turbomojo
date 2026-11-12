@@ -2,6 +2,7 @@
 when something finishes or needs attention while you work elsewhere, and are kept in
 the notification centre (Help > Notifications) with what is running now.
 """
+from glyphs import NF_CHECK, NF_WARN, NF_TIMES, NF_INFO
 from std.collections import List
 
 comptime NL_INFO = 0
@@ -40,7 +41,16 @@ struct Notice(Copyable, Movable):
         return self.at_ns + (TOAST_ERROR_MS if self.level == NL_ERROR else TOAST_MS) * 1000000
 
 
-def level_mark(level: Int) -> String:
+def level_mark(level: Int, nerd: Bool = False) -> String:
+    """The mark before a notice: ✓ ! ✗ •, or Nerd Font icons (ui.glyphs = "nerd")."""
+    if nerd:
+        if level == NL_DONE:
+            return chr(NF_CHECK)
+        if level == NL_WARN:
+            return chr(NF_WARN)
+        if level == NL_ERROR:
+            return chr(NF_TIMES)
+        return chr(NF_INFO)
     if level == NL_DONE:
         return "✓"
     if level == NL_WARN:

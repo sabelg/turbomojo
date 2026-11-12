@@ -3,6 +3,7 @@ from palette import ANSI_BASE, COLOR_DEFAULT
 from std.collections import List, Dict
 from util import decode, encode_cp, append_str, append_int, char_width
 from caps import COLOR_16, COLOR_256, COLOR_TRUE, rgb_to_256, rgb_to_16, sgr_16
+from glyphs import GLYPHS_ASCII, GLYPHS_UNICODE, ascii_look
 
 comptime CONT = -5  # a further cell of a character wider than one cell
 comptime XBASE = 0x1000000  # cmb values from here on are indexes into Screen.xseq
@@ -45,6 +46,7 @@ struct Screen(Movable):
     var cblock: Bool
     var color_mode: Int   # COLOR_TRUE / COLOR_256 / COLOR_16: how colours are sent
     var plain: Bool       # screen-reader mode: box drawing and shading drawn as blanks
+    var glyphs: Int       # ui.glyphs: GLYPHS_ASCII sends every symbol as an ASCII look-alike
     var sync: Bool        # wrap each frame in synchronized-output markers (mode 2026)
     var cx0: Int
     var cy0: Int
@@ -79,6 +81,7 @@ struct Screen(Movable):
         self.cblock = False
         self.color_mode = COLOR_TRUE
         self.plain = False
+        self.glyphs = GLYPHS_UNICODE
         self.sync = True
         self.cx0 = 0
         self.cy0 = 0
@@ -496,6 +499,8 @@ struct Screen(Movable):
                 var c = self.ch[k]
                 if c < 32:
                     c = 32
+                elif c >= 128 and self.glyphs == GLYPHS_ASCII:
+                    c = ascii_look(c)
                 encode_cp(c, out)
                 var m = self.cmb[k]
                 if m != 0 and m < XBASE:

@@ -93,6 +93,7 @@ struct Window(Copyable, Movable):
     var crumbs: String          # " › Counter › add": where the cursor is, after the title
     var sticky: List[Int]       # lines pinned at the top: headers of the scopes scrolled away
     var minimap: Bool           # a minimap column at the right edge
+    var minimap_blocks: Bool    # drawn in half blocks (fonts without braille)
     var scopes_ver: Int         # buffer version `scope_items` were made for
     var scopes_ns: Int          # when they were made (long files: at most every half second)
     var scope_items: List[OutlineItem]  # the file's defs and structs (for crumbs, sticky)
@@ -158,6 +159,7 @@ struct Window(Copyable, Movable):
         self.crumbs = ""
         self.sticky = List[Int]()
         self.minimap = False
+        self.minimap_blocks = False
         self.scopes_ver = -1
         self.scopes_ns = 0
         self.scope_items = List[OutlineItem]()

@@ -1,4 +1,5 @@
 """The file explorer window: the project's files as a tree at the left edge."""
+from glyphs import GLYPHS_NERD
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
@@ -110,7 +111,7 @@ __extension App:
         for k in range(len(self.ex.rows)):
             if k > 0:
                 text.append(10)
-            var line = self.ex.line(k)
+            var line = self.ex.line(k, self.scr.glyphs == GLYPHS_NERD)
             # git: the file's state as a letter after its name (folders: a dot)
             var code = self.git.code_of(self.ex.rows[k].path)
             codes.append(code)
