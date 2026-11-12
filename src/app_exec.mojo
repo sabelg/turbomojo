@@ -44,6 +44,7 @@ from app_terminal import *
 from app_tests import *
 from app_gitdiff import *
 from app_gitcmd import *
+from app_explain import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
@@ -585,6 +586,8 @@ __extension App:
             self.help_page("guide.md")
         elif cmd == CM_HELP_CHEAT:
             self.help_page("cheatsheet.md")
+        elif cmd == CM_HELP_ERRORS:
+            self.help_page("errors.md")
         elif cmd == CM_HELP_NEW:
             self.help_page("whats-new.md")
         elif cmd == CM_HELP_TUTORIAL:
@@ -654,7 +657,7 @@ __extension App:
             self.show(d^)
         elif cmd == CM_HELP:
             # F1 on a name that has documentation shows it, as in Turbo; else the reference
-            if not self.docs_at_cursor(False):
+            if not self.explain_command() and not self.docs_at_cursor(False):
                 self.help_dialog()
         elif cmd == CM_DOCS:
             _ = self.docs_at_cursor(True)

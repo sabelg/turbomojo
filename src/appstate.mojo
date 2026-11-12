@@ -265,6 +265,8 @@ struct App(Movable):
     var git_tmp_n: Int         # numbers the files staged text is written to
     var git_branches: List[String]  # the branch dialog's branches
     var blame_path: String     # the blame window's file
+    var explain_path: String   # the editor an error explanation stands beside
+    var explain_rect: List[Int]  # that editor's place before it made room (x, y, w, h)
     var blame_rows: List[BlameLine]
     var prob_build: List[Problem]   # the last build's errors and warnings (Problems page)
     var prob_filter: ProblemFilter  # what the Problems page shows
@@ -660,6 +662,8 @@ struct App(Movable):
         self.git_tmp_n = 0
         self.git_branches = List[String]()
         self.blame_path = ""
+        self.explain_path = ""
+        self.explain_rect = List[Int]()
         self.blame_rows = List[BlameLine]()
         self.prob_build = List[Problem]()
         self.prob_filter = ProblemFilter()

@@ -27,6 +27,9 @@ Files are in the Edit, Text and Search menus.
 - **F7** starts the language server: problems underlined as you type, completion,
   hover (Alt-I), go to definition (F12), references, rename, code actions.
 - **F9** builds, **Ctrl-F9** runs (in the terminal window if `run_in_terminal`).
+- **F1** on a problem (a row of the Problems page, or its line in the editor) explains
+  the message beside the code: what it means, how to fix it, a program before and
+  after. Help > Error messages has them all.
 - **Shift-F5** debugs: breakpoints (Ctrl-F8), stepping (F7, F8, Shift-F8), the Debug
   window (Ctrl-F3) with variables and watches, the CPU window (Alt-F2).
 - Run > Test explorer runs `std.testing` suites and shows what failed where.

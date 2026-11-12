@@ -3787,3 +3787,33 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
 - Not done / unverified: commands without a key do not suggest binding one; the echo
   is not measured (the report's local counters) - the counts are the only trace.
 - Verified: scripts/check.sh printed CHECK OK (70 test files, 1028 tests).
+
+## 2026-11-11 · P7-08 explanations of Mojo error messages · done
+- What changed: 16 hand-written explanations in `help/errors/*.md` (what it means, how
+  to fix it, a program before and after), each keyed by the text of the message
+  (`<!-- match: ... -->`, several texts allowed). They are built in
+  (`src/errhelp_pages.mojo`, made by `scripts/gen_errhelp.py`); `src/errhelp.mojo`
+  finds the page for a message. F1 on a Problems row, or in an editor on a line with a
+  problem, opens a new explanation window (WK_EXPLAIN, `src/app_explain.mojo`) beside
+  the code: the editor keeps its left half (top half when under 90 columns) and gets
+  its place back on Esc; in the tiled layout it takes half the editor's pane each time
+  the panes are placed. F1 elsewhere is unchanged (documentation of the name, else the
+  keyboard reference). Help > Error messages is the whole set as one page of the help
+  book, so the finder searches it. Guide, what's new and README say so.
+- Verified: `tests/test_errhelp.mojo` (6 tests): the built-in pages are the files; every
+  page's "before" program, built with the real compiler, fails with a first message
+  that page explains (and no earlier page takes), and its "after" program builds - so
+  a change in Mojo's wording fails the gate; F1 on the Problems row of a real build
+  error opens the explanation beside the code with both in view, Esc restores the
+  editor, F1 on the line works too and F1 on a line without a problem still opens the
+  keyboard reference; a message without a page says so; the tiled layout splits the
+  pane. Two claims in my first drafts were wrong and were caught by checking
+  (`Int("12")` does parse text; an unindented body first says "expressions must not
+  appear at file scope").
+- Not done / unverified: "most frequent" is my judgement from the errors met while
+  building TurboMojo, not measured; the language server's wording is assumed to be the
+  compiler's (both come from the same compiler, but only build output is tested); the
+  explanation is plain text (no colours for its code); there is no way to open the
+  "before" program as a scratch file from the window.
+- Gate: scripts/check.sh printed CHECK OK (71 test files, 1034 tests), after test_help was
+  updated for the new help-book page (and now also checks the finder reaches it).

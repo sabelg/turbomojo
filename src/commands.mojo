@@ -162,6 +162,7 @@ comptime CM_HELP_CHEAT = 219
 comptime CM_HELP_TUTORIAL = 220
 comptime CM_HELP_NEW = 221
 comptime CM_SCREEN_READER = 222     # Options > Screen-reader mode
+comptime CM_HELP_ERRORS = 223       # Help > Error messages
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -769,6 +770,7 @@ def build_registry() -> Registry:
     r.cmd(CM_HELP_GUIDE, "help.guide", "TurboMojo ~g~uide", "How TurboMojo works: windows, editing, Mojo, git, agents, settings")
     r.cmd(CM_HELP_CHEAT, "help.cheatSheet", "~C~heat sheet", "The keys used most")
     r.cmd(CM_HELP_TUTORIAL, "help.tutorial", "T~u~torial", "A file to practise in: lessons on moving, selecting, finding, running and debugging")
+    r.cmd(CM_HELP_ERRORS, "help.errors", "~E~rror messages", "What the Mojo compiler's frequent error messages mean and how to fix them (F1 on a problem explains it)")
     r.cmd(CM_HELP_NEW, "help.whatsNew", "W~h~at's new", "What changed in this version of TurboMojo")
     r.cmd(CM_NOTICES, "help.notifications", "~N~otifications...", "What is running now and the messages of this session (builds, tests, git, the agent)", [fkey(10) | MOD_SHIFT])
     r.cmd(CM_SCREEN_READER, "options.screenReader", "Screen-reader ~m~ode", "A plain, linear screen for screen readers: no frames or shading, the cursor on what has the focus, no animation")
@@ -990,6 +992,7 @@ def build_registry() -> Registry:
     r.item(CM_HELP_GUIDE)
     r.item(CM_HELP_CHEAT)
     r.item(CM_HELP_TUTORIAL)
+    r.item(CM_HELP_ERRORS)
     r.item(CM_HELP_NEW)
     r.item(CM_NOTICES)
     r.item(CM_DOCS)

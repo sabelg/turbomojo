@@ -7,6 +7,10 @@
   `theme = "auto"` follows the terminal's (or GNOME's) light or dark.
 - **Notifications**: toasts when a build, tests, a commit or the agent finish while you
   are elsewhere; Help > Notifications (Shift-F10) shows what is running.
+- **Error explanations**: F1 on a problem explains the Mojo message beside the code,
+  with a program before and after the fix; Help > Error messages lists them.
+- **Key echo**: a command picked from a menu or the palette names its key on the
+  status line, until you have used the key a few times.
 - **Help**: this book - the guide, the cheat sheet, a tutorial file, what's new - and
   the finder (/) searches it with the Mojo documentation.
 

@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -48,6 +48,7 @@ from app_terminal import *
 from app_tests import *
 from app_gitdiff import *
 from app_gitcmd import *
+from app_explain import *
 from app_git import *
 from app_jobs import *
 from app_input import *
@@ -149,6 +150,7 @@ __extension App:
     def draw(mut self):
         var p = self.pal.copy()
         self.layout_sync()
+        self.explain_fit()
         self.bp_sync()              # files opened since show their breakpoints
         self.scr.no_clip()
         self.scr.fill(0, 1, self.scr.w, self.scr.h - 2, p.desk_ch, p.desk_fg, p.desk_bg)
@@ -250,6 +252,10 @@ __extension App:
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_AGENT:
                 for h in ["~Enter~ Send", "~Esc~ Stop / editor", "~PgUp~ Back", "@file:1-9 Mention"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_EXPLAIN:
+                for h in ["~Esc~ Close", "~F6~ Back to the code", "~PgDn~ Read on"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_BLAME:

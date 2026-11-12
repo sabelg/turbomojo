@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -46,6 +46,7 @@ from app_terminal import *
 from app_tests import *
 from app_gitdiff import *
 from app_gitcmd import *
+from app_explain import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -65,6 +66,7 @@ __extension App:
         self.macro_key_live = False
         self.sig_follow()
         self.layout_sync()
+        self.explain_fit()
         if recording and self.mode == M_MENU and len(self.macro) > at:
             # the key opened a menu: what is chosen there is recorded as a command instead
             while len(self.macro) > at:
@@ -179,6 +181,8 @@ __extension App:
         if self.wins[t].kind == WK_DIFF and self.git_diff_key(k):
             return
         if self.wins[t].kind == WK_BLAME and self.git_blame_key(k):
+            return
+        if self.wins[t].kind == WK_EXPLAIN and self.explain_key(k):
             return
         if self.wins[t].kind == WK_EXPLORER and self.explorer_key(k):
             return

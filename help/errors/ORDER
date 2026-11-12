@@ -1,0 +1,16 @@
+unknown-name
+implicit-declaration
+fn-removed
+implicit-conversion
+implicit-copy
+uninitialized
+may-raise
+aliasing
+immutable
+init-out
+field-uninitialized
+no-attribute
+invalid-call
+unknown-module
+string-length
+indentation

@@ -73,8 +73,9 @@ def test_the_book_comes_first_and_is_searched() raises:
     assert_equal(lib.pages[1].title, "TurboMojo guide")
     assert_equal(lib.pages[2].title, "Cheat sheet")
     assert_equal(lib.pages[3].title, "Keyboard reference")
-    assert_equal(lib.pages[4].title, "What's new")
-    assert_equal(lib.help_count, 5)
+    assert_equal(lib.pages[4].title, "Mojo error messages")
+    assert_equal(lib.pages[5].title, "What's new")
+    assert_equal(lib.help_count, 6)
     var idx = DocIndex()
     idx.build(lib)
     var found = False
@@ -82,6 +83,11 @@ def test_the_book_comes_first_and_is_searched() raises:
         if e.low.find("coding agents") >= 0 and lib.pages[e.page].title == "TurboMojo guide":
             found = True
     assert_true(found, "the guide's headings are in the finder's index")
+    found = False
+    for e in idx.entries:
+        if e.low.find("copying must be asked for") >= 0 and lib.pages[e.page].title == "Mojo error messages":
+            found = True
+    assert_true(found, "the error explanations are in the finder's index")
     _ = run_system("rm -rf " + shell_quote(d))
 
 
