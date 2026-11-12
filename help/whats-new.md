@@ -1,5 +1,14 @@
 # What's new
 
+## 2.1 (in progress)
+
+- The window with the focus is shown more ways (bold title); the others keep their
+  selection and cursor, muted; the shown tab is in brackets.
+- Problems are marked E, W or i in the gutter, and their underlines are wavy, dashed
+  or dotted - not by colour alone.
+- Terminal ANSI and Terminal Mono themes: your terminal's own colours; `NO_COLOR`
+  is honoured.
+
 ## 2.0: release
 
 - `tmide --version` and `tmide --help`; a conda package (`pixi run package`).

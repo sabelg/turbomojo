@@ -1,4 +1,5 @@
 """Double-buffered cell screen with truecolor diff rendering."""
+from palette import ANSI_BASE, COLOR_DEFAULT
 from std.collections import List
 from util import decode, encode_cp, append_str, append_int, char_width
 from caps import COLOR_16, COLOR_256, COLOR_TRUE, rgb_to_256, rgb_to_16, sgr_16
@@ -366,7 +367,17 @@ struct Screen(Movable):
         return self.bg[y * self.w + x]
 
     def emit_color(self, mut out: List[UInt8], rgb: Int, background: Bool):
-        """Append the SGR sequence for one colour in the terminal's colour depth."""
+        """Append the SGR sequence for one colour in the terminal's colour depth. A
+        palette slot or the terminal's default colour is sent as such at any depth."""
+        if rgb == COLOR_DEFAULT:
+            append_str(out, "\x1b[49m" if background else "\x1b[39m")
+            return
+        if rgb >= ANSI_BASE and rgb < ANSI_BASE + 16:
+            var n = rgb - ANSI_BASE
+            append_str(out, "\x1b[")
+            append_int(out, (40 if background else 30) + n if n < 8 else (100 if background else 90) + n - 8)
+            append_str(out, "m")
+            return
         if self.color_mode == COLOR_TRUE:
             append_str(out, "\x1b[48;2;" if background else "\x1b[38;2;")
             append_int(out, (rgb >> 16) & 255)

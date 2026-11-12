@@ -2,6 +2,17 @@
 from std.collections import List
 
 comptime THEME_COUNT = 3
+comptime ANSI_BASE = 0x1000000      # a colour that names the terminal's palette slot n: ANSI_BASE + n
+comptime COLOR_DEFAULT = 0x2000000  # the terminal's default foreground or background
+
+
+def ansi(n: Int) -> Int:
+    return ANSI_BASE + n
+
+
+def is_rgb(c: Int) -> Bool:
+    """A colour given as 0xRRGGBB (not a palette slot or the terminal's default)."""
+    return c >= 0 and c <= 0xFFFFFF
 
 # CGA palette
 comptime BLACK = 0x000000
@@ -336,7 +347,10 @@ def theme(n: Int) -> Palette:
 
 def mix(a: Int, b: Int, percent_a: Int) -> Int:
     """Colour `a` blended into `b` (`percent_a`% of a): for muted variants, such as the
-    selection of a window that does not have the focus."""
+    selection of a window that does not have the focus. Palette slots cannot be blended:
+    then the palette's bright black (slot 8), the usual muted colour of terminal themes."""
+    if not is_rgb(a) or not is_rgb(b):
+        return ansi(8)
     var r = (((a >> 16) & 255) * percent_a + ((b >> 16) & 255) * (100 - percent_a)) // 100
     var g = (((a >> 8) & 255) * percent_a + ((b >> 8) & 255) * (100 - percent_a)) // 100
     var bl = ((a & 255) * percent_a + (b & 255) * (100 - percent_a)) // 100

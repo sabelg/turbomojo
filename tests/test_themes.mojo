@@ -127,7 +127,7 @@ def test_a_users_theme_file() raises:
     t.add_folder(d)
     var k = t.find("mine")
     assert_true(k >= 0)
-    assert_equal(t.count(), 7)
+    assert_equal(t.count(), 9)                      # the eight built in (with Terminal ANSI and Mono) and "mine"
     assert_equal(t.pals[k].name, "Mine")
     assert_equal(t.pals[k].ed_bg, 0xEEDDCC)
     assert_equal(t.pals[k].ed_fg, 0x1F1F1F)         # a bad colour leaves its base's
@@ -142,7 +142,7 @@ def test_a_users_theme_file() raises:
     var t2 = ThemeSet()
     t2.add_folder(d)
     assert_equal(t2.pals[t2.find("classic")].name, "My Classic")
-    assert_equal(t2.count(), 7)
+    assert_equal(t2.count(), 9)                     # (replaced, not added)
     _ = run_system("rm -rf " + shell_quote(d))
 
 

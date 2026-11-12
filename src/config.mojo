@@ -138,6 +138,7 @@ def read_text(path: String) -> String:
 
 struct Settings(Copyable, Movable):
     var theme: String           # a theme id, or "auto"
+    var theme_given: Bool       # ui.theme is in a config file (NO_COLOR does not override it)
     var theme_dark: String      # for "auto"
     var theme_light: String
     var scanlines: Int          # ui.scanlines: -1 as the theme has it, 0 off, 1 on
@@ -189,6 +190,7 @@ struct Settings(Copyable, Movable):
     def __init__(out self):
         """The built-in defaults."""
         self.theme = "classic"
+        self.theme_given = False
         self.theme_dark = "midnight"
         self.theme_light = "light"
         self.scanlines = -1
@@ -319,6 +321,7 @@ struct Settings(Copyable, Movable):
                     self.warnings.append(String(tk) + " must be the name of a theme")
                 elif String(tk) == "ui.theme":
                     self.theme = doc.vals[ti].s
+                    self.theme_given = True
                 elif String(tk) == "ui.theme_dark":
                     self.theme_dark = doc.vals[ti].s
                 else:

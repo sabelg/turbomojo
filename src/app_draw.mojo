@@ -60,8 +60,8 @@ from app_mouse import *
 
 def scanline_dim(rgb: Int) -> Int:
     """A background colour 22% darker (the dark line of a scanline)."""
-    if rgb < 0:
-        return rgb
+    if rgb < 0 or rgb > 0xFFFFFF:
+        return rgb                  # (a palette slot or the terminal's default: left alone)
     var r = ((rgb >> 16) & 255) * 78 // 100
     var g = ((rgb >> 8) & 255) * 78 // 100
     var b = (rgb & 255) * 78 // 100

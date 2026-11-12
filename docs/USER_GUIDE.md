@@ -172,7 +172,8 @@ checks the imports of its answer against your Mojo.
 The Options menu changes the common settings and writes them to
 `~/.config/turbomojo/config.toml`; a project can have its own `.turbomojo.toml`. Options >
 Colour theme picks a theme (Turbo Classic, Midnight Neon, Amber CRT, Paper Light, High
-Contrast, Hacker Matrix, or `auto` to follow the terminal's light or dark); your own
+Contrast, Hacker Matrix, Terminal ANSI - your terminal's own colours -, Terminal Mono, or
+`auto` to follow the terminal's light or dark; `NO_COLOR` starts Terminal Mono); your own
 themes are TOML files in `~/.config/turbomojo/themes/`. Options > Keys picks the keymap -
 Modern, Turbo (WordStar, as in Turbo C++) or Emacs - and `[keys]` in the config file
 changes single keys. Options > Screen-reader mode gives a plain screen with the cursor on

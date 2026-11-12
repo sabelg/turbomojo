@@ -1173,6 +1173,8 @@ struct App(Movable):
         self.themes = ThemeSet()
         self.themes.add_folder(config_home() + "/themes")
         self.theme_id = s.theme
+        if not s.theme_given and env_or("NO_COLOR", "").byte_length() > 0:
+            self.theme_id = "mono"          # https://no-color.org: the terminal's own colours only
         self.theme_dark_id = s.theme_dark
         self.theme_light_id = s.theme_light
         self.scanlines_cfg = s.scanlines

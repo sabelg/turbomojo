@@ -4301,3 +4301,25 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   the underline (plain where unstyled, so then colour and the Problems page tell the
   kind); the minimap's problem marks are still colour only.
 - Gate: scripts/check.sh printed CHECK OK (88 test files, 1088 tests, 749 s).
+
+## 2026-11-12 · P10-03 Terminal ANSI and Mono themes, NO_COLOR · done
+- What changed: a colour may name a palette slot (ANSI_BASE + n; "ansi:N" in theme
+  files) or the terminal's default (COLOR_DEFAULT; "default"); the renderer sends them
+  as SGR 30-37 / 90-97 / 39 (and the background forms) at every colour depth; `mix`
+  cannot blend them and gives palette slot 8, and scanlines leave them alone. Two
+  built-in themes: Terminal ANSI (`ansi`, the 16 colours and the default fg/bg) and
+  Terminal Mono (`mono`, default colours, palette 0 on 7 for selections and the menu
+  bar). NO_COLOR (non-empty) starts with Mono unless ui.theme is set in a config file
+  (Settings.theme_given). README, user guide and What's new (a 2.1 section) say so.
+- Verified: `tests/test_ansi_theme.mojo` (4 tests): parsing, the codes for slots and
+  the default in truecolor, 256 and 16 colour modes, both themes load without problems
+  and equal their files, the whole IDE drawn with each (an editor with code, the
+  Message window, an open menu) sends no 24-bit and no 256-colour code (and Turbo
+  Classic does), NO_COLOR picks Mono, a config's theme wins, and without it Mono is not
+  chosen.
+- Not done / unverified: how the themes look depends on each terminal's palette (not
+  looked at in a real terminal); Mono's selection is palette 0 on 7, which a terminal
+  theme could make low-contrast; the Options > Colour theme preview shows them like
+  any theme.
+- First gate: test_themes counted the built-in themes (6, now 8).
+- Gate: scripts/check.sh printed CHECK OK (89 test files, 1092 tests, 795 s).
