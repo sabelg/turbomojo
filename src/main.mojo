@@ -7,10 +7,40 @@ from commands import CM_NEW, build_registry
 from strings import strings_template
 from config import config_home
 from util import state_dir
+from version import TURBOMOJO_VERSION
+from std.sys.info import CompilationTarget
+
+
+comptime USAGE = """Usage: tmide [FILE|FOLDER]...
+
+TurboMojo, a Turbo C++ style IDE for Mojo in the terminal. With no arguments it
+restores the last session (or opens an empty window); FILEs open in editors, a
+FOLDER opens the Open dialog there.
+
+  -h, --help      this text
+  -V, --version   the version
+  --strings       the UI's English words, as a strings file to translate
+  --caps          what this terminal reports it can do
+
+Configuration: ~/.config/turbomojo/config.toml (Options writes there).
+Documentation: Help (Alt-H) inside TurboMojo."""
+
+
+def platform_name() -> String:
+    comptime if CompilationTarget.is_macos():
+        return "macos"
+    else:
+        return "linux"
 
 
 def main() raises:
     var pre = argv()
+    if len(pre) == 2 and (String(pre[1]) == "--version" or String(pre[1]) == "-V"):
+        print("TurboMojo " + TURBOMOJO_VERSION + " (" + platform_name() + ")")
+        return
+    if len(pre) == 2 and (String(pre[1]) == "--help" or String(pre[1]) == "-h"):
+        print(USAGE)
+        return
     if len(pre) == 2 and String(pre[1]) == "--strings":
         # the UI's English words as a strings file to translate (see src/strings.mojo)
         print(strings_template(build_registry()), end="")

@@ -9,6 +9,8 @@ fail() { echo "SMOKE FAIL: $1"; $S shot || true; exit 1; }
 
 # leftovers of earlier manual sessions would open the recovery dialog
 rm -f build/state/turbomojo/swap/*.swp
+# (a version seen before would bring the "What's new" notice over the window title)
+rm -f build/state/turbomojo/seen-version
 
 $S start examples/hello.mojo
 $S shot | grep -q "File" || fail "menu bar missing"

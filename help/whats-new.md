@@ -1,6 +1,6 @@
 # What's new
 
-## 1.8 (in progress)
+## 1.9: help that keeps you working, plugins, other languages
 
 - **Themes as files**: Paper Light, High Contrast and Hacker Matrix besides Turbo
   Classic, Midnight Neon and Amber CRT; your own in `~/.config/turbomojo/themes/`;

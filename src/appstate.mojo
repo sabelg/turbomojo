@@ -1,6 +1,7 @@
 """Application state: the App struct, its fields and small shared helpers.
 
 Behaviour lives in the app_*.mojo modules, which extend App."""
+from version import TURBOMOJO_VERSION
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
@@ -78,7 +79,7 @@ comptime PG_COUNT = 3
 comptime M_DOCS = 5                     # the documentation reader fills the screen
 comptime M_HOVER = 4                    # a hover window is open over the editor
 
-comptime VERSION = "1.0"
+comptime VERSION = TURBOMOJO_VERSION       # (src/version.mojo)
 
 comptime COUNT_LINE_LIMIT = 50000     # matches are counted in at most this many lines
 comptime PREVIEW_LINE_LIMIT = 50000   # no search-as-you-type in longer texts

@@ -4188,3 +4188,28 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   (portable in principle: the handler is the first field on both); terminal and
   keyboard behaviour in macOS terminals. On macOS no crash handler is installed.
 - Gate: scripts/check.sh printed CHECK OK with PERF OK (85 test files, 1079 tests, 684 s).
+
+## 2026-11-12 · P9-04 packaging, install instructions, version flag · done
+- What changed: `src/version.mojo` is the one place the version is written (1.9.0 -
+  Phase 8 was the roadmap's 1.9; the About box said "1.0" and the help book "1.8"
+  until now); pixi.toml and the recipe carry the same. `tmide --version` / `-V` and
+  `--help` / `-h` answer before anything else starts (no terminal needed).
+  `recipe/recipe.yaml` (rattler-build): builds tmide with the static terminal library,
+  ships the example plugin, README and the plugin API, and depends on mojo-compiler
+  pinned to the version it was built with (the program links against its runtime
+  libraries, libKGENCompilerRTShared and others); its test runs --version and --help.
+  `pixi run package` builds it into build/conda. README: an Installing section.
+- Verified: rattler-build 0.80.0 built turbomojo-1.9.0 (linux-aarch64, 4.15 MB) and its
+  test passed in a fresh environment ("TurboMojo 1.9.0 (linux)"); `pixi exec` from the
+  local channel ran the installed tmide --version in a throwaway environment.
+  `tests/test_release.mojo` (2 tests): the version agrees in version.mojo, pixi.toml,
+  the recipe and What's new; --version, -V and --help answer, and without a terminal
+  the program exits with 2.
+- Not done / unverified: `pixi global install` was not run (it changes the user's
+  global tools); no licence in the repository, so the package has none; only
+  linux-aarch64 was built (linux-64 is in pixi.toml's platforms but not built here);
+  rattler-build warns that tmide links libc directly ("overlinking"), harmless here;
+  the package is not published to any channel.
+- First gate: test_project expected the exact list of this project's pixi tasks; it now checks the known ones are parsed (the new package task among them).
+- Second gate: all 86 test files passed but the smoke test failed - its own state folder (build/state) remembered version 1.8, so the version bump brought the What's new notice over the window title. smoke.sh now clears that folder's seen-version first (as it does its old recovery files). The user's own state was not touched (still 1.8).
+- Gate: scripts/check.sh printed CHECK OK with PERF OK (86 test files, 1081 tests, 721 s).

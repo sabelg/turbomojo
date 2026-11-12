@@ -40,6 +40,29 @@ GNOME Terminal, Windows Terminal and others). Colour depth is taken from `$COLOR
 pixi run ./build/tmide --caps
 ```
 
+## Installing
+
+**As a conda package.** `pixi run package` builds `turbomojo` with rattler-build
+(recipe: `recipe/recipe.yaml`) into `build/conda/`. Install it from there into pixi's
+global tools, so `tmide` is on your `PATH`:
+
+```bash
+pixi run package
+pixi global install --channel ./build/conda --channel https://conda.modular.com/max --channel conda-forge turbomojo
+tmide --version
+```
+
+The package holds the program (with the terminal emulator linked in), the example plugin
+and the plugin API; it depends on `mojo-compiler` of the version it was built with, for the
+Mojo runtime libraries. Building it and running `tmide --version` from it in a fresh
+environment are tested; `pixi global install` itself was not run here.
+
+**From the source.** `pixi run build` makes `build/tmide`. It finds the Mojo runtime
+libraries in this project's `.pixi` environment, so run it from there (`pixi run
+./build/tmide`) or keep that environment.
+
+`tmide --version` prints the version, `tmide --help` the command line.
+
 ## Configuration
 
 Settings are read from `~/.config/turbomojo/config.toml`, then from a `.turbomojo.toml` in the

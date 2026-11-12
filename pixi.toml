@@ -6,7 +6,7 @@ platforms = [
   { name = "linux-aarch64-glibc", platform = "linux-aarch64", glibc = "2.34" },
   { name = "linux-64-glibc", platform = "linux-64", glibc = "2.34" },
 ]
-version = "0.1.0"
+version = "1.9.0"          # (the same as src/version.mojo)
 
 # The default environment uses the stable Mojo release. The `nightly` environment is a
 # canary: `pixi run canary` runs the whole gate against the newest nightly toolchain so
@@ -32,6 +32,8 @@ build = "mkdir -p build && mojo build -I src src/main.mojo -o build/tmide -Xlink
 run = { cmd = "./build/tmide", depends-on = ["build"] }
 check = "scripts/check.sh"
 canary = "TM_ENV=nightly scripts/check.sh"
+# the conda package (recipe/recipe.yaml) into build/conda
+package = "pixi exec rattler-build build --recipe recipe/ -c https://conda.modular.com/max -c conda-forge --output-dir build/conda"
 
 [dependencies]
 libghostty-vt = ">=1.0.0,<2"
