@@ -4098,3 +4098,23 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   semantic colours and inlay hints are Mojo-only; changes are sent as whole texts;
   no automatic restart of a crashed extra server; tried with ruff only.
 - Gate: scripts/check.sh printed CHECK OK (82 test files, 1068 tests, 675 s).
+
+## 2026-11-12 · P8-04 plugin API documentation · done (Phase 8 complete)
+- What changed: docs/PLUGINS.md is now the reference for API version 1: installing,
+  plugin.toml, the life of a plugin (start, initialize within 10 s, messages both ways,
+  shutdown, what stopping means), each message from and to TurboMojo with a JSON
+  example and its fields, the error codes, a whole minimal plugin in Python, and advice
+  (keep messages that arrive while waiting, flush, debug on stderr, answer initialize
+  fast, leave the user's keys alone). Two claims of the first draft were checked against
+  the code and corrected: non-JSON-RPC output is ignored (not a reason to stop a
+  plugin), and at the end TurboMojo sends shutdown and ends the process (it does not
+  only close its input).
+- Verified: `tests/test_plugin_docs.mojo` (3 tests): every JSON example on the page
+  parses and is JSON-RPC 2.0; the 8 documented requests to TurboMojo are exactly the
+  ones src/app_plugins.mojo answers (both ways) and the 6 documented messages from it
+  are ones it sends; the minimal plugin, taken from the page as it is, registers its
+  command and answers "3 lines" for a three-line file.
+- Not done / unverified: no plugin index (the roadmap's "curated plugin index"), no
+  Python scripting beyond plugins (any language works); the page is in the repository,
+  not in the help viewer.
+- Gate: scripts/check.sh printed CHECK OK (83 test files, 1071 tests, 704 s).

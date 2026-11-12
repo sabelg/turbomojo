@@ -136,7 +136,7 @@ P7-07 to P7-16 come from the research report "Help that keeps users working" (re
 - [x] P8-01 Plugin host: out-of-process plugins over JSON-RPC registering commands, keys, status items, event hooks; example plugin
 - [x] P8-02 Plugin panels (list/cell models)
 - [x] P8-03 Additional language servers by configuration (verify with one non-Mojo server if available)
-- [ ] P8-04 Plugin API documentation
+- [x] P8-04 Plugin API documentation
 
 ## Phase 9: Release engineering (2.0)
 
