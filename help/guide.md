@@ -18,7 +18,8 @@ from the command palette (**Ctrl-P**), which finds every command by name.
 ## Editing
 
 The keys follow your keymap (Options): Modern (Ctrl-C/X/V/Z), Turbo (WordStar Ctrl-K
-blocks) or Emacs. Multiple cursors, column selection, folding by indentation, soft
+blocks) or Emacs. After a prefix key such as Ctrl-K, wait a moment and a box lists
+the keys that may follow. Multiple cursors, column selection, folding by indentation, soft
 wrap, macros (Ctrl-F5 records), find and replace with regular expressions, and Find in
 Files are in the Edit, Text and Search menus.
 

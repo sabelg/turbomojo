@@ -3844,3 +3844,22 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   pane's text is plain (no colours); opening the pane builds the documentation index
   at once, which takes a moment on the full download (not measured).
 - Gate: scripts/check.sh printed CHECK OK (72 test files, 1036 tests).
+
+## 2026-11-11 · P7-10 key-hint boxes after a prefix key · done
+- What changed: `Registry.chord_seconds(first)` lists the second keys of the bindings
+  a prefix starts (sorted by name, each once). `src/app_keybox.mojo`: when a prefix key
+  is pressed its time is noted; if no second key comes within KEY_BOX_MS (600 ms) the
+  box above the status line lists "KEY  Command" in columns (cut short with "..." on a
+  low screen). The event loop wakes for it. It takes no keyboard - the next key
+  completes the sequence and the box goes, Esc cancels. Screen-reader mode puts
+  "Ctrl-K then: ..." on the status line at once instead. ui.key_hints (the P7-07
+  setting) turns it off too. Guide, what's new and README say so.
+- Verified: `tests/test_keybox.mojo` (3 tests) with the real Turbo keymap: listed keys
+  all bound, sorted and unique; no box right after Ctrl-K, the box after the pause with
+  Save and Copy and their real keys, mode unchanged, Ctrl-K C completing and the box
+  gone, Esc cancelling; off with key_hints = false; the status-line form for a screen
+  reader. test_keymap and test_keyecho still pass.
+- Not done / unverified: the delay is fixed (no setting); the box is not clickable;
+  only prefixes of two-key bindings exist in TurboMojo, so "chords" longer than two
+  keys are not covered; not looked at in a real terminal.
+- Gate: scripts/check.sh printed CHECK OK (73 test files, 1039 tests).

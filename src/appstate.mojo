@@ -69,6 +69,7 @@ comptime M_DIALOG = 2
 comptime M_COMPLETE = 3
 comptime PG_MESSAGE = 0                 # pages of the bottom panel: compiler and program output,
 comptime PG_SEARCH = 1                  # search results and lists of places,
+comptime KEY_BOX_MS = 600                # after a prefix key, the box of the next keys comes this late
 comptime PG_PROBLEMS = 2                # what the language server reports
 comptime PG_COUNT = 3
 comptime M_DOCS = 5                     # the documentation reader fills the screen
@@ -174,7 +175,7 @@ struct App(Movable):
     var scopes_stale: Bool      # a long file's scopes wait to be scanned again
     var language: String        # the UI's language (strings file); "en": built in
     var strings_dir: String     # where strings files are ('' in tests: English only)
-    var key_hints: Bool         # ui.key_hints: "Next time: <key>" after a menu or the palette
+    var key_hints: Bool         # ui.key_hints: "Next time: <key>" after a menu or the palette, the box after a prefix key
     var key_uses: Dict[String, Int]  # how often each command was run by its key
     var key_uses_path: String   # where those counts are kept ('' in tests)
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
@@ -189,6 +190,8 @@ struct App(Movable):
     var macro_key_live: Bool   # the key being handled right now was recorded
     var macro_cmd_start: Int   # where the keys of the command being typed begin in `macro`
     var chord: Int             # first key of a two-key binding, waiting for the second
+    var chord_since: Int       # when that key was pressed
+    var chord_box: Bool        # the box of the keys that may follow is shown
     var user_key_cmds: List[String]         # [keys] from the config files
     var user_key_names: List[List[String]]
     var menus: List[Menu]
@@ -577,6 +580,8 @@ struct App(Movable):
         self.language = "en"
         self.strings_dir = ""
         self.key_hints = True
+        self.chord_since = 0
+        self.chord_box = False
         self.key_uses = Dict[String, Int]()
         self.key_uses_path = ""
         self.reduce_motion = False
@@ -1083,6 +1088,8 @@ struct App(Movable):
             t = min(t, 2000)        # look at git's index now and then (see git_tick)
         if self.scopes_stale:
             t = min(t, 500)
+        if self.chord != 0 and not self.chord_box and self.key_hints:
+            t = min(t, max(1, (self.chord_since + KEY_BOX_MS * 1000000 - now) // 1000000 + 1))
         if self.docpane_due > 0:
             t = min(t, max(1, (self.docpane_due - now) // 1000000 + 1))
         var tn = self.notes.next_change_ns(now)

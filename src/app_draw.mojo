@@ -49,6 +49,7 @@ from app_tests import *
 from app_gitdiff import *
 from app_gitcmd import *
 from app_explain import *
+from app_keybox import *
 from app_git import *
 from app_jobs import *
 from app_input import *
@@ -199,6 +200,7 @@ __extension App:
                 self.scr.shadow(self.wins[i].x, self.wins[i].y, self.wins[i].w, self.wins[i].h, p.shadow_fg, p.shadow_bg)
         if not self.reader:
             self.draw_toasts()                  # (a screen reader gets them on the status line)
+            self.draw_chord_box()
         draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, clock_hm() if self.show_clock and not self.reader else "")
         # status line
         var items = List[String]()

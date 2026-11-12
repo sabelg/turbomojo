@@ -444,6 +444,28 @@ struct Registry(Copyable, Movable):
                     return True
         return False
 
+    def chord_seconds(self, first: Int) -> List[Int]:
+        """The second keys of the two-key bindings that start with `first`, in the
+        order of their names (each key once)."""
+        var out = List[Int]()
+        var names = List[String]()
+        for i in range(len(self.cmds)):
+            for b in self.cmds[i].keys:
+                if chord_first(b) != first:
+                    continue
+                var s = b & ((1 << CHORD_SHIFT) - 1)
+                if s in out:
+                    continue
+                var nm = key_name(s)
+                var at = len(out)
+                for j in range(len(out)):
+                    if nm < names[j]:
+                        at = j
+                        break
+                out.insert(at, s)
+                names.insert(at, nm)
+        return out^
+
     def find_chord(self, first: Int, second: Int) -> Int:
         """The command bound to the two keys. If there is no exact match the second key
         is tried without Ctrl and in lower case, so Ctrl-K Ctrl-S and Ctrl-K S are the

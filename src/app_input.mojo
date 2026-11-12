@@ -48,6 +48,7 @@ from app_gitdiff import *
 from app_gitcmd import *
 from app_explain import *
 from app_docpane import *
+from app_keybox import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -130,6 +131,7 @@ __extension App:
             # the second key of a sequence such as Ctrl-K S
             var first = self.chord
             self.chord = 0
+            self.chord_box = False
             if k == KEY_ESC:
                 self.say("")
                 return
@@ -143,7 +145,11 @@ __extension App:
             return
         if self.reg.is_prefix(k):
             self.chord = k
+            self.chord_since = now_ns()
+            self.chord_box = False
             self.say(key_name(k) + " ...")
+            if self.reader and self.key_hints:
+                self.say(self.chord_line(k))     # (a screen reader: the keys on the status line at once)
             return
         if k == fkey(10):
             self.open_menu(1)

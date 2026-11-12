@@ -54,6 +54,7 @@ from app_input import *
 from app_mouse import *
 from app_draw import *
 from app_docpane import *
+from app_keybox import *
 
 
 __extension App:
@@ -184,6 +185,7 @@ __extension App:
             self.term_tick()
             self.outline_tick(now_ns())
             self.docpane_tick(now_ns())
+            self.chord_tick(now_ns())
             self.symidx_tick()
             self.quick_tick()
             self.explorer_tick(now_ns())
