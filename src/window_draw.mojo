@@ -1,7 +1,7 @@
 """Window drawing: frame, gutter, highlighted text, selection, scrollbars."""
 from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
-from screen import Screen
+from screen import Screen, UL_CURLY, UL_DASHED, UL_DOTTED
 from palette import Palette, mix
 from highlight import Highlighter, C_TEXT, C_DEF
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
@@ -279,6 +279,9 @@ __extension Window:
                 elif sev > 2:
                     num_fg = pal.diag_note
                 _ = scr.text(self.x + 1, yy, s, num_fg, pal.gutter_bg)
+                if seg == 0 and sev > 0 and pad >= 1:
+                    # and a letter before the number: the colour is not the only sign
+                    scr.put(self.x + 1, yy, 69 if sev == 1 else (87 if sev == 2 else 105), num_fg, pal.gutter_bg)   # E W i
                 if seg == 0 and not is_msg and len(self.buf.bps) > 0:
                     var look = self.buf.bp_look(r)
                     if look == 1 or look == 3:
@@ -396,8 +399,10 @@ __extension Window:
                 var va = self.vcol(r, a_c)
                 var vb = max(va + 1, self.vcol(r, b_c))
                 var ucol = pal.diag_err if m.severity == 1 else (pal.diag_warn if m.severity == 2 else pal.diag_note)
+                # the kind of problem by the line's shape too, not only its colour
+                var ukind = UL_CURLY if m.severity == 1 else (UL_DASHED if m.severity == 2 else UL_DOTTED)
                 for uv in range(max(va, off), min(vb, lim)):
-                    scr.underline(cx0 + uv - off, yy, True, ucol)
+                    scr.underline_kind(cx0 + uv - off, yy, ukind, ucol)
             # column guides: only where nothing else colours the cell
             if not is_msg and not self.wrap:
                 for rc in self.rulers:

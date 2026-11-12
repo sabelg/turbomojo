@@ -9,6 +9,10 @@ comptime XSEQ_MAX = 2048
 
 
 comptime BOLD_BIT = 1 << 30        # in a cell's underline word: the character is bold
+comptime UL_STRAIGHT = 1           # underline styles (SGR 4:n)
+comptime UL_CURLY = 3
+comptime UL_DOTTED = 4
+comptime UL_DASHED = 5
 
 
 struct Screen(Movable):
@@ -237,11 +241,18 @@ struct Screen(Movable):
         text colour. Drawing a character there again removes it."""
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
             return
+        self.underline_kind(x, y, UL_CURLY if curly else UL_STRAIGHT, rgb)
+
+    def underline_kind(mut self, x: Int, y: Int, kind: Int, rgb: Int):
+        """Underline with a style (UL_*: straight, curly, dotted, dashed - SGR 4:n) and a
+        colour where the terminal can draw them; elsewhere a plain underline."""
+        if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
+            return
         var k = self.head_of(y * self.w + x)
-        self.ul[k] = (self.ul[k] & BOLD_BIT) | ((3 if curly else 1) << 24) | (rgb & 0xFFFFFF)
+        self.ul[k] = (self.ul[k] & BOLD_BIT) | ((kind & 7) << 24) | (rgb & 0xFFFFFF)
 
     def ul_at(self, x: Int, y: Int) -> Int:
-        """0 = not underlined, 1 = straight, 3 = curly."""
+        """0 = not underlined, else UL_* (1 straight, 3 curly, 4 dotted, 5 dashed)."""
         return (self.ul[self.head_of(y * self.w + x)] >> 24) & 7
 
     def bold(mut self, x: Int, y: Int, n: Int = 1):

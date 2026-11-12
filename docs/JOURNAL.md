@@ -4283,3 +4283,21 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   terminal's font.
 - Gate runs: first test_docs_files (CHANGELOG not regenerated after ticking the task), then test_lines - its ruler check drew an unfocused editor whose cursor stood on the cell looked at, now (rightly) marked; the test moves that cursor off it.
 - Gate: scripts/check.sh printed CHECK OK (88 test files, 1087 tests, perf and soak, 781 s).
+
+## 2026-11-12 · P10-02 problems not by colour alone · done
+- What changed: problem ranges were already underlined wavy and coloured where the
+  terminal can (styled underlines, probed), plain elsewhere, and the Problems page names
+  "error:" / "warning:" in words; but in the gutter a problem only changed the line
+  number's colour. Now the free cell before the number shows E, W or i (a breakpoint
+  sign still wins that cell), and the underline's shape says the kind too: wavy for
+  errors, dashed for warnings, dotted for notes and hints (`Screen.underline_kind`, SGR
+  4:3 / 4:5 / 4:4; plain 4 where styled underlines are not supported).
+- Verified: test_screen: the gutter letters E and W; the underline kinds of an error, a
+  warning, a note and a multi-line warning (the expectations changed from "all wavy");
+  the renderer sending 4:5, 4:4 and 4:3 when styled underlines are on and only 4 when
+  off.
+- Not done / unverified: when the line-number column is too narrow for a free cell
+  (very long files) no letter is shown; without line numbers there is no gutter, only
+  the underline (plain where unstyled, so then colour and the Problems page tell the
+  kind); the minimap's problem marks are still colour only.
+- Gate: scripts/check.sh printed CHECK OK (88 test files, 1088 tests, 749 s).

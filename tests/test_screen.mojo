@@ -5,7 +5,7 @@ Golden files live in tests/golden/. To regenerate after an intended visual chang
 and review the diff before committing."""
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
-from screen import Screen, CONT
+from screen import Screen, CONT, UL_CURLY, UL_DASHED, UL_DOTTED
 from palette import Palette, theme
 from highlight import Highlighter
 from menu import Menu, build_menus, draw_menubar, draw_dropdown, dropdown_rows, dropdown_top
@@ -361,7 +361,7 @@ def test_window_underlines_problem_ranges() raises:
     w.buf.marks.append(Mark(0, 4, 0, 7, 1, "bad word"))                 # "def"
     w.buf.marks.append(Mark(1, 5, 1, 7, 2, "two wide characters"))       # "日本" after a tab
     w.buf.marks.append(Mark(2, 4, 2, 4, 1, "something missing at the end"))
-    w.buf.marks.append(Mark(0, 0, 0, 0, 3, "a note at the start"))
+    w.buf.marks.append(Mark(0, 0, 0, 0, 3, "a note at the start"))   # (errors wavy, warnings dashed, notes dotted)
     var s = Screen(40, 8)
     w.draw(s, p, h, False, False, True, False)
     var x0 = 1 + w.gut
@@ -369,17 +369,19 @@ def test_window_underlines_problem_ranges() raises:
     assert_equal(s.ul_at(x0 + 6, 1), 3)
     assert_equal(s.ul_at(x0 + 7, 1), 0)
     assert_equal(s.ul_at(x0 + 3, 1), 0)
-    assert_equal(s.ul_at(x0, 1), 3)                     # an empty range still shows one cell
+    assert_equal(s.ul_at(x0, 1), 4)                     # an empty range still shows one cell
     assert_equal(s.ul_at(x0 + 1, 1), 0)
     # row 2: tab (4 columns), "x = " then the two wide characters at columns 8..11
     assert_equal(s.ul_at(x0 + 7, 2), 0)
-    assert_equal(s.ul_at(x0 + 8, 2), 3)
-    assert_equal(s.ul_at(x0 + 11, 2), 3)
+    assert_equal(s.ul_at(x0 + 8, 2), 5)
+    assert_equal(s.ul_at(x0 + 11, 2), 5)
     assert_equal(s.ul_at(x0 + 12, 2), 0)
     # row 3: at the end of "last": the cell after it
     assert_equal(s.ul_at(x0 + 4, 3), 3)
     assert_equal(s.ul_at(x0 + 3, 3), 0)
-    # line numbers take the colour of the worst problem on the line
+    # line numbers take the colour of the worst problem on the line, and its letter
+    assert_equal(s.ch[1 * 40 + 1], 69)            # E
+    assert_equal(s.ch[2 * 40 + 1], 87)            # W
     assert_equal(s.fg_at(3, 1), p.diag_err)
     assert_equal(s.fg_at(3, 2), p.diag_warn)
     assert_equal(s.fg_at(3, 3), p.diag_err)
@@ -389,6 +391,23 @@ def test_window_underlines_problem_ranges() raises:
     assert_equal(len(w.buf.marks), 0)
 
 
+def test_underline_styles_are_sent_or_plain() raises:
+    for styled in [True, False]:
+        var s = Screen(10, 1)
+        s.styled_ul = styled
+        _ = s.text(0, 0, "abc", 0xFFFFFF, 0)
+        s.underline_kind(0, 0, UL_DASHED, 0xFFAA00)
+        s.underline_kind(1, 0, UL_DOTTED, 0xFFAA00)
+        s.underline_kind(2, 0, UL_CURLY, 0xFF0000)
+        var out = List[UInt8]()
+        s.render(out)
+        var esc = bytes_to_str(out)
+        if styled:
+            assert_true(esc.find("\x1b[4:5m") >= 0 and esc.find("\x1b[4:4m") >= 0 and esc.find("\x1b[4:3m") >= 0, esc)
+        else:
+            assert_true(esc.find("\x1b[4:") < 0 and esc.find("\x1b[4m") >= 0, esc)    # a plain underline
+
+
 def test_multi_line_problem_range() raises:
     var w = Window(WK_EDITOR, "t.mojo", "", 0, 0, 30, 8, 1)
     w.buf.load(decode("ab(\n  cd,\n  ef)\nzz"))
@@ -396,10 +415,10 @@ def test_multi_line_problem_range() raises:
     var s = Screen(30, 8)
     w.draw(s, theme(0), Highlighter(), False, False, True, False)
     assert_equal(s.ul_at(1 + 1, 1), 0)
-    assert_equal(s.ul_at(1 + 2, 1), 3)                  # from the "(" to the end of the first line
-    assert_equal(s.ul_at(1 + 0, 2), 3)                  # all of the middle line
-    assert_equal(s.ul_at(1 + 4, 2), 3)
-    assert_equal(s.ul_at(1 + 4, 3), 3)                  # up to the ")" on the last
+    assert_equal(s.ul_at(1 + 2, 1), 5)                  # from the "(" to the end of the first line
+    assert_equal(s.ul_at(1 + 0, 2), 5)                  # all of the middle line
+    assert_equal(s.ul_at(1 + 4, 2), 5)
+    assert_equal(s.ul_at(1 + 4, 3), 5)                  # up to the ")" on the last
     assert_equal(s.ul_at(1 + 5, 3), 0)
     assert_equal(s.ul_at(1 + 0, 4), 0)
     assert_equal(w.buf.mark_severity(1), 2)
