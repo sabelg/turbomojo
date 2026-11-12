@@ -4263,3 +4263,23 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   debugger, terminals or agents (child processes and their pipes are not soaked);
   VmRSS shows growth, not where; a 24-hour run (the roadmap's wish) was not made.
 - Final gate: scripts/check.sh printed CHECK OK - 87 test files (1084 tests), smoke, PERF OK (start-up 51 ms, key 1.5 ms beyond tmux, 1M-line open 124 ms, idle 10 ms) and SOAK OK (25 cycles, +1.0 MB) - in 755 s.
+
+## 2026-11-12 · P10-01 focus shown more than one way · done
+- What changed: the window with the focus already had a double frame and the terminal's
+  cursor; now its title is also bold (a bold bit beside each cell's underline in
+  `Screen`, rendered as SGR 1 / 22, kept by `underline`, cleared by redrawing the cell).
+  A list window without the focus keeps its selected row, muted (`mix` of the selection
+  and the window's background) instead of at full strength; an editor without it shows
+  a muted cell where its cursor is. The shown tab of a pane is in [brackets] as well as
+  in other colours. test_tiled's tab expectations changed accordingly.
+- Verified: `tests/test_focus.mojo` (3 tests): the renderer switches bold on and off,
+  an underline keeps it and the underline kind is still read right, redrawing clears
+  it; with two editors the front one has the double frame, the bold title and the
+  cursor, the other a single frame, a plain title and a muted cell at its cursor; a
+  Message list keeps its row muted when the focus leaves and fully marked with it.
+- Not done / unverified: unfocused frames are not dimmer in colour than before (they
+  were already the theme's inactive frame colour); the muted colours are computed, not
+  designed per theme (P10-18), and not contrast-checked (P10-04); bold depends on the
+  terminal's font.
+- Gate runs: first test_docs_files (CHANGELOG not regenerated after ticking the task), then test_lines - its ruler check drew an unfocused editor whose cursor stood on the cell looked at, now (rightly) marked; the test moves that cursor off it.
+- Gate: scripts/check.sh printed CHECK OK (88 test files, 1087 tests, perf and soak, 781 s).

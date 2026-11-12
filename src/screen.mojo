@@ -8,6 +8,9 @@ comptime XBASE = 0x1000000  # cmb values from here on are indexes into Screen.xs
 comptime XSEQ_MAX = 2048
 
 
+comptime BOLD_BIT = 1 << 30        # in a cell's underline word: the character is bold
+
+
 struct Screen(Movable):
     var w: Int
     var h: Int
@@ -235,11 +238,23 @@ struct Screen(Movable):
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
             return
         var k = self.head_of(y * self.w + x)
-        self.ul[k] = ((3 if curly else 1) << 24) | (rgb & 0xFFFFFF)
+        self.ul[k] = (self.ul[k] & BOLD_BIT) | ((3 if curly else 1) << 24) | (rgb & 0xFFFFFF)
 
     def ul_at(self, x: Int, y: Int) -> Int:
         """0 = not underlined, 1 = straight, 3 = curly."""
-        return self.ul[self.head_of(y * self.w + x)] >> 24
+        return (self.ul[self.head_of(y * self.w + x)] >> 24) & 7
+
+    def bold(mut self, x: Int, y: Int, n: Int = 1):
+        """Make the `n` characters already drawn from (x, y) bold (drawing a character
+        there again removes it). Kept as a bit beside the underline of each cell."""
+        for j in range(n):
+            if x + j < self.cx0 or x + j >= self.cx1 or y < self.cy0 or y >= self.cy1:
+                continue
+            var k = self.head_of(y * self.w + x + j)
+            self.ul[k] |= BOLD_BIT
+
+    def is_bold(self, x: Int, y: Int) -> Bool:
+        return (self.ul[self.head_of(y * self.w + x)] & BOLD_BIT) != 0
 
     def set_fg(mut self, x: Int, y: Int, fg: Int):
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
@@ -394,12 +409,15 @@ struct Screen(Movable):
                     self.emit_color(out, b, True)
                     lastbg = b
                 var u = self.ul[k]
+                if (u & BOLD_BIT) != (lastul & BOLD_BIT):
+                    append_str(out, "\x1b[1m" if (u & BOLD_BIT) != 0 else "\x1b[22m")
+                    lastul = (lastul & ~BOLD_BIT) | (u & BOLD_BIT)
                 if u != lastul:
-                    if u == 0:
+                    if (u & ~BOLD_BIT) == 0:
                         append_str(out, "\x1b[24m")
                     elif self.styled_ul:
                         append_str(out, "\x1b[4:")
-                        append_int(out, u >> 24)
+                        append_int(out, (u >> 24) & 7)
                         append_str(out, "m\x1b[58:2::")
                         append_int(out, (u >> 16) & 255)
                         append_str(out, ":")
@@ -431,8 +449,10 @@ struct Screen(Movable):
                 self.pch[k] = self.ch[k]
                 self.pfg[k] = f
                 self.pbg[k] = b
-        if lastul != 0:
+        if (lastul & ~BOLD_BIT) != 0:
             append_str(out, "\x1b[24m")
+        if (lastul & BOLD_BIT) != 0:
+            append_str(out, "\x1b[22m")
         self.force = False
         if len(self.xseq) > XSEQ_MAX:
             # the pool only grows; start over and repaint everything next frame

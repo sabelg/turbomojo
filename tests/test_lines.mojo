@@ -325,6 +325,7 @@ def test_rulers_are_drawn_where_the_cell_is_free() raises:
     w.draw(scr, p, Highlighter(), False, False, True, False)
     assert_equal(scr.bg_at(9, 1), p.sel_bg)            # the selection wins
     w.sel = False
+    w.cc = 0                                           # (the cursor of a window without the focus is marked: keep it off the cells looked at)
     w.left = 4                                         # scrolled sideways: the guide moves along
     w.draw(scr, p, Highlighter(), False, False, True, False)
     assert_equal(scr.bg_at(5, 1), p.ruler_bg)

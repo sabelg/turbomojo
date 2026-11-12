@@ -332,3 +332,12 @@ def theme(n: Int) -> Palette:
         p.shadow_fg = lo
         p.shadow_bg = 0x000000
     return p^
+
+
+def mix(a: Int, b: Int, percent_a: Int) -> Int:
+    """Colour `a` blended into `b` (`percent_a`% of a): for muted variants, such as the
+    selection of a window that does not have the focus."""
+    var r = (((a >> 16) & 255) * percent_a + ((b >> 16) & 255) * (100 - percent_a)) // 100
+    var g = (((a >> 8) & 255) * percent_a + ((b >> 8) & 255) * (100 - percent_a)) // 100
+    var bl = ((a & 255) * percent_a + (b & 255) * (100 - percent_a)) // 100
+    return (r << 16) | (g << 8) | bl

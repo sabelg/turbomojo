@@ -4,6 +4,10 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
+## 2.1: UI clarity and calm (in progress: 21 tasks to go)
+
+- Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1] (P10-01)
+
 ## 2.0: Release engineering - 2026-11-12
 
 - Fuzz harnesses: key parser, JSON, rope, VT parser (P9-01)

@@ -205,7 +205,8 @@ __extension App:
             var t = self.wins[wi].title if wi >= 0 else String("?")
             if wi >= 0 and self.wins[wi].buf.modified:
                 t += "*"
-            labels.append(" " + t + " ")
+            # the shown tab in [brackets] as well as in other colours (not colour alone)
+            labels.append(("[" + t + "]") if len(labels) == self.lay.active[g] else (" " + t + " "))
         var act = self.lay.active[g]
         # the first tab drawn: as far left as still lets the shown one fit
         var first = 0

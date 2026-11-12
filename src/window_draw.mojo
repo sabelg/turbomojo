@@ -2,7 +2,7 @@
 from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
 from screen import Screen
-from palette import Palette
+from palette import Palette, mix
 from highlight import Highlighter, C_TEXT, C_DEF
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
 from grapheme import cluster_end
@@ -153,7 +153,9 @@ __extension Window:
         var tl = cp_len(t)
         var tx = self.x + max(1, (self.w - tl) // 2)
         scr.clip(self.x + 1, self.y, self.w - 2, 1)
-        _ = scr.text(tx, self.y, t, pal.title_fg if active else ffg, bg)
+        var tend = scr.text(tx, self.y, t, pal.title_fg if active else ffg, bg)
+        if active:
+            scr.bold(tx, self.y, tend - tx)     # (focus is shown more than one way: frame, title, cursor)
         scr.no_clip()
         if active and self.w > 12 and not scr.plain:     # (no icons for a screen reader)
             _ = scr.text(self.x + 2, self.y, "[", ffg, bg)
@@ -238,9 +240,13 @@ __extension Window:
                 if r < len(self.row_marks) and self.row_marks[r] != RM_NONE:
                     var rm = self.row_marks[r]
                     rowfg = pal.msg_err if rm == RM_ERROR else (pal.msg_warn if rm == RM_WARN else (pal.msg_ok if rm == RM_OK else pal.msg_note))
-                if r == self.cr:
+                if r == self.cr and active:
                     rowbg = pal.msg_sel_bg
                     rowfg = pal.msg_sel_fg
+                    scr.fill(self.x + 1, yy, self.w - 2, 1, 32, rowfg, rowbg)
+                elif r == self.cr:
+                    # the row stays visible in a window without the focus, muted
+                    rowbg = mix(pal.msg_sel_bg, bg, 35)
                     scr.fill(self.x + 1, yy, self.w - 2, 1, 32, rowfg, rowbg)
             elif r == self.buf.exec_row:
                 # the line the program being debugged is stopped at
@@ -417,6 +423,12 @@ __extension Window:
                 r = nr
                 seg = 0
         scr.no_clip()
+        if not is_msg and not active and self.kind == WK_EDITOR:
+            # where the cursor is in an editor without the focus: a muted cell (the
+            # terminal's one cursor belongs to the window that has the focus)
+            var cell = self.cursor_cell()
+            if cell.c > self.x + self.gut and cell.c < self.x + self.w - 1 and cell.r > self.y and cell.r < self.y + self.h - 1:
+                scr.set_bg(cell.c, cell.r, mix(fg, bg, 40))
         if not is_msg and len(self.sticky) > 0:
             self.draw_sticky(scr, pal, cx0, cls)
         if not is_msg and self.minimap and not scr.plain:

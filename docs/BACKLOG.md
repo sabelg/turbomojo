@@ -152,7 +152,7 @@ P7-07 to P7-16 come from the research report "Help that keeps users working" (re
 From reports/TurboMojo UI improvements.md (the recommendation each task comes from in
 brackets; where TurboMojo already did part of it, only the rest is a task).
 
-- [ ] P10-01 Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1]
+- [x] P10-01 Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1]
 - [ ] P10-02 Never colour-only diagnostics: E/W/i glyphs in the gutter and the Problems page, and undercurl with an SGR 58 colour where the terminal supports it (probed), else a plain underline [2]
 - [ ] P10-03 A "Terminal ANSI" theme using only the 16 palette colours and the default foreground/background, and honour NO_COLOR [3]
 - [ ] P10-04 Contrast gate for every theme and token in the tests (WCAG ratio floor plus APCA Lc 75 code / 60 secondary / 30 disabled), extending the Paper Light / High Contrast test; fix what fails [4]

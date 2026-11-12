@@ -73,7 +73,7 @@ def test_open_files_become_tabs_of_one_pane() raises:
     assert_true(s.find("text of a") < 0, "a hidden tab is not drawn")
     # the tabs stand in the pane's top border, the shown one picked out
     var top = to_str(app.scr.row_text(1))
-    assert_true(top.find(" a.mojo │ b.mojo │ c.mojo ") > 0, top)
+    assert_true(top.find(" a.mojo │ b.mojo │[c.mojo]") > 0, top)      # (the shown one in brackets too)
     var col = cp_len(String(top[byte=0:top.find("c.mojo")]))
     var col_a = cp_len(String(top[byte=0:top.find("a.mojo")]))
     assert_equal(app.scr.bg_at(col, 1), app.pal.frame_act)       # inverse
@@ -115,7 +115,7 @@ def test_tabs_by_keyboard() raises:
     var top = String("")
     app.draw()
     top = to_str(app.scr.row_text(1))
-    assert_true(top.find(" a.mojo* ") > 0, top)          # a changed file is marked on its tab
+    assert_true(top.find("[a.mojo*]") > 0, top)          # a changed file is marked on its tab
     # Next window (F6) reaches hidden tabs too, and shows them
     app.exec(CM_NEXTWIN)
     app.layout_sync()
@@ -136,7 +136,7 @@ def test_splits_and_panes() raises:
     assert_true(s.find("text of b") > 0 and s.find("text of c") > 0)
     # the left pane still has two tabs, the right one a plain title
     var top = to_str(app.scr.row_text(1))
-    assert_true(top.find(" a.mojo │ b.mojo ") > 0, top)
+    assert_true(top.find(" a.mojo │[b.mojo]") > 0, top)
     assert_true(top.find(" c.mojo ") > 0, top)
     # other pane and back
     app.handle(key_event(fkey(6) | MOD_ALT))
@@ -240,13 +240,13 @@ def test_many_tabs_keep_the_shown_one_in_view() raises:
     app.fit_windows()
     app.draw()
     var top = to_str(app.scr.row_text(1))
-    assert_true(top.find(" j.mojo ") > 0, top)           # the newest shows and is named
+    assert_true(top.find("[j.mojo]") > 0, top)           # the newest shows and is named
     assert_true(top.find("‹") > 0, top)                  # earlier ones are off to the left
     assert_true(top.find("a.mojo") < 0, top)
     app.focus(app.find_editor(dir + "/a.mojo"))
     app.draw()
     top = to_str(app.scr.row_text(1))
-    assert_true(top.find(" a.mojo ") > 0, top)
+    assert_true(top.find("[a.mojo]") > 0, top)
     assert_true(top.find("›") > 0, top)
     assert_true(top.find("j.mojo") < 0, top)
     # the close and zoom boxes of the frame are still there
