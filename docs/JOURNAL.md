@@ -3972,3 +3972,26 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   the word-move and Ctrl-Backspace keys are the editor's built-in ones, the same in
   every keymap; no tip has a "show me" action.
 - Gate: scripts/check.sh printed CHECK OK (77 test files, 1054 tests, 638 s).
+
+## 2026-11-12 · P7-15 opt-in exercises · done
+- What changed: eight exercises in `help/exercises/` (built in by
+  `scripts/gen_exercises.py` into `src/exercise_pages.mojo`), each a program that is
+  wrong until fixed, with a "# expect: " line; solutions in `tests/exercise_solutions/`.
+  Exercise 3 fails twice on purpose (the type error, then "may raise" once the first is
+  fixed) and 8 builds but prints the wrong sum. `src/app_exercises.mojo`: Help >
+  Exercises (D_EXERCISES) - the first time three buttons choose the start (new to
+  Mojo 1, some Python 2, some Mojo 5), later Open / Reset with done ones ticked; Help >
+  Exercise done? (CM_EX_CHECK) saves and runs the exercise as a task job; at its end
+  (finish_task) the Problems page gets the errors so F1 explains them, and a run that
+  prints the expected line marks it done (exercises/done) with a notice naming the
+  next. The copies' folder is an App field set only by main (tests use their own).
+  Nothing starts at launch. README, guide and what's new say so.
+- Verified: `tests/test_exercises.mojo` (4 tests): the built-in copies are the files;
+  with the real compiler every exercise is wrong (seven fail to build with a message
+  TurboMojo explains, one prints the wrong line) and every solution prints its line;
+  in the IDE "Some Python" opens exercise 2, a check fails and F1 on the `fn` line opens
+  the fn-removed explanation, the fixed one is done and ticked in the list, Reset
+  brings the original back; no exercise or no folder is said.
+- Not done / unverified: eight exercises only, no hints beyond F1; "skip by
+  experience" is three fixed starting points; not tried by a real learner.
+- Gate: scripts/check.sh printed CHECK OK (78 test files, 1058 tests, 668 s).

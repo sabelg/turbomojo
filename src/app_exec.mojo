@@ -48,6 +48,7 @@ from app_explain import *
 from app_docpane import *
 from app_agentexplain import *
 from app_tips import *
+from app_exercises import *
 from tips import TK_FIND
 from app_jobs import *
 from app_input import *
@@ -390,6 +391,10 @@ __extension App:
             self.open_find(cmd == CM_REPLACE)
         elif cmd == CM_TIPS_OFF:
             self.tips_off()
+        elif cmd == CM_EXERCISES:
+            self.exercises_dialog()
+        elif cmd == CM_EX_CHECK:
+            self.ex_check()
         elif cmd == CM_FINDFILES:
             self.open_find_files()
         elif cmd == CM_AGAIN:

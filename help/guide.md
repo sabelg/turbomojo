@@ -64,6 +64,8 @@ there for you. Themes: Options > Colour theme; your own themes are TOML files in
 - Help > Keyboard reference (F1): every key, as your keymap has it.
 - Help > Cheat sheet: the keys used most.
 - Help > Tutorial: a file to practise in.
+- Help > Exercises: small programs that are wrong until you fix them; Help >
+  Exercise done? checks yours.
 - Help > What's new.
 - In this viewer **/** searches every page, the Mojo documentation too. Find in
   documentation (Alt-F1) also takes a name, a dotted path (`List.append`) or a pasted

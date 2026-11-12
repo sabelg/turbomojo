@@ -47,6 +47,7 @@ from app_jobs import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
+from app_exercises import *
 
 
 __extension App:
@@ -240,6 +241,8 @@ __extension App:
             self.bp_list_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFGS:
             self.run_configs_button(b, self.dlg.selected_item())
+        elif kind == D_EXERCISES:
+            self.exercises_button(b, self.dlg.selected_item())
         elif kind == D_RUNCFG and b == 0:
             self.run_config_save()
         elif kind == D_NOTICES and b == 1:

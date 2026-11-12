@@ -54,6 +54,7 @@ from watch import file_sig
 from app_input import *
 from app_mouse import *
 from app_draw import *
+from app_exercises import *
 
 
 comptime SYMIDX_SLICE_MS = 8          # work per pass of the event loop
@@ -287,6 +288,10 @@ __extension App:
         var name = self.job.exe
         var tstr = String(Int(secs * 10) // 10) + "." + String(Int(secs * 10) % 10) + " s"
         var ok = status == 0 and not self.job.cancelled
+        if name.startswith("exercise:"):
+            self.task_output("Exercise checked in " + tstr)
+            self.ex_finished(String(name[byte=9:]), ok, bytes_to_str(self.job.data))
+            return
         var result = String("Task " + name + " finished in " + tstr)
         if self.job.cancelled:
             result = "Task " + name + " cancelled after " + tstr

@@ -181,6 +181,7 @@ struct App(Movable):
     var tip_rules: TipRules     # what the keys have been doing (src/tips.mojo)
     var tips_shown: List[String]  # the tips given already (never twice)
     var tips_file: String       # where those are kept ('' in tests: nowhere)
+    var ex_home: String         # the exercises' copies (set by main; tests use their own)
     var key_uses: Dict[String, Int]  # how often each command was run by its key
     var key_uses_path: String   # where those counts are kept ('' in tests)
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
@@ -591,6 +592,7 @@ struct App(Movable):
         self.tip_rules = TipRules()
         self.tips_shown = List[String]()
         self.tips_file = ""
+        self.ex_home = ""
         self.chord_since = 0
         self.typed_ns = 0
         self.chord_box = False
