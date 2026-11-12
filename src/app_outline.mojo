@@ -308,7 +308,7 @@ __extension App:
                 self.wins[mi].cr = self.errs[0].msg_line
             if not ok and not self.job.cancelled and self.mode == M_NORMAL and self.waited_for_job():
                 self.focus(mi)
-        self.notify(NL_DONE if ok else (NL_INFO if self.job.cancelled else NL_ERROR), "Task " + name, result, True)
+        self.notify_as("task", NL_DONE if ok else (NL_INFO if self.job.cancelled else NL_ERROR), "Task " + name, result, True)
         self.say(result)
 
     def symidx_tick(mut self):

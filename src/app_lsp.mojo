@@ -354,7 +354,7 @@ __extension App:
             self.lsp.state = LSP_STOPPED
             self.log_error("language server: " + self.lsp.last_error)
             var why = self.lsp.last_error
-            self.notify(NL_ERROR, "The language server " + ("crashed" if crashed else "did not start"), why)
+            self.notify_as("lsp", NL_ERROR, "The language server " + ("crashed" if crashed else "did not start"), why)
             # forget crashes that are long ago, then decide whether to try again
             var recent = List[Int]()
             for t in self.lsp_crashes:

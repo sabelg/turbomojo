@@ -94,7 +94,7 @@ __extension App:
                 if self.may_take_focus(self.agent_index()):
                     self.agent_show_proposal()
                 else:
-                    self.notify(NL_WARN, "The agent proposes a change", self.agent_rel(path) + " - " + self.reg.key_label(CM_AGENT) + ", then Enter, to review it")
+                    self.notify_as("agent", NL_WARN, "The agent proposes a change", self.agent_rel(path) + " - " + self.reg.key_label(CM_AGENT) + ", then Enter, to review it")
             return
         if m == "terminal/create":
             var cmd = doc.str(doc.get(0, "command"))
@@ -136,7 +136,7 @@ __extension App:
                 return
             self.chat.note("The agent wants to run `" + title + "` in " + cwd + ": Y runs it, A always (this session), N refuses")
             if self.top() != self.agent_index():
-                self.notify(NL_WARN, "The agent asks to run a command", title + " - " + self.reg.key_label(CM_AGENT) + " to answer")
+                self.notify_as("agent", NL_WARN, "The agent asks to run a command", title + " - " + self.reg.key_label(CM_AGENT) + " to answer")
             return
         var tid = doc.str(doc.get(0, "terminalId"))
         var ti = self.agent_term_index(tid)

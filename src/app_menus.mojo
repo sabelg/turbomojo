@@ -99,6 +99,13 @@ __extension App:
             else:
                 self.mode = M_NORMAL
                 self.handle_key(k)
+        elif self.reader and k >= 49 and k <= 57 and item_of_number(self.menus[self.menu_idx], k - 48) >= 0:
+            # screen-reader mode: the item's number
+            var cmd = self.menus[self.menu_idx].items[item_of_number(self.menus[self.menu_idx], k - 48)].cmd
+            self.mode = M_NORMAL
+            self.macro_note_cmd(cmd)
+            self.exec(cmd)
+            self.key_echo(cmd)
         elif k < K_BASE and k > 32:
             var lk = lower(k)
             for i in range(len(self.menus[self.menu_idx].items)):

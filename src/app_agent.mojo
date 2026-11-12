@@ -131,14 +131,14 @@ __extension App:
                     if self.top() != self.agent_index():
                         # (the panel does not come to the front by itself: a key typed
                         # for the editor would answer)
-                        self.notify(NL_WARN, "The agent asks for permission", self.agent_what(e) + " - " + self.reg.key_label(CM_AGENT) + " to answer")
+                        self.notify_as("agent", NL_WARN, "The agent asks for permission", self.agent_what(e) + " - " + self.reg.key_label(CM_AGENT) + " to answer")
                     self.agent_perms.append(e.copy())
                     self.chat.note("The agent asks to " + self.agent_what(e) + ": Y allows it once, A for this session, N refuses")
             elif e.kind == AE_TURN_END:
                 self.chat.cancel_open_tools()
                 self.agent_check_answer()
                 if self.top() != self.agent_index():
-                    self.notify(NL_DONE if e.stop_reason == "end_turn" else NL_WARN, (self.agent.agent_name if self.agent.agent_name.byte_length() > 0 else String("The agent")) + " has finished", "" if e.stop_reason == "end_turn" else e.stop_reason)
+                    self.notify_as("agent", NL_DONE if e.stop_reason == "end_turn" else NL_WARN, (self.agent.agent_name if self.agent.agent_name.byte_length() > 0 else String("The agent")) + " has finished", "" if e.stop_reason == "end_turn" else e.stop_reason)
                 if e.stop_reason == "error":
                     self.chat.note("The agent reported an error: " + e.text)
                 elif e.stop_reason != "end_turn":
@@ -175,7 +175,7 @@ __extension App:
                     _ = self.agent.prompt_blocks(self.agent_pending, now)
                     self.agent_pending = ""
             elif e.kind == AE_FAILED:
-                self.notify(NL_ERROR, "The agent stopped", e.text)
+                self.notify_as("agent", NL_ERROR, "The agent stopped", e.text)
                 self.chat.note("The agent is not running: " + e.text + ". Ctrl-F11 twice starts it again.")
                 self.agent_pending = ""
                 self.agent_services_end()

@@ -21,6 +21,22 @@ from app_dialogs import *
 
 
 __extension App:
+    def notify_as(mut self, label: String, level: Int, title: String, text: String, own: Bool = False):
+        """A notice from one part of the IDE: in screen-reader mode the status line
+        starts with what it is about ("build: error: Build failed: ..."), and a build,
+        the tests, a task or the agent ring the terminal's bell when they finish or
+        ask."""
+        self.note_label = label
+        self.notify(level, title, text, own)
+        self.note_label = ""
+        if self.reader and (label == "build" or label == "test" or label == "task" or label == "agent"):
+            self.bell()
+
+    def bell(mut self):
+        """The terminal's bell (BEL): for a screen reader, something finished."""
+        self.bells += 1
+        append_str(self.term.out, "\x07")
+
     def notify(mut self, level: Int, title: String, text: String, own: Bool = False):
         """A notice. `own`: about a job the user started - it comes at once, first, and
         brings any held ones with it. Others that come while the user is typing are
@@ -32,7 +48,7 @@ __extension App:
             self.notes_release(now)
         if self.reader and not hold:
             # no toast for a screen reader: the status line, which it reads
-            self.say(title + ((": " + text) if text.byte_length() > 0 else String("")))
+            self.say(spoken_notice(self.note_label, level, title, text))
 
     def typing(self, now: Int) -> Bool:
         return self.typed_ns > 0 and now - self.typed_ns < TYPING_PAUSE_MS * 1000000
@@ -171,3 +187,17 @@ __extension App:
         if seen.byte_length() > 0:
             self.notify(NL_INFO, "TurboMojo " + TURBOMOJO_VERSION, "What changed: Help > What's new")
         _ = write_file(seen_file, str_bytes(TURBOMOJO_VERSION + "\n"))
+
+
+def spoken_notice(label: String, level: Int, title: String, text: String) -> String:
+    """A notice as the status line says it in screen-reader mode: what it is about,
+    an error or a warning said as such, then the notice - "build: error: Build failed:
+    a.mojo: 2 error(s)"."""
+    var s = String("")
+    if label.byte_length() > 0:
+        s += label + ": "
+    if level == NL_ERROR:
+        s += "error: "
+    elif level == NL_WARN:
+        s += "warning: "
+    return s + title + ((": " + text) if text.byte_length() > 0 else String(""))

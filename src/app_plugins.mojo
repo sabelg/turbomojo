@@ -78,7 +78,7 @@ __extension App:
             pi -= 1
         if was == PL_READY:
             self.rebuild_keys(False)            # (its commands leave the menu)
-        self.notify(NL_WARN, "Plugin " + self.plugins[k].name + " stopped", why)
+        self.notify_as("plugin", NL_WARN, "Plugin " + self.plugins[k].name + " stopped", why)
 
     def plugins_tick(mut self, now: Int):
         # panels whose window the user closed: the plugin is told, the room given back
@@ -139,7 +139,7 @@ __extension App:
         var mine = "plugin " + self.plugins[k].name + ":"
         for w in self.plugin_warnings:
             if w.startswith(mine):
-                self.notify(NL_WARN, "Plugin " + self.plugins[k].name, String(w[byte=mine.byte_length() + 1:]))
+                self.notify_as("plugin", NL_WARN, "Plugin " + self.plugins[k].name, String(w[byte=mine.byte_length() + 1:]))
 
     def plugin_asks(mut self, k: Int, m: RpcMessage):
         """A request (answered) or notification from plugin k."""
@@ -153,7 +153,7 @@ __extension App:
         elif m.method == "ui/notify":
             var lv = d.str(d.get(p, "level"), "info")
             var level = NL_DONE if lv == "done" else (NL_WARN if lv == "warn" else (NL_ERROR if lv == "error" else NL_INFO))
-            self.notify(level, d.str(d.get(p, "title"), self.plugins[k].name), d.str(d.get(p, "text"), ""))
+            self.notify_as("plugin", level, d.str(d.get(p, "title"), self.plugins[k].name), d.str(d.get(p, "text"), ""))
             if answer:
                 self.plugins[k].conn.respond(m.id_json, "null")
         elif m.method == "status/set":

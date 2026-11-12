@@ -92,6 +92,7 @@ struct Dialog(Copyable, Movable):
     var muted_col: Int       # items: the text from this column on is secondary (muted); -1 none
     var off: List[Bool]      # if given (one per item): the item can do nothing now (disabled colour)
     var show_count: Bool     # the title says how many items the typing leaves: "Go to 12/340"
+    var numbered: Bool       # screen-reader mode: buttons read "1 OK", "2 Cancel" - digits press them
     var use_pat: Bool        # the pattern is `pat` (set by the owner), not the whole field
     var pat: String
     var list_sel: Int
@@ -138,6 +139,7 @@ struct Dialog(Copyable, Movable):
         self.muted_col = -1
         self.off = List[Bool]()
         self.show_count = False
+        self.numbered = False
         self.use_pat = False
         self.pat = ""
         self.list_sel = 0
@@ -429,18 +431,18 @@ struct Dialog(Copyable, Movable):
         self.btn_x.clear()
         if len(self.buttons) > 0:
             var total = 0
-            for b in self.buttons:
-                total += cp_len(b) - 2 + 4 + 2
+            for i in range(len(self.buttons)):
+                total += cp_len(self.button_label(i)) - 2 + 4 + 2
             var bx = x + max(2, (w - total) // 2)
             var by = y + h - 3
             self.btn_y = by
             for i in range(len(self.buttons)):
-                var bw = cp_len(self.buttons[i]) - 2 + 4
+                var bw = cp_len(self.button_label(i)) - 2 + 4
                 var foc = self.focus_button() == i
                 var dflt = i == 0 and self.focus_button() < 0
                 var bfg = pal.btn_focus_fg if (foc or dflt) else pal.btn_fg
                 scr.fill(bx, by, bw, 1, 32, bfg, pal.btn_bg)
-                _ = scr.hot_text(bx + 2, by, self.buttons[i], bfg, pal.btn_hot, pal.btn_bg)
+                _ = scr.hot_text(bx + 2, by, self.button_label(i), bfg, pal.btn_hot, pal.btn_bg)
                 if foc:
                     scr.put(bx, by, 0x25BA, bfg, pal.btn_bg)
                     scr.put(bx + bw - 1, by, 0x25C4, bfg, pal.btn_bg)
@@ -453,6 +455,12 @@ struct Dialog(Copyable, Movable):
         scr.shadow(x, y, w, h, pal.shadow_fg, pal.shadow_bg)
         return (cur_x, cur_y)
 
+    def button_label(self, i: Int) -> String:
+        """Button i as drawn: "1 ~O~K" when numbered (the first nine)."""
+        if self.numbered and i < 9:
+            return String(i + 1) + " " + self.buttons[i]
+        return self.buttons[i]
+
     def span_width(self, i: Int, a: Int, b: Int) -> Int:
         var w = 0
         for k in range(a, min(b, len(self.fields[i].text))):
@@ -463,7 +471,7 @@ struct Dialog(Copyable, Movable):
         if len(self.buttons) == 0 or py != self.btn_y:
             return -1
         for i in range(len(self.buttons)):
-            var bw = cp_len(self.buttons[i]) - 2 + 4
+            var bw = cp_len(self.button_label(i)) - 2 + 4
             if px >= self.btn_x[i] and px < self.btn_x[i] + bw:
                 return i
         return -1

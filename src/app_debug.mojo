@@ -142,7 +142,7 @@ __extension App:
             self.dbg.set_config("", "setFunctionBreakpoints", self.bps.function_request())
         if not self.dbg.begin(cmd, exe, dirname(source), args, log):
             var why = self.dbg.error
-            self.notify(NL_ERROR, "The debugger did not start", why, True)
+            self.notify_as("debug", NL_ERROR, "The debugger did not start", why, True)
             self.say("The debugger did not start: " + why)
             return
         self.debug_show("Starting " + basename(exe) + " under the debugger...")
@@ -325,7 +325,7 @@ __extension App:
             var tail = String("")
             if len(self.dbg.console) > 0:
                 tail = " - " + String(self.dbg.console[len(self.dbg.console) - 1].strip())
-            self.notify(NL_ERROR, "Debugging failed", failed + tail, True)
+            self.notify_as("debug", NL_ERROR, "Debugging failed", failed + tail, True)
 
     # ========================================================== breakpoints
     def bp_file(self) -> String:

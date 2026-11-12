@@ -114,7 +114,7 @@ __extension App:
                 var why = self.lsp_extra[k].client.last_error
                 _ = self.lsp_extra[k].client.conn.stop()
                 self.lsp_extra[k].client.state = LSP_STOPPED
-                self.notify(NL_ERROR, "The language server " + self.lsp_extra[k].name + " stopped", why)
+                self.notify_as("lsp", NL_ERROR, "The language server " + self.lsp_extra[k].name + " stopped", why)
                 self.extra_stop(k)
                 continue
             self.extra_sync(k, now)

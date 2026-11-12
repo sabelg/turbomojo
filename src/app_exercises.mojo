@@ -185,7 +185,7 @@ __extension App:
                 done.append(key)
                 _ = write_file(self.ex_dir() + "/done", str_bytes("\n".join(done) + "\n"))
             var more = ("Next: Help > Exercises (" + String(i + 2) + ". " + ex_title(ex_text(i + 1)) + ")") if i + 1 < EX_COUNT else String("That was the last one.")
-            self.notify(NL_DONE, "Exercise " + String(i + 1) + " done", more, True)
+            self.notify_as("exercise", NL_DONE, "Exercise " + String(i + 1) + " done", more, True)
             self.say("✓ Exercise " + String(i + 1) + " done. " + more)
         elif ok:
             self.say("It runs, but it does not print \"" + expect + "\" yet")

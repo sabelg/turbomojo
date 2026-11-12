@@ -337,7 +337,7 @@ __extension App:
             cmds.append(-1)
         self.draw_status(items, cmds)
         if self.mode == M_MENU:
-            draw_dropdown(self.scr, p, self.menus[self.menu_idx], self.menu_item, self.checked(), self.unavailable_cmds())
+            draw_dropdown(self.scr, p, self.menus[self.menu_idx], self.menu_item, self.checked(), self.unavailable_cmds(), self.reader)
         # cursor
         self.scr.cvis = False
         var t = self.top()
@@ -359,6 +359,7 @@ __extension App:
         if self.mode == M_NORMAL and t >= 0 and self.wins[t].kind == WK_AGENT:
             self.agent_cursor(t)
         if self.mode == M_DIALOG:
+            self.dlg.numbered = self.reader
             var c = self.dlg.draw(self.scr, p)
             if c[0] >= 0:
                 self.scr.cx = c[0]
@@ -408,7 +409,7 @@ __extension App:
         item, the dialog's control, the list row - since screen readers follow it."""
         if self.mode == M_MENU and self.menu_idx >= 0 and self.menu_idx < len(self.menus):
             ref m = self.menus[self.menu_idx]
-            var w = m.width()
+            var w = m.width(True)
             var x = max(0, min(m.x - 1, self.scr.w - w - 2))
             var top = dropdown_top(self.scr.h, m, self.menu_item)
             self.scr.cx = x + 2

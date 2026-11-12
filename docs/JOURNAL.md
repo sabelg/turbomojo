@@ -4641,3 +4641,36 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   folders are not searched (Ctrl-P is for that); the filter is not kept between
   sessions; the Message page's filter is not shown in its tab.
 - Gate: scripts/check.sh printed CHECK OK (98 test files, 1138 tests, 837 s).
+
+## 2026-11-12 · P10-14a Screen-reader mode, first part · done
+- Split: P10-14 was too big for one round; it is now P10-14a (this), P10-14b (a line
+  mode without cursor addressing for TERM=dumb - the "true linear mode") and
+  P10-14c (OSC 133 marks around program runs).
+- What changed: `notify_as(label, ...)` - every notice now comes from a part of the
+  IDE (build, test, task, agent, git, debug, lsp, plugin, exercise, tip); in
+  screen-reader mode the status line says `spoken_notice`: "build: error: Build
+  failed: a.mojo: 2 error(s)"; a build, the tests, a task or the agent ring the bell
+  (BEL to the terminal, `App.bells` counts) when they finish or ask. Menus in
+  screen-reader mode number their items (`item_number`, separators skipped, up to
+  nine), add "(on)" for a switch that is on (instead of the √) and "(not now)" for
+  what can do nothing now; the drop-down is 17 columns wider for it and the cursor
+  stays on the number; a digit picks the item. Dialog buttons read "1 OK", "2 Cancel"
+  (`Dialog.numbered`, `button_label`, used for drawing and mouse hits); a digit
+  presses one, y / n press the first / last button where no button has those hot
+  letters and there is no list - not while a text field has the focus. TERM=dumb
+  turns the mode on. README: the accessibility row.
+- Verified: tests/test_reader_lines.mojo (5 tests): the spoken notice forms; git does
+  not ring, the agent does, a real failing build says "build: error: Build failed"
+  and rings, the mode off neither says nor rings; the File menu's numbers skip
+  separators, "1 New" is drawn with the cursor on its row, Save says "(not now)"
+  without a file, Open's digit opens its dialog, Options shows "(on)"; the
+  explorer's trash question numbered "1 Move to trash" / "2 Cancel", n and 2 cancel
+  (the file stays), y trashes it, digits typed into the New file field stay text,
+  without the mode nothing is numbered and n does nothing; TERM=dumb sets it.
+  Mutants without y / n, without the bell or without the menu numbers each fail.
+- Not done / unverified: not tried with Orca or another screen reader - whether
+  "(not now)" and the numbers read well is a guess; menus with more than nine items
+  number only the first nine; dialogs with a list ignore y / n; the bell is not
+  configurable apart from the mode; TERM=dumb still gets the full-screen UI with
+  cursor addressing, which a real dumb terminal cannot show (P10-14b).
+- Gate: scripts/check.sh printed CHECK OK (99 test files, 1143 tests, 806 s).

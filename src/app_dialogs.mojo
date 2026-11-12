@@ -646,6 +646,15 @@ __extension App:
                 if hot_char(self.dlg.buttons[i]) == lk:
                     self.dialog_button(i)
                     return
+            if self.reader and len(self.dlg.buttons) > 0 and not self.dlg.list_filter:
+                # screen-reader mode: a button's number presses it; y and n answer a
+                # question (the first button and the last) where no button has them
+                if k >= 49 and k <= 57 and k - 49 < len(self.dlg.buttons):
+                    self.dialog_button(k - 49)
+                    return
+                if (lk == 121 or lk == 110) and len(self.dlg.buttons) >= 2 and not self.dlg.has_list:
+                    self.dialog_button(0 if lk == 121 else len(self.dlg.buttons) - 1)
+                    return
             if self.dlg.list_filter and len(self.dlg.fields) > 0:
                 self.dlg.focus = 0
                 var t = List[Int]()

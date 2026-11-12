@@ -30,11 +30,13 @@ struct Menu(Copyable, Movable):
     def sep(mut self):
         self.items.append(MenuItem("-", "", CM_NONE, ""))
 
-    def width(self) -> Int:
+    def width(self, numbered: Bool = False) -> Int:
+        """Columns of the drop-down; `numbered` (screen-reader mode) leaves room for
+        the number and the words "(on)" / "(not now)"."""
         var w = 10
         for it in self.items:
             w = max(w, cp_len(it.label) - 2 + cp_len(it.key) + 6)
-        return w
+        return w + (17 if numbered else 0)
 
 
 def build_menus(reg: Registry) -> List[Menu]:
@@ -91,10 +93,31 @@ def dropdown_top(scr_h: Int, m: Menu, sel: Int) -> Int:
     return max(0, min(sel - rows // 2, len(m.items) - rows))
 
 
-def draw_dropdown(mut scr: Screen, pal: Palette, m: Menu, sel: Int, checks: List[Int], off: List[Int] = List[Int]()):
+def item_number(m: Menu, i: Int) -> Int:
+    """Item i's number in screen-reader mode: 1, 2, ... counting the items that are
+    not separators (0 for a separator or after the ninth)."""
+    if m.items[i].label == "-":
+        return 0
+    var n = 0
+    for j in range(i + 1):
+        if m.items[j].label != "-":
+            n += 1
+    return n if n <= 9 else 0
+
+
+def item_of_number(m: Menu, n: Int) -> Int:
+    """The item with number n (-1 if none)."""
+    for i in range(len(m.items)):
+        if item_number(m, i) == n:
+            return i
+    return -1
+
+
+def draw_dropdown(mut scr: Screen, pal: Palette, m: Menu, sel: Int, checks: List[Int], off: List[Int] = List[Int](), numbered: Bool = False):
     """A menu's items: the keys muted, items that can do nothing now (`off`) in the
-    disabled colour without their hot letter."""
-    var w = m.width()
+    disabled colour without their hot letter. `numbered` (screen-reader mode): each
+    item starts with its number, which picks it, and a check mark is said as "on"."""
+    var w = m.width(numbered)
     var rows = dropdown_rows(scr.h, m)
     var top = dropdown_top(scr.h, m, sel)
     var h = rows + 2
@@ -121,10 +144,15 @@ def draw_dropdown(mut scr: Screen, pal: Palette, m: Menu, sel: Int, checks: List
         var cmd = m.items[i].cmd
         var dis = cmd in off
         var lfg = fg if s or not dis else text_disabled(pal, fg, bg)
+        var label = m.items[i].label
+        if numbered:
+            var num = item_number(m, i)
+            var on = cmd in checks
+            label = (String(num) + " " if num > 0 else String("  ")) + label + (" (on)" if on else String("")) + (" (not now)" if dis else String(""))
         for c in checks:
-            if c == cmd:
+            if c == cmd and not numbered:
                 scr.put(x + 1, yy, 0x221A, lfg, bg)
-        _ = scr.hot_text(x + 2, yy, m.items[i].label, lfg, lfg if s or dis else pal.menu_hot, bg)
+        _ = scr.hot_text(x + 2, yy, label, lfg, lfg if s or dis else pal.menu_hot, bg)
         var k = m.items[i].key
         _ = scr.text(x + w - 2 - cp_len(k), yy, k, lfg if s or dis else text_muted(fg, bg), bg)
     scr.shadow(x, y, w, h, pal.shadow_fg, pal.shadow_bg)

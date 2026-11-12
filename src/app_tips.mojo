@@ -40,7 +40,7 @@ __extension App:
         self.tips_shown.append(tip_name(t))
         if self.tips_file.byte_length() > 0:
             _ = write_file(self.tips_file, str_bytes("\n".join(self.tips_shown) + "\n"))
-        self.notify(NL_INFO, "Tip", text + " (Help > No more tips stops these)")
+        self.notify_as("tip", NL_INFO, "Tip", text + " (Help > No more tips stops these)")
 
     def tip_text(self, t: Int) -> String:
         if t == TIP_PAGE:

@@ -269,14 +269,14 @@ __extension App:
         if req == GQ_COMMIT:
             if status == 0:
                 self.say(String(text.split("\n")[0]))
-                self.notify(NL_DONE, "Committed", String(text.split("\n")[0]), True)
+                self.notify_as("git", NL_DONE, "Committed", String(text.split("\n")[0]), True)
             else:
                 self.git_info("Commit", "git did not commit:", text)
-                self.notify(NL_ERROR, "git did not commit", String(text.split("\n")[len(text.split("\n")) - 1]), True)
+                self.notify_as("git", NL_ERROR, "git did not commit", String(text.split("\n")[len(text.split("\n")) - 1]), True)
         elif req == GQ_SWITCH:
             if status == 0:
                 self.say("On branch " + path + " now")
-                self.notify(NL_DONE, "Branch", "On " + path + " now", True)
+                self.notify_as("git", NL_DONE, "Branch", "On " + path + " now", True)
                 self.watch_recheck = True       # files git changed on disk are reloaded (or asked about)
             else:
                 self.git_info("Branch", "git did not switch to " + path + ":", text)
