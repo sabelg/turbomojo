@@ -235,6 +235,9 @@ __extension Window:
                         rowfg = pal.msg_ok
                     else:
                         rowfg = pal.msg_warn
+                if r < len(self.row_marks) and self.row_marks[r] != RM_NONE:
+                    var rm = self.row_marks[r]
+                    rowfg = pal.msg_err if rm == RM_ERROR else (pal.msg_warn if rm == RM_WARN else (pal.msg_ok if rm == RM_OK else pal.msg_note))
                 if r == self.cr:
                     rowbg = pal.msg_sel_bg
                     rowfg = pal.msg_sel_fg

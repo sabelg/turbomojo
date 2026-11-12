@@ -4050,3 +4050,25 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   restart of a stopped plugin short of restarting TurboMojo; not tried in a real
   session.
 - Gate: scripts/check.sh printed CHECK OK (80 test files, 1064 tests, 664 s).
+
+## 2026-11-12 · P8-02 plugin panels · done
+- What changed: `PluginPanel` (src/plugins.mojo) - a list or a table with columns,
+  rows of cells, a style per row (RM_ERROR, RM_WARN, RM_OK, RM_DIM: a new `row_marks`
+  per row of list windows, drawn in their colours) and data per row; `panel_lines` lays
+  a table out in columns (widest cell, at most 40, cut with "…", titles and a rule).
+  The host (src/app_plugins.mojo): `panel/open` docks a WK_PANEL window at the right
+  edge (editors make room), `panel/set` fills it, `panel/close` closes it; Enter sends
+  `panel/select` {id, row, data}, Esc goes back to the code; a panel the user closes
+  (Alt-F3) gives the room back and the plugin hears `panel/closed`; a plugin that stops
+  takes its panels with it. The example plugin got "Most used words" (a table that
+  follows saves) and a client that keeps messages arriving while it waits for an
+  answer (the first test found that it dropped a command sent right after an open
+  event). docs/PLUGINS.md and README say so.
+- Verified: `tests/test_plugin_panels.mojo` (2 tests): list and table layouts (cells
+  under their titles, a long cell cut, styles); with the example plugin: the table
+  beside the editor, apple 3 "ok" and the titles dim, Enter on banana giving "is used 2
+  times", a save refreshing it to banana 4, Alt-F3 closing it with the editor's width
+  back, and the plugin's death closing a reopened panel. test_plugins still passes.
+- Not done / unverified: one panel slot at the right edge (two panels overlap there);
+  no mouse selection message; cells are plain text (no per-cell style).
+- Gate: scripts/check.sh printed CHECK OK (81 test files, 1066 tests, 657 s).

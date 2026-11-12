@@ -16,7 +16,7 @@ from themes import ThemeSet, scheme_from, animations_off
 from strings import apply_strings, language_from
 from notify import NotifyCenter, TYPING_PAUSE_MS
 from tips import TipRules
-from plugins import Plugin, register_plugins
+from plugins import Plugin, PluginPanel, register_plugins
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, ACT_OTHER, ACT_TYPE
@@ -188,6 +188,7 @@ struct App(Movable):
     var plugins_log_dir: String # their stderr goes there ('' : nowhere)
     var plugins_on: Bool        # tools.plugins
     var plugin_warnings: List[String]   # what registering their commands could not do
+    var panels: List[PluginPanel]       # the plugins' open panels
     var key_uses: Dict[String, Int]  # how often each command was run by its key
     var key_uses_path: String   # where those counts are kept ('' in tests)
     var reduce_motion: Bool     # no animation (the busy spinner stands still)
@@ -604,6 +605,7 @@ struct App(Movable):
         self.plugins_log_dir = ""
         self.plugins_on = True
         self.plugin_warnings = List[String]()
+        self.panels = List[PluginPanel]()
         self.chord_since = 0
         self.typed_ns = 0
         self.chord_box = False

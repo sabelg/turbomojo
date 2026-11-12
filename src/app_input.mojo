@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -50,6 +50,7 @@ from app_explain import *
 from app_docpane import *
 from app_keybox import *
 from app_tips import *
+from app_plugins import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
@@ -193,6 +194,8 @@ __extension App:
         if self.wins[t].kind == WK_EXPLAIN and self.explain_key(k):
             return
         if self.wins[t].kind == WK_DOCPANE and self.docpane_key_event(k):
+            return
+        if self.wins[t].kind == WK_PANEL and self.panel_key(k):
             return
         if self.wins[t].kind == WK_EXPLORER and self.explorer_key(k):
             return

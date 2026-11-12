@@ -134,3 +134,108 @@ def register_plugins(mut reg: Registry, plugins: List[Plugin]) -> List[String]:
                 any = True
             reg.layout.append(Placement(0, id))
     return warn^
+
+
+# ------------------------------------------------------------------ panels
+comptime PANEL_COL_MAX = 40         # the widest a table column is shown
+
+
+struct PluginPanel(Copyable, Movable):
+    """A plugin's panel: a list (one text per row) or a table (cells under columns)."""
+    var plugin: Int
+    var id: String
+    var title: String
+    var table: Bool
+    var columns: List[String]
+    var cells: List[List[String]]   # per row (a list's row has one cell)
+    var styles: List[Int]           # per row: RM_*
+    var data: List[String]          # per row: given back to the plugin when it is chosen
+    var x: Int                      # where its window was docked (to give the room back)
+    var w: Int
+
+    def __init__(out self, plugin: Int, id: String):
+        self.plugin = plugin
+        self.id = id
+        self.title = id
+        self.table = False
+        self.columns = List[String]()
+        self.cells = List[List[String]]()
+        self.styles = List[Int]()
+        self.data = List[String]()
+        self.x = 0
+        self.w = 0
+
+    def header_rows(self) -> Int:
+        """Lines above the first row (a table's column titles and the line under them)."""
+        return 2 if self.table and len(self.columns) > 0 else 0
+
+
+def style_mark(s: String) -> Int:
+    if s == "error":
+        return 1        # RM_ERROR
+    if s == "warn":
+        return 2        # RM_WARN
+    if s == "ok":
+        return 3        # RM_OK
+    if s == "dim":
+        return 4        # RM_DIM
+    return 0
+
+
+def pad_cell(s: String, w: Int) -> String:
+    """`s` in exactly `w` columns: cut with "…" when longer, blanks after when shorter."""
+    var cps = List[Int]()
+    for c in s.codepoints():
+        cps.append(Int(c))
+    var out = String("")
+    if len(cps) > w:
+        for k in range(max(0, w - 1)):
+            out += chr(cps[k])
+        if w > 0:
+            out += "…"
+        return out^
+    out = s
+    for _ in range(w - len(cps)):
+        out += " "
+    return out^
+
+
+def panel_lines(p: PluginPanel) -> List[String]:
+    """The panel as text lines: a list's rows as they are; a table's cells in columns as
+    wide as their widest cell (at most PANEL_COL_MAX), with the column titles on top."""
+    var out = List[String]()
+    if not p.table:
+        for row in p.cells:
+            out.append(row[0] if len(row) > 0 else String(""))
+        return out^
+    var ncol = len(p.columns)
+    for row in p.cells:
+        ncol = max(ncol, len(row))
+    var widths = List[Int]()
+    for c in range(ncol):
+        var w = 0
+        if c < len(p.columns):
+            w = len(p.columns[c].codepoints())
+        for row in p.cells:
+            if c < len(row):
+                w = max(w, len(row[c].codepoints()))
+        widths.append(min(w, PANEL_COL_MAX))
+    if len(p.columns) > 0:
+        var head = String("")
+        var rule = String("")
+        for c in range(ncol):
+            var last = c == ncol - 1
+            head += (pad_cell(p.columns[c], widths[c]) if c < len(p.columns) else pad_cell("", widths[c])) + ("" if last else "  ")
+            for _ in range(widths[c]):
+                rule += "-"
+            if not last:
+                rule += "  "
+        out.append(String(head.rstrip()))
+        out.append(rule)
+    for row in p.cells:
+        var line = String("")
+        for c in range(ncol):
+            var cell = row[c] if c < len(row) else String("")
+            line += pad_cell(cell, widths[c]) + ("" if c == ncol - 1 else "  ")
+        out.append(String(line.rstrip()))
+    return out^

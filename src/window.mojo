@@ -27,6 +27,12 @@ comptime WK_TESTS = 7        # the test explorer
 comptime MINIMAP_W = 10       # cells of the minimap (2 x 4 braille dots each)
 comptime WK_AGENT = 10       # the conversation with a coding agent (ACP)
 comptime WK_BLAME = 9        # who last changed each line of a file
+comptime WK_PANEL = 13       # a plugin's panel: a list or a table it fills
+comptime RM_NONE = 0          # row marks of list windows (a plugin panel's row styles)
+comptime RM_ERROR = 1
+comptime RM_WARN = 2
+comptime RM_OK = 3
+comptime RM_DIM = 4
 comptime WK_DOCPANE = 12     # the docs pane: documentation of the name at the cursor, at the right edge
 comptime WK_EXPLAIN = 11     # the explanation of a Mojo error message, beside the code
 comptime WK_DIFF = 8         # a file's changes against git's index (or the index's against HEAD)
@@ -83,6 +89,7 @@ struct Window(Copyable, Movable):
     var ac: Int
     var number: Int
     var git_rows: List[Int]     # explorer: GS_* of each row's file or folder
+    var row_marks: List[Int]    # list windows: RM_* of each row (its colour)
     var crumbs: String          # " › Counter › add": where the cursor is, after the title
     var sticky: List[Int]       # lines pinned at the top: headers of the scopes scrolled away
     var minimap: Bool           # a minimap column at the right edge
@@ -147,6 +154,7 @@ struct Window(Copyable, Movable):
         self.ac = 0
         self.number = number
         self.git_rows = List[Int]()
+        self.row_marks = List[Int]()
         self.crumbs = ""
         self.sticky = List[Int]()
         self.minimap = False
