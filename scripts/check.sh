@@ -77,4 +77,11 @@ if [ "${SKIP_PERF:-0}" != "1" ] && command -v tmux >/dev/null; then
   scripts/perf.sh
 fi
 
+# a short soak: a minute of scripted editing, the memory watched (scripts/soak.sh 30 for a
+# long run); SKIP_SOAK=1 leaves it out
+if [ "${SKIP_SOAK:-0}" != "1" ] && command -v tmux >/dev/null; then
+  echo "== soak"
+  scripts/soak.sh 1
+fi
+
 echo "CHECK OK"

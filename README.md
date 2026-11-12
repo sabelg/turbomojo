@@ -275,6 +275,12 @@ the budget each must stay under:
 Each run is added to `build/perf-history.csv`. The IDE runs with configuration and state
 folders of its own there, so nothing of yours is read or changed.
 
+`scripts/soak.sh [minutes]` edits for a long time - open a file through the palette, type,
+undo, find, open menus, resize, save, close, over and over - and watches the IDE's memory;
+it fails if the IDE ends, its screen breaks, the crash log gets an entry, or the memory
+keeps growing. The gate runs it for a minute. A 30-minute run (750 cycles) went from 15.5 MB
+to 17.2 MB while warming up and then stayed at 17.5 MB.
+
 `scripts/bench-open.sh` generates a 1,000,000-line file and a 60 MB file under `build/big/` and
 times how long the editor's loader takes to open them (it fails above 1 s for the first).
 

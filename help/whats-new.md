@@ -1,5 +1,14 @@
 # What's new
 
+## 2.0: release
+
+- `tmide --version` and `tmide --help`; a conda package (`pixi run package`).
+- A user guide, a keymap reference for all three keymaps and a changelog
+  (docs/USER_GUIDE.md, docs/KEYMAP.md, CHANGELOG.md).
+- Checked on every change: fuzzing of the key, JSON, text and terminal parsers,
+  performance budgets (start-up, keys, a 1,000,000-line file, idle CPU) and a soak test
+  of long editing that watches the memory.
+
 ## 1.9: help that keeps you working, plugins, other languages
 
 - **Themes as files**: Paper Light, High Contrast and Hacker Matrix besides Turbo

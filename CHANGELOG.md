@@ -1,16 +1,17 @@
 # Changelog
 
 What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.md) and the
-day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 1.9.0;
+day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.0: Release engineering (in progress: 1 task to go)
+## 2.0: Release engineering - 2026-11-12
 
 - Fuzz harnesses: key parser, JSON, rope, VT parser (P9-01)
 - Performance benchmarks script and budgets checked in `scripts/check.sh` (startup, keystroke-to-frame, 1M-line open) (P9-02)
 - macOS portability layer for termios/ioctl constants (compile-time selected; untestable here, mark what is unverified) (P9-03)
 - Packaging recipe (conda `recipe.yaml`), install instructions, version flag (P9-04)
 - User guide, keymap reference, changelog; README refreshed to match reality (P9-05)
+- Soak script (scripted editing for a long run) and leak check; final full `scripts/check.sh` pass (P9-06)
 
 ## 1.9: Extensibility - 2026-11-12
 

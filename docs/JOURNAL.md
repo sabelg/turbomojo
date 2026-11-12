@@ -4239,3 +4239,27 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   wrong, not rewritten line by line; the changelog lists tasks as the backlog words
   them.
 - Gate: scripts/check.sh printed CHECK OK with PERF OK (87 test files, 1084 tests, 695 s).
+
+## 2026-11-12 · P9-06 soak test, leak check, final gate · done (the roadmap is complete: 2.0.0)
+- What changed: `scripts/soak.sh [minutes]` (`scripts/soak.py`): TurboMojo on a tmux
+  server of its own with configuration and state of its own, in a folder outside any
+  project; cycle after cycle it rewrites soak.mojo, opens it through the palette, types,
+  moves, undoes and redoes, duplicates, deletes, finds, opens and closes the palette and
+  a menu, resizes every tenth cycle, saves and closes; after every action it checks the
+  IDE is still there, after every cycle that the screen still shows it, and samples
+  VmRSS. It fails on an ended IDE, a broken screen, a crash-log entry, or memory whose
+  last third is more than 15% + 8 MB above the first (after a warm-up tenth). The gate
+  runs it for one minute (SKIP_SOAK=1 skips it). Version 2.0.0 (src/version.mojo,
+  pixi.toml, the recipe), What's new for 2.0, README.
+- Found while writing it, all in the script: a work folder inside the repository made
+  the repository the project (the palette opened one of its files); a file that grew
+  every cycle would have grown the memory with it (now rewritten each cycle); and Esc
+  followed within milliseconds by "x" is what a terminal sends for Alt-X - the IDE read
+  it, rightly, as Quit (the script now waits 0.1 s after Esc, as no person types faster).
+- Verified: a 30-minute soak - 750 cycles, no exit, no crash entry; memory 15.5 MB at
+  the start, 17.2 MB after the warm-up, then flat at 17.5 MB for the last 400 cycles
+  (+0.3 MB first third to last; allowed +10.6). The final gate below.
+- Not done / unverified: the soak does not use the language server, builds, the
+  debugger, terminals or agents (child processes and their pipes are not soaked);
+  VmRSS shows growth, not where; a 24-hour run (the roadmap's wish) was not made.
+- Final gate: scripts/check.sh printed CHECK OK - 87 test files (1084 tests), smoke, PERF OK (start-up 51 ms, key 1.5 ms beyond tmux, 1M-line open 124 ms, idle 10 ms) and SOAK OK (25 cycles, +1.0 MB) - in 755 s.
