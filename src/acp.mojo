@@ -151,6 +151,7 @@ struct AcpClient(Movable):
     var init_id: Int
     var new_id: Int
     var prompt_id: Int          # the turn running (-1: none)
+    var prompt_ns: Int          # when it began
     var started_ns: Int
     var permissions: List[String]   # requests for permission not answered yet (their ids)
     var events: List[AcpEvent]
@@ -179,6 +180,7 @@ struct AcpClient(Movable):
         self.init_id = -1
         self.new_id = -1
         self.prompt_id = -1
+        self.prompt_ns = 0
         self.started_ns = 0
         self.permissions = List[String]()
         self.events = List[AcpEvent]()
@@ -278,6 +280,7 @@ struct AcpClient(Movable):
         if self.state != AS_READY or self.busy():
             return False
         self.prompt_id = self.conn.request("session/prompt", "{\"sessionId\":" + json_quote(self.session_id) + ",\"prompt\":" + blocks_json + "}", now)
+        self.prompt_ns = now
         return True
 
     def cancel(mut self):

@@ -24,6 +24,7 @@ from util import *
 from appstate import *
 from outline import scan_outline, scope_path, breadcrumbs, sticky_rows
 from app_notify import *
+from app_progress import *
 from app_agent import *
 from app_problems import *
 from app_lsp import *
@@ -123,25 +124,21 @@ __extension App:
 
         if self.macro_rec:
             right = "● REC  " + right
-        if self.job.active:
-            var sp = decode(SPINNER)
-            var b = List[UInt8]()
-            encode_cp(sp[0] if self.reduce_motion else sp[(now_ns() // (SPINNER_MS * 1000000)) % len(sp)], b)
-            var what = "Building " if (self.job.kind == JOB_BUILD or self.job.kind == JOB_DEBUG) else "Formatting "
-            var subject = basename(self.job.path)
-            if self.job.kind == JOB_TASK:
-                what = "Task "
-                subject = self.job.exe
-            if self.job.kind == JOB_DOCS:
-                what = "Downloading "
-                subject = "documentation"
-            if self.job.kind == JOB_TESTS:
-                what = ""
-                subject = self.job.exe
-            var e = self.job_elapsed()
-            right = bytes_to_str(b) + " " + what + subject + " " + String(Int(e)) + "." + String(Int(e * 10) % 10) + "s  ^F2 cancel  " + right
+        var prog = self.progress_status()           # (nothing in the first second)
+        right = prog + right
         var rl = cp_len(right)
         var rx = self.scr.w - rl - 1
+        if rx < x and prog.byte_length() > 0:
+            # work in progress and its cancel key come before the key hints: the hints
+            # it would cover give way (and are no longer clickable)
+            rx = max(2, rx)
+            while len(self.st_x1) > 0 and self.st_x1[len(self.st_x1) - 1] > rx - 3:
+                _ = self.st_x0.pop()
+                _ = self.st_x1.pop()
+                _ = self.st_cmd.pop()
+            var cut = self.st_x1[len(self.st_x1) - 1] if len(self.st_x1) > 0 else 0
+            self.scr.fill(cut, y, self.scr.w - cut, 1, 32, p.status_fg, p.status_bg)
+            x = cut
         if rx < x:
             rx = x
         if rx < self.scr.w:
@@ -202,6 +199,7 @@ __extension App:
             if i == n - 1 and self.wins[i].w < self.scr.w:
                 self.scr.shadow(self.wins[i].x, self.wins[i].y, self.wins[i].w, self.wins[i].h, p.shadow_fg, p.shadow_bg)
         if not self.reader:
+            self.draw_progress_box()            # beyond ten seconds (never takes the keys)
             self.draw_toasts()                  # (a screen reader gets them on the status line)
             self.draw_chord_box()
         draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, clock_hm() if self.show_clock and not self.reader else "")

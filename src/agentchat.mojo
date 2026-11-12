@@ -132,6 +132,17 @@ struct AgentChat(Copyable, Movable):
             self.entries.append(e^)
         self.version += 1
 
+    def turn_steps(self) -> Int:
+        """Tool calls and commands since the user's last message: what the agent has
+        done so far in this turn."""
+        var n = 0
+        var k = len(self.entries) - 1
+        while k >= 0 and self.entries[k].kind != CE_USER:
+            if self.entries[k].kind == CE_TOOL or self.entries[k].kind == CE_TERM:
+                n += 1
+            k -= 1
+        return n
+
     def cancel_open_tools(mut self):
         """A turn ended: calls still pending or running did not finish."""
         for k in range(len(self.entries)):

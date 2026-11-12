@@ -123,7 +123,7 @@ def test_reduced_motion() raises:
     app.job.active = True                            # (a build, as the status line sees it)
     app.job.kind = JOB_BUILD
     app.job.path = "/p/x.mojo"
-    app.job.t0 = Int(now_ns())
+    app.job.t0 = Int(now_ns()) - 2000000000          # (past the first second, when nothing is shown)
     var seen = List[String]()
     for _ in range(3):
         app.draw()

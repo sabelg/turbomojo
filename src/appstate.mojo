@@ -1,6 +1,7 @@
 """Application state: the App struct, its fields and small shared helpers.
 
 Behaviour lives in the app_*.mojo modules, which extend App."""
+from progress import QUIET_MS
 from version import TURBOMOJO_VERSION
 from std.collections import List, Dict
 from std.time import perf_counter_ns
@@ -1092,8 +1093,14 @@ struct App(Movable):
         # With signals on a descriptor a resize wakes the loop by itself; without it
         # (tests, or signalfd unavailable) fall back to checking the size periodically.
         var t = 3600000 if self.sig.active() else RESIZE_POLL_MS
-        if self.job.active:
-            t = min(t, 1000 if self.reduce_motion else SPINNER_MS)
+        if self.job.active or self.agent.busy():
+            # nothing is shown in the first second (src/progress.mojo): wake when it ends
+            var t0 = self.job.t0 if self.job.active else self.agent.prompt_ns
+            var ms = (now - t0) // 1000000
+            if ms < QUIET_MS:
+                t = min(t, QUIET_MS - ms + 1)
+            else:
+                t = min(t, 1000 if self.reduce_motion else SPINNER_MS)
         if self.symidx.building or self.fidx.building:
             t = min(t, 5)
         if self.fsearch.active:

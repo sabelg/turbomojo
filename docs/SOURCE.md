@@ -43,6 +43,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_pickers.mojo` | List pickers: command palette, symbols, keyboard reference, word completion. |
 | `src/app_plugins.mojo` | The plugin host in the IDE (src/plugins.mojo): start the plugins of the plugins folder, poll them with the event loop, answer what they ask, run their commands, send them the events they asked for, and show their status items. |
 | `src/app_problems.mojo` | The bottom panel's Problems page, for every source: what the language server reports, the errors and warnings of the last build, and the tests that failed. |
+| `src/app_progress.mojo` | The response-time ladder on screen (src/progress.mojo has the stages): a build, format, task, test run or documentation download, and an agent's turn, show nothing for their first second, then a spinner and the time on the status line, and beyond ten seconds what has been done so far and the key that stops it - for a job in the Compiling box at the bottom right, which is drawn over the desktop but never takes the keyboard (typing goes on in the editor); for the agent on the status line (its panel shows the steps themselves). |
 | `src/app_swap.mojo` | Swap files in the running IDE: periodic writing, clean-up and recovery at startup. |
 | `src/app_terminal.mojo` | The integrated terminal: a shell (Window > Terminal) and the program Run starts, each in a window of its own at the bottom, on a pty with libghostty-vt keeping the screen. |
 | `src/app_tests.mojo` | The test explorer: the project's TestSuite files and their tests, run by file or one at a time, with the place of each failure (see testexp.mojo). |
@@ -93,6 +94,7 @@ struct of `appstate.mojo`, one area each.
 | `src/plugins.mojo` | Plugins: programs of their own that TurboMojo starts and talks to over JSON-RPC, one message per line on their standard input and output (the transport of the agent client). |
 | `src/problems.mojo` | The Problems page's model: problems from every source (the language server, the last build, the test explorer's failed tests) in one list, and the filter that chooses which are shown (kinds, only the current file, a text). |
 | `src/proc.mojo` | A child process with pipes in both directions, driven without blocking. |
+| `src/progress.mojo` | The response-time ladder (Nielsen's limits: 0.1 s feels instant, 1 s keeps the flow of thought, 10 s keeps attention): work that ends within a second shows nothing - a spinner that flashes on and off is noise; from one second a spinner and the time on the status line; beyond ten seconds what has been done so far and the key that stops it, in a box that never takes the keyboard. |
 | `src/project.mojo` | The project around the files being edited: where its `pixi.toml` is and which tasks that file defines. |
 | `src/pty.mojo` | A program running on a pseudo-terminal: what the integrated terminal and the REPL run. |
 | `src/regex.mojo` | Regular expressions: a parser, a compiler to a small instruction set, and a Pike VM (Thompson NFA simulation that also tracks capture groups). |

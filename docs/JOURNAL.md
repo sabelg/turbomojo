@@ -4395,3 +4395,33 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
 - First gate: test_dap failed - it expected the box for a program that cannot start
   (not run before the gate); changed to the notice.
 - Gate: scripts/check.sh printed CHECK OK (91 test files, 1102 tests, 348 s).
+
+## 2026-11-12 · P10-06 Response-time ladder · done
+- What changed: `src/progress.mojo` - the stages (under 1 s nothing, 1-10 s spinner,
+  beyond 10 s the box), the time as shown ("3.2 s", "1 min 05 s"), the output's line
+  count and its last line (escape codes left out, a line redrawn with \r shown in
+  its latest state). `src/app_progress.mojo` - the status line's part (spinner, what,
+  time, the cancel key from the keymap) for builds, debug builds, formatting, tasks,
+  test runs and the documentation download, and for an agent's turn (with its steps
+  so far beyond ten seconds: tool calls and commands since the user's message,
+  `AgentChat.turn_steps`; `AcpClient.prompt_ns` records when the turn began); the
+  Compiling box (or Running tests, Running a task, ...) at the bottom right beyond
+  ten seconds - main file, elapsed, output lines, last line, the cancel key - drawn
+  over the desktop without taking the keyboard, left out for a screen reader. The
+  loop wakes when the quiet second ends (and while an agent's turn runs, for its
+  spinner). On a narrow status line work in progress wins: whole key hints give way
+  (and stop being clickable) instead of the cancel key falling off the edge.
+- Verified: `tests/test_progress.mojo` (4 tests): the limits and the time format; the
+  output count and last line with colours and \r; a build at 0, 3 and 12 seconds (no
+  spinner and a 1 s wake-up; spinner, time, cancel key and the spinner's tick; the
+  box with each line, the keyboard still in the editor); the test-run title; no box
+  for a screen reader; an agent's turn at 0, 4 and 15 seconds with two steps, and the
+  count starting again at the next message. test_access sets its build past the first
+  second. The status line and the box looked at as text at 80 and 120 columns.
+- Not done / unverified: "run" (Ctrl-F9) shows its build on the ladder, but the
+  program running in the Run window has no spinner (its output is in front of you);
+  the box does not move out of the way of a window's bottom-right corner, and is
+  not clickable; the ⟳ count on the status line still counts the job the spinner
+  already shows; a screen reader is not told when ten seconds pass. Not looked at
+  in a real terminal.
+- Gate: scripts/check.sh printed CHECK OK (92 test files, 1106 tests, 806 s).
