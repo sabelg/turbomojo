@@ -30,6 +30,7 @@ struct Screen(Movable):
     var cvis: Bool
     var cblock: Bool
     var color_mode: Int   # COLOR_TRUE / COLOR_256 / COLOR_16: how colours are sent
+    var plain: Bool       # screen-reader mode: box drawing and shading drawn as blanks
     var sync: Bool        # wrap each frame in synchronized-output markers (mode 2026)
     var cx0: Int
     var cy0: Int
@@ -58,6 +59,7 @@ struct Screen(Movable):
         self.cvis = False
         self.cblock = False
         self.color_mode = COLOR_TRUE
+        self.plain = False
         self.sync = True
         self.cx0 = 0
         self.cy0 = 0
@@ -168,6 +170,8 @@ struct Screen(Movable):
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
             return
         var ch = c
+        if self.plain and ch >= 0x2500 and ch <= 0x259F:
+            ch = 32                 # frames, lines, shading: noise to a screen reader
         if ch < 32:
             ch = 0x2400 + ch if ch >= 0 else 32  # control pictures
         elif ch == 127:

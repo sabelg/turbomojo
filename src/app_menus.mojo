@@ -116,6 +116,8 @@ __extension App:
         var out = List[Int]()
         if self.line_numbers:
             out.append(CM_LINENUM)
+        if self.reader:
+            out.append(CM_SCREEN_READER)
         if self.auto_indent:
             out.append(CM_AUTOINDENT)
         if self.hl_line:

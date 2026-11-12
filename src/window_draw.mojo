@@ -78,7 +78,7 @@ __extension Window:
         scr.clip(self.x + 1, self.y, self.w - 2, 1)
         _ = scr.text(tx, self.y, t, pal.title_fg if active else ffg, bg)
         scr.no_clip()
-        if active and self.w > 12:
+        if active and self.w > 12 and not scr.plain:     # (no icons for a screen reader)
             _ = scr.text(self.x + 2, self.y, "[", ffg, bg)
             scr.put(self.x + 3, self.y, 0x25A0, pal.icon_fg, bg)
             _ = scr.text(self.x + 4, self.y, "]", ffg, bg)
@@ -346,7 +346,7 @@ __extension Window:
                 scr.put(px, self.y + self.h - 1, 0x263C, pal.icon_fg, bg)
                 px += 1
             _ = scr.text(px, self.y + self.h - 1, pos, ffg, bg)
-        if active and self.h > 4:
+        if active and self.h > 4 and not scr.plain:
             # vertical scrollbar
             var sx = self.x + self.w - 1
             var y0 = self.y + 1

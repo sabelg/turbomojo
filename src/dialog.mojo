@@ -173,6 +173,19 @@ struct Dialog(Copyable, Movable):
         var k = self.focus - len(self.fields) - len(self.checks) - (1 if self.has_list else 0)
         return k if k >= 0 and k < len(self.buttons) else -1
 
+    def focus_cell(self) -> Tuple[Int, Int]:
+        """Where the focused check box, list row or button is (as last drawn; -1 if a
+        field has the focus or nothing is drawn) - for the screen reader's cursor."""
+        var c = self.focus_check()
+        if c >= 0 and c < len(self.check_y):
+            return (self.check_x[c], self.check_y[c])
+        if self.list_focused() and self.list_h > 0:
+            return (self.list_x, self.list_y + max(0, self.list_sel - self.list_top))
+        var b = self.focus_button()
+        if b >= 0 and b < len(self.btn_x):
+            return (self.btn_x[b], self.btn_y)
+        return (-1, -1)
+
     def button_focus_index(self, b: Int) -> Int:
         return len(self.fields) + len(self.checks) + (1 if self.has_list else 0) + b
 

@@ -3670,3 +3670,37 @@ reminders; AI explanations are often wrong (48% correct in one study), more so f
 small-corpus languages. The user asked for all ten of its recommendations as tasks:
 P7-07 to P7-16 (the report's "coming from Python" item said def/fn; the task says
 Mojo 1.x has no fn).
+
+## 2026-11-11 · P7-04 Accessibility: screen-reader (linear) mode, reduced motion · done
+
+- Screen-reader mode (`ui.screen_reader`, Options > Screen-reader mode, or
+  TURBOMOJO_SCREEN_READER=1): `Screen.plain` makes `put` draw U+2500-U+259F (box
+  drawing, lines, shading, the desk pattern) as blanks - the one place every character
+  passes - and window icons and scrollbars are left out (they read as "black square"
+  and "up-pointing triangle"); fold and breakpoint marks stay. The clock is hidden (a
+  change every minute would be read), scanlines are off, notices go to the status line
+  (`say`) instead of toasts, and the terminal's cursor is put on what has the focus:
+  the marked menu item, a dialog's field (as before), check box, list row or button
+  (`Dialog.focus_cell`), a list window's row; editors, terminals and the agent panel
+  place their own. The toggle is written to the config and shown checked in Options.
+- Reduced motion (`ui.reduced_motion` true / false / "auto"): the busy spinner stands
+  still (and the loop wakes once a second for it instead of ten times); "auto", the
+  default, follows GNOME's `org.gnome.desktop.interface enable-animations`; screen-reader
+  mode always has it. There is no terminal or OS "prefers reduced motion" signal for
+  terminal programs besides the desktop's setting.
+- Tests (`tests/test_access.mojo`, 6): a plain screen (frames blank, text kept); an
+  editor in reader mode with no decoration, no clock, no icons or scrollbars, and with
+  the mode off the frames back; the cursor on the marked menu item, a dialog's list row
+  and its OK button, a list window's row; notices on the status line and in the centre,
+  no toast; the spinner standing still, the setting's values and a wrong one; the
+  Options toggle written to the config. The first run of the cursor test failed by my
+  test pressing code 27 for Esc (TurboMojo's key codes have KEY_ESC); the dialog was
+  still open, and the cursor sat correctly on its button.
+- Looked at in tmux with `screen_reader = true`: no frames, no clock; after F10 and two
+  Downs the cursor was on "Save". Window icons and scrollbars were still there then and
+  were taken out.
+- Not done / unverified: not tried with Orca or another screen reader (none here);
+  the documentation viewer and the debugger windows have no focus cursor in this mode;
+  menus and dialogs are still drawn as boxes of text (blank-framed), not as a linear
+  list.
+- Verified: `scripts/check.sh` → `CHECK OK`, 67 test files, 1014 tests, smoke ok.

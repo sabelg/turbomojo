@@ -593,6 +593,11 @@ __extension App:
             self.notices_dialog()
         elif cmd == CM_THEME_PICK:
             self.theme_dialog()
+        elif cmd == CM_SCREEN_READER:
+            self.reader = not self.reader
+            self.motion_apply()
+            self.persist_option("ui", "screen_reader", toml_bool(self.reader))
+            self.say("Screen-reader mode on: plain screen, the cursor on what has the focus" if self.reader else "Screen-reader mode off")
         elif cmd == CM_ZOOM:
             var t = self.top()
             if t >= 0:

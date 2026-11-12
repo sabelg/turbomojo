@@ -120,7 +120,7 @@ __extension App:
         if self.job.active:
             var sp = decode(SPINNER)
             var b = List[UInt8]()
-            encode_cp(sp[(now_ns() // (SPINNER_MS * 1000000)) % len(sp)], b)
+            encode_cp(sp[0] if self.reduce_motion else sp[(now_ns() // (SPINNER_MS * 1000000)) % len(sp)], b)
             var what = "Building " if (self.job.kind == JOB_BUILD or self.job.kind == JOB_DEBUG) else "Formatting "
             var subject = basename(self.job.path)
             if self.job.kind == JOB_TASK:
@@ -192,8 +192,9 @@ __extension App:
                 continue                        # panes lie side by side: no shadow
             if i == n - 1 and self.wins[i].w < self.scr.w:
                 self.scr.shadow(self.wins[i].x, self.wins[i].y, self.wins[i].w, self.wins[i].h, p.shadow_fg, p.shadow_bg)
-        self.draw_toasts()
-        draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, clock_hm() if self.show_clock else "")
+        if not self.reader:
+            self.draw_toasts()                  # (a screen reader gets them on the status line)
+        draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, clock_hm() if self.show_clock and not self.reader else "")
         # status line
         var items = List[String]()
         var cmds = List[Int]()
@@ -328,8 +329,38 @@ __extension App:
                 self.scr.cy = c[1]
                 self.scr.cvis = True
                 self.scr.cblock = False
-        if p.scanlines:
+        if p.scanlines and not self.reader:
             self.draw_scanlines()
+        if self.reader:
+            self.reader_cursor()
+
+    def reader_cursor(mut self):
+        """Screen-reader mode: the terminal's cursor on what has the focus - the menu
+        item, the dialog's control, the list row - since screen readers follow it."""
+        if self.mode == M_MENU and self.menu_idx >= 0 and self.menu_idx < len(self.menus):
+            ref m = self.menus[self.menu_idx]
+            var w = m.width()
+            var x = max(0, min(m.x - 1, self.scr.w - w - 2))
+            var top = dropdown_top(self.scr.h, m, self.menu_item)
+            self.scr.cx = x + 2
+            self.scr.cy = 2 + self.menu_item - top
+            self.scr.cvis = True
+            return
+        if self.mode == M_DIALOG:
+            if self.scr.cvis:
+                return                          # a field: the dialog put it there
+            var c = self.dlg.focus_cell()
+            if c[0] >= 0:
+                self.scr.cx = c[0]
+                self.scr.cy = c[1]
+                self.scr.cvis = True
+            return
+        var t = self.top()
+        if self.mode == M_NORMAL and t >= 0 and not self.scr.cvis and self.wins[t].kind != WK_EDITOR and self.wins[t].kind != WK_TERM and self.wins[t].kind != WK_AGENT:
+            # a list window: its marked row
+            self.scr.cx = self.wins[t].x + 1
+            self.scr.cy = self.wins[t].y + 1 + max(0, self.wins[t].cr - self.wins[t].top)
+            self.scr.cvis = True
 
     def draw_scanlines(mut self):
         """A CRT look: the background of every other row a little darker (the theme's

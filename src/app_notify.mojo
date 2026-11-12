@@ -22,6 +22,9 @@ from app_dialogs import *
 __extension App:
     def notify(mut self, level: Int, title: String, text: String):
         self.notes.add(level, title, text, now_ns(), clock_hm())
+        if self.reader:
+            # no toast for a screen reader: the status line, which it reads
+            self.say(title + ((": " + text) if text.byte_length() > 0 else String("")))
 
     def running_tasks(self) -> List[String]:
         """What is going on in the background now, one line each."""

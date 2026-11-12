@@ -524,3 +524,9 @@ def scheme_from(colorfgbg: String, gnome: String) -> Int:
     if g.find("prefer-light") >= 0 or g.find("default") >= 0:
         return 2
     return 0
+
+
+def animations_off(gnome: String) -> Bool:
+    """GNOME's org.gnome.desktop.interface enable-animations is false: the user asked
+    the desktop for less motion."""
+    return String(gnome.strip()) == "false"

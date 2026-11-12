@@ -12,7 +12,7 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
-from themes import ThemeSet, scheme_from
+from themes import ThemeSet, scheme_from, animations_off
 from notify import NotifyCenter
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
@@ -166,6 +166,9 @@ struct App(Movable):
     var toast_y1: List[Int]
     var toast_x: Int
     var help_dir: String        # where the help pages are written ('' in tests: no help book)
+    var reader: Bool            # screen-reader mode: plain drawing, the cursor on what has focus
+    var reduce_motion: Bool     # no animation (the busy spinner stands still)
+    var reduced_motion_cfg: Int # ui.reduced_motion: -1 auto, 0 off, 1 on
     var hl: Highlighter
     var wins: List[Window]
     var reg: Registry
@@ -549,6 +552,9 @@ struct App(Movable):
         self.toast_y1 = List[Int]()
         self.toast_x = 1 << 30
         self.help_dir = ""
+        self.reader = False
+        self.reduce_motion = False
+        self.reduced_motion_cfg = -1
         self.pal = theme(0)
         self.hl = Highlighter()
         self.wins = List[Window]()
@@ -953,6 +959,20 @@ struct App(Movable):
         var w = self.wins.pop(i)
         self.wins.append(w^)
 
+    def motion_apply(mut self):
+        """Screen-reader mode and reduced motion as the settings (and, for "auto", the
+        desktop) have them."""
+        self.scr.plain = self.reader
+        if self.reader or self.reduced_motion_cfg == 1:
+            self.reduce_motion = True
+        elif self.reduced_motion_cfg == 0:
+            self.reduce_motion = False
+        else:
+            var g = String("")
+            if which("gsettings").byte_length() > 0:
+                g = bytes_to_str(run_capture("gsettings get org.gnome.desktop.interface enable-animations 2>/dev/null").out)
+            self.reduce_motion = animations_off(g)
+
     def theme_apply(mut self):
         """Use the theme ui.theme names (for "auto": the dark or light one, as the
         terminal says; dark until it has said)."""
@@ -997,7 +1017,7 @@ struct App(Movable):
         # (tests, or signalfd unavailable) fall back to checking the size periodically.
         var t = 3600000 if self.sig.active() else RESIZE_POLL_MS
         if self.job.active:
-            t = min(t, SPINNER_MS)
+            t = min(t, 1000 if self.reduce_motion else SPINNER_MS)
         if self.symidx.building or self.fidx.building:
             t = min(t, 5)
         if self.fsearch.active:
@@ -1076,6 +1096,9 @@ struct App(Movable):
         self.theme_dark_id = s.theme_dark
         self.theme_light_id = s.theme_light
         self.scanlines_cfg = s.scanlines
+        self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1"
+        self.reduced_motion_cfg = s.reduced_motion
+        self.motion_apply()
         self.scheme_seen = 0
         self.line_numbers = s.line_numbers
         self.auto_indent = s.auto_indent

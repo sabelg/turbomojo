@@ -117,7 +117,7 @@ P7-07 to P7-16 come from the research report "Help that keeps users working" (re
 - [x] P7-01 Themes as TOML files; light and high-contrast themes; follow terminal light/dark (mode 2031)
 - [x] P7-02 Notification toasts and progress centre
 - [x] P7-03 Help: tutorial file, cheat sheet, searchable help, What's new
-- [ ] P7-04 Accessibility: screen-reader (linear) mode, reduced motion
+- [x] P7-04 Accessibility: screen-reader (linear) mode, reduced motion
 - [ ] P7-05 Breadcrumbs and sticky scope header; optional minimap
 - [ ] P7-06 Externalised UI strings
 - [ ] P7-07 Calm key echo: "Next time: <key>" on the status line (active keymap) after a command is run from a menu, the palette or the mouse; stops once its key is used; never takes focus

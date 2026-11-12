@@ -161,6 +161,7 @@ comptime CM_HELP_GUIDE = 218
 comptime CM_HELP_CHEAT = 219
 comptime CM_HELP_TUTORIAL = 220
 comptime CM_HELP_NEW = 221
+comptime CM_SCREEN_READER = 222     # Options > Screen-reader mode
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -770,6 +771,7 @@ def build_registry() -> Registry:
     r.cmd(CM_HELP_TUTORIAL, "help.tutorial", "T~u~torial", "A file to practise in: lessons on moving, selecting, finding, running and debugging")
     r.cmd(CM_HELP_NEW, "help.whatsNew", "W~h~at's new", "What changed in this version of TurboMojo")
     r.cmd(CM_NOTICES, "help.notifications", "~N~otifications...", "What is running now and the messages of this session (builds, tests, git, the agent)", [fkey(10) | MOD_SHIFT])
+    r.cmd(CM_SCREEN_READER, "options.screenReader", "Screen-reader ~m~ode", "A plain, linear screen for screen readers: no frames or shading, the cursor on what has the focus, no animation")
     r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge or restore the active window", [fkey(5)])
@@ -950,6 +952,7 @@ def build_registry() -> Registry:
     r.item(CM_KEYMAP2)
     r.sep()
     r.item(CM_THEME_PICK)
+    r.item(CM_SCREEN_READER)
     r.sep()
     r.item(CM_TRUST)
 
