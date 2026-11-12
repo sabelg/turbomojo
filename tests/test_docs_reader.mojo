@@ -552,7 +552,7 @@ def test_finder_goes_to_declarations_and_headings() raises:
     var app = reader(d)
     app.exec(CM_DOCFIND)
     press(app, "@append")
-    assert_equal(found_items(app), "ƒ append | ƒ List.append")
+    assert_equal(found_items(app), "ƒ append - Appends to a list. | ƒ List.append - Appends a value.")   # (with their one-line answers)
     app.handle(key_event(KEY_DOWN))                      # the method
     app.handle(key_event(KEY_ENTER))
     assert_equal(app.mode, M_DOCS)
@@ -608,7 +608,7 @@ def test_topic_search_knows_the_standard_library() raises:
     assert_equal(app.mode, M_DIALOG)
     assert_equal(app.dlg.kind, D_DOCFIND)
     assert_equal(app.dlg.field_text(0), "@append")
-    assert_equal(found_items(app), "ƒ append | ƒ List.append")
+    assert_equal(found_items(app), "ƒ append - Appends to a list. | ƒ List.append - Appends a value.")   # (with their one-line answers)
     app.handle(key_event(KEY_ESC))
     assert_equal(app.mode, M_NORMAL)
     # unknown everywhere: said so

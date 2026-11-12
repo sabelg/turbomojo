@@ -7,6 +7,9 @@
   `theme = "auto"` follows the terminal's (or GNOME's) light or dark.
 - **Notifications**: toasts when a build, tests, a commit or the agent finish while you
   are elsewhere; Help > Notifications (Shift-F10) shows what is running.
+- **One search box**: Find in documentation (Alt-F1) takes a name, `List.append` or
+  a pasted error line, answers in one line, and lists the commands that fit; `?`
+  in the palette hands the text over.
 - **Key boxes**: after a prefix key (Ctrl-K, Ctrl-Q, Emacs Ctrl-X), a pause shows
   the keys that may follow and their commands.
 - **Docs pane**: Help > Docs pane shows the documentation of the name at the cursor

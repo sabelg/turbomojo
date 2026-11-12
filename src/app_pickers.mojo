@@ -57,6 +57,7 @@ comptime QM_COMMANDS = 1
 comptime QM_SYMBOLS = 2
 comptime QM_WSYMBOLS = 3
 comptime QM_LINE = 4
+comptime QM_DOCS = 5          # "?": hand the text to the documentation finder
 
 
 __extension App:
@@ -80,7 +81,7 @@ __extension App:
             self.fidx.start(root)
             self.fidx.step(SYMIDX_FIRST_MS)
         var d = Dialog(D_PALETTE, "Go to", min(76, self.scr.w - 4), min(22, self.desk_h()))
-        d.lines.append("file name   >command   @symbol   #project symbol   :line")
+        d.lines.append("file name  >command  @symbol  #project symbol  :line  ?documentation")
         d.fields.append(Field("~G~o to", start))
         d.list_filter = True
         d.use_pat = True
@@ -101,6 +102,8 @@ __extension App:
             return (QM_WSYMBOLS, String(String(text[byte=1:]).strip()))
         if text.startswith(":"):
             return (QM_LINE, String(""))
+        if text.startswith("?"):
+            return (QM_DOCS, String(""))
         # a file name may be followed by :line or :line:column
         var name = text
         var cut = text.find(":")
@@ -200,6 +203,14 @@ __extension App:
         if mode != self.quick_mode:
             self.quick_fill(mode)
         self.dlg.pat = parsed[1]
+        if mode == QM_DOCS:
+            var what = String(String(text[byte=1:]).strip())
+            var one = List[String]()
+            one.append(("Search the documentation for \"" + what + "\"" if what.byte_length() > 0 else String("Type what to look for in the documentation: a name, a.dotted.path, words, an error line")) + "   (" + self.reg.key_label(CM_DOCFIND) + ")")
+            var zero = List[Int]()
+            zero.append(0)
+            self.dlg.set_items(one^, zero^)
+            return
         if mode == QM_LINE:
             var pos = self.quick_position(text)
             var te = self.top_editor()
@@ -230,6 +241,9 @@ __extension App:
         var text = self.dlg.field_text(0)
         var mode = self.quick_mode
         var s = self.dlg.selected_item()
+        if mode == QM_DOCS:
+            self.docs_find_dialog(String(String(text[byte=1:]).strip()))
+            return
         if mode == QM_LINE:
             var pos = self.quick_position(text)
             var ai = self.top_editor()

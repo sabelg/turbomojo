@@ -3863,3 +3863,30 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   only prefixes of two-key bindings exist in TurboMojo, so "chords" longer than two
   keys are not covered; not looked at in a real terminal.
 - Gate: scripts/check.sh printed CHECK OK (73 test files, 1039 tests).
+
+## 2026-11-12 · P7-11 one search box for code-shaped queries · done
+- What changed: `src/codequery.mojo` tells what a query is (a name, a dotted path, a
+  pasted compiler line, or the finder's own syntax) and turns it into a finder query
+  (`@name`, `@last` part, the message's words without the user's quoted names).
+  The finder (Alt-F1, `docs_find_refresh`) puts first the explanation of a pasted
+  error (P7-08) and up to three commands whose names fit, with their keys - Enter
+  opens the explanation beside the code or runs the command (with the key echo);
+  for a dotted path the owner's declaration comes first; the first 24 API rows get
+  a one-line answer, the first prose sentence of their section. The palette's `?`
+  prefix hands its text to the finder. Guide, what's new and README say so.
+- Verified: `tests/test_codequery.mojo` (4 tests): the shapes and rewrites (the
+  finder's own syntax and numbers left alone); with a fake downloaded reference the
+  answers ("make_list - Makes a list."), `List.append` before the function `append`
+  and Enter opening the page; a pasted error giving the explanation first and Enter
+  opening it; "duplicate" giving the command with Ctrl-D and Enter running it; no
+  commands for `@` queries; `?List.append` in the palette opening the finder with the
+  text. Tried by hand on the real download: List.append, Dict, sort and a pasted
+  error line all gave sensible first rows (and the whole run took 0.27 s).
+- Not done / unverified: "cross-linked with the palette" is one way plus the command
+  rows (the palette does not search the documentation itself); project symbols are
+  not in the finder (Alt-G # has them); the answers are the reference's first
+  sentence, which is sometimes a fragment.
+- First gate: test_docs_reader failed - a single plain word ("zeb") had become an @name
+  search only and found nothing. Fixed: a name now lists the declarations and then the
+  ordinary word results. Two of its expectations were updated for the one-line answers.
+- Gate: scripts/check.sh printed CHECK OK (74 test files, 1043 tests).

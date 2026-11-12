@@ -57,9 +57,17 @@ from app_draw import *
 from app_debug import *
 from app_terminal import *
 from app_tests import *
+from codequery import *
+from errhelp import explain_for, err_title
+from docpane import md_section
+from app_explain import *
+from app_keyecho import *
 
 
 comptime DOC_FIND_MAX = 150         # results the finder lists
+comptime FIND_ANSWERS = 24          # API rows of the finder that get a one-line answer
+comptime FIND_EXPLAIN = -10         # finder rows: -10 - page is an error explanation,
+comptime FIND_COMMAND = -100000     # -100000 - id a command
 comptime DOC_TEXT_MAX = 96          # the widest a page's text is laid out
 
 
@@ -345,7 +353,7 @@ __extension App:
             return
         self.doc_find_back = self.mode == M_DOCS
         var d = Dialog(D_DOCFIND, "Find in Documentation", min(112, self.scr.w - 4), min(30, self.desk_h()))
-        d.lines.append("words   \"a phrase\"   -without   @api name   #heading   `code   in:book")
+        d.lines.append("words  \"a phrase\"  -without  @api  #heading  `code  in:book  - or a name, a.dotted.path, an error line")
         d.fields.append(Field("~F~ind", start))
         d.list_filter = True
         d.use_pat = True
@@ -361,17 +369,59 @@ __extension App:
         if text == self.doc_find_text:
             return
         self.doc_find_text = text
-        var q = parse_query(text)
+        var shape = query_shape(text)
+        var q = parse_query(finder_query(text))
         self.doc_found = find_help(self.doc_index, self.doc_lib, q, DOC_FIND_MAX)
+        if shape == QS_NAME:
+            # a plain word may be a name or just a word: the declarations, then the text
+            for f in find_help(self.doc_index, self.doc_lib, parse_query(text), DOC_FIND_MAX):
+                var dup = False
+                for g in self.doc_found:
+                    if g.entry == f.entry:
+                        dup = True
+                        break
+                if not dup and len(self.doc_found) < DOC_FIND_MAX:
+                    self.doc_found.append(f.copy())
+        if shape == QS_PATH:
+            self.doc_found = by_owner(self.doc_found, self.doc_index, path_parts(text))
         var items = List[String]()
         var data = List[Int]()
         var room = max(30, self.dlg.w - 44)
+        # first what is not in the documentation's pages: the explanation of a pasted
+        # error, and the commands whose names fit (as the palette would find them)
+        if shape == QS_ERROR:
+            var page = explain_for(error_text(text))
+            if page >= 0:
+                items.append("! Explanation: " + err_title(page) + "  (F1 on the problem shows it too)")
+                data.append(FIND_EXPLAIN - page)
+        if shape == QS_WORDS or shape == QS_NAME:
+            var low = lower_str(String(text.strip()))
+            var n = 0
+            if low.byte_length() >= 3 and not (low.startswith("@") or low.startswith("#") or low.startswith("`")):
+                for c in self.reg.cmds:
+                    if n >= 3 or self.reg.is_hidden(c.id):
+                        continue
+                    if lower_str(plain(c.title)).find(low) >= 0 or lower_str(c.name).find(low) >= 0:
+                        var keys = self.reg.key_label(c.id)
+                        items.append("> Command: " + plain(c.title) + ("   " + keys if keys.byte_length() > 0 else String("")))
+                        data.append(FIND_COMMAND - c.id)
+                        n += 1
         var signs = ["ƒ", "▤", "§", "·", "›"]
+        var texts = Dict[Int, String]()
+        var answered = 0
         for k in range(len(self.doc_found)):
             var e = self.doc_index.entries[self.doc_found[k].entry].copy()
             var what = e.text
             if e.kind == IK_API and e.owner.byte_length() > 0:
                 what = e.owner + "." + e.text
+            if e.kind == IK_API and answered < FIND_ANSWERS:
+                # a one-line answer: the first sentence the declaration's section says
+                answered += 1
+                if e.page not in texts:
+                    texts[e.page] = path_markdown(self.doc_lib.pages[e.page].path)
+                var said = first_prose(md_section(texts.get(e.page, ""), e.text, e.nth))
+                if said.byte_length() > 0:
+                    what += " - " + said
             if cp_len(what) > room:
                 what = slice_str(decode(what), 0, room - 1) + "…"
             var where = self.doc_lib.pages[e.page].title
@@ -386,9 +436,19 @@ __extension App:
         self.dlg.pat = ""
         self.dlg.set_items(items^, data^)
 
-    def docs_find_go(mut self, sel: Int):
-        """Enter in the finder: the reader opens at the place."""
+    def docs_find_go(mut self, sel: Int) raises:
+        """Enter in the finder: the reader opens at the place (or the explanation, or
+        the command, that the row names)."""
         var k = self.dlg.item_data[sel] if sel >= 0 and sel < len(self.dlg.item_data) else -1
+        if k <= FIND_EXPLAIN and k > FIND_COMMAND:
+            self.mode = M_NORMAL
+            self.explain_open(FIND_EXPLAIN - k, "")
+            return
+        if k <= FIND_COMMAND:
+            self.mode = M_NORMAL
+            self.exec(FIND_COMMAND - k)
+            self.key_echo(FIND_COMMAND - k)
+            return
         if k < 0 or k >= len(self.doc_found):
             if self.doc_find_back:
                 self.mode = M_DOCS
