@@ -9,6 +9,9 @@
   are elsewhere; Help > Notifications (Shift-F10) shows what is running. Toasts that
   come while you type wait for a pause, a save or the debugger stopping; your own
   build, tests and commits come at once and first.
+- **Coming from Python**: Help > Coming from Python lists what is different in Mojo
+  1.x, and the book has VS Code's keys next to TurboMojo's; explanations of Python
+  habits link to it (P).
 - **Exercises**: Help > Exercises - eight small Mojo programs that are wrong until
   you fix them; Help > Exercise done? checks yours. Opt-in; nothing starts by itself.
 - **Tips when they help**: paging to a function, a long run of arrows or Backspace,

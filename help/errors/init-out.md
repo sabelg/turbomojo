@@ -11,6 +11,11 @@ A constructor makes a new value: its `self` is written to, not read, so it is de
 
 - Write `def __init__(out self):`; every constructor takes `out self`.
 
+## Coming from Python
+
+This is a Python habit. The page *Coming from Python* (Help > Coming from Python, or
+**P** in this window) lists the other differences.
+
 ## Before (does not build)
 
 ```mojo

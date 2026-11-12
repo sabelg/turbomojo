@@ -12,6 +12,11 @@ Mojo says something like: `is not supported because Mojo strings are UTF-8 ...`
 - `s.byte_length()`: bytes (what slicing with `[byte=...]` uses).
 - `len(s.codepoints())`: Unicode code points.
 
+## Coming from Python
+
+This is a Python habit. The page *Coming from Python* (Help > Coming from Python, or
+**P** in this window) lists the other differences.
+
 ## Before (does not build)
 
 ```mojo

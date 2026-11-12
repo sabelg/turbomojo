@@ -12,6 +12,11 @@ Mojo 1.x has one kind of function: `def`. A `def` does not raise unless it is ma
 - Replace `fn` with `def`.
 - If the function can raise an error, add `raises`: `def load(path: String) raises -> String:`.
 
+## Coming from Python
+
+This is a Python habit. The page *Coming from Python* (Help > Coming from Python, or
+**P** in this window) lists the other differences.
+
 ## Before (does not build)
 
 ```mojo

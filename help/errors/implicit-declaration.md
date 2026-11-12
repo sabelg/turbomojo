@@ -12,6 +12,11 @@ Unlike Python, Mojo does not create a variable the first time you assign to it: 
 - Write `var x = 1` the first time; later assignments are `x = 2`.
 - Inside a struct, fields are declared with `var` in the struct body.
 
+## Coming from Python
+
+This is a Python habit. The page *Coming from Python* (Help > Coming from Python, or
+**P** in this window) lists the other differences.
+
 ## Before (does not build)
 
 ```mojo

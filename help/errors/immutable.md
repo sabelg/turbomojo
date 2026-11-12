@@ -12,6 +12,11 @@ The value you assign to or change in place is read-only here - most often `self`
 - Declare the method `def bump(mut self):` to change fields.
 - For an argument the function may change, write `mut x: Int`; to have your own copy, `var x: Int`.
 
+## Coming from Python
+
+This is a Python habit. The page *Coming from Python* (Help > Coming from Python, or
+**P** in this window) lists the other differences.
+
 ## Before (does not build)
 
 ```mojo

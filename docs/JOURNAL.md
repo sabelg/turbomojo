@@ -3995,3 +3995,27 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
 - Not done / unverified: eight exercises only, no hints beyond F1; "skip by
   experience" is three fixed starting points; not tried by a real learner.
 - Gate: scripts/check.sh printed CHECK OK (78 test files, 1058 tests, 668 s).
+
+## 2026-11-12 · P7-16 "Coming from" pages · done (Phase 7 complete)
+- What changed: `help/coming-from-python.md` (built in as HELP_PYTHON): eleven
+  differences, each with a whole program - main, def/raises, var, mut/var arguments,
+  copy and move, struct instead of class, strings (no len(), no f-strings), std.
+  imports and std.python, Optional, comptime. The claims were checked with Mojo 1.2
+  first (f-strings: "expected ')' in call argument list"; class: "classes are not
+  supported yet"). A new explanation for "classes are not supported yet"
+  (help/errors/class.md, 17 now). `editors_markdown()` makes "Coming from other
+  editors": VS Code's default Linux keys next to TurboMojo's Modern, Turbo and Emacs
+  keys from the registry (a dash where a keymap has none). Both pages are in the help
+  book; Help > Coming from Python opens the first. Eight explanations of Python habits
+  got a "Coming from Python" section; in the explanation window P opens the page (and
+  the status line says so) only for those. README, guide and what's new say so.
+- Verified: `tests/test_comingfrom.mojo` (3 tests): the page is the file, has every
+  topic, and all 11 Mojo examples build with the real compiler; the keys table rows
+  (Find with the Turbo keymap's own key, the palette, a dash for no key); P does
+  nothing on the aliasing explanation and opens the page from the fn-removed one, with
+  the hint on the status line. test_errhelp (now 17 pages, the class one compiled too)
+  and test_help (the book's two new pages) pass.
+- Not done / unverified: VS Code's keys are written from knowledge of its Linux
+  defaults, not read from an installed VS Code; only "coming from Python" (no C++ or
+  Rust page); the f-string error has no explanation page of its own.
+- Gate: scripts/check.sh printed CHECK OK (79 test files, 1061 tests, 667 s).

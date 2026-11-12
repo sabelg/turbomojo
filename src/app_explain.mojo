@@ -14,6 +14,8 @@ from window import Window, WK_EDITOR, WK_MESSAGE, WK_EXPLAIN
 from term import KEY_ESC
 from markdown import md_render
 from errhelp import *
+from errhelp_pages import ERR_PAGE_COUNT, err_page_key
+from app_docs import *
 from problems import Problem
 from app_jobs import *
 from app_problems import *
@@ -187,8 +189,22 @@ __extension App:
         self.explain_path = ""
         self.explain_rect = List[Int]()
 
+    def explain_python(self) -> Bool:
+        """Is the explanation in front about a Python habit (it has the section)?"""
+        var xi = self.explain_index()
+        if xi < 0:
+            return False
+        var key = String(self.wins[xi].path[byte=8:]) if self.wins[xi].path.startswith("explain:") else String("")
+        for i in range(ERR_PAGE_COUNT):
+            if err_page_key(i) == key:
+                return err_body(i).find("## Coming from Python") >= 0
+        return False
+
     def explain_key(mut self, k: Int) -> Bool:
         if k == KEY_ESC:
             self.explain_close()
+            return True
+        if (k == 112 or k == 80) and self.explain_python():      # P: Coming from Python
+            self.help_page("coming-from-python.md")
             return True
         return False

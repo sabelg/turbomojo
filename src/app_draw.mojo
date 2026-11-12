@@ -264,6 +264,9 @@ __extension App:
                 for h in ["~Esc~ Close", "~F6~ Back to the code", "~PgDn~ Read on"]:
                     items.append(h)
                     cmds.append(CM_NONE)
+                if self.explain_python():
+                    items.append("~P~ Coming from Python")
+                    cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_BLAME:
                 for h in ["~Enter~ Go to", "~Esc~ Close", self.git_blame_summary()]:
                     items.append(h)

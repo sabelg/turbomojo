@@ -12,6 +12,11 @@ The module in an import is not in the standard library, the project or the inclu
 - Standard library modules start with `std.`: `from std.collections import List`.
 - Your own modules: the folder must be on the include path (`-I src`; TurboMojo's `tools.include_paths`).
 
+## Coming from Python
+
+This is a Python habit. The page *Coming from Python* (Help > Coming from Python, or
+**P** in this window) lists the other differences.
+
 ## Before (does not build)
 
 ```mojo

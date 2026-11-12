@@ -600,6 +600,8 @@ __extension App:
             self.help_page("cheatsheet.md")
         elif cmd == CM_HELP_ERRORS:
             self.help_page("errors.md")
+        elif cmd == CM_HELP_PYTHON:
+            self.help_page("coming-from-python.md")
         elif cmd == CM_HELP_NEW:
             self.help_page("whats-new.md")
         elif cmd == CM_HELP_TUTORIAL:

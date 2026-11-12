@@ -74,8 +74,10 @@ def test_the_book_comes_first_and_is_searched() raises:
     assert_equal(lib.pages[2].title, "Cheat sheet")
     assert_equal(lib.pages[3].title, "Keyboard reference")
     assert_equal(lib.pages[4].title, "Mojo error messages")
-    assert_equal(lib.pages[5].title, "What's new")
-    assert_equal(lib.help_count, 6)
+    assert_equal(lib.pages[5].title, "Coming from Python")
+    assert_equal(lib.pages[6].title, "Coming from other editors")
+    assert_equal(lib.pages[7].title, "What's new")
+    assert_equal(lib.help_count, 8)
     var idx = DocIndex()
     idx.build(lib)
     var found = False

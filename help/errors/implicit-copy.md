@@ -13,6 +13,11 @@ Some types (List, String's larger cousins, your own structs) are not copied behi
 - `a^` moves `a` into the new place; `a` cannot be used afterwards.
 - A struct can be made copyable with `(Copyable, Movable)` and copied with `.copy()`.
 
+## Coming from Python
+
+This is a Python habit. The page *Coming from Python* (Help > Coming from Python, or
+**P** in this window) lists the other differences.
+
 ## Before (does not build)
 
 ```mojo

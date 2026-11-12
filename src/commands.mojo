@@ -169,6 +169,7 @@ comptime CM_AGENT_EXPLAIN_CODE = 226    # Help > Ask agent about this code
 comptime CM_TIPS_OFF = 227          # Help > No more tips
 comptime CM_EXERCISES = 228         # Help > Exercises
 comptime CM_EX_CHECK = 229          # Help > Exercise done?
+comptime CM_HELP_PYTHON = 230       # Help > Coming from Python
 comptime CHORD_SHIFT = 32          # a two-key binding is (first key << 32) | second key
 comptime CM_ADDNEXT = 110
 comptime CM_CURABOVE = 111
@@ -802,6 +803,7 @@ def build_registry() -> Registry:
     r.cmd(CM_EXERCISES, "help.exercises", "E~x~ercises...", "Practice: small Mojo programs that are wrong until you fix them (Rustlings style)")
     r.cmd(CM_EX_CHECK, "help.exerciseDone", "Exercise ~d~one?", "Run the exercise in front and say whether it now prints what it should")
     r.cmd(CM_TIPS_OFF, "help.noMoreTips", "No more t~i~ps", "Stop the tips that name a quicker way after a slow one (ui.tips)")
+    r.cmd(CM_HELP_PYTHON, "help.comingFromPython", "Coming from P~y~thon", "What is different in Mojo for a Python programmer, and the keys next to VS Code's")
     r.cmd(CM_HELP_NEW, "help.whatsNew", "W~h~at's new", "What changed in this version of TurboMojo")
     r.cmd(CM_NOTICES, "help.notifications", "~N~otifications...", "What is running now and the messages of this session (builds, tests, git, the agent)", [fkey(10) | MOD_SHIFT])
     r.cmd(CM_SCREEN_READER, "options.screenReader", "Screen-reader ~m~ode", "A plain, linear screen for screen readers: no frames or shading, the cursor on what has the focus, no animation")
@@ -1029,6 +1031,7 @@ def build_registry() -> Registry:
     r.item(CM_EXERCISES)
     r.item(CM_EX_CHECK)
     r.item(CM_HELP_ERRORS)
+    r.item(CM_HELP_PYTHON)
     r.item(CM_HELP_NEW)
     r.item(CM_TIPS_OFF)
     r.item(CM_NOTICES)
