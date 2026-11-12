@@ -8,7 +8,7 @@ from palette import Palette, theme
 from config import load_settings
 from term import Terminal, key_event, KEY_ENTER, KEY_DOWN
 from app import *
-from appstate import App, M_DIALOG, M_NORMAL
+from appstate import App, M_DIALOG, M_NORMAL, now_ns
 from dialog import D_THEME
 from commands import CM_THEME_PICK, CM_THEME1
 from signals import own_pid
@@ -40,10 +40,17 @@ def test_every_colour_has_a_name() raises:
 def test_the_built_in_files_are_the_shipped_files() raises:
     assert_equal(bytes_to_str(read_file(getcwd() + "/themes/paper-light.toml")), PAPER_LIGHT)
     assert_equal(bytes_to_str(read_file(getcwd() + "/themes/high-contrast.toml")), HIGH_CONTRAST)
+    assert_equal(bytes_to_str(read_file(getcwd() + "/themes/hacker-matrix.toml")), HACKER_MATRIX)
     var t = ThemeSet()
     assert_equal(len(t.problems), 0, "\n".join(t.problems))
     assert_equal(t.ids[3], "light")
     assert_equal(t.ids[4], "contrast")
+    assert_equal(t.ids[5], "matrix")
+    assert_equal(t.pals[5].name, "Hacker Matrix")
+    assert_equal(t.pals[5].ed_bg, 0x020A04)
+    assert_equal(t.pals[5].diag_err, 0xFF3B3B)         # red, amber and blue beside the green
+    assert_equal(t.pals[5].diag_warn, 0xFFB000)
+    assert_equal(t.pals[5].diag_note, 0x3FA9F5)
     var light = t.pals[t.find("light")].copy()
     assert_equal(light.name, "Paper Light")
     assert_false(t.dark[t.find("light")])
@@ -87,6 +94,13 @@ def test_contrast_of_the_new_themes() raises:
     for k in range(len(hc.syn)):
         assert_true(contrast(hc.syn[k], hc.ed_bg) >= 7.0, "contrast syntax " + String(k))
         assert_true(contrast(pl.syn[k], pl.ed_bg) >= 4.5, "light syntax " + String(k) + " " + String(contrast(pl.syn[k], pl.ed_bg)))
+    var mx = t.pals[t.find("matrix")].copy()
+    for k in range(len(mx.syn)):
+        assert_true(contrast(mx.syn[k], mx.ed_bg) >= 4.5, "matrix syntax " + String(k))
+    for kf in ["ed_fg", "diag_err", "diag_warn", "diag_note", "gutter_fg"]:
+        assert_true(contrast(palette_get(mx, String(kf)), mx.ed_bg) >= 4.5, "matrix " + String(kf))
+    assert_true(contrast(mx.sel_fg, mx.sel_bg) >= 4.5)
+    assert_true(contrast(mx.btn_focus_fg, mx.btn_bg) >= 4.5)
     assert_true(contrast(hc.sel_fg, hc.sel_bg) >= 7.0)
     assert_true(contrast(pl.sel_fg, pl.sel_bg) >= 4.5)
     assert_true(contrast(hc.menu_sel_fg, hc.menu_sel_bg) >= 7.0)
@@ -102,7 +116,7 @@ def test_a_users_theme_file() raises:
     t.add_folder(d)
     var k = t.find("mine")
     assert_true(k >= 0)
-    assert_equal(t.count(), 6)
+    assert_equal(t.count(), 7)
     assert_equal(t.pals[k].name, "Mine")
     assert_equal(t.pals[k].ed_bg, 0xEEDDCC)
     assert_equal(t.pals[k].ed_fg, 0x1F1F1F)         # a bad colour leaves its base's
@@ -117,7 +131,7 @@ def test_a_users_theme_file() raises:
     var t2 = ThemeSet()
     t2.add_folder(d)
     assert_equal(t2.pals[t2.find("classic")].name, "My Classic")
-    assert_equal(t2.count(), 6)
+    assert_equal(t2.count(), 7)
     _ = run_system("rm -rf " + shell_quote(d))
 
 
@@ -130,6 +144,31 @@ def test_the_terminal_says_light_or_dark() raises:
     evs = term.feed(str_bytes("\x1b[?997;1nx"), False)
     assert_equal(term.scheme, 1)
     assert_equal(len(evs), 1)                       # what follows is still read
+
+
+def test_the_desktops_light_or_dark() raises:
+    assert_equal(scheme_from("15;0", ""), 1)          # COLORFGBG: white on black
+    assert_equal(scheme_from("0;15", ""), 2)
+    assert_equal(scheme_from("default;8", ""), 1)
+    assert_equal(scheme_from("", "'prefer-dark'\n"), 1)
+    assert_equal(scheme_from("", "'prefer-light'"), 2)
+    assert_equal(scheme_from("", "'default'"), 2)
+    assert_equal(scheme_from("", ""), 0)
+    assert_equal(scheme_from("x;y", "'prefer-dark'"), 1)  # unreadable COLORFGBG: GNOME's
+    # GNOME Terminal says nothing: the desktop's setting decides, the terminal's wins
+    var app = App()
+    app.scr.resize(100, 30)
+    app.apply_settings(load_settings("[ui]\ntheme = \"auto\"\n", ""))
+    app.desktop_scheme = 2
+    app.desktop_checked_ns = Int(now_ns())            # (not looked up again in the test)
+    app.theme_tick()
+    assert_equal(app.pal.name, "Paper Light")
+    app.desktop_scheme = 1
+    app.theme_tick()
+    assert_equal(app.pal.name, "Midnight Neon")
+    app.term.scheme = 2
+    app.theme_tick()
+    assert_equal(app.pal.name, "Paper Light")
 
 
 def test_auto_follows_the_terminal() raises:
@@ -160,6 +199,7 @@ def test_the_theme_dialog() raises:
     assert_equal(app.dlg.kind, D_THEME)
     assert_equal(app.dlg.items[0], "Follow the terminal: Midnight Neon when dark, Paper Light when light")
     assert_equal(app.dlg.items[4], "Paper Light   (light)")
+    assert_equal(app.dlg.items[6], "Hacker Matrix")
     assert_equal(app.dlg.items[app.dlg.list_sel], "Turbo Classic")        # the theme in use
     # down to High Contrast, Enter: used and written to the user's config
     for _ in range(4):

@@ -388,6 +388,7 @@ def palette_get(p: Palette, key: String) -> Int:
 # the shipped theme files (themes/*.toml), built in so that the binary needs no files;
 # tests/test_themes.mojo checks that they are the same as the files
 comptime PAPER_LIGHT = "# Paper Light: a light theme for terminals with a light background.\n# Copy this file to ~/.config/turbomojo/themes/ under another name to make your own.\nname = \"Paper Light\"\nbase = \"midnight\"\ndark = false\n\n[colors]\ndesk_fg = \"#D8D8D0\"\ndesk_bg = \"#E8E8E2\"\nmenu_fg = \"#2B2B2B\"\nmenu_bg = \"#E0E0DA\"\nmenu_hot = \"#B04A00\"\nmenu_sel_fg = \"#FFFFFF\"\nmenu_sel_bg = \"#3A6EA5\"\nmenu_dis = \"#8A8A84\"\nstatus_fg = \"#2B2B2B\"\nstatus_bg = \"#E0E0DA\"\nstatus_hot = \"#B04A00\"\ned_fg = \"#1F1F1F\"\ned_bg = \"#FBFBF8\"\nframe_act = \"#3A6EA5\"\nframe_inact = \"#A8A8A0\"\ntitle_fg = \"#1F1F1F\"\nsel_fg = \"#1F1F1F\"\nsel_bg = \"#C9DDF2\"\ncurline_bg = \"#F1F1EC\"\ngutter_fg = \"#8A8A84\"\ngutter_bg = \"#FBFBF8\"\nbracket_fg = \"#1F1F1F\"\nbracket_bg = \"#E2D6A8\"\nmatch_fg = \"#1F1F1F\"\nmatch_bg = \"#F4E3A1\"\ndoc_fg = \"#1F1F1F\"\ndoc_bg = \"#F3F3EE\"\ndoc_bold = \"#000000\"\ndoc_code = \"#7A3E9D\"\ndoc_dim = \"#6E6E68\"\ndiag_err = \"#C62828\"\ndiag_warn = \"#8A5700\"\ndiag_note = \"#2E6DB4\"\nruler_bg = \"#F0F0EA\"\nword_bg = \"#E8EEF5\"\nicon_fg = \"#3A6EA5\"\nscroll_fg = \"#8A8A84\"\nscroll_bg = \"#ECECE6\"\nmsg_fg = \"#1F1F1F\"\nmsg_bg = \"#F3F3EE\"\nmsg_err = \"#C62828\"\nmsg_warn = \"#8A5700\"\nmsg_note = \"#2E6DB4\"\nmsg_ok = \"#2E7D32\"\ngit_add = \"#2E7D32\"\ngit_mod = \"#2E6DB4\"\ngit_del = \"#C62828\"\nmsg_sel_fg = \"#FFFFFF\"\nmsg_sel_bg = \"#3A6EA5\"\nmsg_frame = \"#3A6EA5\"\ndlg_fg = \"#1F1F1F\"\ndlg_bg = \"#ECECE6\"\ndlg_frame = \"#3A6EA5\"\ndlg_title = \"#1F1F1F\"\ndlg_hot = \"#B04A00\"\nin_fg = \"#1F1F1F\"\nin_bg = \"#FFFFFF\"\nbtn_fg = \"#1F1F1F\"\nbtn_bg = \"#D6D6CF\"\nbtn_focus_fg = \"#1A4F8A\"\nbtn_hot = \"#B04A00\"\nbtn_shadow = \"#B8B8B0\"\nlist_fg = \"#1F1F1F\"\nlist_bg = \"#FFFFFF\"\nlist_sel_fg = \"#FFFFFF\"\nlist_sel_bg = \"#3A6EA5\"\nshadow_fg = \"#9A9A94\"\nshadow_bg = \"#C8C8C0\"\n\n[syntax]\ntext = \"#1F1F1F\"\nkeyword = \"#7A3E9D\"\ntype = \"#00708A\"\ncomment = \"#6E6E68\"\nstring = \"#2E7D32\"\nnumber = \"#B04A00\"\ndecorator = \"#8A5700\"\nsymbol = \"#4A4A44\"\nbuiltin = \"#00708A\"\nself = \"#B03060\"\ndef = \"#2E6DB4\"\nparam = \"#5A4FA0\"\nproperty = \"#355E8C\"\nnamespace = \"#00708A\"\n"
+comptime HACKER_MATRIX = "# Hacker Matrix: green phosphor on black, like an old CRT, with red, amber and blue\n# for what needs to stand out (errors, warnings and strings, types and notes).\nname = \"Hacker Matrix\"\nbase = \"amber\"\ndark = true\n\n[colors]\ndesk_fg = \"#0B2E13\"\ndesk_bg = \"#000000\"\nmenu_fg = \"#00D838\"\nmenu_bg = \"#031A08\"\nmenu_hot = \"#FFB000\"\nmenu_sel_fg = \"#000000\"\nmenu_sel_bg = \"#00FF41\"\nmenu_dis = \"#1E8C3A\"\nstatus_fg = \"#00D838\"\nstatus_bg = \"#031A08\"\nstatus_hot = \"#FFB000\"\ned_fg = \"#00D838\"\ned_bg = \"#020A04\"\nframe_act = \"#00FF41\"\nframe_inact = \"#1E8C3A\"\ntitle_fg = \"#00FF41\"\nsel_fg = \"#000000\"\nsel_bg = \"#00B32C\"\ncurline_bg = \"#06200D\"\ngutter_fg = \"#2E9E48\"\ngutter_bg = \"#020A04\"\nbracket_fg = \"#000000\"\nbracket_bg = \"#FFB000\"\nmatch_fg = \"#000000\"\nmatch_bg = \"#3FA9F5\"\ndoc_fg = \"#00D838\"\ndoc_bg = \"#031A08\"\ndoc_bold = \"#00FF41\"\ndoc_code = \"#FFB000\"\ndoc_dim = \"#2E9E48\"\ndiag_err = \"#FF3B3B\"\ndiag_warn = \"#FFB000\"\ndiag_note = \"#3FA9F5\"\nruler_bg = \"#041409\"\nword_bg = \"#0A2A12\"\nicon_fg = \"#00FF41\"\nscroll_fg = \"#00B32C\"\nscroll_bg = \"#041409\"\nmsg_fg = \"#00D838\"\nmsg_bg = \"#031A08\"\nmsg_err = \"#FF3B3B\"\nmsg_warn = \"#FFB000\"\nmsg_note = \"#3FA9F5\"\nmsg_ok = \"#00FF41\"\ngit_add = \"#00FF41\"\ngit_mod = \"#3FA9F5\"\ngit_del = \"#FF3B3B\"\nmsg_sel_fg = \"#000000\"\nmsg_sel_bg = \"#00FF41\"\nmsg_frame = \"#00FF41\"\ndlg_fg = \"#00D838\"\ndlg_bg = \"#031A08\"\ndlg_frame = \"#00FF41\"\ndlg_title = \"#00FF41\"\ndlg_hot = \"#FFB000\"\nin_fg = \"#00FF41\"\nin_bg = \"#000000\"\nbtn_fg = \"#00D838\"\nbtn_bg = \"#0E4D1F\"\nbtn_focus_fg = \"#FFB000\"\nbtn_hot = \"#3FA9F5\"\nbtn_shadow = \"#000000\"\nlist_fg = \"#00D838\"\nlist_bg = \"#000000\"\nlist_sel_fg = \"#000000\"\nlist_sel_bg = \"#00FF41\"\nshadow_fg = \"#0B2E13\"\nshadow_bg = \"#000000\"\n\n[syntax]\ntext = \"#00D838\"\nkeyword = \"#00FF41\"\ntype = \"#3FA9F5\"\ncomment = \"#3E9E4E\"\nstring = \"#FFB000\"\nnumber = \"#FFB000\"\ndecorator = \"#FF3B3B\"\nsymbol = \"#2E9E48\"\nbuiltin = \"#3FA9F5\"\nself = \"#66FFAA\"\ndef = \"#B6FFB6\"\nparam = \"#00D838\"\nproperty = \"#00D838\"\nnamespace = \"#3FA9F5\"\n"
 comptime HIGH_CONTRAST = "# High Contrast: white and bright colours on black, for low vision and bright rooms.\nname = \"High Contrast\"\nbase = \"midnight\"\ndark = true\n\n[colors]\ndesk_fg = \"#303030\"\ndesk_bg = \"#000000\"\nmenu_fg = \"#FFFFFF\"\nmenu_bg = \"#000000\"\nmenu_hot = \"#FFFF00\"\nmenu_sel_fg = \"#000000\"\nmenu_sel_bg = \"#FFFF00\"\nmenu_dis = \"#A0A0A0\"\nstatus_fg = \"#FFFFFF\"\nstatus_bg = \"#000000\"\nstatus_hot = \"#FFFF00\"\ned_fg = \"#FFFFFF\"\ned_bg = \"#000000\"\nframe_act = \"#FFFF00\"\nframe_inact = \"#C0C0C0\"\ntitle_fg = \"#FFFFFF\"\nsel_fg = \"#000000\"\nsel_bg = \"#00FFFF\"\ncurline_bg = \"#1A1A1A\"\ngutter_fg = \"#C0C0C0\"\ngutter_bg = \"#000000\"\nbracket_fg = \"#000000\"\nbracket_bg = \"#FFFF00\"\nmatch_fg = \"#000000\"\nmatch_bg = \"#FF80FF\"\ndoc_fg = \"#FFFFFF\"\ndoc_bg = \"#000000\"\ndoc_bold = \"#FFFF00\"\ndoc_code = \"#00FFFF\"\ndoc_dim = \"#C0C0C0\"\ndiag_err = \"#FF6060\"\ndiag_warn = \"#FFFF00\"\ndiag_note = \"#00FFFF\"\nruler_bg = \"#1A1A1A\"\nword_bg = \"#333333\"\nicon_fg = \"#FFFF00\"\nscroll_fg = \"#FFFFFF\"\nscroll_bg = \"#333333\"\nmsg_fg = \"#FFFFFF\"\nmsg_bg = \"#000000\"\nmsg_err = \"#FF6060\"\nmsg_warn = \"#FFFF00\"\nmsg_note = \"#00FFFF\"\nmsg_ok = \"#80FF80\"\ngit_add = \"#80FF80\"\ngit_mod = \"#00FFFF\"\ngit_del = \"#FF6060\"\nmsg_sel_fg = \"#000000\"\nmsg_sel_bg = \"#FFFF00\"\nmsg_frame = \"#FFFF00\"\ndlg_fg = \"#FFFFFF\"\ndlg_bg = \"#000000\"\ndlg_frame = \"#FFFF00\"\ndlg_title = \"#FFFF00\"\ndlg_hot = \"#00FFFF\"\nin_fg = \"#FFFFFF\"\nin_bg = \"#1A1A1A\"\nbtn_fg = \"#000000\"\nbtn_bg = \"#FFFFFF\"\nbtn_focus_fg = \"#0000C0\"\nbtn_hot = \"#C00000\"\nbtn_shadow = \"#606060\"\nlist_fg = \"#FFFFFF\"\nlist_bg = \"#000000\"\nlist_sel_fg = \"#000000\"\nlist_sel_bg = \"#FFFF00\"\nshadow_fg = \"#808080\"\nshadow_bg = \"#000000\"\n\n[syntax]\ntext = \"#FFFFFF\"\nkeyword = \"#FFFF00\"\ntype = \"#00FFFF\"\ncomment = \"#C0C0C0\"\nstring = \"#80FF80\"\nnumber = \"#FF80FF\"\ndecorator = \"#FFC040\"\nsymbol = \"#FFFFFF\"\nbuiltin = \"#00FFFF\"\nself = \"#FF80FF\"\ndef = \"#80C0FF\"\nparam = \"#FFFFFF\"\nproperty = \"#FFFFFF\"\nnamespace = \"#00FFFF\"\n"
 
 
@@ -437,6 +438,7 @@ struct ThemeSet(Copyable, Movable):
             self.dark.append(True)
         self.add_text("light", PAPER_LIGHT, "themes/paper-light.toml")
         self.add_text("contrast", HIGH_CONTRAST, "themes/high-contrast.toml")
+        self.add_text("matrix", HACKER_MATRIX, "themes/hacker-matrix.toml")
 
     def find(self, id: String) -> Int:
         for k in range(len(self.ids)):
@@ -498,3 +500,25 @@ struct ThemeSet(Copyable, Movable):
                 continue
             var id = String(name[byte=0:name.byte_length() - 5])
             self.add_text(id, bytes_to_str(read_file(dir + "/" + name)), name)
+
+
+def scheme_from(colorfgbg: String, gnome: String) -> Int:
+    """The desktop's light or dark when the terminal does not say (1 dark, 2 light, 0
+    unknown): COLORFGBG ("fg;bg", set by rxvt, Konsole and others: background 0-6 or 8
+    is dark), else GNOME's color-scheme setting ('prefer-dark', 'prefer-light', or
+    'default', which GNOME shows light)."""
+    var c = String(colorfgbg.strip())
+    if c.byte_length() > 0:
+        var parts = c.split(";")
+        try:
+            var bg = atol(String(parts[len(parts) - 1]))
+            if bg >= 0 and bg <= 15:
+                return 1 if (bg <= 6 or bg == 8) else 2
+        except:
+            pass
+    var g = String(gnome.strip())
+    if g.find("prefer-dark") >= 0:
+        return 1
+    if g.find("prefer-light") >= 0 or g.find("default") >= 0:
+        return 2
+    return 0

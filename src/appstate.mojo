@@ -12,7 +12,7 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
-from themes import ThemeSet
+from themes import ThemeSet, scheme_from
 from notify import NotifyCenter
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
@@ -157,6 +157,8 @@ struct App(Movable):
     var theme_dark_id: String
     var theme_light_id: String
     var scheme_seen: Int        # the terminal's light/dark that the theme follows (0: none yet)
+    var desktop_scheme: Int     # the desktop's (COLORFGBG, GNOME's setting) when the terminal is silent
+    var desktop_checked_ns: Int
     var notes: NotifyCenter     # toasts and the notification centre
     var toast_rows: List[Int]   # the toasts as drawn: which notice, top and bottom row
     var toast_y0: List[Int]
@@ -536,6 +538,8 @@ struct App(Movable):
         self.theme_dark_id = "midnight"
         self.theme_light_id = "light"
         self.scheme_seen = 0
+        self.desktop_scheme = 0
+        self.desktop_checked_ns = 0
         self.notes = NotifyCenter()
         self.toast_rows = List[Int]()
         self.toast_y0 = List[Int]()
@@ -950,8 +954,10 @@ struct App(Movable):
         terminal says; dark until it has said)."""
         var id = self.theme_id
         if id == "auto":
-            id = self.theme_light_id if self.term.scheme == 2 else self.theme_dark_id
-            self.scheme_seen = self.term.scheme
+            # the terminal's word first; else the desktop's (GNOME Terminal does not say)
+            var scheme = self.term.scheme if self.term.scheme != 0 else self.desktop_scheme
+            id = self.theme_light_id if scheme == 2 else self.theme_dark_id
+            self.scheme_seen = scheme
         var k = self.themes.find(id)
         if k < 0:
             self.config_warnings.append("ui.theme: there is no theme \"" + id + "\" (themes: " + ", ".join(self.themes.ids) + ")")
@@ -959,9 +965,24 @@ struct App(Movable):
         self.theme_idx = k
         self.pal = self.themes.pals[k].copy()
 
+    def desktop_scheme_now(self) -> Int:
+        var g = String("")
+        if which("gsettings").byte_length() > 0:
+            g = bytes_to_str(run_capture("gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null").out)
+        return scheme_from(env_or("COLORFGBG", ""), g)
+
     def theme_tick(mut self):
-        """The terminal said it turned light or dark (mode 2031): follow it."""
-        if self.theme_id == "auto" and self.term.scheme != self.scheme_seen:
+        """Follow the terminal's light or dark (mode 2031) - or, when it says nothing,
+        the desktop's, looked at every half minute."""
+        if self.theme_id != "auto":
+            return
+        if self.term.scheme == 0:
+            var now = Int(now_ns())
+            if self.desktop_checked_ns == 0 or now - self.desktop_checked_ns > 30 * 1000000000:
+                self.desktop_checked_ns = now
+                self.desktop_scheme = self.desktop_scheme_now()
+        var scheme = self.term.scheme if self.term.scheme != 0 else self.desktop_scheme
+        if scheme != self.scheme_seen:
             self.theme_apply()
 
     def next_timeout_ms(self, now: Int, input_pending: Bool, secs_to_minute: Int) -> Int:

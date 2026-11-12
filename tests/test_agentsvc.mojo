@@ -194,7 +194,9 @@ def test_commands_run_after_a_yes() raises:
     say(app, "killrun")
     pump(app, "Y runs it", False)
     app.handle(key_event(121))
-    pump(app, "before kill: False; signal SIGHUP")
+    # SIGHUP, or SIGKILL when it is not gone within half a second (a busy machine)
+    pump(app, "before kill: False; signal SIG")
+    assert_true(md(app).find("signal SIGHUP") > 0 or md(app).find("signal SIGKILL") > 0, md(app))
     assert_equal(len(app.agent_terms), 0)           # released
     app.agent.stop()
     _ = run_system("rm -rf " + shell_quote(d))

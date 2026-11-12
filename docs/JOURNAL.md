@@ -3554,3 +3554,37 @@ files).
   - No percentages: none of the tools report progress (the language server's
     `$/progress` is not handled; mojo-lsp-server was not seen to send any).
 - Verified: `scripts/check.sh` → `CHECK OK`, 65 test files, 999 tests, smoke ok.
+
+## 2026-11-11 · User requests: GNOME Terminal check, desktop light/dark, Hacker Matrix theme · done
+
+- The user's favourite terminal is GNOME Terminal (3.52, VTE 0.76 here). Without
+  computer-use tools in this session, it was checked by starting it from the shell
+  with a probe script and `tmide --caps` (through `script`, so the queries reach it):
+  24-bit colour yes; mode 2031 not recognised (DECRQM 0) and `CSI ? 996 n` unanswered;
+  no kitty keyboard; synchronized output 2026 "permanently reset"; no grapheme mode
+  2027; DA1 and XTVERSION answered ("VTE(7600)"). TurboMojo's own detection matches.
+  A first `--caps` run said "answered: no" because its output had been redirected to a
+  file (the queries went there): a mistake of the check, not of the IDE. Not seen: how
+  the IDE looks there, the mouse, the clipboard.
+- So `theme = "auto"` now also follows the desktop when the terminal says nothing:
+  `themes.scheme_from` reads `COLORFGBG` (background 0-6 or 8: dark) and GNOME's
+  `org.gnome.desktop.interface color-scheme` ('prefer-dark' dark; 'prefer-light' and
+  'default' light), looked at every 30 s while "auto" is on and the terminal is silent;
+  the terminal's own report wins when it comes.
+- New theme "Hacker Matrix" (`matrix`, `themes/hacker-matrix.toml`, built in): green
+  phosphor on near-black with red (errors, removed lines, decorators), amber (warnings,
+  strings, numbers, hot keys) and blue (types, notes, changed lines). All syntax
+  colours, the problem colours and the gutter have at least 4.5:1 against the editor
+  background (the test checks it), the selection 7.5:1.
+- Tests (test_themes, now 9): the file equals the built-in text, its colours and
+  contrast, the dialog lists it; `scheme_from` cases; "auto" following the desktop's
+  setting and the terminal's report winning over it.
+- Looked at in tmux with `theme = "matrix"` (amber docstring, green keywords, blue
+  types).
+- The first gate run failed in test_agentsvc (from P6-03): a killed `sleep 30` was
+  reported as SIGKILL, not SIGHUP. The pty is stopped with SIGHUP and, if the program
+  is still there after half a second, SIGKILL; on a busy machine the second happened.
+  Both are right; the test now accepts either.
+- Not done / unverified: the GNOME setting was read on this desktop ('prefer-dark') but
+  the IDE's switch was not watched in GNOME Terminal itself.
+- Verified: `scripts/check.sh` → `CHECK OK`, 65 test files, 1000 tests, smoke ok.
