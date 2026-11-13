@@ -99,6 +99,7 @@ comptime CM_SEMANTIC = 156
 comptime CM_QUIET = 231          # Options > Quiet code colours
 comptime CM_NEW_PROJECT = 232    # File > New project
 comptime CM_SETUP = 233          # Help > Check setup
+comptime CM_PRESETS = 234        # Options > Presets
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -832,6 +833,7 @@ def build_registry() -> Registry:
     r.cmd(CM_HELP_NEW, "help.whatsNew", "W~h~at's new", "What changed in this version of TurboMojo")
     r.cmd(CM_NOTICES, "help.notifications", "~N~otifications...", "What is running now and the messages of this session (builds, tests, git, the agent)", [fkey(10) | MOD_SHIFT])
     r.cmd(CM_SCREEN_READER, "options.screenReader", "Screen-reader ~m~ode", "A plain, linear screen for screen readers: no frames or shading, the cursor on what has the focus, no animation")
+    r.cmd(CM_PRESETS, "options.presets", "~P~resets...", "Turbo (the blue desktop, overlapping windows) or Modern (terminal colours, panes, the explorer) in one choice")
     r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark; each shows as you move through the list")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
@@ -1017,6 +1019,7 @@ def build_registry() -> Registry:
     r.item(CM_KEYMAP1)
     r.item(CM_KEYMAP2)
     r.sep()
+    r.item(CM_PRESETS)
     r.item(CM_THEME_PICK)
     r.item(CM_SCREEN_READER)
     r.sep()

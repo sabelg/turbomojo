@@ -507,6 +507,7 @@ struct App(Movable):
     var run_active: String           # the one Run uses ('' = the file being edited)
     var run_edit_old: String         # the configuration the open edit dialog began with ('' = a new one)
     var restore_session: Bool        # ui.restore_session
+    var explorer_at_start: Bool      # ui.explorer (opened once the screen size is known)
     var session_dir: String          # where sessions are kept ('' = they are not)
     var session_saved: String        # the session as last written
     var session_checked_ns: Int
@@ -978,6 +979,7 @@ struct App(Movable):
         self.run_active = ""
         self.run_edit_old = ""
         self.restore_session = True
+        self.explorer_at_start = False
         self.session_dir = ""
         self.session_saved = ""
         self.session_checked_ns = 0
@@ -1368,6 +1370,7 @@ struct App(Movable):
         self.keymap = s.keymap
         self.language = language_from(s.language, env_or("LANG", ""))
         self.restore_session = s.restore_session
+        self.explorer_at_start = s.explorer
         if s.docs_home.byte_length() > 0 and s.docs_home != self.doc_home:
             self.doc_home = s.docs_home
             self.doc_loaded = False

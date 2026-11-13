@@ -184,6 +184,13 @@ checks the imports of its answer against your Mojo.
 
 ## Settings, themes and keymaps
 
+**Two ways to start.** Options > Presets... has Turbo - Turbo Classic's blue desktop and
+overlapping windows - and Modern - Terminal ANSI (your terminal's own colours), the tiled
+layout of panes with tabs, the file explorer open at each start (`ui.explorer`) and the
+Modern keys. The first run's theme question has Modern at its top. A preset changes and
+saves those settings; each can still be changed alone afterwards (Turbo leaves your keymap
+as it is).
+
 The Options menu changes the common settings and writes them to
 `~/.config/turbomojo/config.toml`; a project can have its own `.turbomojo.toml`. Options >
 Colour theme picks a theme (Turbo Classic, Midnight Neon, Amber CRT, Paper Light, High

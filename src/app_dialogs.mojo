@@ -50,6 +50,7 @@ from app_draw import *
 from app_exercises import *
 from app_newproject import *
 from app_setup import *
+from app_presets import *
 from setupcheck import setup_items, setup_needs_attention
 
 
@@ -75,22 +76,28 @@ __extension App:
         var dark = self.themes.find(self.theme_dark_id)
         var light = self.themes.find(self.theme_light_id)
         var auto_name = "Follow the terminal: " + (self.themes.pals[dark].name if dark >= 0 else self.theme_dark_id) + " when dark, " + (self.themes.pals[light].name if light >= 0 else self.theme_light_id) + " when light"
+        if welcome:
+            # the other way to start: P11-06
+            items.append("Modern start: your terminal's colours, panes with tabs, the explorer")
+            data.append(THEME_ITEM_MODERN)
         items.append(auto_name)
         data.append(-1)
-        var first = 0
+        var auto_at = len(items) - 1
+        var first = auto_at
         for k in range(self.themes.count()):
             items.append(self.themes.pals[k].name + ("   (light)" if not self.themes.dark[k] else String("")))
             data.append(k)
             if k == self.theme_idx and self.theme_id != "auto":
                 first = len(items) - 1
         if self.theme_id == "auto":
-            first = 0
+            first = auto_at
         var d = Dialog(D_THEME, "Welcome to TurboMojo - Colour Theme" if welcome else "Colour Theme", min(72, self.scr.w - 4), min(20, len(items) + (10 if welcome else 8)))
         d.has_list = True
         d.set_items(items^, data^)
         d.list_sel = first
         if welcome:
-            d.lines.append("Pick a look: each shows at once as you move. Later: Options > Colour theme.")
+            d.lines.append("Pick a look: each shows at once as you move. Later: Options > Presets,")
+            d.lines.append("Options > Colour theme.")
         d.lines.append("Your own: TOML files in " + config_home() + "/themes/")
         self.theme_before = self.theme_id
         d.buttons.append("~O~K")
@@ -113,6 +120,8 @@ __extension App:
             return
         var k = self.dlg.item_data[sel]
         var id = String("auto") if k < 0 else (self.themes.ids[k] if k < self.themes.count() else self.theme_id)
+        if k == THEME_ITEM_MODERN:
+            id = PRESET_MODERN_THEME
         if id != self.theme_id:
             self.theme_id = id
             self.theme_apply()
@@ -138,6 +147,12 @@ __extension App:
 
     def theme_chosen(mut self, k: Int):
         self.theme_before = ""
+        if k == THEME_ITEM_MODERN:
+            try:
+                self.preset_apply(PRESET_MODERN)
+            except:
+                pass
+            return
         if k < 0:
             self.theme_id = "auto"
         elif k < self.themes.count():
@@ -330,6 +345,10 @@ __extension App:
             var sel = self.dlg.selected_item()
             if sel >= 0:
                 self.theme_chosen(self.dlg.item_data[sel])
+        elif kind == D_PRESETS and b == 0:
+            var ps = self.dlg.selected_item()
+            if ps >= 0:
+                self.preset_apply(self.dlg.item_data[ps])
         elif kind == D_NEW_PROJECT and b == 0:
             _ = self.new_project_create(self.dlg.field_text(0))
         elif kind == D_EX_FILTER and b == 0:

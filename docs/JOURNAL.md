@@ -5596,3 +5596,41 @@ Not done / unverified:
   looked for on PATH only, as the IDE starts it. The terminal lines were not seen in a
   real terminal.
 - Gate: CHECK OK (121 test files, 1232 tests, 928 s).
+
+## 2026-11-13 · P11-06 Presets: Turbo and Modern · done
+
+What changed:
+- Options > Presets... (`options.presets`, hot letter P) offers Turbo (Turbo Classic,
+  overlapping windows, no explorer at start; the keymap left as it is) and Modern
+  (Terminal ANSI - the terminal's own colours, a calm choice that follows a light or dark
+  terminal -, the tiled layout, the explorer open now and at each start, the Modern
+  keys). The dialog starts on the preset the settings are now closest to. A preset runs
+  the same commands as the Options and Window menus (so they save themselves) and saves
+  the theme and `ui.explorer`.
+- The first run's theme question has "Modern start: ..." at its top; moving onto it
+  previews Terminal ANSI like any theme; OK applies the whole preset. Options > Colour
+  theme (not the first run) has no such line. The list still opens on the theme in use.
+- New setting `ui.explorer` (default false): the explorer opens once the screen has its
+  size at start, and the file keeps the keyboard.
+- src/app_presets.mojo; README (settings, a line for Modern), user guide, What's new.
+
+Verified:
+- tests/test_presets.mojo (3 tests): the setting read; the explorer opened at start once,
+  with the editor keeping the focus; Modern from Options > Presets (tiled, Terminal ANSI,
+  the Modern keys from the Turbo ones, the explorer, all in the config file) and back to
+  Turbo (classic, no explorer, keys left alone), Cancel changing nothing; the first run's
+  Modern line (previewed, then applied and saved), and no Modern line in Options >
+  Colour theme.
+- Mutations: without saving ui.explorer, without the Modern line's preset, without its
+  preview, a test fails.
+- By hand: tmide in tmux (100x28) with `ui.explorer = true`, tiled, Terminal ANSI: the
+  explorer is open at the left beside hello.mojo. (First seen with the explorer holding
+  the keyboard; changed so the file keeps it, and tested.)
+- Tests touching the theme question and the menus (test_theme_first_run, test_themes,
+  test_access, test_new_project, test_setup, test_commands, test_config, test_screen)
+  pass.
+
+Not done / unverified:
+- `tmide --screenshot` does not open the explorer from ui.explorer (it does not go
+  through run()); a Modern picture for the README is not made yet.
+- Gate: CHECK OK (122 test files, 1235 tests, 970 s).

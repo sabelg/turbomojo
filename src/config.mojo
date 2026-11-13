@@ -19,6 +19,7 @@ Example:
     reduced_motion = "auto"     # no spinner animation; "auto": as the desktop's animations setting
     keymap = "modern"           # modern | turbo (WordStar keys) | emacs
     layout = "classic"          # classic (overlapping windows) | tiled (panes with tabs, splits)
+    explorer = false            # the file explorer open at start (the Modern preset sets it)
     restore_session = true      # started without a file: open what was open in this project last time
     line_numbers = true
     highlight_line = true
@@ -163,6 +164,7 @@ struct Settings(Copyable, Movable):
     var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var tiled: Bool      # ui.layout = "tiled"
     var restore_session: Bool
+    var explorer: Bool          # ui.explorer: the file explorer open at start
     var line_numbers: Bool
     var auto_indent: Bool
     var highlight_line: Bool
@@ -222,6 +224,7 @@ struct Settings(Copyable, Movable):
         self.keymap = 0
         self.tiled = False
         self.restore_session = True
+        self.explorer = False
         self.line_numbers = True
         self.auto_indent = True
         self.highlight_line = True
@@ -344,6 +347,7 @@ struct Settings(Copyable, Movable):
                 self.warnings.append("editor.rulers must be a list of column numbers from 1 to 1000")
         self.auto_indent = self.take_bool(doc, "editor.auto_indent", self.auto_indent)
         self.restore_session = self.take_bool(doc, "ui.restore_session", self.restore_session)
+        self.explorer = self.take_bool(doc, "ui.explorer", self.explorer)
         var lay_i = doc.find("ui.layout")
         if lay_i >= 0:
             if doc.vals[lay_i].kind == T_STR and (doc.vals[lay_i].s == "classic" or doc.vals[lay_i].s == "tiled"):
@@ -495,7 +499,7 @@ struct Settings(Copyable, Movable):
                 self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):

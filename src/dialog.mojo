@@ -54,6 +54,7 @@ comptime D_EXERCISES = 45       # Help > Exercises
 comptime D_EX_FILTER = 46       # the explorer's filter (/ in the explorer)
 comptime D_NEW_PROJECT = 47     # File > New project
 comptime D_SETUP = 48           # Help > Check setup
+comptime D_PRESETS = 49         # Options > Presets
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

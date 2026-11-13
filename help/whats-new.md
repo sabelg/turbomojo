@@ -2,6 +2,10 @@
 
 ## 2.2 (in progress)
 
+- Options > Presets...: Turbo (the blue desktop, overlapping windows) or Modern (your
+  terminal's colours, panes with tabs, the explorer open, the Modern keys) in one
+  choice; the first run's theme question offers Modern at its top. `ui.explorer = true`
+  opens the explorer at each start.
 - Help > Check setup... lists what TurboMojo uses (Mojo and its release, pixi, the
   language server, the debugger, the docs, the terminal's colours and keys), marks what
   is missing, and Fix helps with it; the first start shows it when something is missing.

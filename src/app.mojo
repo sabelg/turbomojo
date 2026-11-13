@@ -60,6 +60,7 @@ from app_plugins import *
 from app_lspextra import *
 from app_newproject import *
 from app_setup import *
+from app_presets import *
 from version import MOJO_BUILT_WITH
 from mojover import mojo_mismatch, mojo_summary
 
@@ -192,6 +193,9 @@ __extension App:
             if sz[0] != self.scr.w or sz[1] != self.scr.h:
                 self.scr.resize(sz[0], sz[1])
                 self.fit_windows()
+            if self.explorer_at_start:
+                self.explorer_at_start = False      # (once: closing it later is the user's)
+                self.explorer_start()
             self.draw()
             self.sixel_prepare()
             if self.gfx_out.byte_length() > 0:

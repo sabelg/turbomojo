@@ -50,6 +50,8 @@ pixi run ./build/tmide examples/hello.mojo
 
 Requirements: Linux with glibc 2.34 or newer. pixi fetches everything else: the Mojo toolchain and, from conda-forge, `libghostty-vt` (Ghostty's terminal emulator core, MIT licence), which the build links in statically for the integrated terminal - the built program does not need it at run time. macOS: the system-dependent parts are selected at compile time (`src/platform.mojo`) and the whole IDE compiles for `arm64-apple-macosx`, but it has never been linked or run on a Mac, and the project's pixi environments are Linux only, so macOS is not supported yet.
 
+Prefer a current editor's look to the blue desktop? Pick **Modern start** in the first run's theme question, or **Options ▸ Presets…** later: your terminal's own colours, panes with tabs and the file explorer.
+
 Something not working? **Help ▸ Check setup…** lists what TurboMojo uses and what is missing, with a fix for each.
 
 New to Mojo and pixi? Start TurboMojo in an empty folder: the first run offers to make a project there (**File ▸ New project…** any time later) - a `pixi.toml` with Mojo, `hello.mojo` and a test - and installs Mojo for it with `pixi install`.
@@ -99,6 +101,7 @@ working directory or the nearest parent folder (the project file wins):
 theme = "midnight"          # classic | midnight | amber | light | contrast | okabe | muted | auto (see Themes)
 keymap = "modern"           # modern | turbo (WordStar keys) | emacs
 layout = "classic"          # classic (overlapping windows) | tiled (panes with tabs, splits)
+explorer = false            # the file explorer open at start (the Modern preset sets it)
 restore_session = true      # started without a file: open what was open in this project last time
 line_numbers = true
 highlight_line = true
