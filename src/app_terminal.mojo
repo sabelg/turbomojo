@@ -304,6 +304,10 @@ __extension App:
             self.scr.cy = y0 + min(s.vt.cursor_y, h - 1)
             self.scr.cvis = True
             self.scr.cblock = True
+        elif i == self.top() and s.ended_note.byte_length() == 0 and self.mode == M_NORMAL:
+            # the program hides its cursor: it waits there, hidden
+            self.scr.fx = x0 + min(s.vt.cursor_x, w - 1)
+            self.scr.fy = y0 + min(s.vt.cursor_y, h - 1)
 
     def term_reserved(self, k: Int) -> Bool:
         """Keys the IDE keeps while a terminal has the keyboard."""

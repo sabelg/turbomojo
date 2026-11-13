@@ -44,6 +44,12 @@ struct Screen(Movable):
     var cy: Int
     var cvis: Bool
     var cblock: Bool
+    var fx: Int           # where the cursor waits, hidden, when no caret shows: the
+    var fy: Int           #   focused row or control (-1: nowhere in particular)
+    var sent_x: Int       # the cursor as the last frame left it on the terminal
+    var sent_y: Int       #   (-1: not known - the next frame says it all)
+    var sent_vis: Int     # 1 shown, 0 hidden, -1 not known
+    var sent_shape: Int   # 1 block, 3 underline, -1 not known
     var color_mode: Int   # COLOR_TRUE / COLOR_256 / COLOR_16: how colours are sent
     var plain: Bool       # screen-reader mode: box drawing and shading drawn as blanks
     var glyphs: Int       # ui.glyphs: GLYPHS_ASCII sends every symbol as an ASCII look-alike
@@ -79,6 +85,12 @@ struct Screen(Movable):
         self.cy = 0
         self.cvis = False
         self.cblock = False
+        self.fx = -1
+        self.fy = -1
+        self.sent_x = -1
+        self.sent_y = -1
+        self.sent_vis = -1
+        self.sent_shape = -1
         self.color_mode = COLOR_TRUE
         self.plain = False
         self.glyphs = GLYPHS_UNICODE
@@ -429,9 +441,55 @@ struct Screen(Movable):
         append_str(out, "m")
 
     def render(mut self, mut out: List[UInt8]):
+        """Send what changed since the last frame, and only that: the cells that differ,
+        then the cursor - on the caret when one shows, else (hidden) on the focused row
+        or control, so that magnifiers and screen readers that follow it find the focus
+        and nothing is left where the last changed cell (a toast, the clock, the
+        spinner) was written. An unchanged frame sends nothing at all."""
+        if self.force:
+            self.sent_x = -1
+            self.sent_y = -1
+            self.sent_vis = -1
+            self.sent_shape = -1
+        var body = List[UInt8]()
+        self.render_cells(body)
+        var tx = self.cx if self.cvis else self.fx
+        var ty = self.cy if self.cvis else self.fy
+        var vis = 1 if self.cvis else 0
+        var shape = 1 if self.cblock else 3
+        var moved = tx >= 0 and ty >= 0 and (len(body) > 0 or tx != self.sent_x or ty != self.sent_y)
+        if len(body) == 0 and not moved and vis == self.sent_vis and (vis == 0 or shape == self.sent_shape):
+            return
         if self.sync:
             append_str(out, "\x1b[?2026h")
-        append_str(out, "\x1b[?25l")
+        var hide = self.sent_vis != 0 and (vis == 0 or (len(body) > 0 and not self.sync))
+        if hide:
+            append_str(out, "\x1b[?25l")       # (it would wander over the changed cells)
+        for b in body:
+            out.append(b)
+        if moved:
+            append_str(out, "\x1b[")
+            append_int(out, ty + 1)
+            append_str(out, ";")
+            append_int(out, tx + 1)
+            append_str(out, "H")
+            self.sent_x = tx
+            self.sent_y = ty
+        elif len(body) > 0:
+            self.sent_x = -1                    # (left after the last cell written)
+            self.sent_y = -1
+        if vis == 1 and shape != self.sent_shape:
+            append_str(out, "\x1b[1 q" if shape == 1 else "\x1b[3 q")
+            self.sent_shape = shape
+        if vis == 1 and (hide or self.sent_vis != 1):
+            append_str(out, "\x1b[?25h")
+        self.sent_vis = vis
+        if self.sync:
+            append_str(out, "\x1b[?2026l")
+
+    def render_cells(mut self, mut out: List[UInt8]):
+        """The cells that differ from what the terminal shows (all after a resize or
+        `force`), with their colours and attributes."""
         var lastfg = -1
         var lastbg = -1
         var lastul = 0          # every frame ends with underlining switched off
@@ -543,13 +601,3 @@ struct Screen(Movable):
                 self.lk[k] = 0
                 self.plk[k] = 0
             self.force = True
-        if self.cvis:
-            append_str(out, "\x1b[")
-            append_int(out, self.cy + 1)
-            append_str(out, ";")
-            append_int(out, self.cx + 1)
-            append_str(out, "H")
-            append_str(out, "\x1b[1 q" if self.cblock else "\x1b[3 q")
-            append_str(out, "\x1b[?25h")
-        if self.sync:
-            append_str(out, "\x1b[?2026l")

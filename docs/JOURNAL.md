@@ -4750,3 +4750,38 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   marks by design.
 - Gate: scripts/check.sh printed CHECK OK (101 test files, 1152 tests, 826 s).
 
+## 2026-11-12 · P10-15 cursor discipline · done
+- What changed: Screen.render (src/screen.mojo) now writes the changed cells into a
+  body first (`render_cells`, the old diff loop) and then decides about the cursor
+  from what the last frame left (`sent_x/sent_y/sent_vis/sent_shape`, forgotten on
+  `force` and resize): an unchanged frame sends no bytes at all (before: every frame
+  sent ?2026h ?25l, a cursor move, the shape and ?25h); the cursor is moved after
+  any written cell or when its place changed; hidden only when it goes away or,
+  without synchronized output, while cells change under it; the shape and ?25h only
+  when they change. Where no caret shows, the cursor waits hidden on `Screen.fx/fy`:
+  `focus_at` in src/app_draw.mojo - what screen-reader mode already computed (the
+  menu's marked item, the dialog's focused control, a list window's row) - now sets
+  that in the full UI too, shown only in screen-reader mode. A bug found on the way:
+  draw() set `cvis = False` after the windows were drawn, so a terminal window's
+  program never had its cursor shown; the reset is now at the start of draw(), and
+  a program that hides its cursor gets it parked there instead.
+- Verified: tests/test_cursor_discipline.mojo (4 tests): on a Screen - the first
+  frame shows the caret and its shape once, an unchanged frame is "", one changed
+  cell sends only that cell and the move back to the caret without hiding (synced),
+  a caret move alone is exactly "?2026h ESC[3;5H ?2026l", a new shape once, no caret
+  hides once and parks on the focus cell, without sync a changed frame is wrapped
+  in ?25l ... ?25h, a resize says it all again; in the IDE - after a status message,
+  a toast and a cursor key the last cursor move is the caret's, nothing new sends
+  nothing; with the explorer focused the hidden cursor ends on its row after a toast
+  at the top right, follows Down, and in an open menu follows the marked item; a
+  Run window waiting at "name? " shows the program's cursor after the prompt.
+  Mutants each fail: no move back after written cells, no parking, the old cvis
+  reset, always hiding. The render-reading tests (screen, focus, links, ANSI theme,
+  grapheme, glyphs, caps, terminal, quiet text) pass unchanged.
+- Not done / unverified: not tried with a real magnifier (GNOME's zoom follows the
+  text caret through AT-SPI of the terminal - whether it follows a hidden cursor
+  depends on the terminal); the agent panel and the docs pane park nothing of their
+  own; frames are still drawn in full into the back buffer every pass (only what is
+  sent is diffed).
+- Gate: scripts/check.sh printed CHECK OK (102 test files, 1156 tests, 845 s).
+

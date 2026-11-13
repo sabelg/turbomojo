@@ -165,6 +165,11 @@ __extension App:
 
     def draw(mut self):
         var p = self.pal.copy()
+        # the cursor: where this frame puts it (a terminal window's program, the
+        # editor's caret, a dialog's field, else the focused row - reader_cursor)
+        self.scr.cvis = False
+        self.scr.fx = -1
+        self.scr.fy = -1
         self.layout_sync()
         self.explain_fit()
         self.bp_sync()              # files opened since show their breakpoints
@@ -339,7 +344,6 @@ __extension App:
         if self.mode == M_MENU:
             draw_dropdown(self.scr, p, self.menus[self.menu_idx], self.menu_item, self.checked(), self.unavailable_cmds(), self.reader)
         # cursor
-        self.scr.cvis = False
         var t = self.top()
         if (self.mode == M_NORMAL or self.mode == M_COMPLETE or self.mode == M_HOVER) and t >= 0 and self.wins[t].kind == WK_EDITOR:
             var cell = self.wins[t].cursor_cell()
@@ -370,8 +374,7 @@ __extension App:
             self.draw_scanlines()
         if not self.focused and self.dim_unfocused and not self.reader:
             self.draw_unfocused()
-        if self.reader:
-            self.reader_cursor()
+        self.reader_cursor()
 
     def draw_unfocused(mut self):
         """The terminal does not have the focus (mode 1004): every cell's text half way
@@ -404,33 +407,39 @@ __extension App:
             var top = self.wins[i].top
             self.wins[i].sticky = sticky_rows(items, scope_path(items, top), top, self.wins[i].cr, 3)
 
+    def focus_at(mut self, x: Int, y: Int):
+        """The terminal's cursor goes to (x, y), what has the focus: shown in
+        screen-reader mode (screen readers follow it), else hidden there (magnifiers
+        follow it, and it is not left where the last changed cell was written)."""
+        if self.reader:
+            self.scr.cx = x
+            self.scr.cy = y
+            self.scr.cvis = True
+        else:
+            self.scr.fx = x
+            self.scr.fy = y
+
     def reader_cursor(mut self):
-        """Screen-reader mode: the terminal's cursor on what has the focus - the menu
-        item, the dialog's control, the list row - since screen readers follow it."""
+        """The cursor on what has the focus when no caret shows - the menu item, the
+        dialog's control, the list row (see focus_at)."""
         if self.mode == M_MENU and self.menu_idx >= 0 and self.menu_idx < len(self.menus):
             ref m = self.menus[self.menu_idx]
-            var w = m.width(True)
+            var w = m.width(self.reader)
             var x = max(0, min(m.x - 1, self.scr.w - w - 2))
             var top = dropdown_top(self.scr.h, m, self.menu_item)
-            self.scr.cx = x + 2
-            self.scr.cy = 2 + self.menu_item - top
-            self.scr.cvis = True
+            self.focus_at(x + 2, 2 + self.menu_item - top)
             return
         if self.mode == M_DIALOG:
             if self.scr.cvis:
                 return                          # a field: the dialog put it there
             var c = self.dlg.focus_cell()
             if c[0] >= 0:
-                self.scr.cx = c[0]
-                self.scr.cy = c[1]
-                self.scr.cvis = True
+                self.focus_at(c[0], c[1])
             return
         var t = self.top()
         if self.mode == M_NORMAL and t >= 0 and not self.scr.cvis and self.wins[t].kind != WK_EDITOR and self.wins[t].kind != WK_TERM and self.wins[t].kind != WK_AGENT:
             # a list window: its marked row
-            self.scr.cx = self.wins[t].x + 1
-            self.scr.cy = self.wins[t].y + 1 + max(0, self.wins[t].cr - self.wins[t].top)
-            self.scr.cvis = True
+            self.focus_at(self.wins[t].x + 1, self.wins[t].y + 1 + max(0, self.wins[t].cr - self.wins[t].top))
 
     def draw_scanlines(mut self):
         """A CRT look: the background of every other row a little darker (the theme's
