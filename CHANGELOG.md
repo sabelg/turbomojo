@@ -4,7 +4,7 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.1: UI clarity and calm (in progress: 1 task to go)
+## 2.1: UI clarity and calm - 2026-11-12
 
 - Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1] (P10-01)
 - Never colour-only diagnostics: E/W/i glyphs in the gutter and the Problems page, and undercurl with an SGR 58 colour where the terminal supports it (probed), else a plain underline [2] (P10-02)
@@ -39,6 +39,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - The theme follows the terminal live where it only reports its background (OSC 11 asked again on focus and every half minute; 2031 / 996 were followed already), and Turbo Muted, a low-saturation Turbo Classic [G] (P10-20a)
 - The first run asks which theme, with a preview of each (dark / light / auto, Turbo or modern) [G] (P10-20b)
 - Grapheme-width discipline: mode 2027 where reported, else the width table plus a cursor-position measurement for doubtful glyphs; Unicode-safe hot letters [H] (P10-21)
+- Inline images in the docs pane (kitty graphics with Unicode placeholders under tmux, sixel), with a text fallback [I] (P10-22)
 
 ## 2.0: Release engineering - 2026-11-12
 

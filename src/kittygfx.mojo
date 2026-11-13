@@ -61,15 +61,15 @@ def png_size(data: List[UInt8]) -> Tuple[Int, Int]:
     return (w, h)
 
 
-def image_cells(w: Int, h: Int, max_cols: Int, max_rows: Int) -> Tuple[Int, Int]:
-    """Columns and rows for a w x h picture: about 10 x 20 pixels a cell (a cell is
-    twice as high as wide), never wider than `max_cols` or higher than `max_rows`,
-    the proportions kept."""
-    var cols = max(1, min(max_cols, (w + 9) // 10))
-    var rows = max(1, (cols * h + w) // (2 * w))
+def image_cells(w: Int, h: Int, max_cols: Int, max_rows: Int, cell_w: Int = 10, cell_h: Int = 20) -> Tuple[Int, Int]:
+    """Columns and rows for a w x h picture with cells of cell_w x cell_h pixels (the
+    terminal's, else about 10 x 20), never wider than `max_cols` or higher than
+    `max_rows`, the proportions kept."""
+    var cols = max(1, min(max_cols, (w + cell_w - 1) // cell_w))
+    var rows = max(1, (cols * cell_w * h + w * cell_h // 2) // (w * cell_h))
     if rows > max_rows:
         rows = max(1, max_rows)
-        cols = max(1, min(cols, (rows * 2 * w + h // 2) // h))
+        cols = max(1, min(cols, (rows * cell_h * w + h * cell_w // 2) // (h * cell_w)))
     return (cols, rows)
 
 

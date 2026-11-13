@@ -30,7 +30,8 @@
   width it still gets wrong spoils one cell, no longer the rest of the line.
 - Pictures in the Mojo documentation show as "[image: ...]" links that name the
   picture's file, and in kitty, Ghostty and other terminals with the kitty graphics
-  protocol the PNGs themselves, also inside tmux (`[ui] images`).
+  protocol the PNGs themselves, also inside tmux (`[ui] images`); terminals with
+  sixel (foot, xterm, tmux 3.4) get them as sixel.
 - Translated menus can have hot letters in any script ("~Ф~айл", "~Ö~ffnen"):
   small or capital, they open the menu, choose the item and press the button.
 

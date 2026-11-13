@@ -523,6 +523,15 @@ struct App(Movable):
     var images_mode: String          # ui.images: auto | kitty | off
     var gfx_on: Bool                 # pictures are shown (kitty graphics; decided at start)
     var gfx_tmux: Bool               # ...through tmux (commands passed through)
+    var gfx_sixel: Bool              # ...as sixel (else kitty graphics)
+    var gfx_cell_w: Int              # a cell in pixels (the terminal's, else 10 x 20)
+    var gfx_cell_h: Int
+    var gfx_emit: String             # sixel pictures to draw after the frame
+    var gfx_page_bg: Int             # the page's background colour (cells under a sixel)
+    var doc_img_sixel: List[String]  # each picture as sixel ('' with kitty graphics)
+    var doc_img_at: List[Int]        # where its first row was drawn this frame (y << 16 | x, -1)
+    var doc_img_vis: List[Int]       # how many of its rows were drawn this frame
+    var doc_img_shown: List[Int]     # where it was last drawn as sixel (-1: not on screen)
     var gfx_out: String              # graphics commands to send before the next frame
     var gfx_next: Int                # the next image id to use
     var gfx_diac: List[Int]          # the row / column marks of the placeholder cells
@@ -977,6 +986,15 @@ struct App(Movable):
         self.images_mode = "auto"
         self.gfx_on = False
         self.gfx_tmux = False
+        self.gfx_sixel = False
+        self.gfx_cell_w = 10
+        self.gfx_cell_h = 20
+        self.gfx_emit = ""
+        self.gfx_page_bg = 0
+        self.doc_img_sixel = List[String]()
+        self.doc_img_at = List[Int]()
+        self.doc_img_vis = List[Int]()
+        self.doc_img_shown = List[Int]()
         self.gfx_out = ""
         self.gfx_next = GFX_FIRST_ID
         self.gfx_diac = List[Int]()

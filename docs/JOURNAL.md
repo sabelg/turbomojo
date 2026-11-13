@@ -5297,3 +5297,46 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   width) sends the picture again; pictures in the docs pane beside the editor (not
   the reader) stay links; sixel is P10-22c.
 - Gate: scripts/check.sh printed CHECK OK (116 test files, 1210 tests, 926 s).
+
+## 2026-11-13 · P10-22c pictures as sixel · done
+
+- What changed: src/inflate.mojo (zlib / DEFLATE after puff.c: stored, fixed and
+  dynamic blocks, an output limit, any damage refused - a code the table does not
+  have included, found by a mutant that crashed it), src/png.mojo (chunks, IDAT
+  joined, filters 0-4 with Paeth, grey / grey+alpha / RGB / RGBA at 8 or 16 bits,
+  palettes at 1-8 bits with tRNS, grey at 1-16; interlaced refused; at most 4096^2
+  pixels; to RGBA), src/sixel.mojo (nearest-neighbour scaling, fit_pixels, the
+  6x6x6 cube, half-transparent pixels mixed with the page background, mostly
+  transparent ones left out with P2=1, bands of six rows, run lengths, empty sixels
+  at a line's end left out). caps: the cell size (CSI 16 t, answered CSI 6;h;w t,
+  sent with every probe before DA1; "cell size" in --caps), used by image_cells for
+  both kinds. ui.images = auto | kitty | sixel | off; gfx_decide prefers kitty
+  graphics, else sixel when DA1 said so. Reader: with sixel the PNG is decoded and
+  encoded when the page is laid out (one that cannot be decoded stays a link), its
+  rows are blank cells; before each frame sixel_prepare wipes it (cells sent again)
+  where it moved or is no longer wholly on the page, and draws it where it is wholly
+  on the page, nothing lies over it (blank_in) and it moved or its cells were
+  rewritten (changed_in); after the frame sixel_take sends it and puts the cursor
+  back. Screen.invalidate / changed_in / blank_in. README, What's new. P10-22 done.
+- Verified: tests/test_sixel.mojo (7 tests): inflate of stored, fixed and dynamic
+  streams equals the text, the limit and damage refused; the five colour types (9 x
+  7, all filters) decode to exactly the RGBA of the fixtures (made with Python's
+  zlib); interlaced, cut and non-PNG refused; 400 randomly damaged PNGs read or
+  refused, none crashes; the sixel of a 2 x 7 picture is byte for byte what the
+  format gives, a run of 10 is "!10", a transparent pixel is left out and 50 % white
+  on black is grey; the cell-size answer and the query's place; which kind is used;
+  in the reader a 100 x 80 PNG is 10 x 4 cells, drawn at its place with its colour
+  registers, not again when nothing changed, wiped and not drawn when cut off at the
+  top or the bottom, drawn again higher up. test_caps (12 lines), test_doc_pictures,
+  test_doc_images pass. Mutants (no wipe, drawn every frame, Paeth, the average
+  filter's rounding, the fixed code table, run lengths) fail; requiring the whole
+  picture on the page (doc_img_vis) is also covered by the blank-cell check, so
+  dropping it alone does not fail. tmide --caps in tmux 3.4 here: "images: sixel",
+  "cell size: 16 x 32 pixels"; the real IDE in it, images on auto, showed the page
+  with the rows kept for a 160 x 96 PNG and no sixel text leaking into the pane.
+- Not done / unverified: the picture itself was not seen (tmux keeps it, but nothing
+  here shows tmux's screen as pixels; no foot or xterm here); while a sixel picture
+  is cut off at the page's edge it is not shown at all; 216 colours (no dithering);
+  CRCs and Adler-32 are not checked; the decoder is not in scripts/fuzz.sh (the
+  random-damage test stands for it).
+- Gate: scripts/check.sh printed CHECK OK (117 test files, 1217 tests, 939 s).

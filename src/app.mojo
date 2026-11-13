@@ -117,17 +117,21 @@ __extension App:
             self.scr.clustered = True
         self.scr.emoji_narrow = v.emoji_narrow
 
-    def gfx_decide(mut self, answered: Bool, tmux: String, kitty_window: String, ghostty: String):
-        """Whether the reader shows pictures: `ui.images = "kitty"` says so; "auto" when
-        the terminal answered the kitty graphics query - or, inside tmux (which does
-        not pass the query on), when tmux runs in kitty or Ghostty (their variables are
-        inherited). Never in screen-reader mode or with 16 colours (the image id is a
-        256-colour index)."""
+    def gfx_decide(mut self, answered: Bool, tmux: String, kitty_window: String, ghostty: String, sixel: Bool = False):
+        """Whether the reader shows pictures, and how: `ui.images = "kitty"` or
+        "sixel" says so; "auto" takes kitty graphics when the terminal answered its
+        query - or, inside tmux (which does not pass the query on), when tmux runs in
+        kitty or Ghostty (their variables are inherited) - and else sixel when DA1
+        listed it. Never in screen-reader mode; kitty graphics not with 16 colours (the
+        image id is a 256-colour index)."""
         self.gfx_tmux = tmux.byte_length() > 0
         var outside = self.gfx_tmux and (kitty_window.byte_length() > 0 or ghostty.byte_length() > 0)
-        self.gfx_on = self.images_mode == "kitty" or (self.images_mode == "auto" and (answered or outside))
-        if self.reader or self.scr.color_mode == COLOR_16:
-            self.gfx_on = False
+        var kitty = self.images_mode == "kitty" or (self.images_mode == "auto" and (answered or outside))
+        var six = not kitty and (self.images_mode == "sixel" or (self.images_mode == "auto" and sixel))
+        if kitty and self.scr.color_mode == COLOR_16:
+            kitty = False
+        self.gfx_on = (kitty or six) and not self.reader
+        self.gfx_sixel = six and self.gfx_on
 
     def run(mut self) raises:
         self.frec_path = state_dir() + "/opened"
@@ -157,7 +161,10 @@ __extension App:
             self.term.set_grapheme(True)
             self.scr.clustered = True
         self.apply_widths(caps.widths)
-        self.gfx_decide(caps.kitty_graphics, env_or("TMUX", ""), env_or("KITTY_WINDOW_ID", ""), env_or("GHOSTTY_RESOURCES_DIR", ""))
+        self.gfx_decide(caps.kitty_graphics, env_or("TMUX", ""), env_or("KITTY_WINDOW_ID", ""), env_or("GHOSTTY_RESOURCES_DIR", ""), caps.sixel)
+        if caps.cell_w > 0:
+            self.gfx_cell_w = caps.cell_w
+            self.gfx_cell_h = caps.cell_h
         _ = self.sig.open()
         _ = self.first_run_theme()
         var early = self.term.take_early()
@@ -167,10 +174,14 @@ __extension App:
                 self.scr.resize(sz[0], sz[1])
                 self.fit_windows()
             self.draw()
+            self.sixel_prepare()
             if self.gfx_out.byte_length() > 0:
                 append_str(self.term.out, self.gfx_out)    # pictures before the cells that show them
                 self.gfx_out = ""
             self.scr.render(self.term.out)
+            var six = self.sixel_take()
+            if six.byte_length() > 0:
+                append_str(self.term.out, six)
             self.term.flush()
             if self.fault.byte_length() > 0:
                 self.inject_fault()

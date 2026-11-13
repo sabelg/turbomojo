@@ -12,6 +12,8 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT, ANSI_BASE
 from kittygfx import *
+from png import png_decode
+from sixel import sixel_encode, scale_to, fit_pixels
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
@@ -353,11 +355,24 @@ __extension App:
             var size = png_size(data)
             if size[0] < 0:
                 continue
-            var cells = image_cells(size[0], size[1], min(w, 297), min(max_rows, 297))
+            var cells = image_cells(size[0], size[1], min(w, 297), min(max_rows, 297), self.gfx_cell_w, self.gfx_cell_h)
+            var six = String("")
+            if self.gfx_sixel:
+                # decoded now: a picture that cannot be (interlaced, damaged) stays a link
+                var pic = png_decode(data)
+                if not pic.ok:
+                    continue
+                var px = fit_pixels(pic.w, pic.h, cells[0] * self.gfx_cell_w, cells[1] * self.gfx_cell_h)
+                var bg = self.pal.doc_bg if self.pal.doc_bg >= 0 and self.pal.doc_bg <= 0xFFFFFF else 0
+                six = sixel_encode(scale_to(pic, px[0], px[1]), px[0], px[1], bg)
             var idx = len(self.doc_images)
             self.doc_images.append(path)
             self.doc_img_ids.append(0)
             self.doc_img_size.append((cells[0] << 16) | cells[1])
+            self.doc_img_sixel.append(six)
+            self.doc_img_at.append(-1)
+            self.doc_img_vis.append(0)
+            self.doc_img_shown.append(-1)
             for r in range(cells[1]):
                 var m = MdLine()
                 m.img = idx
@@ -373,9 +388,17 @@ __extension App:
         for id in self.doc_img_ids:
             if id > 0:
                 self.gfx_out += kitty_delete(id, self.gfx_tmux)
+        for k in range(len(self.doc_img_shown)):
+            var at = self.doc_img_shown[k]
+            if at >= 0:                 # a sixel picture is wiped by sending its cells again
+                self.scr.invalidate(at & 0xFFFF, at >> 16, self.doc_img_size[k] >> 16, self.doc_img_size[k] & 0xFFFF)
         self.doc_images.clear()
         self.doc_img_ids.clear()
         self.doc_img_size.clear()
+        self.doc_img_sixel.clear()
+        self.doc_img_at.clear()
+        self.doc_img_vis.clear()
+        self.doc_img_shown.clear()
 
     def docs_draw_image_row(mut self, line: MdLine, x0: Int, y: Int, bg: Int):
         """One row of a picture: placeholder cells (sent first, when it shows for the
@@ -383,6 +406,14 @@ __extension App:
         var idx = line.img
         var cols = self.doc_img_size[idx] >> 16
         var rows = self.doc_img_size[idx] & 0xFFFF
+        if self.gfx_sixel:
+            # blank cells; the picture is drawn over them after the frame (sixel_emit)
+            self.scr.fill(x0, y, cols, 1, 32, bg, bg)
+            self.gfx_page_bg = bg
+            if line.img_row == 0:
+                self.doc_img_at[idx] = (y << 16) | x0
+            self.doc_img_vis[idx] += 1
+            return
         if self.doc_img_ids[idx] == 0:
             var id = self.gfx_next
             self.gfx_next = GFX_FIRST_ID if id >= GFX_LAST_ID else id + 1
@@ -395,6 +426,47 @@ __extension App:
             self.scr.put(x0 + c, y, PLACEHOLDER, fg, bg)
             self.scr.combine(x0 + c, y, self.gfx_diac[line.img_row])
             self.scr.combine(x0 + c, y, self.gfx_diac[c])
+
+    def sixel_prepare(mut self):
+        """Before the frame is sent: a sixel picture that moved or is no longer wholly on
+        the page has its old cells sent again (that wipes it); one wholly on the page,
+        with nothing drawn over it, is drawn when it moved or its cells were rewritten."""
+        self.gfx_emit = ""
+        if not self.gfx_sixel:
+            return
+        for k in range(len(self.doc_images)):
+            var cols = self.doc_img_size[k] >> 16
+            var rows = self.doc_img_size[k] & 0xFFFF
+            var at = self.doc_img_at[k]
+            var cur = at if at >= 0 and self.doc_img_vis[k] == rows and (at >> 16) + rows < self.scr.h else -1
+            var old = self.doc_img_shown[k]
+            if old >= 0 and old != cur:
+                self.scr.invalidate(old & 0xFFFF, old >> 16, cols, rows)
+            if cur >= 0:
+                var x = cur & 0xFFFF
+                var y = cur >> 16
+                if not self.scr.blank_in(x, y, cols, rows, self.gfx_page_bg):
+                    self.doc_img_shown[k] = -1      # something lies over it: drawn when it goes
+                elif old != cur or self.scr.changed_in(x, y, cols, rows):
+                    self.gfx_emit += "\x1b[" + String(y + 1) + ";" + String(x + 1) + "H" + self.doc_img_sixel[k]
+                    self.doc_img_shown[k] = cur
+            else:
+                self.doc_img_shown[k] = -1
+            self.doc_img_at[k] = -1
+            self.doc_img_vis[k] = 0
+
+    def sixel_take(mut self) -> String:
+        """After the frame: the sixel pictures to send, then the cursor back where the
+        frame left it (a sixel moves it)."""
+        if self.gfx_emit.byte_length() == 0:
+            return ""
+        var out = "\x1b[?25l" + self.gfx_emit
+        self.gfx_emit = ""
+        if self.scr.sent_x >= 0 and self.scr.sent_y >= 0:
+            out += "\x1b[" + String(self.scr.sent_y + 1) + ";" + String(self.scr.sent_x + 1) + "H"
+        if self.scr.sent_vis == 1:
+            out += "\x1b[?25h"
+        return out
 
     def docs_follow(mut self, id: Int):
         if id < 0 or id >= len(self.doc_links):

@@ -81,6 +81,7 @@ struct of `appstate.mojo`, one area each.
 | `src/grep.mojo` | Find in files: walks a folder and searches every text file, a little at a time so the editor stays responsive (call `step` from the event loop until `done`). |
 | `src/helpbook.mojo` | TurboMojo's own help: the "TurboMojo" book of the documentation viewer (the guide, the cheat sheet, the keyboard reference, what's new) and the tutorial file. |
 | `src/highlight.mojo` | Mojo syntax highlighter (line-based with triple-quoted string state). |
+| `src/inflate.mojo` | Inflate: the zlib / DEFLATE decompressor (RFC 1950, 1951), for PNG pictures. |
 | `src/json.mojo` | JSON reader and writer (RFC 8259). |
 | `src/kittygfx.mojo` | Kitty graphics protocol, for pictures in the documentation reader (P10-22b). |
 | `src/layout.mojo` | The tiled layout: a tree of splits whose leaves are tab groups. |
@@ -98,6 +99,7 @@ struct of `appstate.mojo`, one area each.
 | `src/palette.mojo` | Colour themes. |
 | `src/platform.mojo` | What differs between the systems TurboMojo is built for, chosen when it is compiled: the numbers of system calls' flags and signals, the layout of `struct termios`, and which Linux-only facilities exist. |
 | `src/plugins.mojo` | Plugins: programs of their own that TurboMojo starts and talks to over JSON-RPC, one message per line on their standard input and output (the transport of the agent client). |
+| `src/png.mojo` | PNG decoding to RGBA pixels, for sixel pictures in the docs reader (P10-22c). |
 | `src/problems.mojo` | The Problems page's model: problems from every source (the language server, the last build, the test explorer's failed tests) in one list, and the filter that chooses which are shown (kinds, only the current file, a text). |
 | `src/proc.mojo` | A child process with pipes in both directions, driven without blocking. |
 | `src/progress.mojo` | The response-time ladder (Nielsen's limits: 0.1 s feels instant, 1 s keeps the flow of thought, 10 s keeps attention): work that ends within a second shows nothing - a spinner that flashes on and off is noise; from one second a spinner and the time on the status line; beyond ten seconds what has been done so far and the key that stops it, in a box that never takes the keyboard. |
@@ -112,6 +114,7 @@ struct of `appstate.mojo`, one area each.
 | `src/search.mojo` | What to search for: text or a regular expression, with the Find dialog's options. |
 | `src/session.mojo` | A session: which files were open in a project, where the cursors were, and how the windows were arranged - written as a small text file and read back at the next start. |
 | `src/signals.mojo` | Signal handling for the event loop. |
+| `src/sixel.mojo` | Sixel output, for pictures in the docs reader where the terminal has no kitty graphics (P10-22c): a decoded picture scaled to its cells, its colours put on the 6 x 6 x 6 cube (216 registers), sent band by band (six pixel rows each) with run-length counts. |
 | `src/stdref.mojo` | The standard library reference: `mojo doc`'s JSON for the `std` package (made by scripts/fetch-docs.sh) turned into one Markdown page per module, with an index that the documentation library reads as a book. |
 | `src/strings.mojo` | The UI's words outside the code: the menu titles and every command's title and hint (what the menus, the command palette, the status line and the keyboard reference show) can come from a strings file, so the IDE can be translated. |
 | `src/swap.mojo` | Swap files: periodic copies of unsaved buffers, used to recover work after a crash, a power cut or `kill -9`. |

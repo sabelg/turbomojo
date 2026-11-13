@@ -642,6 +642,12 @@ struct Terminal(Movable):
             # focus in (CSI I) / out (CSI O), mode 1004
             evs.append(Event(EV_FOCUS, 1 if final == 73 else 0, 0, 0, 0, False, False, List[Int]()))
             return
+        if final == 116 and len(params) == 3 and params[0] == 6:
+            # the cell size in pixels (answer to CSI 16 t)
+            if params[1] > 0 and params[2] > 0 and params[1] < 1000 and params[2] < 1000:
+                self.caps.cell_h = params[1]
+                self.caps.cell_w = params[2]
+            return
         if final == 82 and self.cpr_pending > 0 and len(params) == 2:
             # a cursor-position report for a width sample (it looks like a modified F3)
             self.caps.width_report(params[1])

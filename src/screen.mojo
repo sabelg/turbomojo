@@ -223,6 +223,33 @@ struct Screen(Movable):
     def set_cell(mut self, x: Int, y: Int, c: Int, fg: Int, bg: Int):
         self.place(x, y, c, 0, 1, fg, bg)
 
+    def invalidate(mut self, x: Int, y: Int, w: Int, h: Int):
+        """The cells of a rectangle are sent again with the next frame (a picture drawn
+        over them is wiped that way)."""
+        for yy in range(max(0, y), min(self.h, y + h)):
+            for xx in range(max(0, x), min(self.w, x + w)):
+                self.pch[yy * self.w + xx] = -2
+
+    def changed_in(self, x: Int, y: Int, w: Int, h: Int) -> Bool:
+        """Some cell of the rectangle differs from what the terminal shows."""
+        for yy in range(max(0, y), min(self.h, y + h)):
+            for xx in range(max(0, x), min(self.w, x + w)):
+                var k = yy * self.w + xx
+                if self.ch[k] != self.pch[k] or self.fg[k] != self.pfg[k] or self.bg[k] != self.pbg[k] or self.cmb[k] != self.pcmb[k]:
+                    return True
+        return self.force
+
+    def blank_in(self, x: Int, y: Int, w: Int, h: Int, bg: Int) -> Bool:
+        """Every cell of the rectangle is a space on `bg` (nothing drawn over it)."""
+        if x < 0 or y < 0 or x + w > self.w or y + h > self.h:
+            return False
+        for yy in range(y, y + h):
+            for xx in range(x, x + w):
+                var k = yy * self.w + xx
+                if self.ch[k] != 32 or self.bg[k] != bg or self.cmb[k] != 0:
+                    return False
+        return True
+
     def put(mut self, x: Int, y: Int, c: Int, fg: Int, bg: Int):
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
             return

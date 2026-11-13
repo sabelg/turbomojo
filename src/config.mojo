@@ -28,7 +28,7 @@ Example:
     hyperlinks = true           # file:line in the Message window and the agent panel as links (OSC 8)
     hyperlink_format = "file://{host}{path}"   # or e.g. "vscode://file{path}:{line}:{column}"
     glyphs = "unicode"          # unicode (box drawing, arrows) | ascii (only ASCII) | nerd (+ Nerd Font icons)
-    images = "auto"             # pictures in the documentation: auto | kitty | off (else "[image: ...]")
+    images = "auto"             # pictures in the documentation: auto | kitty | sixel | off (else "[image: ...]")
     dim_unfocused = true        # dim the screen while the terminal window does not have the focus
 
     [editor]
@@ -170,7 +170,7 @@ struct Settings(Copyable, Movable):
     var hyperlinks: Bool        # ui.hyperlinks
     var hyperlink_format: String    # ui.hyperlink_format: {host} {path} {line} {column}
     var glyphs: String              # ui.glyphs: unicode | ascii | nerd
-    var images: String              # ui.images: auto | kitty | off
+    var images: String              # ui.images: auto | kitty | sixel | off
     var dim_unfocused: Bool         # ui.dim_unfocused
     var minimap_style: String       # editor.minimap_style: auto | braille | blocks
     var run_in_terminal: Bool
@@ -292,8 +292,8 @@ struct Settings(Copyable, Movable):
             self.warnings.append("ui.hyperlink_format must contain {path}")
             self.hyperlink_format = "file://{host}{path}"
         var im = doc.get_str("ui.images", self.images)
-        if im != "auto" and im != "kitty" and im != "off":
-            self.warnings.append("ui.images must be auto, kitty or off")
+        if im != "auto" and im != "kitty" and im != "sixel" and im != "off":
+            self.warnings.append("ui.images must be auto, kitty, sixel or off")
         else:
             self.images = im
         var g = doc.get_str("ui.glyphs", self.glyphs)

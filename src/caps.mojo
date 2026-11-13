@@ -28,6 +28,9 @@ comptime UNDERLINE_QUERY = "\x1bP+q536d756c78;536574756c63\x1b\\"
 # kitty graphics: a query for a 1x1 image that is not stored (a=q); a terminal with the
 # protocol answers "ESC _ G i=31;OK ESC \" before the DA1 reply. (An APC, so left out
 # under GNU screen too.) Sixel is in the DA1 reply itself (attribute 4).
+# The size of a cell in pixels (XTWINOPS 16: answered CSI 6 ; height ; width t), so
+# that pictures get their proportions; terminals that do not know it say nothing.
+comptime CELL_SIZE_QUERY = "\x1b[16t"
 comptime KITTY_GRAPHICS_QUERY = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\"
 
 
@@ -36,7 +39,7 @@ def caps_query(dcs: Bool) -> String:
     var q = String("\x1b[?2026$p\x1b[?2027$p\x1b[?2031$p\x1b[?2048$p\x1b[?u") + OSC11_QUERY
     if dcs:
         q += String(TRUECOLOR_QUERY) + UNDERLINE_QUERY + KITTY_GRAPHICS_QUERY
-    return q + "\x1b[c"
+    return q + CELL_SIZE_QUERY + "\x1b[c"
 
 
 def under_gnu_screen(term: String, sty: String, tmux: String) -> Bool:
@@ -109,6 +112,8 @@ struct Caps(Copyable, Movable):
     var widths: List[Int]      # how far the cursor moved for each WIDTH_SAMPLES entry (measured)
     var kitty_graphics: Bool   # answered the kitty graphics query
     var sixel: Bool            # DA1 lists attribute 4 (sixel graphics)
+    var cell_w: Int            # a cell's size in pixels (0: not said)
+    var cell_h: Int
 
     def __init__(out self):
         self.color = COLOR_TRUE
@@ -125,6 +130,8 @@ struct Caps(Copyable, Movable):
         self.widths = List[Int]()
         self.kitty_graphics = False
         self.sixel = False
+        self.cell_w = 0
+        self.cell_h = 0
 
     def dcs_reply(mut self, body: String):
         """A DCS reply's body (between ESC P and ST)."""
@@ -191,6 +198,7 @@ struct Caps(Copyable, Movable):
         out.append("background          : " + (("#" + hex6(self.background)) if self.background >= 0 else String("not said")))
         out.append("measured widths     : " + width_summary(self.widths))
         out.append("images              : " + images_summary(self.kitty_graphics, self.sixel))
+        out.append("cell size           : " + ((String(self.cell_w) + " x " + String(self.cell_h) + " pixels") if self.cell_w > 0 else String("not said")))
         out.append("answered queries    : " + yes_no(self.answered))
         return out^
 
