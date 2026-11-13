@@ -321,3 +321,8 @@ scripts/tui-test.sh stop
 - Key sequences are at most two keys long. The Turbo keymap has no block markers (Ctrl-K B / Ctrl-K K): Ctrl-K C/V/Y act on the ordinary selection. In the Emacs keymap Alt-F and Alt-W keep opening the File and Window menus rather than moving by word or copying. Some key combinations never reach a terminal program (Ctrl-M, Ctrl-I, Ctrl-H are Enter, Tab and Backspace).
 - A macro is kept only until the IDE exits, there is one of it, mouse actions are not recorded, and each recorded step is its own undo step.
 - Ctrl-F9 runs the program in the Run window, a terminal of its own; with `run_in_terminal = false` it gets the whole terminal instead, the way Turbo's user screen did. Build, Format and tests run in the background.
+
+## Licence
+
+MIT - see [LICENSE](LICENSE). The integrated terminal links in `libghostty-vt`
+(Ghostty's terminal core, MIT licence, from conda-forge) statically.

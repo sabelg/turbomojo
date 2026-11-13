@@ -39,6 +39,8 @@ tests:
       - tmide --help
 
 about:
+  license: MIT
+  license_file: LICENSE
   summary: A Turbo C++ style IDE for Mojo in the terminal, written in Mojo
   description: |
     TurboMojo is an editor and IDE for Mojo in the terminal: overlapping windows, a
