@@ -2,6 +2,9 @@
 
 ## 2.2 (in progress)
 
+- Help > Report a problem... writes a ready-to-file issue text (versions, the terminal,
+  the last crash, your settings without secrets), copies it and opens it; nothing is
+  sent.
 - A guide to working on a remote machine over SSH and in tmux (the user guide: copying
   to your own clipboard, the mouse, colours, keys, pictures); copying through tmux with
   no X11, Wayland or clipboard program on the server is now tested.

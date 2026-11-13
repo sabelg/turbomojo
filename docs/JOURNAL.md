@@ -5682,3 +5682,54 @@ Not done / unverified:
   support is as documented by them); the mouse, RGB, extended-keys and passthrough
   settings were not tested here.
 - Gate: CHECK OK (123 test files, 1239 tests, 971 s).
+
+## 2026-11-13 · Fix found by GitHub CI: the debugger test knew only aarch64's register names · done
+
+What changed:
+- GitHub CI (run 43428243145, linux-64) failed test_debug_e2e: at a stop the CPU window
+  showed the code, the memory and the registers, but the test looked for the program
+  counter as " pc " - aarch64's name, where every earlier run was. On x86-64 the adapter
+  calls it rip. The window shows the adapter's names, as designed; the test now takes
+  either.
+
+Verified:
+- tests/test_debug_e2e.mojo passes here (aarch64: 3 tests). The x86-64 side is seen only
+  on CI after a push.
+- Gate, first run: FAILED in test_docs_files: docs/SOURCE.md was out of date because P11-08's new src/report.mojo was already on disk (nothing to do with this fix).
+- Gate: CHECK OK (124 test files, 1244 tests, 950 s; one run for this and the next entry).
+
+## 2026-11-13 · P11-08 Help > Report a problem · done
+
+What changed:
+- Help > Report a problem... (`help.reportProblem`, hot letter B) writes an issue text in
+  Markdown: a comment saying nothing was sent and where to post it, headings for what
+  happened and what was expected, the versions (TurboMojo, the Mojo it was built with,
+  the Mojo found, `uname -srm`, TERM/COLORTERM, tmux, SSH), what the terminal answered
+  at start-up (the `--caps` lines; kept from run()), the last crash-log entry (from the
+  last crash header, at most 60 lines; without one, the log's last lines) and the config
+  file cleaned.
+- Cleaning: a value is replaced by "(removed)" when its name says secret (token,
+  secret, password, auth, credential, cookie, private, key / *_key - not keymap or
+  key_hints), when it looks like one (known token prefixes such as sk-, ghp_,
+  github_pat_, AKIA, hf_; or 24+ letters and digits without a space, slash or dot), and
+  every value in an `[... .env]` table or an inline `env = {...}`. The home folder is
+  written as ~ throughout.
+- It goes to problem-report.md in the state folder, to the clipboard (OSC 52) and into
+  an editor window (an older one is replaced). Nothing is sent.
+- src/report.mojo (the text, pure), src/app_report.mojo; user guide, What's new.
+
+Verified:
+- tests/test_report.mojo (5 tests): secret names and values both ways (paths, theme
+  names, commands are kept); a config with a key, a random value, an agent's env table
+  and an inline env cleaned, the rest kept; ~ for the home folder; the last crash out of
+  two, the log's tail without one, the 60-line cap; the text's parts; the command
+  writing, copying and opening the report, with the secret gone and the crash in it, and
+  a second report replacing the first window's text.
+- Mutations: without the cleaning, or without replacing the older window, the command
+  test fails.
+
+Not done / unverified:
+- The --caps lines are only there when started in a terminal (tests have none). The
+  cleaning is a heuristic: it can miss a secret with an innocent name and look, which is
+  why the report is opened for reading before anything is posted.
+- Gate: CHECK OK (124 test files, 1244 tests, 950 s; the same run as the entry before).

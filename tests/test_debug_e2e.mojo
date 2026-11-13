@@ -173,10 +173,11 @@ def test_debugging_hello_end_to_end() raises:
     # the CPU window at this stop
     app.exec(CM_CPUWIN)
     var deadline = now() + 20000 * MS
-    while now() < deadline and (window_text(app, 5).find("► 0x") < 0 or window_text(app, 5).find(" pc ") < 0 or window_text(app, 5).find("Memory at 0x") < 0):
+    # (the program counter is "pc" on aarch64 and "rip" on x86-64: the adapter's names)
+    while now() < deadline and (window_text(app, 5).find("► 0x") < 0 or (window_text(app, 5).find(" pc ") < 0 and window_text(app, 5).find(" rip ") < 0) or window_text(app, 5).find("Memory at 0x") < 0):
         turn(app)
     var cpu = window_text(app, 5)
-    assert_true(cpu.find("► 0x") >= 0 and cpu.find(" pc ") >= 0 and cpu.find("hello.mojo:25") >= 0, cpu)
+    assert_true(cpu.find("► 0x") >= 0 and (cpu.find(" pc ") >= 0 or cpu.find(" rip ") >= 0) and cpu.find("hello.mojo:25") >= 0, cpu)
     app.exec(CM_CPUWIN)
     # F8: over the print; its output arrives
     goto_line(app, 25)

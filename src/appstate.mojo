@@ -188,6 +188,8 @@ struct App(Movable):
     var setup_offer: Bool             # the first run shows Check setup after its questions
     var setup_list: List[SetupItem]  # Check setup's lines
     var term_probed: Bool            # the terminal was asked what it can do (run())
+    var caps_lines: List[String]     # what the terminal said it can do (Report a problem)
+    var report_path: String          # where the report goes ("": the state folder)
     var term_kitty_keys: Bool        # ... and it sends every key (kitty keyboard protocol)
     var np_offer: Bool                # the welcome offers a new project once its theme question is answered
     var theme_marker: String         # a file that says the first run asked for a theme ("": never ask)
@@ -657,6 +659,8 @@ struct App(Movable):
         self.setup_list = List[SetupItem]()
         self.term_probed = False
         self.term_kitty_keys = False
+        self.caps_lines = List[String]()
+        self.report_path = ""
         self.notes = NotifyCenter()
         self.toast_rows = List[Int]()
         self.toast_y0 = List[Int]()

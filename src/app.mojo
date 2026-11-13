@@ -61,6 +61,7 @@ from app_lspextra import *
 from app_newproject import *
 from app_setup import *
 from app_presets import *
+from app_report import *
 from version import MOJO_BUILT_WITH
 from mojover import mojo_mismatch, mojo_summary
 
@@ -170,6 +171,7 @@ __extension App:
         self.scr.color_mode = caps.color
         self.term_probed = True
         self.term_kitty_keys = caps.kitty_keyboard
+        self.caps_lines = caps.describe()
         if caps.color != COLOR_TRUE:
             # the theme's colours as designed for 256 or 16 colours
             self.theme_apply()

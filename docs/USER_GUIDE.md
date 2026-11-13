@@ -281,6 +281,13 @@ This is checked by the tests: the copy is made through tmux with `DISPLAY` and
   install brings Mojo and its tools), Compile > Compiler command or Help > Download
   documentation, or copies the command that fixes it. The very first start shows the
   list by itself when something is missing.
+- To report a problem: **Help > Report a problem...** writes a ready-to-file issue text
+  - what to describe, the versions, what your terminal can do, the last crash-log entry
+  and your config file with anything secret-looking removed (tokens, keys, passwords,
+  long random values, the environments given to agents and language servers) and your
+  home folder written as `~` - to `problem-report.md` in the state folder, copies it to
+  the clipboard and opens it. Nothing is sent: read it, change what you like, and paste
+  it into a new issue on GitHub.
 - The status line says TurboMojo was built with another Mojo than the one found: Mojo
   still changes between releases, so the language server, builds or running may fail.
   Rebuild TurboMojo with the Mojo you use (`pixi run build`), or use the Mojo it names.

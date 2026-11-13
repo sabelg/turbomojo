@@ -100,6 +100,7 @@ comptime CM_QUIET = 231          # Options > Quiet code colours
 comptime CM_NEW_PROJECT = 232    # File > New project
 comptime CM_SETUP = 233          # Help > Check setup
 comptime CM_PRESETS = 234        # Options > Presets
+comptime CM_REPORT = 235         # Help > Report a problem
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -868,6 +869,7 @@ def build_registry() -> Registry:
     r.cmd(CM_DOCFIND, "help.findInDocs", "~F~ind in documentation...", "Search the Mojo documentation: words, phrases, standard library names, headings, code", [fkey(1) | MOD_ALT])
     r.cmd(CM_DOCFETCH, "help.downloadDocs", "Do~w~nload documentation...", "Download or update the Mojo documentation from Modular's public repositories")
     r.cmd(CM_SETUP, "help.checkSetup", "Check ~s~etup...", "Is everything TurboMojo uses there? Mojo, pixi, the language server, the debugger, docs, the terminal")
+    r.cmd(CM_REPORT, "help.reportProblem", "Report a pro~b~lem...", "A ready-to-file issue text (versions, the terminal, the last crash, your settings without secrets) - nothing is sent")
     r.cmd(CM_ABOUT, "help.about", "~A~bout...", "Show version and credits")
     r.cmd(CM_REFRESH, "view.repaint", "~R~epaint desktop", "Redraw the whole screen")
 
@@ -1074,5 +1076,6 @@ def build_registry() -> Registry:
     r.item(CM_DOCFIND)
     r.item(CM_DOCFETCH)
     r.item(CM_SETUP)
+    r.item(CM_REPORT)
     r.item(CM_ABOUT)
     return r^

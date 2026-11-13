@@ -47,6 +47,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_presets.mojo` | Options > Presets (P11-06): two ways to start, each in one choice - Turbo (Turbo Classic's blue desktop, overlapping windows) and Modern (your terminal's own colours, panes with tabs, the file explorer open, the keys of current editors). |
 | `src/app_problems.mojo` | The bottom panel's Problems page, for every source: what the language server reports, the errors and warnings of the last build, and the tests that failed. |
 | `src/app_progress.mojo` | The response-time ladder on screen (src/progress.mojo has the stages): a build, format, task, test run or documentation download, and an agent's turn, show nothing for their first second, then a spinner and the time on the status line, and beyond ten seconds what has been done so far and the key that stops it - for a job in the Compiling box at the bottom right, which is drawn over the desktop but never takes the keyboard (typing goes on in the editor); for the agent on the status line (its panel shows the steps themselves). |
+| `src/app_report.mojo` | Help > Report a problem (P11-08): report.mojo makes the text; this gathers what goes in it, writes it to problem-report.md in the state folder, copies it to the clipboard and opens it, so it can be read and changed before it is posted. |
 | `src/app_setup.mojo` | Help > Check setup (P11-05): the list of what TurboMojo uses and whether it is there (setupcheck.mojo makes the lines), with a Fix button for the marked line - it opens File > New project, Compile > Compiler command or Help > Download documentation, or copies the command that fixes it. |
 | `src/app_swap.mojo` | Swap files in the running IDE: periodic writing, clean-up and recovery at startup. |
 | `src/app_terminal.mojo` | The integrated terminal: a shell (Window > Terminal) and the program Run starts, each in a window of its own at the bottom, on a pty with libghostty-vt keeping the screen. |
@@ -111,6 +112,7 @@ struct of `appstate.mojo`, one area each.
 | `src/project.mojo` | The project around the files being edited: where its `pixi.toml` is and which tasks that file defines. |
 | `src/pty.mojo` | A program running on a pseudo-terminal: what the integrated terminal and the REPL run. |
 | `src/regex.mojo` | Regular expressions: a parser, a compiler to a small instruction set, and a Pike VM (Thompson NFA simulation that also tracks capture groups). |
+| `src/report.mojo` | Help > Report a problem (P11-08): a ready-to-file issue text - what to describe, the versions, what the terminal can do (as `tmide --caps` shows), the last crash-log entry and the configuration with anything secret-looking removed. |
 | `src/responsive.mojo` | Responsive layout, first part (P10-16a): what gives way when the terminal or a window is small. |
 | `src/rope.mojo` | Rope: text stored as UTF-8 chunks in a B-tree whose nodes carry summaries. |
 | `src/rpc.mojo` | JSON-RPC 2.0 over a child process's pipes, with `Content-Length` framing (LSP, DAP) or one message per line (ACP: `lines`, messages contain no raw line feeds). |
