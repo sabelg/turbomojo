@@ -5900,3 +5900,44 @@ Not done / unverified:
   older glibc; the x86-64 bundle is made by the same script but not tried. The binary
   still contains the source files' paths (for assertion messages), not used at run time.
 - Gate: CHECK OK (129 test files, 1255 tests, 1018 s).
+
+## 2026-11-13 · P11-12 macOS, first part · blocked on running it (no Mac); compiled and linked here
+
+What changed:
+- pixi.toml has "osx-arm64" among its platforms; `pixi lock` resolved it (mojo 1.2.0 and
+  mojo-compiler from conda.modular.com/max, libghostty-vt 1.0.0 from conda-forge - which
+  P9-03 still lacked -, ruff and the rest); the Linux entries of pixi.lock are unchanged.
+- scripts/macos-link.sh (`pixi run macos-link`): downloads the three osx-arm64 packages
+  pixi.lock names (once, into $TMPDIR/turbomojo-macos), compiles the IDE for
+  arm64-apple-macosx14.0 (`mojo build --emit object`; `mojo build` itself links through
+  the system's gcc, which cannot make Mach-O), and links it with the lld that comes with
+  Mojo as ld64.lld: the object, libghostty-vt.a, -lKGENCompilerRTShared, and libSystem as
+  a text stub (.tbd) whose functions are scripts/macos/libSystem.symbols, a hand-kept list
+  (the 95 the IDE uses, from the macOS documentation). rpath @executable_path/../lib and
+  @executable_path for the Mojo runtime's dylibs. -lc++ is not needed (and conda's libc++
+  re-exports the system's libc++abi, which is not here).
+- Found by the link: src/pty.mojo called close_range in the pty child - Linux and FreeBSD
+  only; on a Mac the program would not even have loaded. platform.close_from: close_range
+  on Linux, on macOS close() of each descriptor up to getdtablesize().
+- README (macOS: not yet, what was checked), CONTRIBUTING (pixi run macos-link).
+
+Verified:
+- build/macos/tmide: "Mach-O 64-bit arm64 executable, flags:<NOUNDEFS|DYLDLINK|TWOLEVEL|PIE>";
+  its load commands (read with a small Python script): LC_BUILD_VERSION macOS, minos 14.0;
+  LC_LOAD_DYLIB @rpath/libKGENCompilerRTShared.dylib and /usr/lib/libSystem.B.dylib;
+  the two rpaths; LC_CODE_SIGNATURE (lld signs arm64 ad hoc). Putting close_range back
+  on the macOS path makes the link fail with "undefined symbol: _close_range".
+- tests/test_macos.mojo (4 tests): the platform and its locked packages; the symbol list
+  (no Linux-only function among 12 named ones: close_range, eventfd, inotify, memfd,
+  dup3, statx, signalfd, epoll, pipe2, accept4, getrandom); close_from closes 900 and 901
+  and keeps lower ones; the link itself with TM_MACOS_LINK=1 (passes; it is not in the
+  gate, as it downloads about 70 MB the first time).
+
+Not done / unverified (the [!] part):
+- Running it: no Mac here. Every macOS value of src/platform.mojo (P9-03), the termios
+  handling, ptys (TIOCSCTTY may be needed), the loop without eventfd, file watching
+  without inotify, terminals and keys on macOS - all untested. The symbol list is from
+  documentation: a name macOS lacks would link here and fail on a Mac. Whether the Mojo
+  runtime's dylibs load from beside tmide (the rpaths) is unchecked. No macOS bundle or
+  package; no osx-64 (Intel).
+- Gate: CHECK OK (130 test files, 1259 tests, 1035 s).

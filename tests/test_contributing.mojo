@@ -12,7 +12,7 @@ def test_what_contributing_names_exists() raises:
     var c = read_text("CONTRIBUTING.md")
     assert_true(c.byte_length() > 1000)
     var pixi = read_text("pixi.toml")
-    for task in ["build", "check", "canary"]:
+    for task in ["build", "check", "canary", "macos-link"]:
         assert_true(c.find("pixi run " + String(task)) >= 0, String(task))
         assert_true(pixi.find("\n" + String(task) + " = ") >= 0, "pixi task " + String(task))
     for f in ["docs/SOURCE.md", "docs/JOURNAL.md", "docs/BACKLOG.md", "docs/ROADMAP.md", "docs/USER_GUIDE.md", "docs/KEYMAP.md", "help/whats-new.md", "src/helpbook.mojo", "tests/test_help.mojo", "tests/test_docs_files.mojo", "scripts/gen_docs.py", "scripts/smoke.sh", "scripts/perf.sh", "scripts/check.sh", "LICENSE", "tests/test_window.mojo"]:

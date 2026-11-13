@@ -16,7 +16,7 @@ from std.ffi import external_call
 from std.collections import List
 from util import bytes_to_str
 
-from platform import O_RDWR, O_NOCTTY, TIOCSWINSZ, SIGHUP, SIGKILL, SIGPIPE, make_nonblocking
+from platform import O_RDWR, O_NOCTTY, TIOCSWINSZ, SIGHUP, SIGKILL, SIGPIPE, make_nonblocking, close_from
 comptime WNOHANG = 1
 
 
@@ -107,7 +107,7 @@ struct Pty(Copyable, Movable):
                 _ = external_call["dup2", Int32](Int32(s), Int32(0))
                 _ = external_call["dup2", Int32](Int32(s), Int32(1))
                 _ = external_call["dup2", Int32](Int32(s), Int32(2))
-            _ = external_call["close_range", Int32](UInt32(3), UInt32(0xFFFFFFFF), Int32(0))
+            close_from(3)
             _ = external_call["sigaction", Int32](Int32(SIGPIPE), dfl.unsafe_ptr(), old.unsafe_ptr())
             for i in range(len(envs)):
                 _ = external_call["putenv", Int32](envs[i].unsafe_ptr())

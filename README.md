@@ -50,6 +50,8 @@ pixi run ./build/tmide examples/hello.mojo
 
 Requirements: Linux with glibc 2.34 or newer. pixi fetches everything else: the Mojo toolchain and, from conda-forge, `libghostty-vt` (Ghostty's terminal emulator core, MIT licence), which the build links in statically for the integrated terminal - the built program does not need it at run time. macOS: the system-dependent parts are selected at compile time (`src/platform.mojo`) and the whole IDE compiles for `arm64-apple-macosx`, but it has never been linked or run on a Mac, and the project's pixi environments are Linux only, so macOS is not supported yet.
 
+**macOS (Apple silicon): not yet.** `osx-arm64` is one of pixi's platforms, and `scripts/macos-link.sh` compiles TurboMojo for macOS 14 and links it here, on Linux, against the osx-arm64 packages (an arm64 Mach-O executable with every function found), but it has not been run on a Mac: the terminal handling, the pseudo-terminals and the file watching on macOS are untested.
+
 Prefer a current editor's look to the blue desktop? Pick **Modern start** in the first run's theme question, or **Options ▸ Presets…** later: your terminal's own colours, panes with tabs and the file explorer.
 
 Working on a server over SSH, in tmux? The user guide's [On a remote machine](docs/USER_GUIDE.md#on-a-remote-machine-ssh-tmux) has the five tmux settings that make copying, the mouse, colours, keys and pictures work.

@@ -121,6 +121,18 @@ def dup_cloexec(fd: Int32, target: Int) -> Int32:
         return d
 
 
+def close_from(low: Int):
+    """Close every descriptor from `low` up (in a child after fork: C calls only). Linux
+    has close_range; macOS has not (found by linking for it, P11-12), so there each one
+    up to the table size is closed."""
+    comptime if IS_MACOS:
+        var top = Int(external_call["getdtablesize", Int32]())
+        for fd in range(low, min(top, 65536)):
+            _ = external_call["close", Int32](Int32(fd))
+    else:
+        _ = external_call["close_range", Int32](UInt32(low), UInt32(0xFFFFFFFF), Int32(0))
+
+
 def make_nonblocking(fd: Int):
     var fl = external_call["fcntl", Int32](Int32(fd), Int32(F_GETFL), Int32(0))
     _ = external_call["fcntl", Int32](Int32(fd), Int32(F_SETFL), fl | Int32(O_NONBLOCK))

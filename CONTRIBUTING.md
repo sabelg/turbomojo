@@ -19,6 +19,9 @@ pixi run ./build/tmide examples/hello.mojo
 ```
 
 Linux (x86-64 or aarch64, glibc 2.34+) only for now; see the README for macOS.
+`pixi run macos-link` compiles and links the macOS build (it downloads the osx-arm64
+packages once); a call of a Linux-only C function makes its link fail - give macOS its
+own way in `src/platform.mojo`.
 
 ## The gate
 
