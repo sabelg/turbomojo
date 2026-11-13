@@ -4,12 +4,13 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.1.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.2: Ready for other people (in progress: 8 tasks to go)
+## 2.2: Ready for other people (in progress: 7 tasks to go)
 
 - README first screen: a two-line pitch (ready to use, runs over SSH, starts in 50 ms, explains Mojo's errors), a "Why TurboMojo?" section comparing it honestly with VS Code + the Mojo extension, and the terminal-capability details moved to docs/USER_GUIDE.md [8, 9] (P11-01)
 - Pictures of the IDE made from itself: `tmide --screenshot FILE.svg` (the screen buffer as SVG, with the theme's colours) and a script that records a short demo through tmux as an asciinema cast; three screenshots (Turbo Classic, a modern theme, the docs reader) and the cast linked from the README [7] (P11-02)
 - Mojo version check: the Mojo version TurboMojo was built with is recorded; when the `mojo` found differs, the status line and `tmide --caps` say so plainly, instead of the language server or builds failing in strange ways [5] (P11-03)
 - File > New project: makes a pixi project with Mojo (`pixi init`, the Modular channel, `mojo` as a dependency), a hello.mojo and a test, and opens them; offered by the welcome screen when the folder has no project [13] (P11-04)
+- First-run checklist (also Help > Check setup): Mojo found and its version, the language server, the debugger, the docs downloaded, the terminal's colours and keys; each missing piece with the command or button that fixes it [14] (P11-05)
 
 ## 2.1: UI clarity and calm - 2026-11-12
 

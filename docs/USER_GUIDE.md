@@ -227,6 +227,13 @@ pixi run ./build/tmide --caps
 
 ## When something goes wrong
 
+- First, **Help > Check setup...**: it lists what TurboMojo uses - Mojo (and whether it
+  is the release TurboMojo was built with), pixi, the language server, the debugger,
+  the documentation, your terminal's colours and keys - each marked ok, note or
+  MISSING. Fix (Enter) helps with the marked line: it opens File > New project (pixi
+  install brings Mojo and its tools), Compile > Compiler command or Help > Download
+  documentation, or copies the command that fixes it. The very first start shows the
+  list by itself when something is missing.
 - The status line says TurboMojo was built with another Mojo than the one found: Mojo
   still changes between releases, so the language server, builds or running may fail.
   Rebuild TurboMojo with the Mojo you use (`pixi run build`), or use the Mojo it names.

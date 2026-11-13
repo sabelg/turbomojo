@@ -5554,3 +5554,45 @@ Not done / unverified:
 - Not looked at in a real terminal (the dialog's look at 80 columns); only the platform
   of this machine is listed (more: `pixi workspace platform add`); the welcome does not
   offer it again on later starts.
+
+## 2026-11-13 · P11-05 First-run checklist (Help > Check setup) · done
+
+What changed:
+- Help > Check setup... (`help.checkSetup`, hot letter S) shows one line for each thing
+  TurboMojo uses, marked `ok`, `note` or `MISSING` (a word, not colour alone): Mojo (its
+  version; a note when it is another release than TurboMojo's), pixi, the language
+  server, the debugger, the documentation (optional), the terminal's colours (24-bit or
+  not) and keys (the kitty keyboard protocol or not; tmux's own settings named inside
+  tmux).
+- Fix (Enter) helps with the marked line: File > New project when Mojo or its tools are
+  missing and pixi is there (pixi install brings them), Compile > Compiler command for
+  another release, Help > Download documentation for the docs; otherwise the fixing
+  command (pixi's installer, COLORTERM...) is copied to the clipboard and shown. Again
+  looks once more.
+- The first run shows it by itself when something is MISSING (not for notes): after the
+  theme question, or after the new-project offer when that is declined (a made project
+  installs Mojo anyway). Esc now moves through the first run's questions like Cancel
+  (before, Esc on the theme question skipped the new-project offer).
+- run() keeps the two probe results the list needs (asked, kitty keys).
+- src/setupcheck.mojo (the lines, pure), src/app_setup.mojo (the facts, the dialog, Fix);
+  user guide ("When something goes wrong"), README, What's new.
+
+Verified:
+- tests/test_setup.mojo (3 tests): every line ok when all is there; Mojo missing with
+  and without pixi (what Fix does differs), another release, the language server and
+  debugger missing, the docs, 256 colours and no kitty keys in tmux, no terminal; the
+  dialog with stand-in tools (the ok lines, Fix opening the docs download and the new
+  project, Fix copying pixi's installer, Again rechecking, an ok line with nothing to
+  fix); the first run showing the list when the debugger is missing, not when all is
+  there, and after a declined new project when Mojo is missing.
+- Mutations: without the first run's check, or without Esc moving on, the first-run test
+  fails.
+- tests/test_new_project.mojo still passes. A screenshot of the dialog (--screenshot
+  --command help.checkSetup) at 100x24 shows the lines and buttons.
+
+Not done / unverified:
+- The copy to the terminal's clipboard (OSC 52) is not seen by the test (no terminal;
+  its mutant survives) - the same call the editor's Copy uses. The language server is
+  looked for on PATH only, as the IDE starts it. The terminal lines were not seen in a
+  real terminal.
+- Gate: CHECK OK (121 test files, 1232 tests, 928 s).

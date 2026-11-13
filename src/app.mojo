@@ -59,6 +59,7 @@ from app_keybox import *
 from app_plugins import *
 from app_lspextra import *
 from app_newproject import *
+from app_setup import *
 from version import MOJO_BUILT_WITH
 from mojover import mojo_mismatch, mojo_summary
 
@@ -166,6 +167,8 @@ __extension App:
         self.term.enter()
         var caps = self.term.probe(CAPS_TIMEOUT_MS, True)
         self.scr.color_mode = caps.color
+        self.term_probed = True
+        self.term_kitty_keys = caps.kitty_keyboard
         if caps.color != COLOR_TRUE:
             # the theme's colours as designed for 256 or 16 colours
             self.theme_apply()

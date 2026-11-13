@@ -2,6 +2,9 @@
 
 ## 2.2 (in progress)
 
+- Help > Check setup... lists what TurboMojo uses (Mojo and its release, pixi, the
+  language server, the debugger, the docs, the terminal's colours and keys), marks what
+  is missing, and Fix helps with it; the first start shows it when something is missing.
 - File > New project... makes a Mojo project - a `pixi.toml` with Mojo, `hello.mojo` and
   a test - opens it and installs Mojo with `pixi install`; the first start in a folder
   with no project offers it.

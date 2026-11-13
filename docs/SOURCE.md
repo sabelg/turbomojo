@@ -46,6 +46,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_plugins.mojo` | The plugin host in the IDE (src/plugins.mojo): start the plugins of the plugins folder, poll them with the event loop, answer what they ask, run their commands, send them the events they asked for, and show their status items. |
 | `src/app_problems.mojo` | The bottom panel's Problems page, for every source: what the language server reports, the errors and warnings of the last build, and the tests that failed. |
 | `src/app_progress.mojo` | The response-time ladder on screen (src/progress.mojo has the stages): a build, format, task, test run or documentation download, and an agent's turn, show nothing for their first second, then a spinner and the time on the status line, and beyond ten seconds what has been done so far and the key that stops it - for a job in the Compiling box at the bottom right, which is drawn over the desktop but never takes the keyboard (typing goes on in the editor); for the agent on the status line (its panel shows the steps themselves). |
+| `src/app_setup.mojo` | Help > Check setup (P11-05): the list of what TurboMojo uses and whether it is there (setupcheck.mojo makes the lines), with a Fix button for the marked line - it opens File > New project, Compile > Compiler command or Help > Download documentation, or copies the command that fixes it. |
 | `src/app_swap.mojo` | Swap files in the running IDE: periodic writing, clean-up and recovery at startup. |
 | `src/app_terminal.mojo` | The integrated terminal: a shell (Window > Terminal) and the program Run starts, each in a window of its own at the bottom, on a pty with libghostty-vt keeping the screen. |
 | `src/app_tests.mojo` | The test explorer: the project's TestSuite files and their tests, run by file or one at a time, with the place of each failure (see testexp.mojo). |
@@ -116,6 +117,7 @@ struct of `appstate.mojo`, one area each.
 | `src/screen.mojo` | Double-buffered cell screen with truecolor diff rendering. |
 | `src/search.mojo` | What to search for: text or a regular expression, with the Find dialog's options. |
 | `src/session.mojo` | A session: which files were open in a project, where the cursors were, and how the windows were arranged - written as a small text file and read back at the next start. |
+| `src/setupcheck.mojo` | Help > Check setup (P11-05): is everything TurboMojo uses there? Mojo (and is it the release TurboMojo was built with), pixi, the language server, the debugger, the documentation, the terminal's colours and keys - each with what fixes it when it is missing. |
 | `src/signals.mojo` | Signal handling for the event loop. |
 | `src/sixel.mojo` | Sixel output, for pictures in the docs reader where the terminal has no kitty graphics (P10-22c): a decoded picture scaled to its cells, its colours put on the 6 x 6 x 6 cube (216 registers), sent band by band (six pixel rows each) with run-length counts. |
 | `src/stdref.mojo` | The standard library reference: `mojo doc`'s JSON for the `std` package (made by scripts/fetch-docs.sh) turned into one Markdown page per module, with an index that the documentation library reads as a book. |

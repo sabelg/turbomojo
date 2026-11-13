@@ -49,6 +49,8 @@ from app_mouse import *
 from app_draw import *
 from app_exercises import *
 from app_newproject import *
+from app_setup import *
+from setupcheck import setup_items, setup_needs_attention
 
 
 __extension App:
@@ -130,6 +132,7 @@ __extension App:
             _ = run_system("mkdir -p " + shell_quote(dirname(self.theme_marker)))
         _ = write_file(self.theme_marker, str_bytes("asked\n"))
         self.np_offer = self.no_project_here()
+        self.setup_offer = setup_needs_attention(setup_items(self.setup_facts()))
         self.theme_dialog(True)
         return True
 
@@ -203,6 +206,26 @@ __extension App:
             return
         if kind == D_EVALUATE:
             self.eval_button(b)
+            return
+        if kind == D_SETUP:
+            self.setup_button(b, self.dlg.selected_item())
+            return
+        if kind == D_THEME and not self.np_offer and self.setup_offer:
+            # the first run: the theme, then what is missing
+            self.setup_offer = False
+            self.mode = M_NORMAL
+            if b == 0 and self.dlg.selected_item() >= 0:
+                self.theme_chosen(self.dlg.item_data[self.dlg.selected_item()])
+            self.setup_dialog()
+            return
+        if kind == D_NEW_PROJECT and self.setup_offer:
+            # (made: pixi install brings Mojo and its tools; not made: what is missing)
+            self.setup_offer = False
+            self.mode = M_NORMAL
+            if b == 0:
+                _ = self.new_project_create(self.dlg.field_text(0))
+            else:
+                self.setup_dialog()
             return
         if kind == D_THEME and self.np_offer:
             # the first run's welcome, in a folder with no project: offer one next
@@ -550,6 +573,13 @@ __extension App:
 
     def dismiss_dialog(mut self):
         """Esc or the close box."""
+        if (self.dlg.kind == D_THEME and (self.np_offer or self.setup_offer)) or (self.dlg.kind == D_NEW_PROJECT and self.setup_offer):
+            # the first run's questions go on to the next one, as with Cancel
+            try:
+                self.dialog_button(len(self.dlg.buttons) - 1)
+            except:
+                self.mode = M_NORMAL
+            return
         if self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE:
             self.find_close(True)
         else:

@@ -50,6 +50,7 @@ from app_agentexplain import *
 from app_tips import *
 from app_exercises import *
 from app_newproject import *
+from app_setup import *
 from app_plugins import *
 from plugins import CM_PLUGIN0
 from tips import TK_FIND
@@ -237,6 +238,9 @@ __extension App:
             # only these know about several cursors; everything else works on the main one
             if not (cmd == CM_ADDNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO or cmd == CM_MACRO_REC or cmd == CM_MACRO_PLAY or (cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE)):
                 self.wins[ai].collapse()
+        if cmd == CM_SETUP:
+            self.setup_dialog()
+            return
         if cmd == CM_NEW_PROJECT:
             self.new_project_dialog()
             return
