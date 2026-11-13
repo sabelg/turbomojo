@@ -184,6 +184,8 @@ __extension App:
             out.append(CM_TILED)
         if self.semantic_on:
             out.append(CM_SEMANTIC)
+        if self.quiet_on:
+            out.append(CM_QUIET)
         if self.hints_on:
             out.append(CM_HINTS)
         var ti = self.top_editor()

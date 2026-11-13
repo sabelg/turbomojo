@@ -219,6 +219,8 @@ __extension App:
             self.persist_option("ui", "layout", "\"tiled\"" if self.tiled else "\"classic\"")
         elif cmd == CM_SEMANTIC:
             self.persist_option("editor", "semantic_colors", toml_bool(self.semantic_on))
+        elif cmd == CM_QUIET:
+            self.persist_option("editor", "quiet_colors", toml_bool(self.quiet_on))
         elif cmd == CM_HINTS:
             self.persist_option("editor", "inlay_hints", toml_bool(self.hints_on))
         elif cmd == CM_AUTOINDENT:
@@ -567,6 +569,11 @@ __extension App:
             self.semantic_on = not self.semantic_on
             self.decor_reset(True, False)
             self.say("Semantic colours " + ("on" if self.semantic_on else "off"))
+        elif cmd == CM_QUIET:
+            self.quiet_on = not self.quiet_on
+            self.theme_apply()
+            self.scr.force = True
+            self.say("Quiet code colours " + ("on" if self.quiet_on else "off"))
         elif cmd == CM_HINTS:
             self.hints_on = not self.hints_on
             self.decor_reset(False, True)

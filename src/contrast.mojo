@@ -369,3 +369,83 @@ def depth_problems(p: Palette, mode: Int) -> List[String]:
         elif w < fl[0] or l < fl[1]:
             out.append(c.what + ": " + one_decimal(w) + ":1, Lc " + String(Int(l)) + " (needs " + one_decimal(fl[0]) + ":1, Lc " + String(Int(fl[1])) + ")")
     return out^
+
+
+# ------------------------------------------------- quiet code colours
+comptime QUIET_SALIENCE = 80    # a code colour keeps under 80% of the error colour's distance from the text
+
+
+def cvd_nearest(c: Int, others: List[Int]) -> Float64:
+    """How close c comes to any of `others`, with normal vision or a deficiency."""
+    var best = 1.0e9
+    for o in others:
+        if not is_rgb(o):
+            continue
+        for kind in range(4):
+            best = min(best, cvd_distance(c, o, kind))
+    return best
+
+
+def calm_toward(c: Int, text: Int, bg: Int, below: Float64, others: List[Int]) -> Int:
+    """The calmest colour near c - c mixed toward the text colour, the background,
+    white or black, in steps of 5% - that is less than `below` from the text, at least CVD_SYNTAX_MIN
+    from each of `others` with every deficiency, and readable on bg (the text
+    floors). Without one that is apart: the most apart of those quiet enough; without
+    one quiet enough: c."""
+    if not is_rgb(c) or not is_rgb(text) or not is_rgb(bg):
+        return c
+    var best = c
+    var best_d = 1.0e9          # distance from the text: smaller is calmer
+    var fallback = c
+    var fallback_apart = -1.0
+    var floor = floors(ROLE_TEXT)
+    var towards: List[Int] = [text, bg, 0xFFFFFF, 0x000000]
+    for toward in towards:
+        for pct in range(20, 101, 5):
+            var cand = mix(c, toward, pct)
+            var d = cvd_distance(cand, text, CVD_NONE)
+            if below > 0.0 and d >= below:
+                continue
+            if wcag_ratio(cand, bg) < floor[0] or abs(apca_lc(cand, bg)) < floor[1]:
+                continue
+            var apart = cvd_nearest(cand, others)
+            if apart >= CVD_SYNTAX_MIN and d < best_d:
+                best = cand
+                best_d = d
+            if apart > fallback_apart:
+                fallback = cand
+                fallback_apart = apart
+    if best_d < 1.0e9:
+        return best
+    return fallback
+
+
+def quiet_syntax(p: Palette) -> List[Int]:
+    """The theme's syntax colours folded into four, as restrained schemes do (tonsky's
+    Alabaster): text - also keywords, types, built-ins, self, decorators, parameters,
+    properties, namespaces and punctuation -, comments, strings and numbers, and
+    definitions. Strings and definitions become the calmest colours near their own
+    that are less than QUIET_SALIENCE percent as far from the text as the error
+    colour is - so that problems stand out most -, still apart for colour-blind eyes
+    and readable (calm_toward). Colours that are not RGB are taken as they are."""
+    var syn = p.syn.copy()
+    if len(syn) < 14:
+        return syn^
+    var text = syn[0]
+    var below = 0.0
+    if is_rgb(p.diag_err) and is_rgb(text):
+        below = cvd_distance(p.diag_err, text, CVD_NONE) * Float64(QUIET_SALIENCE) / 100.0
+    var cmt = syn[3]                # (comments are quiet already: muted text)
+    var st = calm_toward(syn[4], text, p.ed_bg, below, [text, cmt])
+    var de = calm_toward(syn[10], text, p.ed_bg, below, [text, cmt, st])
+    var out = List[Int]()
+    for k in range(len(syn)):
+        if k == 3:
+            out.append(cmt)
+        elif k == 4 or k == 5:
+            out.append(st)
+        elif k == 10:
+            out.append(de)
+        else:
+            out.append(text)
+    return out^

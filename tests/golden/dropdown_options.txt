@@ -7,6 +7,7 @@
                               │ Show whitespace          │
                               │ Soft wrap          Alt-Z │
                               │ Semantic colours         │
+                              │ Quiet code colours       │
                               │ Inlay hints              │
                               │ Indent with tabs         │
                               │ CRLF line endings        │
@@ -15,6 +16,5 @@
                               │ Keys: Turbo / WordStar   │
                               │ Keys: Emacs              │
                               ├──────────────────────────┤
-                              │ Colour theme...          │
                               └────────────────────────▼─┘
 

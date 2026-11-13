@@ -34,6 +34,7 @@ Example:
     auto_indent = true
     soft_wrap = false           # continue long lines on the next screen row
     semantic_colors = true      # colours from the language server over the built-in ones
+    quiet_colors = false        # four code colours; errors and search hits stand out most
     inlay_hints = true          # the language server's notes (inferred types) after the line
     persistent_undo = true      # keep undo history and cursor position between sessions
     auto_pairs = true           # typing ( [ { " ' also inserts the closing one
@@ -174,6 +175,7 @@ struct Settings(Copyable, Movable):
     var show_whitespace: Bool
     var soft_wrap: Bool
     var semantic_colors: Bool
+    var quiet_colors: Bool
     var inlay_hints: Bool
     var auto_pairs: Bool
     var breadcrumbs: Bool
@@ -231,6 +233,7 @@ struct Settings(Copyable, Movable):
         self.show_whitespace = False
         self.soft_wrap = False
         self.semantic_colors = True
+        self.quiet_colors = False
         self.inlay_hints = True
         self.auto_pairs = True
         self.breadcrumbs = True
@@ -300,6 +303,7 @@ struct Settings(Copyable, Movable):
         self.show_whitespace = self.take_bool(doc, "ui.show_whitespace", self.show_whitespace)
         self.soft_wrap = self.take_bool(doc, "editor.soft_wrap", self.soft_wrap)
         self.semantic_colors = self.take_bool(doc, "editor.semantic_colors", self.semantic_colors)
+        self.quiet_colors = self.take_bool(doc, "editor.quiet_colors", self.quiet_colors)
         self.inlay_hints = self.take_bool(doc, "editor.inlay_hints", self.inlay_hints)
         self.auto_pairs = self.take_bool(doc, "editor.auto_pairs", self.auto_pairs)
         self.key_hints = self.take_bool(doc, "ui.key_hints", self.key_hints)
@@ -483,7 +487,7 @@ struct Settings(Copyable, Movable):
                 self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):

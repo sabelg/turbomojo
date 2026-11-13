@@ -19,6 +19,8 @@
   colour-blind eyes too; a few colours changed for it (Paper Light's errors are
   raspberry and its additions blue, Classic's strings light orange, Midnight's numbers
   pink and definitions yellow).
+- Options > Quiet code colours: four code colours (text, comments, strings,
+  definitions), so that errors and search hits stand out most.
 
 ## 2.0: release
 

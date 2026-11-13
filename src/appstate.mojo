@@ -16,6 +16,7 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from themes import ThemeSet, scheme_from, animations_off
+from contrast import quiet_syntax
 from strings import apply_strings, language_from
 from notify import NotifyCenter, TYPING_PAUSE_MS
 from tips import TipRules
@@ -578,6 +579,7 @@ struct App(Movable):
     var show_ws: Bool
     var soft_wrap: Bool
     var semantic_on: Bool            # Options > Semantic colours
+    var quiet_on: Bool               # Options > Quiet code colours
     var hints_on: Bool               # Options > Inlay hints
     var sem_req_id: Int              # the semantic tokens request under way
     var sem_req_path: String
@@ -1019,6 +1021,7 @@ struct App(Movable):
         self.show_ws = False
         self.soft_wrap = False
         self.semantic_on = True
+        self.quiet_on = False
         self.hints_on = True
         self.sem_req_id = -1
         self.sem_req_path = ""
@@ -1101,6 +1104,8 @@ struct App(Movable):
         self.pal = self.themes.for_depth(k, self.scr.color_mode)
         if self.scanlines_cfg >= 0:
             self.pal.scanlines = self.scanlines_cfg == 1
+        if self.quiet_on:
+            self.pal.syn = quiet_syntax(self.pal)
 
     def desktop_scheme_now(self) -> Int:
         var g = String("")
@@ -1247,6 +1252,7 @@ struct App(Movable):
         self.show_ws = s.show_whitespace
         self.soft_wrap = s.soft_wrap
         self.semantic_on = s.semantic_colors
+        self.quiet_on = s.quiet_colors
         self.hints_on = s.inlay_hints
         self.auto_pairs = s.auto_pairs
         self.word_hl = s.highlight_word

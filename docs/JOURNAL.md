@@ -5040,3 +5040,42 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   full dichromacy); nobody colour-blind has looked; the changed colours have not
   been seen in a terminal, only measured.
 - Gate: scripts/check.sh printed CHECK OK (109 test files, 1184 tests, 886 s).
+
+## 2026-11-12 · P10-19 Quiet code colours · done
+- What changed: `quiet_syntax` (src/contrast.mojo) folds a palette's 14 syntax
+  colours into four, after restrained schemes such as tonsky's Alabaster: text
+  (keywords, types, built-ins, self, decorators, parameters, properties,
+  namespaces, punctuation too), comments (as they are), strings with numbers, and
+  definitions. Strings and definitions become `calm_toward`: of the colour mixed
+  toward the text, the background, white or black in steps of 5%, the one nearest
+  the text that is under 80% of the error colour's distance from it, at least 10
+  from the others with each colour-vision deficiency, and within the text floors
+  on the editor background. Options > Quiet code colours (CM_QUIET, hot letter Q)
+  and `editor.quiet_colors` (off by default, written to the config when toggled);
+  `theme_apply` applies it, and run() now calls theme_apply after the probe. The
+  first try kept keywords as a fifth class, toned halfway; with tritanopia they
+  fell together with the text in four themes, so keywords take the text colour, as
+  in Alabaster. README (new row, config), What's new (KEYMAP lists only keyed
+  commands: unchanged).
+- Verified: tests/test_quiet_colors.mojo (3 tests): every theme at truecolor, 256
+  and 16 colours has at most four code colours (never more than its rich ones),
+  keywords and types as text, numbers as strings, no contrast or depth problems, no
+  colour-vision problems; strings and definitions under 80% of the error colour's
+  distance from the text, strings still 10 from it, comments fainter than the
+  text; Midnight's strings come nearer the text than its rich ones. In every theme
+  search hits differ more from the background than the current line and the other
+  uses of the word, and the current line at least 3 (Paper Light 3.7, the least).
+  The option: the palette changes at once, the status says so, the config file (in
+  $TMPDIR) gets quiet_colors = true / false, and it stays across a theme change.
+  Mutants (no colour-vision guard, no contrast guard, theme_apply ignoring the
+  option, the least calm candidate) fail; removing the 80% limit does not - the
+  calmest candidate is under it in every theme, so the limit is a guard only.
+- Not done / unverified: "most salient" is measured as colour distance (CIE76)
+  from the text and the background, not with people; the semantic tokens of the
+  language server go through the same table, so they are quiet too (not tested
+  separately); not looked at in a terminal.
+- Gate, first run: failed in tests/test_screen.mojo test_dropdown_golden - the
+  Options menu has one more item (Quiet code colours), so on the 20-row test screen
+  Colour theme... is below the ▼; the golden file updated (UPDATE_GOLDEN=1, that
+  one change only).
+- Gate: scripts/check.sh printed CHECK OK (110 test files, 1187 tests, 892 s).
