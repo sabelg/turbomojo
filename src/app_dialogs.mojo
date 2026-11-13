@@ -48,6 +48,7 @@ from app_input import *
 from app_mouse import *
 from app_draw import *
 from app_exercises import *
+from app_newproject import *
 
 
 __extension App:
@@ -128,6 +129,7 @@ __extension App:
         if not path_exists(dirname(self.theme_marker)):
             _ = run_system("mkdir -p " + shell_quote(dirname(self.theme_marker)))
         _ = write_file(self.theme_marker, str_bytes("asked\n"))
+        self.np_offer = self.no_project_here()
         self.theme_dialog(True)
         return True
 
@@ -201,6 +203,14 @@ __extension App:
             return
         if kind == D_EVALUATE:
             self.eval_button(b)
+            return
+        if kind == D_THEME and self.np_offer:
+            # the first run's welcome, in a folder with no project: offer one next
+            self.np_offer = False
+            self.mode = M_NORMAL
+            if b == 0 and self.dlg.selected_item() >= 0:
+                self.theme_chosen(self.dlg.item_data[self.dlg.selected_item()])
+            self.new_project_dialog(True)
             return
         self.mode = M_NORMAL
         if kind == D_SAVEAS and b == 0:
@@ -297,6 +307,8 @@ __extension App:
             var sel = self.dlg.selected_item()
             if sel >= 0:
                 self.theme_chosen(self.dlg.item_data[sel])
+        elif kind == D_NEW_PROJECT and b == 0:
+            _ = self.new_project_create(self.dlg.field_text(0))
         elif kind == D_EX_FILTER and b == 0:
             self.explorer_filter(String(self.dlg.field_text(0).strip()))
         elif kind == D_PANEL_FILTER and b == 0:

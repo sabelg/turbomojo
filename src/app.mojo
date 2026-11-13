@@ -58,6 +58,7 @@ from app_docpane import *
 from app_keybox import *
 from app_plugins import *
 from app_lspextra import *
+from app_newproject import *
 from version import MOJO_BUILT_WITH
 from mojover import mojo_mismatch, mojo_summary
 

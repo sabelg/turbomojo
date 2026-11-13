@@ -97,6 +97,7 @@ comptime CM_RENAME = 154
 comptime CM_ACTIONS = 155
 comptime CM_SEMANTIC = 156
 comptime CM_QUIET = 231          # Options > Quiet code colours
+comptime CM_NEW_PROJECT = 232    # File > New project
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -689,6 +690,7 @@ def build_registry() -> Registry:
     r.hide(CM_INSERT_MODE, "edit.toggleInsertMode", "Insert / overwrite", "Switch between insert and overwrite mode")
     # ---- File
     r.cmd(CM_NEW, "file.new", "~N~ew", "Create a new edit window", [ctrl(110)])
+    r.cmd(CM_NEW_PROJECT, "file.newProject", "Ne~w~ project...", "Make a Mojo project: pixi.toml, hello.mojo and a test, then pixi install")
     r.cmd(CM_OPEN, "file.open", "~O~pen...", "Locate and open a file in an edit window", [fkey(3), ctrl(111)])
     r.cmd(CM_SAVE, "file.save", "~S~ave", "Save the file in the active edit window", [fkey(2), ctrl(115)])
     r.cmd(CM_SAVEAS, "file.saveAs", "Save ~a~s...", "Save the current file under a different name")
@@ -874,6 +876,7 @@ def build_registry() -> Registry:
 
     r.menu("~F~ile")
     r.item(CM_NEW)
+    r.item(CM_NEW_PROJECT)
     r.item(CM_OPEN)
     r.item(CM_SAVE)
     r.item(CM_SAVEAS)

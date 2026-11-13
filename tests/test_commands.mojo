@@ -176,7 +176,8 @@ def test_generated_menus() raises:
     assert_equal(menus[1].items[0].label, "~N~ew")
     assert_equal(menus[1].items[0].key, "Ctrl-N")
     assert_equal(menus[1].items[0].cmd, CM_NEW)
-    assert_equal(menus[1].items[5].label, "-")
+    assert_equal(menus[1].items[1].label, "Ne~w~ project...")
+    assert_equal(menus[1].items[6].label, "-")
     assert_equal(plain(menus[9].title), "Help")
     # menu x positions are increasing and leave room for " Title "
     for i in range(1, len(menus)):
@@ -197,7 +198,7 @@ def test_rebind() raises:
     assert_true(r.rebind("file.save", keys^))
     assert_equal(r.find_key(fkey(4)), CM_SAVE)
     assert_equal(r.find_key(fkey(2)), CM_NONE)
-    assert_equal(build_menus(r)[1].items[2].key, "F4")
+    assert_equal(build_menus(r)[1].items[3].key, "F4")
     assert_false(r.rebind("no.such.command", List[Int]()))
 
 

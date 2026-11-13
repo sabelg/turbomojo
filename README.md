@@ -50,6 +50,8 @@ pixi run ./build/tmide examples/hello.mojo
 
 Requirements: Linux with glibc 2.34 or newer. pixi fetches everything else: the Mojo toolchain and, from conda-forge, `libghostty-vt` (Ghostty's terminal emulator core, MIT licence), which the build links in statically for the integrated terminal - the built program does not need it at run time. macOS: the system-dependent parts are selected at compile time (`src/platform.mojo`) and the whole IDE compiles for `arm64-apple-macosx`, but it has never been linked or run on a Mac, and the project's pixi environments are Linux only, so macOS is not supported yet.
 
+New to Mojo and pixi? Start TurboMojo in an empty folder: the first run offers to make a project there (**File ▸ New project…** any time later) - a `pixi.toml` with Mojo, `hello.mojo` and a test - and installs Mojo for it with `pixi install`.
+
 The build records the Mojo it was built with; if the `mojo` TurboMojo finds later is another release, the status line says so (Mojo still changes between releases), and `tmide --caps` shows both.
 
 `pixi run` puts the Mojo toolchain on `PATH`. The IDE also works when started directly, as long

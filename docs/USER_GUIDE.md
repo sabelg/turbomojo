@@ -33,6 +33,16 @@ and inside the IDE **F1** shows the keys of the keymap you use.
 a folder to choose from it. With no arguments TurboMojo restores the windows of your last
 session. `tmide --help` lists the command-line options.
 
+**A new project.** File > New project... asks for a folder (an empty one, or a new
+`hello-mojo` beside what is there) and writes a Mojo project in it: a `pixi.toml` with the
+Modular channel, `mojo` of the release TurboMojo was built with and two tasks (`hello`,
+`test`), a `hello.mojo`, a `test_hello.mojo` and a `.gitignore`. TurboMojo then works in
+that folder, opens the two files and runs `pixi install` (its output is on the Message
+page; the first time it downloads Mojo, which takes a minute). Ctrl-F9 runs hello.mojo;
+Run > Pixi tasks runs the test. The very first start in a folder with no project offers
+this after the colour-theme question. Without pixi the files are still made, and the box
+says where to get it.
+
 The project is the nearest folder at or above where TurboMojo started that has a
 `pixi.toml` - or, without one, the folder it started in. The first time you build, run or start the
 language server in a folder, TurboMojo asks whether you trust it: those run code the

@@ -39,6 +39,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_menus.mojo` | Menu bar navigation. |
 | `src/app_mouse.mojo` | Mouse handling. |
 | `src/app_nav.mojo` | Moving between places: go to definition, lists of places, the back/forward jump list. |
+| `src/app_newproject.mojo` | File > New project (P11-04): asks for a folder, writes a Mojo project there (newproject.mojo has what goes in it), makes it the folder the IDE works in, opens hello.mojo and its test, and runs `pixi install` with its output on the Message page. |
 | `src/app_notify.mojo` | Toasts and the notification centre (src/notify.mojo). |
 | `src/app_outline.mojo` | The Outline window: the symbols of the file being edited, as a tree to jump from. |
 | `src/app_pickers.mojo` | List pickers: command palette, symbols, keyboard reference, word completion. |
@@ -95,6 +96,7 @@ struct of `appstate.mojo`, one area each.
 | `src/marks.mojo` | OSC 133 marks ("semantic prompts", FinalTerm's sequences) around a program run. |
 | `src/menu.mojo` | Menu bar structures and drawing. |
 | `src/mojover.mojo` | Is the Mojo found the one TurboMojo was built with? (P11-03) |
+| `src/newproject.mojo` | File > New project (P11-04): a folder with what a Mojo project needs, so that a newcomer does not have to know pixi first - a pixi.toml (the Modular channel, `mojo` as its dependency, `hello` and `test` tasks), a hello.mojo, a test for it and a .gitignore. |
 | `src/notify.mojo` | Notifications: short messages that show for a few seconds at the top right ("toasts") when something finishes or needs attention while you work elsewhere, and are kept in the notification centre (Help > Notifications) with what is running now. |
 | `src/outline.mojo` | The outline of a file: its functions, structs, traits and constants as a tree. |
 | `src/palette.mojo` | Colour themes. |

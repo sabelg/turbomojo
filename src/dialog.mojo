@@ -52,6 +52,7 @@ comptime D_THEME = 43           # Options > Colour theme
 comptime D_NOTICES = 44         # Help > Notifications
 comptime D_EXERCISES = 45       # Help > Exercises
 comptime D_EX_FILTER = 46       # the explorer's filter (/ in the explorer)
+comptime D_NEW_PROJECT = 47     # File > New project
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

@@ -48,7 +48,7 @@ def test_a_translation() raises:
     var menus = build_menus(reg)
     assert_equal(menus[1].title, "~D~atei")
     assert_equal(menus[1].items[0].label, "~N~eu")
-    assert_equal(menus[1].items[1].label, "Ö~f~fnen...")
+    assert_equal(menus[1].items[2].label, "Ö~f~fnen...")
 
 
 def test_mistakes_in_a_translation_are_said() raises:

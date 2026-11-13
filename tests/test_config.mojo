@@ -252,7 +252,7 @@ def test_apply_settings_with_key_rebinding() raises:
     assert_equal(app.shortcut(ctrl(115)), CM_SAVE)
     assert_equal(app.shortcut(fkey(2)), CM_NONE)         # old default binding is gone
     assert_equal(app.shortcut(alt(100)), CM_DUPLINE)
-    assert_equal(app.menus[1].items[2].key, "F4")        # menu shows the new key
+    assert_equal(app.menus[1].items[3].key, "F4")        # menu shows the new key
     assert_equal(len(app.config_warnings), 0)
 
 

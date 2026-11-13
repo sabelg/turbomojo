@@ -2,6 +2,9 @@
 
 ## 2.2 (in progress)
 
+- File > New project... makes a Mojo project - a `pixi.toml` with Mojo, `hello.mojo` and
+  a test - opens it and installs Mojo with `pixi install`; the first start in a folder
+  with no project offers it.
 - If the Mojo found is another release than the one TurboMojo was built with, the status
   line says so at start-up, instead of the language server or builds failing without
   saying why; `tmide --caps` shows both versions.

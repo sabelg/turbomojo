@@ -5506,3 +5506,51 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   a time; the gate fits the 120-minute limit there, but CI could be made much quicker
   (compile once into a cached build, or fewer, larger test programs) - left for P11-09.
 - Gate: scripts/check.sh printed CHECK OK with the tests in an empty configuration and state (119 test files, 1225 tests, smoke, perf, soak) in 936 s.
+
+## 2026-11-13 · P11-04 File > New project · done
+
+What changed:
+- File > New project... (`file.newProject`, hot letter W) asks for a folder: the folder
+  itself when it is empty, otherwise a new `hello-mojo` (then `hello-mojo-2`, ...) in it.
+  It refuses a folder that is not empty, a file, and a name pixi would not take (the
+  folder's name is the project's name: letters, digits, `- _ .`).
+- It writes `pixi.toml` (the Modular channel and conda-forge, this machine's platform from
+  `uname -sm`, `mojo` of the release series TurboMojo was built with, e.g. `>=1.2,<1.3`,
+  or `*` when not known; tasks `hello` and `test`), `hello.mojo`, `test_hello.mojo` (a
+  TestSuite test importing hello) and `.gitignore`. The IDE writes them itself instead of
+  calling `pixi init` and `pixi add mojo`: the same result, without the network, and
+  testable.
+- The IDE then works in the new folder (chdir, `cwd`, the pixi lookup, the explorer's
+  root), opens the test and hello.mojo (in front; an untouched NONAME window gives its
+  place), and runs `pixi install` as a task job: output on the Message page, Ctrl-F2
+  cancels, the status line says when it is ready, failed or was cancelled. Without pixi
+  the files are still made and a box says where to get it.
+- The first run's welcome (the colour-theme question, asked only when started without
+  file names) offers the new project next when the folder has no pixi.toml at or above
+  it and no Mojo file in it.
+- src/newproject.mojo (the files, pure), src/app_newproject.mojo (the dialog and the
+  steps); README, user guide ("Starting"), What's new.
+
+Verified:
+- tests/test_new_project.mojo (4 tests): the names, platforms and Mojo version asked for;
+  the manifest's name, channels, dependency and tasks read back by the task parser; the
+  dialog's default folders; the files made, the IDE in the project (cwd, pixi_dir, the
+  explorer's root), hello.mojo in front of the test with no NONAME left; a stand-in pixi
+  run in the project; refusals (not empty, a file, a bad name, nothing given) changing
+  nothing; a failing install and a missing pixi told; the welcome offering it in an empty
+  folder (in that folder) and not where there is a project.
+- Mutations: without the welcome's offer, test_the_welcome_offers_one fails; without the
+  explorer re-rooting, test_a_project_is_made_opened_and_installed fails. A loop closing
+  NONAME windows survived its mutant (open_path already reuses one in front) and was
+  removed.
+- By hand with the real pixi (network): a project made by the code installed Mojo 1.2
+  for linux-aarch64; `pixi run hello` printed "Hello, Mojo!" and `pixi run test` passed
+  1 test.
+- Gate, first run: FAILED in test_commands (and, found after, test_config and test_strings): they count places in the File menu, which has one more item now; the indexes were updated.
+- Gate, second run: FAILED in test_docs_files: CHANGELOG.md was made before the journal entry changed; gen_docs.py run again.
+- Gate: CHECK OK (120 test files, 1229 tests, 947 s).
+
+Not done / unverified:
+- Not looked at in a real terminal (the dialog's look at 80 columns); only the platform
+  of this machine is listed (more: `pixi workspace platform add`); the welcome does not
+  offer it again on later starts.
