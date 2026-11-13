@@ -196,6 +196,9 @@ struct App(Movable):
     var gpu_fd: Int
     var gpu_out: List[UInt8]
     var gpu_item: String             # "GPU GB10" once known
+    var run_t0_ns: Int               # when the last Ctrl-F9 run started (0: none to report)
+    var run_label: String
+    var run_wants_gpu: Bool          # its source uses the GPU
     var caps_lines: List[String]     # what the terminal said it can do (Report a problem)
     var report_path: String          # where the report goes ("": the state folder)
     var term_kitty_keys: Bool        # ... and it sends every key (kitty keyboard protocol)
@@ -675,6 +678,9 @@ struct App(Movable):
         self.gpu_fd = -1
         self.gpu_out = List[UInt8]()
         self.gpu_item = ""
+        self.run_t0_ns = 0
+        self.run_label = ""
+        self.run_wants_gpu = False
         self.report_path = ""
         self.notes = NotifyCenter()
         self.toast_rows = List[Int]()

@@ -132,8 +132,12 @@ into the Message page under the exact command (`$ ...`, ready to paste into a sh
 (Shift- or Ctrl-Shift-click, as your terminal has it). After a second the status line shows the
 time; after ten a box at the bottom right shows the output so far. Its errors are on the Problems page too: Enter
 goes to one, **F1** on it explains the message. **Ctrl-F9** runs the program in the Run
-window at the bottom, where it can read what you type. Run > Arguments sets its command
-line; Run > Run configurations keeps several.
+window at the bottom, where it can read what you type. When it ends, the Message window
+says how it ended and how long it took (compiling included, as `mojo run` compiles
+first), and for a program that uses the GPU - it imports `gpu` or MAX, or makes a
+DeviceContext - which GPU it ran on: the first one `nvidia-smi` or `rocm-smi` lists, or
+the one `CUDA_VISIBLE_DEVICES` names. Run > Arguments sets its command line; Run > Run
+configurations keeps several.
 
 Run > Test explorer lists the project's test files (programs that run a `std.testing`
 TestSuite) and their tests; it runs all of them, one file or one test, and a failure

@@ -178,8 +178,13 @@ __extension App:
         var replies = vt_take_replies()
         for which in [TS_SHELL, TS_RUN, TS_REPL]:
             var s = self.term_take(which)
+            var running = s.ended_note.byte_length() == 0
             self.term_pump(s, replies, self.term_index(which))
+            var ended = which == TS_RUN and running and s.ended_note.byte_length() > 0
+            var status = exit_code(s.pty.status)
             self.term_put(which, s^)
+            if ended:
+                self.run_report(status)
 
     def term_take(mut self, which: Int) -> TermSession:
         """A session taken out of the App to work on it (put it back with term_put)."""

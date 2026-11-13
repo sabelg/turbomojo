@@ -2,6 +2,8 @@
 
 ## 2.2 (in progress)
 
+- After Ctrl-F9 the Message window says how the run ended, how long it took and, for a
+  program that uses the GPU, which GPU it ran on.
 - Options > GPU in the status line shows the GPU your programs will run on (asked once
   from nvidia-smi or rocm-smi, in the background); `tmide --caps` names it, with its
   memory and driver.

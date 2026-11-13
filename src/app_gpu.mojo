@@ -11,9 +11,10 @@ from gpuinfo import GPU_QUERY, parse_gpus, gpu_short
 
 
 __extension App:
-    def gpu_start(mut self):
-        """Ask once (again only after the setting is switched off and on)."""
-        if self.gpu_asked or not self.gpu_status_on or self.gpu_fd >= 0:
+    def gpu_start(mut self, wanted: Bool = False):
+        """Ask once (again only after the setting is switched off and on): for the
+        status line, or `wanted` for a run that uses the GPU (P11-10b)."""
+        if self.gpu_asked or not (self.gpu_status_on or wanted) or self.gpu_fd >= 0:
             return
         self.gpu_asked = True
         var fp = popen_read("(" + self.gpu_query + ") 2>/dev/null </dev/null")
@@ -49,6 +50,9 @@ __extension App:
         self.gpu_fd = -1
         self.gpu_fp = 0
         self.gpu_item = gpu_short(parse_gpus(bytes_to_str(self.gpu_out)))
+
+    def gpu_known(self) -> Bool:
+        return self.gpu_asked and self.gpu_fd < 0
 
     def gpu_status_text(self) -> String:
         """The status item ("" when off, not known yet, or there is no GPU)."""

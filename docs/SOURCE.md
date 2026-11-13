@@ -119,6 +119,7 @@ struct of `appstate.mojo`, one area each.
 | `src/rope.mojo` | Rope: text stored as UTF-8 chunks in a B-tree whose nodes carry summaries. |
 | `src/rpc.mojo` | JSON-RPC 2.0 over a child process's pipes, with `Content-Length` framing (LSP, DAP) or one message per line (ACP: `lines`, messages contain no raw line feeds). |
 | `src/runconfig.mojo` | Run configurations: named ways of running the project (which file, with what arguments, environment and working directory, built first or not), kept in the project's .turbomojo.toml as tables [run.<name>]. |
+| `src/runreport.mojo` | After Ctrl-F9 (P11-10b): one line in the Message window with how the run ended, how long it took and, for a program that uses the GPU, which GPU it ran on. |
 | `src/screen.mojo` | Double-buffered cell screen with truecolor diff rendering. |
 | `src/search.mojo` | What to search for: text or a regular expression, with the Find dialog's options. |
 | `src/session.mojo` | A session: which files were open in a project, where the cursors were, and how the windows were arranged - written as a small text file and read back at the next start. |

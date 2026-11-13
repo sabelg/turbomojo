@@ -147,7 +147,8 @@ def test_the_run_window() raises:
     assert_true(top_row(app).find("$ mojo run prog.mojo") < 0)  # (scrolled out of view)
     # Ctrl-Shift-Up: to the run's prompt
     app.handle(key_event(KEY_UP | MOD_CTRL | MOD_SHIFT))
-    assert_equal(app.top(), t)
+    assert_equal(app.wins[app.top()].kind, WK_TERM)      # (still the Run window; the Message window,
+                                                         #  made when the run ended, went in below)
     assert_true(top_row(app).startswith("$ mojo run prog.mojo"), top_row(app))
     # none earlier: it says so
     app.status = ""

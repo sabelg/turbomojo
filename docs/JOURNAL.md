@@ -5795,3 +5795,38 @@ Not done / unverified:
   column is found by its header ("Card series"), so a renamed column gives "none found".
 - Gate, first run: FAILED test_screen (test_dropdown_golden: the Options menu golden lacked the new item; golden refreshed, the hot letter G is not taken)
 - Gate: CHECK OK (126 test files, 1248 tests, 992 s).
+
+## 2026-11-13 · P11-10b A run's time and its GPU in the Message window · done
+
+What changed:
+- src/runreport.mojo: uses_gpu (a line importing `gpu` or `max`, or their submodules -
+  not `gpuinfo` -, or a DeviceContext; comments skipped), visible_gpu_index
+  (CUDA_VISIBLE_DEVICES, else HIP_VISIBLE_DEVICES: its first number; -1 for "-1", a UUID
+  or an empty list), duration_text ("430 ms", "2.3 s", "1 min 12 s") and run_summary.
+- Ctrl-F9 notes the start time and whether the edited file uses the GPU; for one that
+  does, the GPU question of P11-10a is asked in the background meanwhile (whatever the
+  status-line setting). When the program in the Run window ends (term_tick sees it), or
+  the old full-screen run returns (its shell now exits with the program's status), one
+  line goes to the Message page and the status line: "mojo run a.mojo: ended with status
+  0 after 2.3 s (compiling included), on the GPU NVIDIA GB10".
+- User guide (Ctrl-F9), README (Run), whats-new.
+
+Verified:
+- tests/test_run_report.mojo (3 tests): which sources use the GPU; the visible GPU and
+  its name; the times and the line; with a fake `mojo` on a real pty and a fake GPU
+  query, a plain program gets status 3 and its time and no GPU (and nothing is asked), a
+  GPU program gets "on the GPU NVIDIA GB10", the status item stays off. 9 mutants (the
+  import boundary, comments, both -1 cases, the report at the end, asking for the GPU,
+  `wanted` in gpu_start, the start time reset, the GPU test of the source) all fail it
+  (the comment one only once the test's comment named a DeviceContext).
+
+Not done / unverified:
+- "The GPU it used" is the GPU a program gets first, not one watched in the driver
+  while it runs; a program that picks another device itself (DeviceContext(device_id=1))
+  is reported with the first. With a run configuration for another file, the edited
+  file's imports decide. The full-screen run (run_in_terminal = false) is not tested
+  (it needs the real terminal).
+- Gate, first run: FAILED test_run_marks (test_the_run_window kept the Run window's index; the Message
+  window made at the run's end is inserted below it and moves the index, not the focus; the test now
+  checks the top window's kind)
+- Gate: CHECK OK (127 test files, 1251 tests, 994 s).

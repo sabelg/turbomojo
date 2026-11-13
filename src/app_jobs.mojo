@@ -49,6 +49,10 @@ from app_input import *
 from app_mouse import *
 from app_draw import *
 from app_plugins import *
+from app_gpu import *
+from gpuinfo import parse_gpus
+from pty import exit_code
+from runreport import uses_gpu, visible_gpu_index, run_gpu_name, run_summary
 
 
 
@@ -512,6 +516,21 @@ __extension App:
         self.note_disk_state(i)
         self.say("Formatted " + basename(path))
 
+    def run_report(mut self, status: Int):
+        """The run that just ended, as one line on the Message page: its status, its
+        time and, when it uses the GPU, which one (P11-10b)."""
+        if self.run_t0_ns == 0:
+            return
+        var ns = Int(perf_counter_ns()) - self.run_t0_ns
+        self.run_t0_ns = 0
+        var gpu = String("")
+        if self.run_wants_gpu and self.gpu_known():
+            gpu = run_gpu_name(parse_gpus(bytes_to_str(self.gpu_out)), visible_gpu_index(env_or("CUDA_VISIBLE_DEVICES", ""), env_or("HIP_VISIBLE_DEVICES", "")))
+        var line = run_summary(self.run_label, status, ns, self.run_wants_gpu, gpu)
+        self.panel_write(PG_MESSAGE)
+        _ = self.fill_messages("Run - " + self.run_label, List[UInt8](), line)
+        self.say(line)
+
     def run_program(mut self, test: Bool) raises:
         if self.job_busy():
             return
@@ -531,15 +550,22 @@ __extension App:
         var label = "mojo run " + basename(path)
         if not test and self.run_active.byte_length() > 0:
             label = "configuration " + self.run_active
+        # timed, and the GPU learnt meanwhile for a program that uses one (P11-10b)
+        self.run_label = label
+        self.run_wants_gpu = uses_gpu(to_str(self.wins[i].buf.all_text()))
+        if self.run_wants_gpu:
+            self.gpu_start(True)
+        self.run_t0_ns = Int(perf_counter_ns())
         if self.run_in_terminal:
             self.run_in_window(label, core)
             return
         var cmd = (
             "clear && " + marked_run(label, core, marks_wanted(env_or("TERM", "")), "\\n")
-            + "; printf '\\n\\033[7m Program exited with status %d - press any key to return to TurboMojo \\033[0m' $st"
+            + "; printf '\\n\\033[7m Program exited with status %d - press any key to return to TurboMojo \\033[0m' $st; exit $st"
         )
         self.term.leave()
-        _ = run_system(cmd)
+        var st = run_system(cmd)
+        self.run_report(exit_code(st))
         self.term.raw()
         self.term.wait_byte()
         self.term.enter()
