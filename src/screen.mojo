@@ -18,6 +18,22 @@ comptime UL_DOTTED = 4
 comptime UL_DASHED = 5
 
 
+def doubtful_width(c: Int) -> Bool:
+    """Emoji and pictographs (from U+1F000, and the wide symbols in U+2300..U+2BFF):
+    their width depends on how new the terminal's tables are."""
+    return c >= 0x1F000 or (c >= 0x2300 and c < 0x2C00 and char_width(c) == 2)
+
+
+def drawn_narrow(c: Int, level: Int) -> Bool:
+    """The terminal was measured to give this wide glyph one column (caps.EMOJI_NARROW_*:
+    1 the Unicode 12+ block U+1FA70..U+1FAFF, 2 every emoji)."""
+    if level == 1:
+        return c >= 0x1FA70 and c <= 0x1FAFF
+    if level == 2:
+        return doubtful_width(c) and char_width(c) == 2
+    return False
+
+
 struct Screen(Movable):
     var w: Int
     var h: Int
@@ -39,6 +55,7 @@ struct Screen(Movable):
     var styled_ul: Bool         # the terminal draws curly and coloured underlines
     var xseq: List[List[Int]]   # pool of multi-codepoint cell extras (see intern)
     var clustered: Bool         # terminal draws grapheme clusters as one glyph (mode 2027)
+    var emoji_narrow: Int       # caps.EMOJI_NARROW_*: emoji the terminal draws one column wide
     var force: Bool
     var cx: Int
     var cy: Int
@@ -80,6 +97,7 @@ struct Screen(Movable):
         self.styled_ul = False
         self.xseq = List[List[Int]]()
         self.clustered = False
+        self.emoji_narrow = 0
         self.force = True
         self.cx = 0
         self.cy = 0
@@ -581,8 +599,14 @@ struct Screen(Movable):
                 var run = 1
                 while x + run < self.w and self.ch[k + run] == CONT:
                     run += 1
-                # after a long cluster do not trust where the terminal left its cursor
-                px = x + run if m < XBASE else -1
+                var padded = run == 2 and m == 0 and drawn_narrow(c, self.emoji_narrow)
+                if padded:
+                    out.append(32)      # the terminal gave it one column: fill the second
+                # after a glyph whose width terminals disagree about (an emoji, anything
+                # with a combining mark or selector) do not trust where the terminal left
+                # its cursor: the next cell is placed explicitly, so a wrong guess spoils
+                # one cell instead of shifting the rest of the row
+                px = -1 if (m != 0 or doubtful_width(c)) and not padded else x + run
                 py = y
                 self.pcmb[k] = self.cmb[k]
                 self.pul[k] = u

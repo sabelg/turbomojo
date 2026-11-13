@@ -63,7 +63,7 @@ def main() raises:
     if len(args) == 2 and String(args[1]) == "--caps":
         # diagnostics: show what this terminal reports, then exit
         app.term.raw()
-        var caps = app.term.probe(300)
+        var caps = app.term.probe(300, True)
         app.term.cooked()
         print("TurboMojo terminal capabilities")
         for line in caps.describe():

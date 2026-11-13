@@ -89,7 +89,7 @@ def test_describe_lists_every_capability() raises:
     var c = Caps()
     c.sync_output = True
     var lines = c.describe()
-    assert_equal(len(lines), 9)
+    assert_equal(len(lines), 10)
     assert_true(lines[0].endswith("24-bit colour"))
     assert_true(lines[1].endswith(": yes"))
     assert_true(lines[2].endswith(": no"))
@@ -100,6 +100,13 @@ def test_describe_lists_every_capability() raises:
     assert_true(bg >= 0 and lines[bg].endswith("not said"))
     c.background = 0x1A1B26
     assert_true(c.describe()[bg].endswith("#1a1b26"), c.describe()[bg])
+    var wl = -1
+    for k in range(len(lines)):
+        if lines[k].startswith("measured widths"):
+            wl = k
+    assert_true(wl >= 0 and lines[wl].endswith("not measured"))
+    c.widths = [2, 2, 2, 2]
+    assert_true(c.describe()[wl].endswith("2, 2, 2, 2 (joins emoji sequences; emoji selector widens)"), c.describe()[wl])
 
 
 # ------------------------------------------------------------ colour depth

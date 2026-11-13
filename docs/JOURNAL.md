@@ -5144,3 +5144,44 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   main.mojo only then, not in run()).
 - Gate, second run: the soak step failed ("cycle 1: the file did not open"): scripts/soak.py starts the IDE without file names on a fresh state, so the welcome theme box took its keys. The soak now writes the theme-asked marker into its own state folder; `scripts/soak.sh 1` printed SOAK OK.
 - Gate: scripts/check.sh printed CHECK OK (112 test files, 1192 tests, 899 s).
+
+## 2026-11-12 · P10-21a width measurement for doubtful glyphs · done
+
+- What changed: P10-21 split into a (measurement and layout) and b (Unicode-safe hot
+  letters). caps.mojo: four width samples (an emoji from Unicode 6, one from Unicode
+  15, two emoji joined by ZWJ, a symbol with U+FE0F), `width_probe()` writes each
+  concealed (SGR 8) from column 1 followed by CSI 6n, then wipes the line;
+  `Caps.widths` collects the answers, `width_verdict` reads them (measured only when
+  all four came back with 1..4 columns; clusters when the old emoji is 2 and the ZWJ
+  pair 2; emoji narrow: all / the U+1FA70..U+1FAFF block; FE0F widens),
+  `width_summary` for `tmide --caps` ("measured widths" line). term.mojo:
+  `probe(timeout, measure)` sends the samples before the other queries and counts
+  the reports it waits for (`cpr_pending`); while that count is above zero CSI r;c R
+  is a width report, not a modified F3; it is reset after the probe. app.run measures
+  (after entering the alternate screen); `apply_widths`: a terminal that joins the
+  pair gets the clustered layout even without mode 2027, narrow emoji set
+  `Screen.emoji_narrow`. screen.mojo render: a wide emoji the terminal draws narrow
+  is followed by a space; after any doubtful glyph (U+1F000 and up, the wide
+  symbols in U+2300..U+2BFF) or any cell with a combining mark or selector the next
+  cell gets an explicit cursor position (before: only after long clusters). README
+  (Unicode limit), What's new.
+- Verified: tests/test_widths.mojo (6 tests): the reports are taken in without
+  events (a key typed between them still comes through), and once all are in the
+  same bytes are Shift-F3 again; the probe has one CSI 6n per sample, concealed and
+  wiped; verdicts for one-by-one, joining, Unicode-15-less and pre-Unicode-9
+  answers, incomplete and implausible answers not used; rendering: a narrow-measured
+  emoji is padded (U+1FAE8 at the "new" level, U+1F600 only at "all"), the next
+  cell after an emoji or accented letter is placed, after CJK not; the app takes the
+  clustered layout and the narrow level from the measurement. test_caps (describe
+  has the new line), test_screen, test_grapheme pass. Mutants (no padding, the old
+  cursor rule, no report parsing, verdict not applied) fail. In tmux, `build/tmide
+  --caps` printed "measured widths: 2, 2, 2, 2 (joins emoji sequences; emoji
+  selector widens)", with nothing left on the line - so under tmux emoji sequences
+  are now laid out joined.
+- Not done / unverified: measured only through tmux, not in kitty, WezTerm, foot,
+  Alacritty, GNOME Terminal or Windows Terminal; East Asian ambiguous-width
+  characters are not measured (always one column); a terminal that widens U+FE0F
+  but lays codepoints out one by one is only noted - its next cell is placed, but
+  the right half of such a symbol can be covered; a Shift-F3 pressed during the
+  start-up probe would be read as a width report.
+- Gate: scripts/check.sh printed CHECK OK (113 test files, 1198 tests, 897 s).

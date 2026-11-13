@@ -185,4 +185,6 @@ brackets; where TurboMojo already did part of it, only the rest is a task).
 - [x] P10-20a The theme follows the terminal live where it only reports its background (OSC 11 asked again on focus and every half minute; 2031 / 996 were followed already), and Turbo Muted, a low-saturation Turbo Classic [G]
 - [x] P10-20b The first run asks which theme, with a preview of each (dark / light / auto, Turbo or modern) [G]
 - [ ] P10-21 Grapheme-width discipline: mode 2027 where reported, else the width table plus a cursor-position measurement for doubtful glyphs; Unicode-safe hot letters [H]
+  - [x] P10-21a Width measurement at start-up (cursor-position reports for doubtful glyphs), the layout chosen by it, narrow emoji padded, the next cell placed explicitly after a doubtful glyph
+  - [ ] P10-21b Unicode-safe hot letters (non-ASCII and accented hot letters, case-folded matching, a clear rule for labels without one)
 - [ ] P10-22 Inline images in the docs pane (kitty graphics with Unicode placeholders under tmux, sixel), with a text fallback [I]

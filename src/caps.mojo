@@ -102,6 +102,7 @@ struct Caps(Copyable, Movable):
     var background: Int        # OSC 11: the terminal's background colour (-1: not said)
     var truecolor_said: Int    # DECRQSS: 1 the RGB colour came back, 2 it did not, 0 no answer
     var underline_said: Int    # XTGETTCAP Smulx / Setulc: 1 the terminal has them, 0 no answer
+    var widths: List[Int]      # how far the cursor moved for each WIDTH_SAMPLES entry (measured)
 
     def __init__(out self):
         self.color = COLOR_TRUE
@@ -115,6 +116,7 @@ struct Caps(Copyable, Movable):
         self.background = -1
         self.truecolor_said = 0
         self.underline_said = 0
+        self.widths = List[Int]()
 
     def dcs_reply(mut self, body: String):
         """A DCS reply's body (between ESC P and ST)."""
@@ -136,6 +138,12 @@ struct Caps(Copyable, Movable):
             self.color = COLOR_TRUE
         if self.underline_said == 1 and underline_override.byte_length() == 0:
             self.styled_underline = True
+
+    def width_report(mut self, col: Int):
+        """A cursor-position report after one width sample (1-based column; the sample
+        was written from column 1)."""
+        if len(self.widths) < WIDTH_SAMPLE_COUNT:
+            self.widths.append(col - 1)
 
     def mode_report(mut self, mode: Int, value: Int):
         """A DECRPM reply: value 1/2 = supported (set/reset), 3/4 = fixed, 0 = unknown.
@@ -161,8 +169,106 @@ struct Caps(Copyable, Movable):
         out.append("kitty keyboard      : " + yes_no(self.kitty_keyboard))
         out.append("curly underlines    : " + yes_no(self.styled_underline) + (" (the terminal says so)" if self.underline_said == 1 else " (guessed)"))
         out.append("background          : " + (("#" + hex6(self.background)) if self.background >= 0 else String("not said")))
+        out.append("measured widths     : " + width_summary(self.widths))
         out.append("answered queries    : " + yes_no(self.answered))
         return out^
+
+
+# Glyphs whose width terminals disagree about, measured once at start-up: each is written
+# (concealed) from column 1 and the cursor position asked for (CSI 6n); the column in the
+# answer is the width the terminal really gave it. One sample per doubtful kind:
+#   0 an emoji from Unicode 6 (wide in every width table since Unicode 9)
+#   1 an emoji from Unicode 15 (narrow in older tables)
+#   2 two emoji joined with ZWJ (2 where the terminal draws the cluster as one glyph, 4
+#     where it lays the codepoints out one by one)
+#   3 a text-style symbol with the emoji selector U+FE0F (1 or 2)
+comptime WIDTH_SAMPLE_COUNT = 4
+comptime EMOJI_NARROW_NONE = 0
+comptime EMOJI_NARROW_NEW = 1     # the Unicode 12+ block U+1FA70..U+1FAFF is drawn narrow
+comptime EMOJI_NARROW_ALL = 2     # every emoji is drawn narrow (a pre-Unicode-9 table)
+
+
+def width_sample(k: Int) -> List[Int]:
+    if k == 0:
+        return [0x1F600]
+    if k == 1:
+        return [0x1FAE8]
+    if k == 2:
+        return [0x1F468, 0x200D, 0x1F469]
+    return [0x2764, 0xFE0F]
+
+
+def width_probe() -> String:
+    """The measuring sequence: each sample concealed (SGR 8) from column 1, then CSI 6n;
+    at the end the line is cleared and the attributes reset. Sent while the screen is
+    about to be drawn anyway (alternate screen, cursor hidden)."""
+    var s = String("\x1b[8m")
+    for k in range(WIDTH_SAMPLE_COUNT):
+        s += "\r"
+        for c in width_sample(k):
+            s += chr(c)
+        s += "\x1b[6n"
+    return s + "\r\x1b[2K\x1b[0m"
+
+
+struct WidthVerdict(Copyable, Movable):
+    """What the measured widths mean for drawing."""
+    var measured: Bool      # every sample was answered
+    var clusters: Bool      # the terminal draws a ZWJ sequence as one glyph by itself
+    var emoji_narrow: Int   # EMOJI_NARROW_*
+    var vs16_wide: Bool     # a symbol + U+FE0F takes two columns
+
+    def __init__(out self):
+        self.measured = False
+        self.clusters = False
+        self.emoji_narrow = EMOJI_NARROW_NONE
+        self.vs16_wide = False
+
+
+def width_verdict(widths: List[Int]) -> WidthVerdict:
+    """Read the answers. Missing or implausible answers (a terminal that ignored the
+    query, or answered from somewhere else on the line) change nothing."""
+    var v = WidthVerdict()
+    if len(widths) < WIDTH_SAMPLE_COUNT:
+        return v^
+    for w in widths:
+        if w < 1 or w > 4:
+            return v^
+    v.measured = True
+    if widths[0] == 1:
+        v.emoji_narrow = EMOJI_NARROW_ALL
+    elif widths[1] == 1:
+        v.emoji_narrow = EMOJI_NARROW_NEW
+    # (with narrow emoji a ZWJ pair is 2 laid out one by one too: no conclusion then)
+    v.clusters = widths[0] == 2 and widths[2] == 2
+    v.vs16_wide = widths[3] == 2
+    return v^
+
+
+def width_summary(widths: List[Int]) -> String:
+    if len(widths) == 0:
+        return "not measured"
+    var v = width_verdict(widths)
+    var s = String("")
+    for k in range(len(widths)):
+        s += (", " if k > 0 else "") + String(widths[k])
+    if not v.measured:
+        return s + " (incomplete: not used)"
+    var notes = List[String]()
+    if v.clusters:
+        notes.append("joins emoji sequences")
+    if v.emoji_narrow == EMOJI_NARROW_ALL:
+        notes.append("emoji narrow")
+    elif v.emoji_narrow == EMOJI_NARROW_NEW:
+        notes.append("newer emoji narrow")
+    if v.vs16_wide:
+        notes.append("emoji selector widens")
+    if len(notes) == 0:
+        return s
+    var t = String(" (")
+    for k in range(len(notes)):
+        t += ("; " if k > 0 else "") + notes[k]
+    return s + t + ")"
 
 
 def hex6(rgb: Int) -> String:

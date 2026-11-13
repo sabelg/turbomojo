@@ -25,6 +25,9 @@
   terminals that only tell their background colour live too.
 - Options > Colour theme shows each theme as you move through the list; the first run
   asks which one, once.
+- Emoji line up in more terminals: the IDE measures at start-up how wide the terminal
+  draws a few doubtful glyphs (shown by `tmide --caps`) and lays them out to match; a
+  width it still gets wrong spoils one cell, no longer the rest of the line.
 
 ## 2.0: release
 

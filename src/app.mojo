@@ -10,7 +10,7 @@ from term import (
     MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN,
 )
 from screen import Screen
-from caps import COLOR_TRUE
+from caps import COLOR_TRUE, width_verdict
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
@@ -106,6 +106,17 @@ __extension App:
             self.history_dir = state_dir() + "/history"
             self.prune_history()
 
+    def apply_widths(mut self, widths: List[Int]):
+        """Draw by what the terminal was measured to do with doubtful glyphs: a
+        terminal that joins emoji sequences by itself (without saying so through mode
+        2027) gets the clustered layout; emoji it draws one column wide are padded."""
+        var v = width_verdict(widths)
+        if not v.measured:
+            return
+        if v.clusters:
+            self.scr.clustered = True
+        self.scr.emoji_narrow = v.emoji_narrow
+
     def run(mut self) raises:
         self.frec_path = state_dir() + "/opened"
         self.frec.decode_text(read_text(self.frec_path))
@@ -121,7 +132,7 @@ __extension App:
         self.watch_enabled = True
         _ = self.watch.open()
         self.term.enter()
-        var caps = self.term.probe(CAPS_TIMEOUT_MS)
+        var caps = self.term.probe(CAPS_TIMEOUT_MS, True)
         self.scr.color_mode = caps.color
         if caps.color != COLOR_TRUE:
             # the theme's colours as designed for 256 or 16 colours
@@ -133,6 +144,7 @@ __extension App:
         if caps.grapheme:
             self.term.set_grapheme(True)
             self.scr.clustered = True
+        self.apply_widths(caps.widths)
         _ = self.sig.open()
         _ = self.first_run_theme()
         var early = self.term.take_early()

@@ -5,7 +5,7 @@ from std.collections import List
 from std.time import perf_counter_ns
 from util import decode_list, append_str, env_or, bytes_to_str
 from crash import CrashGuard
-from caps import Caps, CAPS_QUERY, caps_query, under_gnu_screen, osc11_rgb, scheme_of_background, detect_color_level, detect_styled_underline
+from caps import Caps, CAPS_QUERY, width_probe, WIDTH_SAMPLE_COUNT, caps_query, under_gnu_screen, osc11_rgb, scheme_of_background, detect_color_level, detect_styled_underline
 
 comptime K_BASE = 0x110000
 comptime KEY_ESC = K_BASE + 1
@@ -130,6 +130,7 @@ struct Terminal(Movable):
     var event_type: Int       # of the sequence being parsed: 0/1 press, 2 repeat, 3 release
     var scheme: Int           # the terminal's colour scheme (mode 2031): 0 unknown, 1 dark, 2 light
     var bg_scheme: Int        # the same, judged from its background colour (OSC 11)
+    var cpr_pending: Int      # width samples whose cursor-position report has not come yet
 
     def __init__(out self):
         self.saved = List[UInt8](length=128, fill=0)
@@ -149,6 +150,7 @@ struct Terminal(Movable):
         self.event_type = 0
         self.scheme = 0
         self.bg_scheme = 0
+        self.cpr_pending = 0
 
     # ------------------------------------------------------------- modes
     def raw(mut self):
@@ -214,15 +216,20 @@ struct Terminal(Movable):
         self.cooked()
         self.guard.set_tui(False)
 
-    def probe(mut self, timeout_ms: Int) -> Caps:
+    def probe(mut self, timeout_ms: Int, measure: Bool = False) -> Caps:
         """Ask the terminal what it supports. Waits until it answers the final request
-        or the timeout passes (a terminal that answers nothing costs one timeout)."""
+        or the timeout passes (a terminal that answers nothing costs one timeout).
+        `measure`: also write the width samples and ask where the cursor ended up
+        (on a screen that is about to be drawn anyway)."""
         self.caps.color = detect_color_level(env_or("COLORTERM", ""), env_or("TERM", ""), env_or("TURBOMOJO_COLORS", ""))
         self.caps.styled_underline = detect_styled_underline(
             env_or("TERM", ""), env_or("TERM_PROGRAM", ""), env_or("VTE_VERSION", ""), env_or("TURBOMOJO_UNDERLINE", "")
         )
         if not is_terminal():
             return self.caps.copy()     # nobody there to answer
+        if measure:
+            append_str(self.out, width_probe())
+            self.cpr_pending = WIDTH_SAMPLE_COUNT
         append_str(self.out, caps_query(not under_gnu_screen(env_or("TERM", ""), env_or("STY", ""), env_or("TMUX", ""))))
         self.flush()
         var deadline = Int(perf_counter_ns()) + timeout_ms * 1000000
@@ -237,6 +244,7 @@ struct Terminal(Movable):
             for e in self.poll():
                 self.early.append(e.copy())
         self.caps.settle(env_or("TURBOMOJO_COLORS", ""), env_or("TURBOMOJO_UNDERLINE", ""))
+        self.cpr_pending = 0            # (unanswered: from now on CSI 1;m R is F3 again)
         return self.caps.copy()
 
     def take_early(mut self) -> List[Event]:
@@ -626,6 +634,11 @@ struct Terminal(Movable):
         if (final == 73 or final == 79) and len(params) == 0:
             # focus in (CSI I) / out (CSI O), mode 1004
             evs.append(Event(EV_FOCUS, 1 if final == 73 else 0, 0, 0, 0, False, False, List[Int]()))
+            return
+        if final == 82 and self.cpr_pending > 0 and len(params) == 2:
+            # a cursor-position report for a width sample (it looks like a modified F3)
+            self.caps.width_report(params[1])
+            self.cpr_pending -= 1
             return
         var mods = 0
         if len(params) >= 2:
