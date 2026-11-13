@@ -243,6 +243,7 @@ struct App(Movable):
     var hl_line: Bool
     var insert_mode: Bool
     var show_clock: Bool
+    var clock_fixed: String     # shown instead of the time when set (screenshots)
     var running: Bool
     var find_text: List[Int]
     var replace_text: List[Int]
@@ -701,6 +702,7 @@ struct App(Movable):
         self.hl_line = True
         self.insert_mode = True
         self.show_clock = True
+        self.clock_fixed = ""
         self.running = True
         self.find_text = List[Int]()
         self.replace_text = List[Int]()

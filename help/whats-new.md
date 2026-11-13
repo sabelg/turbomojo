@@ -1,5 +1,11 @@
 # What's new
 
+## 2.2 (in progress)
+
+- `tmide --screenshot OUT.svg` draws the IDE without a terminal and saves the screen as
+  an SVG picture (`--size`, `--theme`, `--command` to open the palette, the explorer...);
+  it changes none of your settings.
+
 ## 2.1: UI clarity and calm
 
 - The window with the focus is shown more ways (bold title); the others keep their

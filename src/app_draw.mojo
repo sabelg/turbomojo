@@ -228,7 +228,7 @@ __extension App:
             self.draw_progress_box()            # beyond ten seconds (never takes the keys)
             self.draw_toasts()                  # (a screen reader gets them on the status line)
             self.draw_chord_box()
-        draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, clock_hm() if self.show_clock and not self.reader else "")
+        draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, (self.clock_fixed if self.clock_fixed.byte_length() > 0 else clock_hm()) if self.show_clock and not self.reader else "")
         # status line
         var items = List[String]()
         var cmds = List[Int]()

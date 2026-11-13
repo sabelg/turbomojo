@@ -5421,3 +5421,39 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
 - Also: GitHub CI (first run, after publishing) timed out on both runners at its 30-minute
   limit while still compiling the tests two at a time (4-CPU runners); the workflow now
   compiles four at a time (TM_JOBS) with a 120-minute limit.
+
+## 2026-11-13 · P11-02 pictures of the IDE made from itself · done
+- What changed: `src/svgshot.mojo` writes a Screen as SVG: runs of one background as
+  rectangles, runs of one colour / weight / underline as text stretched to their cells
+  (textLength), so the grid holds in any monospace font; colours as the theme gives them,
+  palette slots as their xterm values, XML escaped. `tmide --screenshot OUT.svg [--size
+  WxH] [--theme ID] [--command NAME]... [FILE]...` lays the IDE out without a terminal,
+  runs the named commands in order and writes the picture; it shows a fixed time (10:00),
+  no "Loaded <path>" message, saves no toggled option (config_path cleared), and refuses
+  an unknown theme, command or size. `scripts/screenshots.sh` makes docs/images/
+  turbo-classic.svg, midnight-tiled.svg (tiled, explorer, outline) and command-palette.svg
+  (Paper Light) with a home, config and state of its own; `scripts/record-demo.py` drives
+  the IDE in tmux (own home, a trusted copy of hello.mojo) through the menus, Ctrl-F9 (it
+  waits for the program's output, 6765), the palette, the tiled layout with the explorer
+  and the theme preview, and writes docs/demo.cast (asciinema v2, 43 frames, 26 s). The
+  README shows the three pictures under the pitch and links the cast; What's new has a
+  2.2 section.
+- Verified: tests/test_screenshot.mojo (4 tests): colours and XML escaping; a hand-made
+  screen gives exactly the rectangles and text runs of its cells (bold, an escaped "<",
+  no text for blank rows); a wide character once in an eight-cell run; an underline on
+  blanks is kept; the command line writes a picture with the palette open and the window
+  title, a fixed time, no path, no saved option after toggling the tiled layout, the same
+  picture whatever colour depth the environment names (TURBOMOJO_COLORS truecolor / 256 /
+  16) for Classic and Midnight, and refuses a wrong command, theme or size. Mutants:
+  keeping the "Loaded" message and saving toggled options each fail the test. The three
+  pictures were rendered with headless Chrome and looked at; the cast was checked frame
+  by frame (the program's output, the explorer, five theme previews by their colours).
+- Found on the way: a first `--command window.tiledLayout` wrote `layout = "tiled"` into
+  the config - fixed before anything was committed; and setting the colour depth to true
+  colour in screenshot mode did nothing (it is true colour without a terminal), so that
+  line was removed rather than kept untested.
+- Not done / unverified: GitHub draws the SVGs with the viewer's monospace font, so box
+  lines may join less neatly than in a terminal (not seen on github.com); the cast is not
+  uploaded anywhere (asciinema.org would publish it - the user's call); the docs reader is
+  not pictured (it needs the downloaded documentation).
+- Gate: scripts/check.sh printed CHECK OK (118 test files, 1221 tests, smoke, perf, soak) in 936 s.

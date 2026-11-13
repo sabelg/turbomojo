@@ -13,15 +13,18 @@ plugins, the Mojo documentation offline, and a fuzzy command palette - in about 
 memory. Prefer a modern look? Calmer themes and a tiled layout with panes and tabs are one
 setting away ("Tiled layout" in the Ctrl-P palette).
 
-```
- ≡  File  Edit  Text  Search  Run  Compile  Options  Window  Help           02:31
-╔═[■]════════════════════════ hello.mojo ══════════════════════════════1═[↑]═╗
-║  1 """A tiny demo program for TurboMojo."""                                 ▲
-║  2 from std.collections import List                                         ■
-║  5 struct Counter(Copyable, Movable):                                       ▒
-╚═ 7:1 ═══════════◄■▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒►╝
- F1 Help  F2 Save  F3 Open  ^P Commands  F9 Build  ^F9 Run  F10 Menu
-```
+<p>
+<img src="docs/images/turbo-classic.svg" alt="TurboMojo in the Turbo Classic theme: a blue editor window with a Mojo program, the menu bar and the key hints" width="100%">
+</p>
+<p>
+<img src="docs/images/midnight-tiled.svg" alt="The tiled layout in the Midnight Neon theme: file explorer, editor with tabs and the outline side by side" width="49%">
+<img src="docs/images/command-palette.svg" alt="The command palette over the editor in the Paper Light theme" width="49%">
+</p>
+
+A 26-second tour - running a program, the menus, the palette, the tiled layout and the
+themes - is in [docs/demo.cast](docs/demo.cast) (`asciinema play docs/demo.cast`). The
+pictures and the tour are made by TurboMojo itself: `scripts/screenshots.sh` (with
+`tmide --screenshot`) and `scripts/record-demo.py`.
 
 ## Why TurboMojo?
 

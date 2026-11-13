@@ -12,6 +12,8 @@ from util import state_dir
 from version import TURBOMOJO_VERSION
 from helpbook import keymap_markdown
 from std.sys.info import CompilationTarget
+from svgshot import screen_svg
+from util import write_file, str_bytes
 
 
 comptime USAGE = """Usage: tmide [FILE|FOLDER]...
@@ -26,6 +28,8 @@ FOLDER opens the Open dialog there.
   --strings       the UI's English words, as a strings file to translate
   --caps          what this terminal reports it can do
   --lines         the line mode: commands and answers as lines, no screen
+  --screenshot OUT.svg [--size WxH] [--theme ID] [--command NAME]... [FILE]...
+                  draw the IDE without a terminal and save the screen as SVG
                   (also when TERM=dumb; for screen readers and Emacs shells)
 
 Configuration: ~/.config/turbomojo/config.toml (Options writes there).
@@ -37,6 +41,63 @@ def platform_name() -> String:
         return "macos"
     else:
         return "linux"
+
+
+def screenshot(mut app: App, args: List[String]) raises -> Int:
+    """`tmide --screenshot OUT.svg [--size WxH] [--theme ID] [--command NAME]... [FILE]...`:
+    lay the IDE out without a terminal, as it would first appear (after the commands,
+    in order), and write the screen as SVG."""
+    if len(args) < 3:
+        print("usage: tmide --screenshot OUT.svg [--size WxH] [--theme ID] [--command NAME]... [FILE]...")
+        return 2
+    var out = args[2]
+    var w = 120
+    var h = 36
+    var cmds = List[String]()
+    var files = List[String]()
+    var k = 3
+    while k < len(args):
+        var a = args[k]
+        if (a == "--size" or a == "--theme" or a == "--command") and k + 1 < len(args):
+            var v = args[k + 1]
+            if a == "--size":
+                var p = v.split("x")
+                if len(p) != 2:
+                    print("--size wants WIDTHxHEIGHT, for example 120x36")
+                    return 2
+                w = max(40, min(400, atol(String(p[0]))))
+                h = max(12, min(200, atol(String(p[1]))))
+            elif a == "--theme":
+                if app.themes.find(v) < 0:
+                    print("there is no theme \"" + v + "\" (themes: " + ", ".join(app.themes.ids) + ")")
+                    return 2
+                app.theme_id = v
+            else:
+                cmds.append(v)
+            k += 2
+        else:
+            files.append(a)
+            k += 1
+    app.config_path = ""             # a toggled option is for the picture, not saved
+    app.scr.resize(w, h)
+    app.theme_apply()
+    for f in files:
+        app.open_path(f)
+    if app.top_editor() < 0:
+        app.exec(CM_NEW)
+    app.clock_fixed = "10:00"          # the same picture each time
+    app.status = ""                   # ("Loaded /home/...": a picture shows no one's paths)
+    for name in cmds:
+        var i = app.reg.index_of_name(name)
+        if i < 0:
+            print("there is no command \"" + name + "\" (see the palette, Ctrl-P)")
+            return 2
+        app.exec(app.reg.cmds[i].id)
+    app.draw()
+    if not write_file(out, str_bytes(screen_svg(app.scr, app.pal.ed_fg, app.pal.desk_bg, "TurboMojo"))):
+        print("cannot write", out)
+        return 1
+    return 0
 
 
 def main() raises:
@@ -60,6 +121,11 @@ def main() raises:
     app.bp_enable(state_dir() + "/breakpoints")
     app.load_config()
     var args = argv()
+    if len(args) >= 2 and String(args[1]) == "--screenshot":
+        var sa = List[String]()
+        for a in args:
+            sa.append(String(a))
+        external_call["exit", NoneType](Int32(screenshot(app, sa)))
     if len(args) == 2 and String(args[1]) == "--caps":
         # diagnostics: show what this terminal reports, then exit
         app.term.raw()

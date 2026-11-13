@@ -117,6 +117,7 @@ struct of `appstate.mojo`, one area each.
 | `src/sixel.mojo` | Sixel output, for pictures in the docs reader where the terminal has no kitty graphics (P10-22c): a decoded picture scaled to its cells, its colours put on the 6 x 6 x 6 cube (216 registers), sent band by band (six pixel rows each) with run-length counts. |
 | `src/stdref.mojo` | The standard library reference: `mojo doc`'s JSON for the `std` package (made by scripts/fetch-docs.sh) turned into one Markdown page per module, with an index that the documentation library reads as a book. |
 | `src/strings.mojo` | The UI's words outside the code: the menu titles and every command's title and hint (what the menus, the command palette, the status line and the keyboard reference show) can come from a strings file, so the IDE can be translated. |
+| `src/svgshot.mojo` | The screen as an SVG picture (P11-02): `tmide --screenshot FILE.svg` draws the IDE as it would appear and writes what is in its cells - characters, colours, bold, underlines - as a grid of text, so the README can show it without a screen recorder. |
 | `src/swap.mojo` | Swap files: periodic copies of unsaved buffers, used to recover work after a crash, a power cut or `kill -9`. |
 | `src/symindex.mojo` | An index of the symbols (functions, structs, traits, constants) of every Mojo file of the project, built a slice at a time so the editor never waits for it. |
 | `src/term.mojo` | Raw terminal I/O: termios, window size, key + SGR mouse + bracketed paste parsing. |
