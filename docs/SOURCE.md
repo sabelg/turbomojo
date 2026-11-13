@@ -72,7 +72,7 @@ struct of `appstate.mojo`, one area each.
 | `src/errhelp_pages.mojo` | The explanations of Mojo error messages, made from help/errors/ by scripts/gen_errhelp.py - do not edit here. |
 | `src/exercise_pages.mojo` | The exercises of Help > Exercises, made from help/exercises/ by scripts/gen_exercises.py - do not edit here. |
 | `src/explorer.mojo` | The file explorer's model: the project folder as a tree of which only the opened folders are listed, and the file operations (create, rename, move, delete to trash). |
-| `src/filestate.mojo` | What is remembered about a file between sessions: where the cursor was and the undo history. |
+| `src/filestate.mojo` | What is remembered about a file between sessions: where the cursor was, how far it was scrolled, which blocks were folded (version 2) and the undo history. |
 | `src/frecency.mojo` | Which files were opened how often and how recently ("frecency"), to rank the files in the quick-open palette. |
 | `src/git.mojo` | Git, as the editor sees it: which repository a file is in, what `git status` says about the files (for the explorer), and the commands that ask git for them. |
 | `src/gitdiff.mojo` | The diff view's model: a unified diff of two versions of a file, and what staging, unstaging or reverting one change (hunk) of it makes of them. |

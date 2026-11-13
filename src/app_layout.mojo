@@ -580,6 +580,7 @@ __extension App:
             f.w = self.wins[i].w
             f.h = self.wins[i].h
             f.zoomed = self.wins[i].zoomed
+            f.folds = self.wins[i].buf.folds.copy()
             d.files.append(f^)
             wids.append(self.wins[i].wid)
         if self.tiled:
@@ -653,6 +654,8 @@ __extension App:
                     if self.wins[t].kind == WK_EDITOR and self.wins[t].path == f.path:
                         self.wins[t].goto(f.cr, f.cc)
                         self.wins[t].top = max(0, min(f.top, self.wins[t].buf.count() - 1))
+                        if len(f.folds) > 0:
+                            self.restore_folds(t, f.folds)
                         if not d.tiled and not self.tiled and f.w >= 16 and f.h >= 4:
                             self.wins[t].x = f.x
                             self.wins[t].y = max(1, f.y)

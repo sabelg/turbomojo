@@ -1,5 +1,5 @@
-"""What is remembered about a file between sessions: where the cursor was and the undo
-history. One small text file per edited file, in the state directory. It is only used
+"""What is remembered about a file between sessions: where the cursor was, how far it was
+scrolled, which blocks were folded (version 2) and the undo history. One small text file per edited file, in the state directory. It is only used
 again if the file on disk still has exactly the content the history belongs to (size and
 a hash of its bytes), so an old history can never be applied to a changed file."""
 from std.collections import List
@@ -7,7 +7,9 @@ from buffer import UndoRec
 from util import decode, to_str
 
 comptime STATE_SUFFIX = ".hist"
-comptime STATE_MAGIC = "turbomojo-history 1"
+comptime STATE_MAGIC = "turbomojo-history 2"      # 2: the folds after the cursor
+comptime STATE_MAGIC_1 = "turbomojo-history 1"    # still read: no folds
+comptime STATE_MAX_FOLDS = 10000
 comptime STATE_MAX_RECORDS = 5000       # the most recent undo steps kept
 comptime STATE_MAX_CHARS = 2000000      # ...and the most text they may hold together
 
@@ -41,6 +43,7 @@ struct FileState(Movable):
     var cr: Int
     var cc: Int
     var top: Int
+    var folds: List[Int]
     var undos: List[UndoRec]
     var redos: List[UndoRec]
 
@@ -51,6 +54,7 @@ struct FileState(Movable):
         self.cr = 0
         self.cc = 0
         self.top = 0
+        self.folds = List[Int]()
         self.undos = List[UndoRec]()
         self.redos = List[UndoRec]()
 
@@ -81,7 +85,7 @@ def put_records(mut out: List[UInt8], tag: String, recs: List[UndoRec], first: I
         out.append(10)
 
 
-def state_encode(hash: Int, size: Int, cr: Int, cc: Int, top: Int, undos: List[UndoRec], redos: List[UndoRec]) -> List[UInt8]:
+def state_encode(hash: Int, size: Int, cr: Int, cc: Int, top: Int, undos: List[UndoRec], redos: List[UndoRec], folds: List[Int] = List[Int]()) -> List[UInt8]:
     """The history file's content. Only the newest undo steps are kept when there are
     very many or they hold very much text; redo steps are dropped in that case."""
     var first = max(0, len(undos) - STATE_MAX_RECORDS)
@@ -110,6 +114,14 @@ def state_encode(hash: Int, size: Int, cr: Int, cc: Int, top: Int, undos: List[U
     put_int(out, cr)
     put_int(out, cc)
     put_int(out, top)
+    out.append(10)
+    for b in "folds".as_bytes():
+        out.append(b)
+    out.append(32)
+    var nf = min(len(folds), STATE_MAX_FOLDS)
+    put_int(out, nf)
+    for k in range(nf):
+        put_int(out, folds[k])
     out.append(10)
     put_records(out, "undo", undos, first)
     if keep_redo:
@@ -201,9 +213,16 @@ def state_decode(data: List[UInt8]) -> FileState:
     var magic = STATE_MAGIC.as_bytes()
     if len(data) < len(magic) + 1:
         return st^
+    var version = 2
     for i in range(len(magic)):
         if data[i] != magic[i]:
-            return st^
+            version = 0
+    if version == 0:
+        var m1 = STATE_MAGIC_1.as_bytes()
+        version = 1
+        for i in range(len(m1)):
+            if data[i] != m1[i]:
+                return st^
     var rd = Reader(data)
     rd.pos = len(magic)
     st.hash = rd.number()
@@ -211,6 +230,19 @@ def state_decode(data: List[UInt8]) -> FileState:
     st.cr = rd.number()
     st.cc = rd.number()
     st.top = rd.number()
+    if version >= 2 and not rd.bad:
+        if rd.word() != "folds":
+            rd.bad = True
+        var nf = rd.number()
+        if rd.bad or nf < 0 or nf > STATE_MAX_FOLDS:
+            rd.bad = True
+        else:
+            for _ in range(nf):
+                var r = rd.number()
+                if rd.bad or r < 0:
+                    rd.bad = True
+                    break
+                st.folds.append(r)
     rd.records("undo", st.undos)
     if not rd.bad:
         rd.records("redo", st.redos)
@@ -219,6 +251,7 @@ def state_decode(data: List[UInt8]) -> FileState:
     if rd.bad or st.cr < 0 or st.cc < 0 or st.top < 0:
         st.undos.clear()
         st.redos.clear()
+        st.folds.clear()
         return st^
     st.ok = True
     return st^

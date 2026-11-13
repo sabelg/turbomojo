@@ -158,7 +158,7 @@ __extension App:
         return self.history_dir + "/" + state_name(self.wins[i].path)
 
     def store_history(mut self, i: Int):
-        """Write the undo history and cursor position of window i next to nothing but the
+        """Write the undo history, cursor position, scroll and folds of window i next to nothing but the
         state directory. Only for a buffer that equals its file on disk: the history is
         tied to that exact content."""
         if self.history_dir.byte_length() == 0 or self.wins[i].kind != WK_EDITOR:
@@ -169,7 +169,7 @@ __extension App:
             _ = run_system("mkdir -p " + shell_quote(self.history_dir) + " && chmod 700 " + shell_quote(self.history_dir))
         var data = state_encode(
             self.wins[i].disk_hash, self.wins[i].disk_size, self.wins[i].cr, self.wins[i].cc, self.wins[i].top,
-            self.wins[i].buf.undos, self.wins[i].buf.redos,
+            self.wins[i].buf.undos, self.wins[i].buf.redos, self.wins[i].buf.folds,
         )
         if not write_file(self.history_file(i), data):
             self.log_error("could not write history for " + self.wins[i].path)
@@ -200,7 +200,16 @@ __extension App:
         self.wins[i].clamp()
         self.wins[i].sync_want()
         self.wins[i].top = max(0, min(st.top, self.wins[i].buf.count() - 1))
+        self.restore_folds(i, st.folds)
         self.wins[i].follow = True
+
+    def restore_folds(mut self, i: Int, folds: List[Int]):
+        """Fold again the blocks that were folded (a row that starts no block now is
+        passed over); a fold that would hide the cursor stays open."""
+        for r in folds:
+            if r >= 0 and r < self.wins[i].buf.count():
+                _ = self.wins[i].buf.set_fold(r, True)
+        self.wins[i].reveal_cursor()
 
     def prune_history(mut self):
         """Keep the state directory from growing for ever: only the 500 most recently

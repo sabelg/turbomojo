@@ -14,6 +14,7 @@ struct SessionFile(Copyable, Movable):
     var w: Int
     var h: Int
     var zoomed: Bool
+    var folds: List[Int]        # rows of the folded block headers
 
     def __init__(out self, path: String):
         self.path = path
@@ -25,6 +26,7 @@ struct SessionFile(Copyable, Movable):
         self.w = 0
         self.h = 0
         self.zoomed = False
+        self.folds = List[Int]()
 
 
 struct SessionData(Copyable, Movable):
@@ -70,9 +72,19 @@ struct SessionData(Copyable, Movable):
         if self.panel:
             s += "panel\t" + String(self.panel_page) + " " + String(self.panel_h) + "\n"
         for f in self.files:
-            s += "file\t" + String(f.cr) + " " + String(f.cc) + " " + String(f.top) + " " + String(f.x) + " " + String(f.y) + " " + String(f.w) + " " + String(f.h) + " " + ("1" if f.zoomed else "0") + "\t" + f.path + "\n"
+            s += "file\t" + String(f.cr) + " " + String(f.cc) + " " + String(f.top) + " " + String(f.x) + " " + String(f.y) + " " + String(f.w) + " " + String(f.h) + " " + ("1" if f.zoomed else "0") + fold_words(f.folds) + "\t" + f.path + "\n"
         s += "end\n"
         return s
+
+
+def fold_words(folds: List[Int]) -> String:
+    """ " N r1 r2 ..." for a file's folds ("" when there are none, as older sessions)."""
+    if len(folds) == 0:
+        return ""
+    var s = " " + String(len(folds))
+    for r in folds:
+        s += " " + String(r)
+    return s
 
 
 def session_numbers(text: String) -> List[Int]:
@@ -138,7 +150,10 @@ def session_decode(text: String) -> Tuple[SessionData, Bool]:
                 continue
             var n = session_numbers(String(rest[byte=0:tab2]))
             var path = String(rest[byte=tab2 + 1:])
-            if len(n) != 8 or not path.startswith("/"):
+            # 8 numbers, then (since the folds were kept) their count and rows
+            if len(n) < 8 or not path.startswith("/"):
+                continue
+            if len(n) > 8 and len(n) != 9 + n[8]:
                 continue
             var f = SessionFile(path)
             f.cr = n[0]
@@ -149,6 +164,8 @@ def session_decode(text: String) -> Tuple[SessionData, Bool]:
             f.w = n[5]
             f.h = n[6]
             f.zoomed = n[7] == 1
+            for k in range(9, len(n)):
+                f.folds.append(n[k])
             d.files.append(f^)
     if not complete:
         return (SessionData(), False)

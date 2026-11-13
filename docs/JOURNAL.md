@@ -4900,3 +4900,34 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   (frecency, as before).
 - Gate: scripts/check.sh printed CHECK OK (106 test files, 1168 tests, 839 s).
 
+
+## 2026-11-12 · P10-17b Navigation memory, second part · done
+- What changed: the history file (src/filestate.mojo) is format 2,
+  "turbomojo-history 2", with a line `folds N r1 ...` (the rows of the folded block
+  headers, at most 10000) after the cursor and scroll; format 1 files are still read
+  (without folds), and damaged folds make the file unused like any other damage.
+  `store_history` writes the window's folds; `restore_history` applies them
+  through the new `restore_folds` (rows that are in the file and start a block)
+  and then keeps the cursor in view. The cursor and scroll were already kept in
+  the history; they now come back after a close and reopen in the same run, too,
+  since the history is written on close. The session's file lines
+  (src/session.mojo) carry the folds after the eight numbers (" N r1 ..." - none
+  when there are none, so older sessions still read; a count that does not fit
+  drops that file), and session restore folds them. README rows (Between sessions,
+  Sessions, the config comment).
+- Verified: tests/test_file_memory.mojo (5 tests): the history format round trip
+  with folds, a hand-made format 1 file read with no folds, a wrong fold count
+  rejected (the first run showed that the folds word was written without a space
+  before the count, so no format 2 file was ever readable - fixed); a file with
+  "def f" folded and the cursor at 20:4 closed and opened again has its cursor,
+  scroll and fold, and again in a new App with the same history folder, and nothing
+  once the file changed on disk; session encode/decode with and without folds and
+  with a bad count; a session saved with two folds (no history folder) restores
+  both; a tab moved to the other pane (CM_MOVE_TAB) keeps cursor, scroll and fold.
+  Mutants (no folds stored, none restored, none in the session save, encode or
+  restore) each fail a test.
+- Not done / unverified: the tab move kept the window's state already (the test
+  only guards it); with `persistent_undo = false` nothing is remembered after a
+  close; folds come back only while the file is unchanged on disk (as the undo
+  history); not tried by hand in a real terminal.
+- Gate: scripts/check.sh printed CHECK OK (107 test files, 1173 tests, 872 s).
