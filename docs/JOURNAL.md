@@ -5385,3 +5385,9 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   (117 test files, 1217 tests, smoke, PERF OK, SOAK OK) in 913 s.
 - Not done: nothing pushed or published, no tag made (the user's call); the conda
   package was not rebuilt.
+
+## 2026-11-13 · Phase 11 added (ready for other people, v2.2)
+- At the user's request, the code tasks from reports/Making TurboMojo something people
+  use.md became Phase 11 in docs/BACKLOG.md (P11-01 to P11-12). Left out, being the
+  user's to do or decide: the licence, merging the branches, pushing, a public conda
+  channel, posting in the Modular forum. The runner goes on with P11-01.

@@ -191,3 +191,26 @@ brackets; where TurboMojo already did part of it, only the rest is a task).
   - [x] P10-22a The text fallback (Markdown and HTML images as "[image: alt]" links that keep the picture's source) and the probe for kitty graphics and sixel
   - [x] P10-22b Kitty graphics: a local PNG shown in the reader, transmitted as it is and placed with Unicode placeholders (so it works through tmux), rows reserved in the page, deleted when the page changes
   - [x] P10-22c Sixel: PNG decoded (inflate and filters), scaled to the cells, quantised to a palette, sent as sixel
+
+## Phase 11: Ready for other people (v2.2)
+
+From reports/Making TurboMojo something people use.md (the recommendation each task comes
+from in brackets). Not tasks for the runner, because they publish or are the user's to
+decide: the licence, merging the branches, pushing, the public conda channel, and posting
+in the Modular forum [1, 2, 4, 16, 17].
+
+- [ ] P11-01 README first screen: a two-line pitch (ready to use, runs over SSH, starts in 50 ms, explains Mojo's errors), a "Why TurboMojo?" section comparing it honestly with VS Code + the Mojo extension, and the terminal-capability details moved to docs/USER_GUIDE.md [8, 9]
+- [ ] P11-02 Pictures of the IDE made from itself: `tmide --screenshot FILE.svg` (the screen buffer as SVG, with the theme's colours) and a script that records a short demo through tmux as an asciinema cast; three screenshots (Turbo Classic, a modern theme, the docs reader) and the cast linked from the README [7]
+- [ ] P11-03 Mojo version check: the Mojo version TurboMojo was built with is recorded; when the `mojo` found differs, the status line and `tmide --caps` say so plainly, instead of the language server or builds failing in strange ways [5]
+- [ ] P11-04 File > New project: makes a pixi project with Mojo (`pixi init`, the Modular channel, `mojo` as a dependency), a hello.mojo and a test, and opens them; offered by the welcome screen when the folder has no project [13]
+- [ ] P11-05 First-run checklist (also Help > Check setup): Mojo found and its version, the language server, the debugger, the docs downloaded, the terminal's colours and keys; each missing piece with the command or button that fixes it [14]
+- [ ] P11-06 A "Modern" start besides the Turbo look, in the first-run question: tiled layout, explorer open, VS Code keys and a calm theme in one choice (and Options > Presets to switch later) [15]
+- [ ] P11-07 Working on a remote machine over SSH: a user-guide page (clipboard through OSC 52, mouse, colours, pictures through tmux, keys that SSH clients take), and tests for what it needs (OSC 52 copy when there is no local clipboard tool, no DISPLAY / WAYLAND_DISPLAY) [10]
+- [ ] P11-08 Help > Report a problem: writes a ready-to-file issue text (versions, `--caps` output, the last crash-log entry, the config with anything secret-looking removed) to a file and the clipboard; it sends nothing [19]
+- [ ] P11-09 Contributing: CONTRIBUTING.md (building, the gate, docs/SOURCE.md, docs/JOURNAL.md), issue templates asking for `tmide --caps` output, and a GitHub Actions workflow that runs the tests (written, not run here) [3, 18]
+- [ ] P11-10 GPU awareness (split into a-c below) [11]
+  - [ ] P11-10a The GPU the program will run on (nvidia-smi, rocm-smi, or none) in `--caps` and as an optional status-line item, read once in the background
+  - [ ] P11-10b A run's time and the GPU it used in the Message window after Ctrl-F9
+  - [ ] P11-10c "Check my answer" for the GPU puzzles in the docs reader, as the exercises have
+- [ ] P11-11 A copy-to-the-server bundle: `pixi run bundle` makes a tar file with tmide and the Mojo runtime libraries it needs, which runs after unpacking on another Linux machine with the same glibc (checked in a clean folder without the project's .pixi) [12]
+- [ ] P11-12 macOS, first part: osx-arm64 in pixi's platforms and the build linked for it where the toolchain allows that here; running it needs a Mac, so that part becomes [!] with what was checked [6]
