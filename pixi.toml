@@ -6,7 +6,7 @@ platforms = [
   { name = "linux-aarch64-glibc", platform = "linux-aarch64", glibc = "2.34" },
   { name = "linux-64-glibc", platform = "linux-64", glibc = "2.34" },
 ]
-version = "2.0.0"          # (the same as src/version.mojo)
+version = "2.1.0"          # (the same as src/version.mojo)
 
 # The default environment uses the stable Mojo release. The `nightly` environment is a
 # canary: `pixi run canary` runs the whole gate against the newest nightly toolchain so

@@ -1,6 +1,6 @@
 # What's new
 
-## 2.1 (in progress)
+## 2.1: UI clarity and calm
 
 - The window with the focus is shown more ways (bold title); the others keep their
   selection and cursor, muted; the shown tab is in brackets.

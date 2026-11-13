@@ -1,7 +1,7 @@
 # Changelog
 
 What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.md) and the
-day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
+day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.1.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
 ## 2.1: UI clarity and calm - 2026-11-12

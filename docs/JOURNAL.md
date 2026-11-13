@@ -5374,3 +5374,14 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   tmux, never as pixels in kitty, Ghostty, foot or xterm; P1-20 as above.
 - The runner has nothing left to do. Its loop stays armed (the user asked that it never
   stop), but each wake-up only checks for new tasks in docs/BACKLOG.md.
+
+## 2026-11-13 · Version 2.1.0 (Phase 10 released) · done
+- The user chose to call Phase 10 a release. Version 2.1.0 in src/version.mojo,
+  pixi.toml and recipe/recipe.yaml; What's new's "2.1 (in progress)" is now "2.1: UI
+  clarity and calm" (help/whats-new.md and its copy in src/helpbook.mojo);
+  CHANGELOG.md and docs/KEYMAP.md made again (they name the version).
+- Verified: `tmide --version` prints "TurboMojo 2.1.0 (linux)"; test_release checks
+  the version is the same in all four places. Gate: scripts/check.sh printed CHECK OK
+  (117 test files, 1217 tests, smoke, PERF OK, SOAK OK) in 913 s.
+- Not done: nothing pushed or published, no tag made (the user's call); the conda
+  package was not rebuilt.

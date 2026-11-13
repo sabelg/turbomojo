@@ -6,7 +6,7 @@ after the other (Ctrl-K B). A dash: no key in that keymap - the menus and the co
 palette (Ctrl-P, then >) have every command. Your own keys (`[keys]` in the config file)
 come on top; Help > Keyboard reference (F1) shows the keys as you have them.
 
-This file is made by `tmide --keys` (TurboMojo 2.0.0).
+This file is made by `tmide --keys` (TurboMojo 2.1.0).
 
 ## System (≡)
 
