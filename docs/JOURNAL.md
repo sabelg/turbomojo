@@ -5218,3 +5218,40 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   text field focused a plain letter is still typed into the field, not a button's
   hot letter (as for ASCII).
 - Gate: scripts/check.sh printed CHECK OK (114 test files, 1201 tests, 909 s).
+
+## 2026-11-13 · P10-22a image text fallback and image probe · done
+
+- What changed: P10-22 split into a (text fallback, probe), b (kitty graphics with
+  Unicode placeholders) and c (sixel, with a PNG decoder). markdown.mojo: `![alt](src
+  "title")` and HTML `<img src=... alt=...>` (any case, quoted or bare attributes)
+  render as "[image: alt]" - the file name without alt - styled as a link whose target
+  is the picture's source; an image inside a link (a badge) leads where the link does;
+  helpers html_attr, image_name, is_image_name, image_label. doclib.mojo: the reader's
+  page clean-up turned images into "*[image: alt]*" and dropped the source; it now
+  keeps them as Markdown images (image_markdown: from HTML tags inline and in mdBook
+  pages, spaces in the source as %20; the dark-theme copies still skipped;
+  images_to_notes removed). app_docs.docs_follow: an image of the download says
+  "An image (copied to the clipboard): <path>" or "That image is not part of the
+  download"; web images as other web addresses. caps.mojo: KITTY_GRAPHICS_QUERY (a
+  stored-nothing a=q query, sent with the DCS queries, so not under GNU screen),
+  `apc_reply` (Gi=31;OK), `da1_reply` (attribute 4 after the class number: sixel),
+  "images" line in `tmide --caps`. term.mojo: APC (ESC _) replies starting with G are
+  parsed as replies; other ESC _ stays Alt-_.
+- Verified: tests/test_doc_images.mojo (4 tests): Markdown images with and without
+  alt and with a title, a badge, "Hello!" before a link untouched; HTML images (upper
+  case, single quotes, self-closing), an <img> without src and <imgx> left as text,
+  html_attr not matching data-src; doc_prepare keeping an inline <img> (with a space
+  in its source) and a Markdown image; the kitty answer and DA1 taken without events,
+  sixel only from attribute 4 after the class, an error answer not counted, Alt-_
+  and typing still keys, the query sent before DA1 and not without DCS; in the reader
+  a page's image shows as "[image: The parts]" and following it names the file or
+  says it is missing. test_docs_reader (21, with the two expectations that said
+  "*[image: ...]*" now the Markdown images), test_markdown, test_caps pass. Mutants
+  (no Markdown image, no HTML image, sixel from any attribute, no APC parsing, no
+  image branch in docs_follow, the old inline note in doclib) fail.
+- Not done / unverified: no picture is shown yet (b, c); the kitty query was not seen
+  answered by a real terminal (tmux, the only one here, does not have the protocol,
+  and the query is not passed through it); GIF, JPEG and SVG are links only, also
+  later; a source with ")" or spaces from Markdown itself (not from HTML) is cut at
+  the space.
+- Gate: scripts/check.sh printed CHECK OK (115 test files, 1205 tests, 916 s).

@@ -25,13 +25,17 @@ comptime OSC11_QUERY = "\x1b]11;?\x1b\\"
 # Smulx: curly; Setulc: coloured).
 comptime TRUECOLOR_QUERY = "\x1b[48;2;1;2;3m\x1bP$qm\x1b\\\x1b[0m"
 comptime UNDERLINE_QUERY = "\x1bP+q536d756c78;536574756c63\x1b\\"
+# kitty graphics: a query for a 1x1 image that is not stored (a=q); a terminal with the
+# protocol answers "ESC _ G i=31;OK ESC \" before the DA1 reply. (An APC, so left out
+# under GNU screen too.) Sixel is in the DA1 reply itself (attribute 4).
+comptime KITTY_GRAPHICS_QUERY = "\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\"
 
 
 def caps_query(dcs: Bool) -> String:
     """All the questions, DA1 last (every terminal answers it: then we stop waiting)."""
     var q = String("\x1b[?2026$p\x1b[?2027$p\x1b[?2031$p\x1b[?2048$p\x1b[?u") + OSC11_QUERY
     if dcs:
-        q += String(TRUECOLOR_QUERY) + UNDERLINE_QUERY
+        q += String(TRUECOLOR_QUERY) + UNDERLINE_QUERY + KITTY_GRAPHICS_QUERY
     return q + "\x1b[c"
 
 
@@ -103,6 +107,8 @@ struct Caps(Copyable, Movable):
     var truecolor_said: Int    # DECRQSS: 1 the RGB colour came back, 2 it did not, 0 no answer
     var underline_said: Int    # XTGETTCAP Smulx / Setulc: 1 the terminal has them, 0 no answer
     var widths: List[Int]      # how far the cursor moved for each WIDTH_SAMPLES entry (measured)
+    var kitty_graphics: Bool   # answered the kitty graphics query
+    var sixel: Bool            # DA1 lists attribute 4 (sixel graphics)
 
     def __init__(out self):
         self.color = COLOR_TRUE
@@ -117,6 +123,8 @@ struct Caps(Copyable, Movable):
         self.truecolor_said = 0
         self.underline_said = 0
         self.widths = List[Int]()
+        self.kitty_graphics = False
+        self.sixel = False
 
     def dcs_reply(mut self, body: String):
         """A DCS reply's body (between ESC P and ST)."""
@@ -138,6 +146,18 @@ struct Caps(Copyable, Movable):
             self.color = COLOR_TRUE
         if self.underline_said == 1 and underline_override.byte_length() == 0:
             self.styled_underline = True
+
+    def apc_reply(mut self, body: String):
+        """An APC reply's body (between ESC _ and ST): the kitty graphics answer."""
+        if body.startswith("Gi=31;") and body.find(";OK") >= 0:
+            self.kitty_graphics = True
+
+    def da1_reply(mut self, params: List[Int]):
+        """The DA1 answer (CSI ? 6x ; attributes c): the last reply to our queries."""
+        self.answered = True
+        for k in range(1, len(params)):
+            if params[k] == 4:
+                self.sixel = True
 
     def width_report(mut self, col: Int):
         """A cursor-position report after one width sample (1-based column; the sample
@@ -170,6 +190,7 @@ struct Caps(Copyable, Movable):
         out.append("curly underlines    : " + yes_no(self.styled_underline) + (" (the terminal says so)" if self.underline_said == 1 else " (guessed)"))
         out.append("background          : " + (("#" + hex6(self.background)) if self.background >= 0 else String("not said")))
         out.append("measured widths     : " + width_summary(self.widths))
+        out.append("images              : " + images_summary(self.kitty_graphics, self.sixel))
         out.append("answered queries    : " + yes_no(self.answered))
         return out^
 
@@ -243,6 +264,16 @@ def width_verdict(widths: List[Int]) -> WidthVerdict:
     v.clusters = widths[0] == 2 and widths[2] == 2
     v.vs16_wide = widths[3] == 2
     return v^
+
+
+def images_summary(kitty: Bool, sixel: Bool) -> String:
+    if kitty and sixel:
+        return "kitty graphics, sixel"
+    if kitty:
+        return "kitty graphics"
+    if sixel:
+        return "sixel"
+    return "no (shown as text)"
 
 
 def width_summary(widths: List[Int]) -> String:

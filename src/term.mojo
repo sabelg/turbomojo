@@ -511,9 +511,10 @@ struct Terminal(Movable):
             if d == 27:
                 evs.append(key_event(KEY_ESC))
                 return 1
-            if d == 93 or d == 80:
-                # OSC (ESC ]) or DCS (ESC P): a reply to a query, whenever it comes - never
-                # keys. Alt-] or Alt-Shift-P followed by typing has no terminator.
+            if d == 93 or d == 80 or d == 95:
+                # OSC (ESC ]), DCS (ESC P) or APC (ESC _): a reply to a query, whenever it
+                # comes - never keys. Alt-], Alt-Shift-P or Alt-_ followed by typing has
+                # no terminator.
                 var used = self.string_reply(i, d, stale)
                 if used > 0:
                     return used
@@ -584,14 +585,18 @@ struct Terminal(Movable):
         return p
 
     def string_reply(mut self, i: Int, kind: Int, stale: Bool) -> Int:
-        """An OSC or DCS reply from inbuf[i]: the bytes it takes, 0 to wait for more, -1
-        if it is not one (then it is a key). It starts with a digit (OSC "11;...", DCS
-        "1$r..." / "1+r...") or ">" (DCS XTVERSION) and ends with BEL or ESC \\."""
+        """An OSC, DCS or APC reply from inbuf[i]: the bytes it takes, 0 to wait for
+        more, -1 if it is not one (then it is a key). It starts with a digit (OSC
+        "11;...", DCS "1$r..." / "1+r..."), ">" (DCS XTVERSION) or "G" (APC: kitty
+        graphics) and ends with BEL or ESC \\."""
         var n = len(self.inbuf)
         if i + 2 >= n:
             return -1 if stale else 0
         var first = Int(self.inbuf[i + 2])
-        if not ((first >= 48 and first <= 57) or first == 62):
+        if kind == 95:
+            if first != 71:
+                return -1                   # APC: only the kitty graphics answer ("G...")
+        elif not ((first >= 48 and first <= 57) or first == 62):
             return -1
         var j = i + 2
         while j < n:
@@ -606,6 +611,8 @@ struct Terminal(Movable):
                     if rgb >= 0:
                         self.caps.background = rgb
                         self.bg_scheme = scheme_of_background(rgb)
+                elif kind == 95:
+                    self.caps.apc_reply(text)
                 else:
                     self.caps.dcs_reply(text)
                 return (j + 1 if b == 7 else j + 2) - i
@@ -623,7 +630,7 @@ struct Terminal(Movable):
         elif final == 117:                          # kitty keyboard: CSI ? flags u
             self.caps.kitty_keyboard = True
         elif final == 99:                           # DA1: CSI ? ... c
-            self.caps.answered = True
+            self.caps.da1_reply(params)
         elif final == 110 and len(params) >= 2 and params[0] == 997:
             # the colour scheme (mode 2031; answer to CSI ? 996 n): 1 dark, 2 light
             self.scheme = params[1]

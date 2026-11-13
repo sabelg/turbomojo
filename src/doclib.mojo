@@ -292,36 +292,24 @@ def inline_html(line: String) -> String:
         elif lower == "/summary":
             put = "**"
         elif lower.startswith("img"):
-            var alt = attr_of(tag, "alt")
-            put = ("*[image: " + alt + "]*") if alt.byte_length() > 0 else String("*[image]*")
+            put = image_markdown(attr_of(tag, "alt"), attr_of(tag, "src"))
         s = cut(s, 0, a) + put + String(s[byte=b + 1:])
     return s
 
 
-def images_to_notes(line: String) -> String:
-    """"![alt](src)" cannot be shown in a terminal: say what it was instead."""
-    var s = line
-    var guard = 0
-    while guard < 20:
-        guard += 1
-        var a = s.find("![")
-        if a < 0:
-            break
-        var b = s.find("](", a)
-        if b < 0:
-            break
-        var c = s.find(")", b)
-        if c < 0:
-            break
-        var alt = String(s[byte=a + 2:b])
-        s = cut(s, 0, a) + (("*[image: " + alt + "]*") if alt.byte_length() > 0 else String("*[image]*")) + String(s[byte=c + 1:])
-    return s
+def image_markdown(alt: String, src: String) -> String:
+    """An HTML picture as a Markdown image, so the reader keeps where it is (and shows
+    it as "[image: alt]", or the picture itself where the terminal can); without a
+    source, just the words."""
+    if src.byte_length() == 0:
+        return ("*[image: " + alt + "]*") if alt.byte_length() > 0 else String("*[image]*")
+    return "![" + alt.replace("]", ")").replace("[", "(") + "](" + src.replace(" ", "%20").replace(")", "%29") + ")"
 
 
 def doc_prepare(text: String, path: String) -> String:
     """A documentation page as plain Markdown for the reader: the header's title as
     first heading, includes expanded, admonitions as quotes, web-only markup (imports,
-    components, comments, images) removed or put into words."""
+    components, comments) removed or put into words; images are kept as Markdown images."""
     var fm = front_matter(text)
     var dir = dirname(path)
     var out = String("")
@@ -426,7 +414,6 @@ def doc_prepare(text: String, path: String) -> String:
                     continue        # an opening tag alone on its line
         if t.startswith("</") and t.endswith(">") and t.find(" ") < 0:
             continue                # a closing tag alone on its line
-        l = images_to_notes(l)
         if l.find("<") >= 0:
             l = inline_html(l)
         t = trimmed(l)
@@ -544,7 +531,7 @@ def decode_entities(text: String) -> String:
 def html_markdown(html: String) -> String:
     """The text of an HTML page (what is inside <main>, else the whole of it) as
     Markdown: headings, paragraphs, lists, quotes, code blocks with their language,
-    links, bold, italic and inline code. Images are put into words; scripts, styles
+    links, bold, italic and inline code. Images become Markdown images; scripts, styles
     and drawings are left out. Made for the pages mdBook writes."""
     var src = html
     var a = src.find("<main")
@@ -683,8 +670,7 @@ def html_markdown(html: String) -> String:
             continue
         if name == "img":
             if tag.find("dark") < 0:    # pictures come twice, for the light and the dark theme
-                var alt = attr_of(tag, "alt")
-                cur += ("*[image: " + alt + "]*") if alt.byte_length() > 0 else String("*[image]*")
+                cur += image_markdown(attr_of(tag, "alt"), attr_of(tag, "src"))
             continue
         if name == "summary":
             cur += "**▸ " if not closing else "**"

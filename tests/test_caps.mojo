@@ -89,7 +89,7 @@ def test_describe_lists_every_capability() raises:
     var c = Caps()
     c.sync_output = True
     var lines = c.describe()
-    assert_equal(len(lines), 10)
+    assert_equal(len(lines), 11)
     assert_true(lines[0].endswith("24-bit colour"))
     assert_true(lines[1].endswith(": yes"))
     assert_true(lines[2].endswith(": no"))

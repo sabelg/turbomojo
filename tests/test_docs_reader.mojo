@@ -53,7 +53,7 @@ def test_front_matter_titles_and_names() raises:
 def test_pages_are_cleaned_up_for_reading() raises:
     var d = scratch("prep")
     var src = "---\ntitle: Basics\n---\n\nimport Tabs from '@theme/Tabs';\nimport {\n  Panel,\n  Sheet,\n} from '@site/src/components/Sheet';\n\nIntro text with ![a diagram](./img/x.png) inside.\n\n:::note Heads up\n\nBe careful with `var`.\n\n:::\n\n<Tabs>\n<TabItem value=\"a\" label=\"With pixi\">\n\nUse pixi.\n\n</TabItem>\n</Tabs>\n\n## Scopes {#variable-scopes}\n\n<!-- a comment\nover two lines -->\nSee <a href=\"/docs/manual/types\">the types page</a> and <strong>this</strong>.\n\n```mojo\nimport std.math  # code is left alone: <not> a tag, :::not an admonition\n```\n"
-    var want = "# Basics\n\nIntro text with *[image: a diagram]* inside.\n\n> **Note: Heads up**\n>\n> Be careful with `var`.\n\n### With pixi\n\nUse pixi.\n\n## Scopes\n\nSee [the types page](/docs/manual/types) and **this**.\n\n```mojo\nimport std.math  # code is left alone: <not> a tag, :::not an admonition\n```\n"
+    var want = "# Basics\n\nIntro text with ![a diagram](./img/x.png) inside.\n\n> **Note: Heads up**\n>\n> Be careful with `var`.\n\n### With pixi\n\nUse pixi.\n\n## Scopes\n\nSee [the types page](/docs/manual/types) and **this**.\n\n```mojo\nimport std.math  # code is left alone: <not> a tag, :::not an admonition\n```\n"
     assert_equal(doc_prepare(src, d + "/basics.mdx"), want)
     # a page that has its own first heading does not get the header's title again
     assert_equal(doc_prepare("---\ntitle: T\n---\n# Own heading\n", d + "/x.md"), "# Own heading\n")
@@ -134,7 +134,7 @@ comptime ADVENT_PAGE = "<!DOCTYPE HTML><html><head><title>Welcome</title><style>
 
 def test_web_pages_become_markdown() raises:
     assert_equal(decode_entities("a &lt; b &amp;&amp; c &gt; d &quot;q&quot; &#39;s&#39; &#x1F525; &#8217; x&nbsp;y &unknown; & alone"), "a < b && c > d \"q\" 's' 🔥 ’ x y &unknown; & alone")
-    assert_equal(html_markdown(ADVENT_PAGE), "# Welcome to Advent 🔥\n\nDr. Green’s lettuce is **cold** & *crunchy*; see [how to install](./install.html) or [the data](./downloads/temps.txt).\n\n*[image: A grid.]*\n\n## Today’s data\n\n```mojo\nvar a = 1 < 2\n    if a && True:\n        pass\n```\n\nUse `List[Int]` then:\n\n- first item\n- second `item`\n  - nested one\n\n1. step one\n2. step two\n\n> A quoted thought.\n\n**▸ Hint**\n\nLook at the neighbours.\n\n*[drawing]*\n")
+    assert_equal(html_markdown(ADVENT_PAGE), "# Welcome to Advent 🔥\n\nDr. Green’s lettuce is **cold** & *crunchy*; see [how to install](./install.html) or [the data](./downloads/temps.txt).\n\n![A grid.](a.png)\n\n## Today’s data\n\n```mojo\nvar a = 1 < 2\n    if a && True:\n        pass\n```\n\nUse `List[Int]` then:\n\n- first item\n- second `item`\n  - nested one\n\n1. step one\n2. step two\n\n> A quoted thought.\n\n**▸ Hint**\n\nLook at the neighbours.\n\n*[drawing]*\n")
     # a page without <main> is taken whole; nothing at all gives nothing
     assert_equal(html_markdown("<p>Just <b>this</b>.</p>"), "Just **this**.\n")
     assert_equal(html_markdown(""), "")

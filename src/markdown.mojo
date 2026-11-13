@@ -3,8 +3,10 @@
 Understands what documentation in practice uses: headings, paragraphs, fenced code blocks
 (Mojo and Python blocks get the editor's syntax colours), bullet and numbered lists, block
 quotes, horizontal rules, and inline **bold**, *italic*, `code`, [links](url), backslash
-escapes and a few HTML entities. Paragraphs are wrapped to a width; code lines are not.
-Anything else (tables, HTML, images) is shown as the text it is."""
+escapes and a few HTML entities, tables (in the rich form), and images - Markdown
+`![alt](src)` and HTML `<img src=... alt=...>` - as a "[image: alt]" link to the picture.
+Paragraphs are wrapped to a width; code lines are not. Other HTML is shown as the text
+it is."""
 from std.collections import List
 from highlight import Highlighter
 from util import decode, char_width, is_ident, to_str
@@ -87,6 +89,102 @@ def md_inline(src: List[Int], base: Int, mut out: MdLine):
             out.st[k] = MD_LINK
 
 
+def lower_ascii(c: Int) -> Int:
+    return c + 32 if c >= 65 and c <= 90 else c
+
+
+def starts_at(src: List[Int], i: Int, word: String) -> Bool:
+    """`word` (ASCII, compared without case) at src[i]."""
+    var w = decode(word)
+    if i + len(w) > len(src):
+        return False
+    for k in range(len(w)):
+        if lower_ascii(src[i + k]) != w[k]:
+            return False
+    return True
+
+
+def html_attr(tag: List[Int], name: String) -> String:
+    """The value of attribute `name` in an HTML tag's text (quoted with " or ', or bare),
+    "" if it has none. Names are compared without case."""
+    var n = len(tag)
+    var i = 0
+    var nl = len(decode(name))
+    while i < n:
+        if starts_at(tag, i, name) and (i == 0 or is_space(tag[i - 1])):
+            var j = i + nl
+            while j < n and is_space(tag[j]):
+                j += 1
+            if j < n and tag[j] == 61:
+                j += 1
+                while j < n and is_space(tag[j]):
+                    j += 1
+                var out = List[Int]()
+                if j < n and (tag[j] == 34 or tag[j] == 39):
+                    var q = tag[j]
+                    j += 1
+                    while j < n and tag[j] != q:
+                        out.append(tag[j])
+                        j += 1
+                else:
+                    while j < n and not is_space(tag[j]) and tag[j] != 62 and tag[j] != 47:
+                        out.append(tag[j])
+                        j += 1
+                return to_str(out)
+        i += 1
+    return ""
+
+
+def image_name(src: String) -> String:
+    """The file name an image address ends in (no directory, query or fragment)."""
+    var cps = decode(src)
+    var end = len(cps)
+    for k in range(len(cps)):
+        if cps[k] == 63 or cps[k] == 35:
+            end = k
+            break
+    var start = 0
+    for k in range(end):
+        if cps[k] == 47:
+            start = k + 1
+    var out = List[Int]()
+    for k in range(start, end):
+        out.append(cps[k])
+    return to_str(out)
+
+
+def is_image_name(src: String) -> Bool:
+    """The address names a picture (by its extension)."""
+    var n = image_name(src).lower()
+    for ext in [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp"]:
+        if n.endswith(String(ext)):
+            return True
+    return False
+
+
+def image_label(alt: List[Int], src: String) -> List[Int]:
+    """What stands for an image in text: "[image: alt]", or the file name without alt."""
+    var out = decode("[image: ")
+    var shown = alt.copy()
+    var blank = True
+    for c in alt:
+        if not is_space(c):
+            blank = False
+    if blank:
+        shown = decode(image_name(src))
+    if len(shown) == 0:
+        return decode("[image]")
+    for c in shown:
+        out.append(32 if c == 10 or c == 9 else c)
+    out.append(93)
+    return out^
+
+
+def add_image(alt: List[Int], src: String, mut out: MdLine, mut links: List[String]):
+    links.append(src)
+    out.add_all(image_label(alt, src), -len(links))
+
+
 def md_inline_links(src: List[Int], base: Int, mut out: MdLine, mut links: List[String]):
     """md_inline that also keeps where links lead: the address of each link is added to
     `links`, and the link's characters get the style -(its index in `links`) - 1."""
@@ -145,6 +243,49 @@ def md_inline_links(src: List[Int], base: Int, mut out: MdLine, mut links: List[
                 md_inline_links(inner, MD_ITALIC if base == MD_TEXT else base, out, links)
                 i = close + 1
                 continue
+        # image: ![alt](src "title") - the alt text stands for it, as a link to the picture
+        if c == 33 and i + 1 < n and src[i + 1] == 91:
+            var rb = -1
+            for k in range(i + 2, n):
+                if src[k] == 93:
+                    rb = k
+                    break
+            if rb > i and rb + 1 < n and src[rb + 1] == 40:
+                var rp = -1
+                for k in range(rb + 2, n):
+                    if src[k] == 41:
+                        rp = k
+                        break
+                if rp > 0:
+                    var alt = List[Int]()
+                    for k in range(i + 2, rb):
+                        alt.append(src[k])
+                    var target = List[Int]()
+                    var k = rb + 2
+                    while k < rp and is_space(src[k]):
+                        k += 1
+                    while k < rp and not is_space(src[k]):
+                        target.append(src[k])
+                        k += 1
+                    add_image(alt, to_str(target), out, links)
+                    i = rp + 1
+                    continue
+        # <img src="..." alt="..."> in HTML
+        if c == 60 and starts_at(src, i + 1, "img") and i + 4 < n and (is_space(src[i + 4]) or src[i + 4] == 47 or src[i + 4] == 62):
+            var gt = -1
+            for k in range(i + 4, n):
+                if src[k] == 62:
+                    gt = k
+                    break
+            if gt > 0:
+                var tag = List[Int]()
+                for k in range(i + 4, gt):
+                    tag.append(src[k])
+                var isrc = html_attr(tag, "src")
+                if isrc.byte_length() > 0:
+                    add_image(decode(html_attr(tag, "alt")), isrc, out, links)
+                    i = gt + 1
+                    continue
         # link: [text](url) shows the text; <http://...> shows the address
         if c == 91:
             var rb = -1

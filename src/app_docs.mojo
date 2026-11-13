@@ -323,6 +323,15 @@ __extension App:
         if id < 0 or id >= len(self.doc_links):
             return
         var target = self.doc_links[id]
+        if is_image_name(target) and target.find("://") < 0:
+            # a picture of the download: where it is (images are shown as text here)
+            var p = normal_path(join_path(dirname(self.doc_path), target.replace("%20", " ").replace("%29", ")")))
+            if path_exists(p):
+                self.osc52(decode(p))
+                self.say("An image (copied to the clipboard): " + p)
+            else:
+                self.say("That image is not part of the download: " + target)
+            return
         var to = self.doc_lib.resolve_link(self.doc_path, target)
         if to[0].byte_length() > 0:
             self.doc_mark = ""

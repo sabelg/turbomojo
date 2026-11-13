@@ -28,6 +28,8 @@
 - Emoji line up in more terminals: the IDE measures at start-up how wide the terminal
   draws a few doubtful glyphs (shown by `tmide --caps`) and lays them out to match; a
   width it still gets wrong spoils one cell, no longer the rest of the line.
+- Pictures in the Mojo documentation show as "[image: ...]" links that name the
+  picture's file; `tmide --caps` says whether the terminal could show images.
 - Translated menus can have hot letters in any script ("~Ф~айл", "~Ö~ffnen"):
   small or capital, they open the menu, choose the item and press the button.
 
