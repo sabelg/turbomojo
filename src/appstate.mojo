@@ -162,6 +162,14 @@ struct ErrLoc(Copyable, Movable):
     var msg_line: Int
 
 
+
+def osc52_seq(text: List[Int]) -> String:
+    """The OSC 52 sequence that puts `text` on the clipboard (base64 of its UTF-8)."""
+    var b = List[UInt8]()
+    for c in text:
+        encode_cp(c, b)
+    return "\x1b]52;c;" + base64(b) + "\x07"
+
 struct App(Movable):
     var term: Terminal
     var scr: Screen
@@ -1567,8 +1575,8 @@ struct App(Movable):
                 self.wins[i].y = max(1, min(self.wins[i].y, 1 + dh - self.wins[i].h))
 
     def osc52(mut self, text: List[Int]):
-        var b = List[UInt8]()
-        for c in text:
-            encode_cp(c, b)
-        append_str(self.term.out, "\x1b]52;c;" + base64(b) + "\x07")
+        """Copy to the terminal's clipboard with OSC 52 - the only way TurboMojo copies, so
+        it works the same over SSH and with no X11 or Wayland (inside tmux: set-clipboard
+        on)."""
+        append_str(self.term.out, osc52_seq(text))
         self.term.flush()

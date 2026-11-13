@@ -52,6 +52,8 @@ Requirements: Linux with glibc 2.34 or newer. pixi fetches everything else: the 
 
 Prefer a current editor's look to the blue desktop? Pick **Modern start** in the first run's theme question, or **Options ▸ Presets…** later: your terminal's own colours, panes with tabs and the file explorer.
 
+Working on a server over SSH, in tmux? The user guide's [On a remote machine](docs/USER_GUIDE.md#on-a-remote-machine-ssh-tmux) has the five tmux settings that make copying, the mouse, colours, keys and pictures work.
+
 Something not working? **Help ▸ Check setup…** lists what TurboMojo uses and what is missing, with a fix for each.
 
 New to Mojo and pixi? Start TurboMojo in an empty folder: the first run offers to make a project there (**File ▸ New project…** any time later) - a `pixi.toml` with Mojo, `hello.mojo` and a test - and installs Mojo for it with `pixi install`.

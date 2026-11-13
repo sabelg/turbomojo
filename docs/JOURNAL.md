@@ -5655,3 +5655,30 @@ Verified:
 
 Not done / unverified:
 - The smoke test on CI is seen again only after a push.
+
+## 2026-11-13 · P11-07 Working on a remote machine over SSH · done
+
+What changed:
+- docs/USER_GUIDE.md "On a remote machine (SSH, tmux)": TurboMojo runs on the server and
+  only the screen travels; copying goes to your own terminal's clipboard with OSC 52
+  (which terminals take it; pasting is the terminal's own); five tmux settings
+  (set-clipboard, mouse, RGB, extended-keys, allow-passthrough) and what each is for;
+  COLORTERM not crossing ssh and TURBOMOJO_COLORS; keys that terminals or ssh keep, and
+  that every command is in the menus and the palette; Help > Check setup for what is
+  missing. README points to it; What's new.
+- The OSC 52 sequence is made by `osc52_seq` (appstate.mojo), so it can be checked
+  directly; copying is unchanged.
+
+Verified:
+- tests/test_remote.mojo (3 tests): the sequence (base64 of UTF-8, also a non-ASCII
+  character); no clipboard program (xclip, xsel, wl-copy, pbcopy, clip.exe) is named
+  anywhere in the source; end to end, the real tmide in a tmux of its own (set-clipboard
+  on) with DISPLAY and WAYLAND_DISPLAY unset and PATH=/usr/bin:/bin: Ctrl-A, Ctrl-C, and
+  tmux's buffer holds the file's text ("copied over ssh ✓").
+- Mutation: without the OSC 52 write, the end-to-end test fails.
+
+Not done / unverified:
+- Not tried over a real ssh connection or with the terminals named (their OSC 52
+  support is as documented by them); the mouse, RGB, extended-keys and passthrough
+  settings were not tested here.
+- Gate: CHECK OK (123 test files, 1239 tests, 971 s).

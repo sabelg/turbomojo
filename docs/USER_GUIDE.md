@@ -22,7 +22,8 @@ and inside the IDE **F1** shows the keys of the keymap you use.
 13. [Settings, themes and keymaps](#settings-themes-and-keymaps)
 14. [Plugins and other languages](#plugins-and-other-languages)
 15. [Your terminal](#your-terminal)
-16. [When something goes wrong](#when-something-goes-wrong)
+16. [On a remote machine (SSH, tmux)](#on-a-remote-machine-ssh-tmux)
+17. [When something goes wrong](#when-something-goes-wrong)
 
 ## Starting
 
@@ -231,6 +232,45 @@ terminal reports:
 ```bash
 pixi run ./build/tmide --caps
 ```
+
+## On a remote machine (SSH, tmux)
+
+TurboMojo runs where your code is: on a GPU server or any Linux machine you reach with
+`ssh`, Mojo, the language server, the debugger and your program all run there, and only
+the screen travels. Nothing needs to be installed on your own computer but a terminal.
+
+    ssh you@gpu-box
+    cd my-project && tmide          # or: pixi run ./build/tmide
+
+- **Copying.** Copy (Ctrl-C, Ctrl-Ins) sends the text to *your* terminal's clipboard
+  with OSC 52 - the only way TurboMojo copies, so it needs no X11, no Wayland and no
+  clipboard program on the server. Most terminals accept it (kitty, WezTerm, Ghostty,
+  foot, Alacritty, Windows Terminal; iTerm2 once "Applications in terminal may access
+  clipboard" is on). Pasting is your terminal's own paste (Ctrl-Shift-V, Cmd-V); it
+  arrives as one paste, not as typed keys.
+- **Inside tmux** (worth it: the session survives a dropped connection), add to
+  `~/.tmux.conf` on the server:
+
+      set -g set-clipboard on                  # copies reach your terminal
+      set -g mouse on                          # clicks and the wheel reach TurboMojo
+      set -as terminal-features ',*:RGB'       # 24-bit colour
+      set -s extended-keys on                  # more Ctrl and Shift combinations
+      set -g allow-passthrough on              # pictures in the docs (kitty graphics)
+
+- **Colours.** `ssh` does not pass `COLORTERM` on unless both sides allow it
+  (`SendEnv`/`AcceptEnv`), so the server may think your terminal has 256 colours; the
+  start-up questions to the terminal usually find out anyway. If not, set
+  `TURBOMOJO_COLORS=truecolor` on the server (in `~/.bashrc`).
+- **Keys.** Some keys never reach a program: a terminal may keep F10, F11 or Alt for its
+  own menus, and macOS terminals send Alt only with "Option as Meta" turned on. Every
+  command is also in the menus (F10 - or click the menu bar) and the palette (Ctrl-P).
+  OpenSSH's escape key, `~` at the start of a line, is only taken after Enter; type it
+  twice to get one.
+- **What is missing** on the server (Mojo, pixi, the docs) is listed by Help > Check
+  setup, with how to get it.
+
+This is checked by the tests: the copy is made through tmux with `DISPLAY` and
+`WAYLAND_DISPLAY` unset and no clipboard program on `PATH`, and arrives.
 
 ## When something goes wrong
 

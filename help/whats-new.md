@@ -2,6 +2,9 @@
 
 ## 2.2 (in progress)
 
+- A guide to working on a remote machine over SSH and in tmux (the user guide: copying
+  to your own clipboard, the mouse, colours, keys, pictures); copying through tmux with
+  no X11, Wayland or clipboard program on the server is now tested.
 - Options > Presets...: Turbo (the blue desktop, overlapping windows) or Modern (your
   terminal's colours, panes with tabs, the explorer open, the Modern keys) in one
   choice; the first run's theme question offers Modern at its top. `ui.explorer = true`
