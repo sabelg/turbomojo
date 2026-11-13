@@ -109,12 +109,21 @@ __extension App:
         var n = len(self.pending_swaps)
         if n == 0:
             return
-        var d = Dialog(D_RECOVER, "Recover unsaved work", 62, min(9 + min(n, 6), 16))
+        var dw = max(62, min(self.scr.w - 4, 96))
+        var d = Dialog(D_RECOVER, "Recover unsaved work", dw, min(9 + min(n, 6), 16))
         d.lines.append("TurboMojo did not exit normally last time.")
         d.lines.append("Unsaved changes were kept for:")
         for k in range(min(n, 6)):
             var info = swap_decode(read_bytes(self.pending_swaps[k]))
             var what = info.path if info.path.byte_length() > 0 else info.title + " (never saved)"
+            if what.startswith(self.cwd + "/"):
+                var rel = String(what[byte=self.cwd.byte_length() + 1:])
+                what = rel                  # (where the IDE runs: shorter)
+            # a long path keeps its end - the file's name - and loses its start
+            var room = dw - 6 - cp_len(info.time) - 3
+            var cps = decode(what)
+            if len(cps) > room and room > 8:
+                what = "…" + slice_str(cps, len(cps) - room + 1, len(cps))
             d.lines.append("  " + what + "   " + info.time)
         if n > 6:
             d.lines.append("  ... and " + String(n - 6) + " more")

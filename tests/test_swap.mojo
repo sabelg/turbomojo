@@ -409,5 +409,29 @@ def test_file_at_the_limit_is_not_large() raises:
     cleanup(app)
 
 
+def test_a_long_path_keeps_the_files_name() raises:
+    """(found by CI, whose checkout is deep: the name was cut off at the box's edge)"""
+    var app = make("longpath")
+    app.scr.resize(80, 25)
+    var dead = dead_pid()
+    var deep = app.recovery_dir + "/a-rather-long-folder-name/another-long-folder-name/and-one-more-level"
+    _ = run_system("mkdir -p '" + deep + "'")
+    var real = deep + "/the_file.mojo"
+    _ = run_system("printf 'x\\n' > '" + real + "'")
+    _ = plant(app, swap_name(real, "the_file.mojo", dead, 1), real, "the_file.mojo", dead, "y\n")
+    app.offer_recovery()
+    assert_equal(app.dlg.kind, D_RECOVER)
+    var line = app.dlg.lines[2]
+    assert_true(line.find("the_file.mojo") > 0, line)
+    assert_true(line.find("…") > 0, line)
+    assert_true(len(decode(line)) <= app.dlg.w - 4, line)
+    # under the folder the IDE works in: shown from there
+    app.mode = M_NORMAL
+    app.cwd = app.recovery_dir + "/a-rather-long-folder-name/another-long-folder-name"
+    app.offer_recovery()
+    assert_true(app.dlg.lines[2].startswith("  and-one-more-level/the_file.mojo   "), app.dlg.lines[2])
+    cleanup(app)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

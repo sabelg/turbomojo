@@ -5634,3 +5634,24 @@ Not done / unverified:
 - `tmide --screenshot` does not open the explorer from ui.explorer (it does not go
   through run()); a Modern picture for the README is not made yet.
 - Gate: CHECK OK (122 test files, 1235 tests, 970 s).
+
+## 2026-11-13 · Fix found by GitHub CI: the recovery box cut off a long path's file name · done
+
+What changed:
+- GitHub CI (run 43428243145, linux-aarch64) passed every test file, then failed the
+  smoke test: "recovery dialog does not name the file". The runner's checkout is deep
+  (/home/runner/work/turbomojo/turbomojo/...), and the "Recover unsaved work" box (62
+  columns) cut the path at its right edge, "…/examples/hello.moj". Anyone with deep
+  folders saw the same.
+- The box is wider on wider screens (up to 96 columns); a path under the folder the IDE
+  works in is shown from there; a path still too long loses its start ("…") and keeps
+  the file's name.
+
+Verified:
+- tests/test_swap.mojo: test_a_long_path_keeps_the_files_name (a deep path at 80 columns
+  keeps "the_file.mojo" and fits the box; under the working folder it is shown from
+  there). The other 22 swap tests pass.
+- Gate: CHECK OK (122 test files, 1236 tests, 971 s).
+
+Not done / unverified:
+- The smoke test on CI is seen again only after a push.
