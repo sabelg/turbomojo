@@ -1,4 +1,5 @@
 """Keyboard and paste input routing."""
+from responsive import too_small
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
@@ -88,6 +89,11 @@ __extension App:
     def handle_event(mut self, e: Event) raises:
         if e.kind == EV_FOCUS:
             self.focused = e.key == 1           # (the next frame is drawn dimmed or not)
+            return
+        if too_small(self.scr.w, self.scr.h):
+            # nothing to see: nothing is typed or clicked anywhere; only quitting works
+            if e.kind == EV_KEY and self.reg.find_key(e.key) == CM_QUIT:
+                self.exec(CM_QUIT)
             return
         if e.kind == EV_MOUSE:
             self.handle_mouse(e)

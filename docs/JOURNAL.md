@@ -4785,3 +4785,28 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   sent is diffed).
 - Gate: scripts/check.sh printed CHECK OK (102 test files, 1156 tests, 845 s).
 
+## 2026-11-12 · P10-16a too-small screen and narrow-window rules · done
+- Split P10-16 into 16a (this), 16b (three-step zoom) and 16c (stacking the tiled
+  panes on narrow terminals): each is a round of its own.
+- What changed: new src/responsive.mojo - MIN_COLS x MIN_ROWS = 40x10,
+  `too_small`, `too_small_lines` (the notice, word-wrapped), and the widths below
+  which a window drops what crowds its text: MINIMAP_MIN_W 60 (the old literal),
+  CRUMBS_MIN_W 50, GUTTER_MIN_W 36. draw() shows only the notice, centred in the
+  dialog colours, when the terminal is too small (the hidden cursor parked on it);
+  handle_event() then ignores every event except a key bound to Quit, so nothing
+  is typed into a file nobody can see. Breadcrumbs and the gutter (line numbers and
+  git column) follow the window's width each frame. README row "Small terminals".
+- Verified: tests/test_responsive.mojo (3 tests): the limits and the notice's
+  words, wrapped to the width, with and without a quit key; at 30x8 the screen
+  says "Terminal too small: 30x8." and "40x10", shows nothing of the IDE, typed
+  keys and Enter leave the file unchanged, growing back to 100x30 shows the editor
+  as it was, the notice names the quit key and that key quits; windows of 80, 59,
+  49, 35 and 36 columns lose the minimap, then the breadcrumbs, then the gutter,
+  the text then starting right after the frame. Mutants (keys not swallowed, no
+  gutter rule, no breadcrumb rule) each fail.
+- Not done / unverified: the thresholds are judgement, not measured with users;
+  mouse clicks are ignored on the notice (no "quit" button); the panel, explorer
+  and other side windows have no narrow rules of their own; a quit bound only to a
+  two-key chord (the Emacs keymap's Ctrl-X Ctrl-C) cannot be typed on the notice.
+- Gate: scripts/check.sh printed CHECK OK (103 test files, 1159 tests, 829 s).
+

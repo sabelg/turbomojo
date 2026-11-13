@@ -103,6 +103,7 @@ struct of `appstate.mojo`, one area each.
 | `src/project.mojo` | The project around the files being edited: where its `pixi.toml` is and which tasks that file defines. |
 | `src/pty.mojo` | A program running on a pseudo-terminal: what the integrated terminal and the REPL run. |
 | `src/regex.mojo` | Regular expressions: a parser, a compiler to a small instruction set, and a Pike VM (Thompson NFA simulation that also tracks capture groups). |
+| `src/responsive.mojo` | Responsive layout, first part (P10-16a): what gives way when the terminal or a window is small. |
 | `src/rope.mojo` | Rope: text stored as UTF-8 chunks in a B-tree whose nodes carry summaries. |
 | `src/rpc.mojo` | JSON-RPC 2.0 over a child process's pipes, with `Content-Length` framing (LSP, DAP) or one message per line (ACP: `lines`, messages contain no raw line feeds). |
 | `src/runconfig.mojo` | Run configurations: named ways of running the project (which file, with what arguments, environment and working directory, built first or not), kept in the project's .turbomojo.toml as tables [run.<name>]. |

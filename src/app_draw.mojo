@@ -23,6 +23,7 @@ from commands import *
 from dialog import *
 from util import *
 from appstate import *
+from responsive import too_small, too_small_lines, MINIMAP_MIN_W, CRUMBS_MIN_W, GUTTER_MIN_W
 from outline import scan_outline, scope_path, breadcrumbs, sticky_rows
 from app_notify import *
 from app_progress import *
@@ -170,6 +171,9 @@ __extension App:
         self.scr.cvis = False
         self.scr.fx = -1
         self.scr.fy = -1
+        if too_small(self.scr.w, self.scr.h):
+            self.draw_too_small()
+            return
         self.layout_sync()
         self.explain_fit()
         self.bp_sync()              # files opened since show their breakpoints
@@ -184,7 +188,7 @@ __extension App:
                 self.scopes_update(i)
             if self.wins[i].kind == WK_AGENT:
                 self.wins[i].title = self.agent_title()     # (before the frame is drawn)
-            self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers)
+            self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers and self.wins[i].w >= GUTTER_MIN_W)
             self.wins[i].clustered = self.scr.clustered
             self.wins[i].auto_pairs = self.auto_pairs
             if len(self.wins[i].rulers) != len(self.rulers):
@@ -385,7 +389,7 @@ __extension App:
     def scopes_update(mut self, i: Int):
         """Window i's breadcrumbs, pinned scope headers and minimap, as the settings and
         the cursor have them (the file's scopes are scanned again only after an edit)."""
-        self.wins[i].minimap = self.minimap_on and not self.reader and self.wins[i].w >= 60
+        self.wins[i].minimap = self.minimap_on and not self.reader and self.wins[i].w >= MINIMAP_MIN_W
         self.wins[i].minimap_blocks = self.minimap_blocks
         if (not self.breadcrumbs and not self.sticky_scroll) or self.wins[i].buf.large:
             self.wins[i].crumbs = ""
@@ -401,11 +405,25 @@ __extension App:
             else:
                 self.scopes_stale = True
         var items = self.wins[i].scope_items.copy()
-        self.wins[i].crumbs = breadcrumbs(items, scope_path(items, self.wins[i].cr)) if self.breadcrumbs else String("")
+        self.wins[i].crumbs = breadcrumbs(items, scope_path(items, self.wins[i].cr)) if self.breadcrumbs and self.wins[i].w >= CRUMBS_MIN_W else String("")
         self.wins[i].sticky.clear()
         if self.sticky_scroll and not self.wins[i].wrap and len(self.wins[i].buf.folds) == 0:
             var top = self.wins[i].top
             self.wins[i].sticky = sticky_rows(items, scope_path(items, top), top, self.wins[i].cr, 3)
+
+    def draw_too_small(mut self):
+        """Below MIN_COLS x MIN_ROWS: only a notice, in the middle (src/responsive.mojo)."""
+        var p = self.pal.copy()
+        self.scr.no_clip()
+        self.scr.fill(0, 0, self.scr.w, self.scr.h, 32, p.dlg_fg, p.dlg_bg)
+        var lines = too_small_lines(self.scr.w, self.scr.h, self.reg.key_label(CM_QUIT))
+        var y0 = max(0, (self.scr.h - len(lines)) // 2)
+        for k in range(len(lines)):
+            if y0 + k >= self.scr.h:
+                break
+            var x = max(0, (self.scr.w - lines[k].byte_length()) // 2)
+            _ = self.scr.text(x, y0 + k, lines[k], p.dlg_fg, p.dlg_bg)
+        self.focus_at(0, y0)
 
     def focus_at(mut self, x: Int, y: Int):
         """The terminal's cursor goes to (x, y), what has the focus: shown in
