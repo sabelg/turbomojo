@@ -5340,3 +5340,37 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   CRCs and Adler-32 are not checked; the decoder is not in scripts/fuzz.sh (the
   random-damage test stands for it).
 - Gate: scripts/check.sh printed CHECK OK (117 test files, 1217 tests, 939 s).
+
+## 2026-11-13 · P1-20 tree-sitter spike · revisited once, still blocked
+- RUNNER.md asks for blocked tasks to be looked at once more after the last phase.
+  `pixi search` in the project's channels (conda-forge, conda.modular.com/max, and
+  max-nightly for the canary): `libtree-sitter` 0.27.2 is still there; there is still
+  **no Mojo grammar** - `tree-sitter-mojo` finds nothing, and the only packages matching
+  `*mojo*` are mojo, mojo-compiler, mojo-jupyter, mojo-python, pixi-build-mojo and
+  perl-mojolicious. Nothing new to measure, so the decision of 2026-11-10 stands: the
+  hand-written lexer and the language server's symbols. P1-20 stays [!].
+- What would unblock it is unchanged: a Mojo grammar published to one of those
+  channels, or the user's permission to build one from a source outside them.
+
+## 2026-11-13 · Final summary (Phases 0-10)
+
+- The backlog: 143 tasks done, 1 blocked (P1-20, above). Phases 0-9 made TurboMojo
+  2.0.0 (2026-11-12); Phase 10, "UI clarity and calm" (v2.1, 22 tasks, some split into
+  a/b/c), was added that day from the UI research report and finished today with
+  pictures in the docs reader (kitty graphics, then sixel).
+- Phase 10 in short: focus shown by more than colour; calmer frames and spacing;
+  icon sets with fallbacks; key hints and the status line reworked; motion that can be
+  turned off; contrast checked in every theme; measured emoji widths (the terminal is
+  asked rather than guessed); hot letters in any alphabet; images in Markdown and HTML
+  shown as captions and, where the terminal can, as pictures, with a PNG decoder and
+  an inflate of its own (no new dependency).
+- State of the tree: branch `roadmap`, 152 commits, never pushed; 129 source files
+  (about 46,700 lines of Mojo) and 117 test programs. The last gate: CHECK OK, 117
+  test files with 1217 tests, smoke, perf and soak, in 939 s.
+- Left for the user (not tasks the runner can do): choose a licence (the package has
+  none); decide whether to call Phase 10 a release - src/version.mojo and pixi.toml
+  still say 2.0.0 and What's new says "2.1 (in progress)"; push or publish; macOS
+  has not been tried; the pictures were seen as placeholder cells and reserved rows in
+  tmux, never as pixels in kitty, Ghostty, foot or xterm; P1-20 as above.
+- The runner has nothing left to do. Its loop stays armed (the user asked that it never
+  stop), but each wake-up only checks for new tasks in docs/BACKLOG.md.
