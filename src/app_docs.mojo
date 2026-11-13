@@ -10,7 +10,8 @@ from term import (
     MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN,
 )
 from screen import Screen
-from palette import Palette, theme, THEME_COUNT
+from palette import Palette, theme, THEME_COUNT, ANSI_BASE
+from kittygfx import *
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
@@ -181,8 +182,10 @@ __extension App:
             md = doc_welcome(self.doc_home, len(self.doc_lib.pages) > self.doc_lib.help_count)
             if self.doc_path.byte_length() > 0:
                 md = "# Not found\n\nThe file `" + self.doc_path + "` is no longer there. Help > Download documentation fetches it again."
+        self.docs_images_forget()
         self.doc_links.clear()
         self.doc_lines = md_render_rich(md, w, self.hl, self.doc_links, True)
+        self.docs_place_images(w)
         self.doc_scroll = max(0, min(self.doc_scroll, max(0, len(self.doc_lines) - 1)))
 
     # --------------------------------------------------------- navigation
@@ -319,14 +322,88 @@ __extension App:
                 self.say(shown)
                 return
 
+    # ------------------------------------------------------------- pictures
+    def docs_image_file(self, target: String) -> String:
+        """The picture of the download a link names, as a path ("" if it is on the web
+        or not there)."""
+        if not is_image_name(target) or target.find("://") >= 0:
+            return ""
+        var p = normal_path(join_path(dirname(self.doc_path), target.replace("%20", " ").replace("%29", ")")))
+        return p if path_exists(p) else String("")
+
+    def docs_place_images(mut self, w: Int):
+        """With pictures on (kitty graphics): after each line that is just a PNG of the
+        download, rows for the picture itself (the "[image: ...]" line stays, as its
+        caption and link). Larger files, other formats and web pictures stay links."""
+        if not self.gfx_on:
+            return
+        var out = List[MdLine]()
+        var max_rows = min(24, max(3, self.docs_page_h() - 2))
+        for line in self.doc_lines:
+            out.append(line.copy())
+            var k = image_only(line)
+            if k < 0 or not image_name(self.doc_links[k]).lower().endswith(".png"):
+                continue
+            var path = self.docs_image_file(self.doc_links[k])
+            if path.byte_length() == 0:
+                continue
+            var data = read_file(path)
+            if len(data) > GFX_MAX_BYTES:
+                continue
+            var size = png_size(data)
+            if size[0] < 0:
+                continue
+            var cells = image_cells(size[0], size[1], min(w, 297), min(max_rows, 297))
+            var idx = len(self.doc_images)
+            self.doc_images.append(path)
+            self.doc_img_ids.append(0)
+            self.doc_img_size.append((cells[0] << 16) | cells[1])
+            for r in range(cells[1]):
+                var m = MdLine()
+                m.img = idx
+                m.img_row = r
+                for _ in range(cells[0]):
+                    m.add(32, MD_TEXT)
+                out.append(m^)
+        self.doc_lines = out^
+
+    def docs_images_forget(mut self):
+        """The page's pictures deleted in the terminal (a new page, another width, the
+        end): their memory is freed there too."""
+        for id in self.doc_img_ids:
+            if id > 0:
+                self.gfx_out += kitty_delete(id, self.gfx_tmux)
+        self.doc_images.clear()
+        self.doc_img_ids.clear()
+        self.doc_img_size.clear()
+
+    def docs_draw_image_row(mut self, line: MdLine, x0: Int, y: Int, bg: Int):
+        """One row of a picture: placeholder cells (sent first, when it shows for the
+        first time)."""
+        var idx = line.img
+        var cols = self.doc_img_size[idx] >> 16
+        var rows = self.doc_img_size[idx] & 0xFFFF
+        if self.doc_img_ids[idx] == 0:
+            var id = self.gfx_next
+            self.gfx_next = GFX_FIRST_ID if id >= GFX_LAST_ID else id + 1
+            self.gfx_out += kitty_transmit(id, read_file(self.doc_images[idx]), cols, rows, self.gfx_tmux)
+            self.doc_img_ids[idx] = id
+        if len(self.gfx_diac) == 0:
+            self.gfx_diac = kitty_diacritics()
+        var fg = ANSI_BASE + self.doc_img_ids[idx]
+        for c in range(cols):
+            self.scr.put(x0 + c, y, PLACEHOLDER, fg, bg)
+            self.scr.combine(x0 + c, y, self.gfx_diac[line.img_row])
+            self.scr.combine(x0 + c, y, self.gfx_diac[c])
+
     def docs_follow(mut self, id: Int):
         if id < 0 or id >= len(self.doc_links):
             return
         var target = self.doc_links[id]
         if is_image_name(target) and target.find("://") < 0:
-            # a picture of the download: where it is (images are shown as text here)
-            var p = normal_path(join_path(dirname(self.doc_path), target.replace("%20", " ").replace("%29", ")")))
-            if path_exists(p):
+            # a picture of the download: where it is
+            var p = self.docs_image_file(target)
+            if p.byte_length() > 0:
                 self.osc52(decode(p))
                 self.say("An image (copied to the clipboard): " + p)
             else:
@@ -765,6 +842,9 @@ __extension App:
             if ln >= len(self.doc_lines):
                 break
             var line = self.doc_lines[ln].copy()
+            if line.img >= 0:
+                self.docs_draw_image_row(line, x0, 2 + r, p.doc_bg)
+                continue
             var block = len(line.st) > 0 and line.st[0] >= MD_BLOCK
             if block:
                 self.scr.fill(x0 - 1, 2 + r, min(textw + 2, W - x0), 1, 32, p.ed_fg, p.ed_bg)

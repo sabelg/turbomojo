@@ -189,5 +189,5 @@ brackets; where TurboMojo already did part of it, only the rest is a task).
   - [x] P10-21b Unicode-safe hot letters (non-ASCII and accented hot letters, case-folded matching, a clear rule for labels without one)
 - [ ] P10-22 Inline images in the docs pane (kitty graphics with Unicode placeholders under tmux, sixel), with a text fallback [I]
   - [x] P10-22a The text fallback (Markdown and HTML images as "[image: alt]" links that keep the picture's source) and the probe for kitty graphics and sixel
-  - [ ] P10-22b Kitty graphics: a local PNG shown in the reader, transmitted as it is and placed with Unicode placeholders (so it works through tmux), rows reserved in the page, deleted when the page changes
+  - [x] P10-22b Kitty graphics: a local PNG shown in the reader, transmitted as it is and placed with Unicode placeholders (so it works through tmux), rows reserved in the page, deleted when the page changes
   - [ ] P10-22c Sixel: PNG decoded (inflate and filters), scaled to the cells, quantised to a palette, sent as sixel

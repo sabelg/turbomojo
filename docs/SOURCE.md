@@ -82,6 +82,7 @@ struct of `appstate.mojo`, one area each.
 | `src/helpbook.mojo` | TurboMojo's own help: the "TurboMojo" book of the documentation viewer (the guide, the cheat sheet, the keyboard reference, what's new) and the tutorial file. |
 | `src/highlight.mojo` | Mojo syntax highlighter (line-based with triple-quoted string state). |
 | `src/json.mojo` | JSON reader and writer (RFC 8259). |
+| `src/kittygfx.mojo` | Kitty graphics protocol, for pictures in the documentation reader (P10-22b). |
 | `src/layout.mojo` | The tiled layout: a tree of splits whose leaves are tab groups. |
 | `src/linediff.mojo` | Line diff: which lines of an old text became which lines of a new one. |
 | `src/linemode.mojo` | The line mode (P10-14b): TurboMojo without cursor addressing, for TERM=dumb and `tmide --lines`. |

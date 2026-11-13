@@ -29,7 +29,8 @@
   draws a few doubtful glyphs (shown by `tmide --caps`) and lays them out to match; a
   width it still gets wrong spoils one cell, no longer the rest of the line.
 - Pictures in the Mojo documentation show as "[image: ...]" links that name the
-  picture's file; `tmide --caps` says whether the terminal could show images.
+  picture's file, and in kitty, Ghostty and other terminals with the kitty graphics
+  protocol the PNGs themselves, also inside tmux (`[ui] images`).
 - Translated menus can have hot letters in any script ("~Ф~айл", "~Ö~ffnen"):
   small or capital, they open the menu, choose the item and press the button.
 

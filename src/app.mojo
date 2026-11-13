@@ -10,7 +10,7 @@ from term import (
     MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN,
 )
 from screen import Screen
-from caps import COLOR_TRUE, width_verdict
+from caps import COLOR_TRUE, COLOR_16, width_verdict
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
@@ -117,6 +117,18 @@ __extension App:
             self.scr.clustered = True
         self.scr.emoji_narrow = v.emoji_narrow
 
+    def gfx_decide(mut self, answered: Bool, tmux: String, kitty_window: String, ghostty: String):
+        """Whether the reader shows pictures: `ui.images = "kitty"` says so; "auto" when
+        the terminal answered the kitty graphics query - or, inside tmux (which does
+        not pass the query on), when tmux runs in kitty or Ghostty (their variables are
+        inherited). Never in screen-reader mode or with 16 colours (the image id is a
+        256-colour index)."""
+        self.gfx_tmux = tmux.byte_length() > 0
+        var outside = self.gfx_tmux and (kitty_window.byte_length() > 0 or ghostty.byte_length() > 0)
+        self.gfx_on = self.images_mode == "kitty" or (self.images_mode == "auto" and (answered or outside))
+        if self.reader or self.scr.color_mode == COLOR_16:
+            self.gfx_on = False
+
     def run(mut self) raises:
         self.frec_path = state_dir() + "/opened"
         self.frec.decode_text(read_text(self.frec_path))
@@ -145,6 +157,7 @@ __extension App:
             self.term.set_grapheme(True)
             self.scr.clustered = True
         self.apply_widths(caps.widths)
+        self.gfx_decide(caps.kitty_graphics, env_or("TMUX", ""), env_or("KITTY_WINDOW_ID", ""), env_or("GHOSTTY_RESOURCES_DIR", ""))
         _ = self.sig.open()
         _ = self.first_run_theme()
         var early = self.term.take_early()
@@ -154,6 +167,9 @@ __extension App:
                 self.scr.resize(sz[0], sz[1])
                 self.fit_windows()
             self.draw()
+            if self.gfx_out.byte_length() > 0:
+                append_str(self.term.out, self.gfx_out)    # pictures before the cells that show them
+                self.gfx_out = ""
             self.scr.render(self.term.out)
             self.term.flush()
             if self.fault.byte_length() > 0:
@@ -252,6 +268,10 @@ __extension App:
         self.lsp_stop()
         self.sig.close()
         self.watch.close()
+        self.docs_images_forget()
+        if self.gfx_out.byte_length() > 0:
+            append_str(self.term.out, self.gfx_out)
+            self.gfx_out = ""
         self.term.leave()
         if self.recovered > 0:
             print("TurboMojo: kept", self.recovered, "unsaved buffer(s); they will be offered when you start it again.")

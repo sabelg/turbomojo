@@ -21,6 +21,8 @@ comptime UL_DASHED = 5
 def doubtful_width(c: Int) -> Bool:
     """Emoji and pictographs (from U+1F000, and the wide symbols in U+2300..U+2BFF):
     their width depends on how new the terminal's tables are."""
+    if c == 0x10EEEE:
+        return False        # a picture's placeholder cell: one column by definition
     return c >= 0x1F000 or (c >= 0x2300 and c < 0x2C00 and char_width(c) == 2)
 
 

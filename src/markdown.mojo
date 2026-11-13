@@ -24,10 +24,14 @@ comptime MD_BLOCK = 16      # a code block line: MD_BLOCK + syntax class of the 
 struct MdLine(Copyable, Movable):
     var cps: List[Int]
     var st: List[Int]       # one style per codepoint
+    var img: Int            # a row of a picture: its index in the reader's images (-1: text)
+    var img_row: Int        # ...and which row of it
 
     def __init__(out self):
         self.cps = List[Int]()
         self.st = List[Int]()
+        self.img = -1
+        self.img_row = -1
 
     def add(mut self, cp: Int, style: Int):
         self.cps.append(cp)
@@ -151,6 +155,23 @@ def image_name(src: String) -> String:
     for k in range(start, end):
         out.append(cps[k])
     return to_str(out)
+
+
+def image_only(line: MdLine) -> Int:
+    """The link index of a line that is one picture and nothing else ("[image: ...]"
+    as a single link), -1 otherwise."""
+    var n = len(line.cps)
+    if n < 7 or line.cps[0] != 91 or line.cps[n - 1] != 93:
+        return -1
+    var st = line.st[0]
+    if st >= 0:
+        return -1
+    for s in line.st:
+        if s != st:
+            return -1
+    if not to_str(line.cps).startswith("[image"):
+        return -1
+    return -st - 1
 
 
 def is_image_name(src: String) -> Bool:

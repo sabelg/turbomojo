@@ -2,6 +2,7 @@
 
 Behaviour lives in the app_*.mojo modules, which extend App."""
 from glyphs import glyphs_of
+from kittygfx import GFX_FIRST_ID
 from progress import QUIET_MS
 from version import TURBOMOJO_VERSION
 from std.collections import List, Dict
@@ -516,6 +517,15 @@ struct App(Movable):
     var doc_path: String             # the file the page pane shows ('' = the welcome page)
     var doc_lines: List[MdLine]
     var doc_links: List[String]
+    var doc_images: List[String]     # the pictures the page shows (their files), by MdLine.img
+    var doc_img_ids: List[Int]       # ...the id each has in the terminal (0: not sent yet)
+    var doc_img_size: List[Int]      # ...cols << 16 | rows
+    var images_mode: String          # ui.images: auto | kitty | off
+    var gfx_on: Bool                 # pictures are shown (kitty graphics; decided at start)
+    var gfx_tmux: Bool               # ...through tmux (commands passed through)
+    var gfx_out: String              # graphics commands to send before the next frame
+    var gfx_next: Int                # the next image id to use
+    var gfx_diac: List[Int]          # the row / column marks of the placeholder cells
     var doc_width: Int               # the width the page was laid out for
     var doc_scroll: Int
     var doc_link: Int                # the link under Enter (-1 = none)
@@ -961,6 +971,15 @@ struct App(Movable):
         self.doc_path = ""
         self.doc_lines = List[MdLine]()
         self.doc_links = List[String]()
+        self.doc_images = List[String]()
+        self.doc_img_ids = List[Int]()
+        self.doc_img_size = List[Int]()
+        self.images_mode = "auto"
+        self.gfx_on = False
+        self.gfx_tmux = False
+        self.gfx_out = ""
+        self.gfx_next = GFX_FIRST_ID
+        self.gfx_diac = List[Int]()
         self.doc_width = 0
         self.doc_scroll = 0
         self.doc_link = -1
@@ -1258,6 +1277,7 @@ struct App(Movable):
         self.minimap_on = s.minimap
         self.minimap_blocks = s.minimap_style == "blocks" or (s.minimap_style == "auto" and env_or("TERM", "") == "linux")
         self.scr.glyphs = glyphs_of(s.glyphs)
+        self.images_mode = s.images
         self.dim_unfocused = s.dim_unfocused
         self.reader = s.screen_reader or env_or("TURBOMOJO_SCREEN_READER", "") == "1" or env_or("TERM", "") == "dumb"
         self.reduced_motion_cfg = s.reduced_motion

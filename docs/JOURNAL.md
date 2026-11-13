@@ -5255,3 +5255,45 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   later; a source with ")" or spaces from Markdown itself (not from HTML) is cut at
   the space.
 - Gate: scripts/check.sh printed CHECK OK (115 test files, 1205 tests, 916 s).
+
+## 2026-11-13 · P10-22b pictures through kitty graphics · done
+
+- What changed: src/kittygfx.mojo: the 297 row/column marks (from kitty's
+  gen/rowcolumn-diacritics.txt, fetched for this; kept as a hex string), png_size
+  (IHDR), image_cells (about 10 x 20 px a cell, within a width and 24 rows,
+  proportions kept), kitty_transmit (a=T,U=1,f=100,t=d with c and r: the PNG as it is,
+  base64 in 4096-character chunks with m=1 / m=0, quiet q=2), kitty_delete (a=d,d=I),
+  wrap_for_tmux (DCS tmux; with ESC doubled). MdLine has img / img_row; markdown
+  image_only finds a line that is one picture. app_docs: docs_place_images (after
+  md_render_rich, when gfx_on: below each line that is a PNG of the download alone,
+  rows of the picture; the "[image: ...]" line stays as the caption), the picture
+  sent the first time a row of it is drawn (ids 16..255, so the id is sent as 38;5;id),
+  each cell U+10EEEE with its row and column mark and the id as colour (so scrolling,
+  clipping and repainting are the text's), docs_images_forget deletes the page's
+  pictures on a new layout and at the end. App.gfx_out is sent before the frame
+  (run loop, and before leaving). gfx_decide: ui.images = kitty, or auto with the
+  query answered or inside tmux with KITTY_WINDOW_ID / GHOSTTY_RESOURCES_DIR set;
+  never in screen-reader mode or with 16 colours. screen.doubtful_width: the
+  placeholder is not doubtful (one column by definition). config: ui.images = auto |
+  kitty | off. README (Mojo documentation row), What's new.
+- Verified: tests/test_doc_pictures.mojo (5 tests): the marks (297, first and last),
+  png_size, image_cells for wide, tall and small pictures; one APC for a small file,
+  chunks with m=1 then m=0 whose payload is the base64 of the file, delete, the tmux
+  wrapping; the decision for each case; in the reader a 200 x 100 PNG gives 5 rows of
+  20 cells after its caption, the JPEG, the web picture and a picture inside a
+  sentence stay links, the transmit command comes first, each cell has the
+  placeholder, colour id 16 and its row and column marks, the frame sends 38;5;16 and
+  the character with its marks, nothing is sent again on the next frame, scrolled
+  part-way the rows that show are the right ones, another page deletes it; with
+  pictures off (auto, nothing answered) no rows and nothing sent. Mutants (no
+  delete, the row mark always 0, sent on every frame, tmux anywhere counts, no chunk
+  flag) fail; dropping the .png check does not (png_size turns the others down too -
+  the check only saves reading them). In tmux the real IDE with images = "kitty"
+  showed the "[image: Gradient]" caption and 12 placeholder cells (a 60 x 30 PNG: 6 x
+  2) with their marks, from a temporary docs home and config.
+- Not done / unverified: not seen in kitty, Ghostty or WezTerm themselves (none
+  here): that the picture appears, its size, and passthrough through tmux to them;
+  the cell size is assumed (10 x 20 px), not asked (CSI 16 t); a reflow (another
+  width) sends the picture again; pictures in the docs pane beside the editor (not
+  the reader) stay links; sixel is P10-22c.
+- Gate: scripts/check.sh printed CHECK OK (116 test files, 1210 tests, 926 s).
