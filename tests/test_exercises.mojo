@@ -140,7 +140,7 @@ def test_not_an_exercise() raises:
     app.ex_home = "/nowhere/exercises"
     app.open_path("/nowhere/x.mojo")
     app.exec(CM_EX_CHECK)
-    assert_equal(app.status, "Open an exercise first (Help > Exercises)")
+    assert_equal(app.status, "Open an exercise (Help > Exercises) or your copy of a GPU puzzle (O in the documentation) first")
     var none = App()
     none.exec(CM_EXERCISES)
     assert_equal(none.status, "There is no folder for the exercises")

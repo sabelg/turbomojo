@@ -183,7 +183,13 @@ checks the imports of its answer against your Mojo.
   library reference (Help > Download documentation fetches it once); **Alt-F1** searches
   it - names, `List.append`, or a pasted error line.
 - Help > Coming from Python: what is different in Mojo, and the keys next to VS Code's.
-- Help > Exercises: small programs that are wrong until you fix them.
+- Help > Exercises: small programs that are wrong until you fix them; Help > Exercise
+  done? checks yours.
+- The Mojo GPU Puzzles (a course in the documentation): **O** on a puzzle's program
+  opens your own copy; fill it in, then Help > Exercise done? runs it in each of the
+  puzzle's modes, as the course's tests do, and says whether your answer is right. The
+  puzzles import MAX, so they need their own environment: run `pixi install` once in
+  the downloaded `mojo-gpu-puzzles` folder (`~/.local/share/turbomojo/docs/`).
 - Help > Cheat sheet, Keyboard reference (**F1** elsewhere), Tutorial, What's new.
 - Notifications that come while you type wait for a pause; **Shift-F10** lists them and
   what is running. Nothing that happens in the background takes the keyboard: when the

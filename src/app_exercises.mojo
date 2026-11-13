@@ -24,6 +24,8 @@ from app_problems import *
 from app_notify import *
 from app_outline import *
 from notify import NL_DONE
+from report import home_as_tilde
+from puzzlecheck import PUZZLES_DIR, puzzle_mojo, puzzle_runner, puzzle_rel, puzzle_name, puzzle_flags, puzzle_checks_itself, puzzle_command
 
 comptime EX_START_NEW = 0           # where each kind of experience starts
 comptime EX_START_PYTHON = 1
@@ -155,8 +157,11 @@ __extension App:
         """Help > Exercise done?: save and run the exercise in front."""
         var ei = self.top_editor()
         var i = self.ex_index_of(self.wins[ei].path) if ei >= 0 else -1
+        if i < 0 and ei >= 0 and self.puzzle_of(self.wins[ei].path).byte_length() > 0:
+            self.puzzle_check(ei)
+            return
         if i < 0:
-            self.say("Open an exercise first (Help > Exercises)")
+            self.say("Open an exercise (Help > Exercises) or your copy of a GPU puzzle (O in the documentation) first")
             return
         if self.job_busy():
             return
@@ -191,3 +196,69 @@ __extension App:
             self.say("It runs, but it does not print \"" + expect + "\" yet")
         else:
             self.say("Not yet: " + String(len(self.prob_build)) + " problem(s) - F1 on the line explains the message")
+
+    # ------------------------------------------------------- the GPU puzzles (P11-10c)
+    def puzzle_practice(self) -> String:
+        """The practice folder (where O in the documentation puts your copies)."""
+        if self.doc_home.byte_length() == 0:
+            return ""
+        return join_path(dirname(self.doc_home), "practice")
+
+    def puzzle_of(self, path: String) -> String:
+        var root = self.puzzle_practice()
+        if root.byte_length() == 0:
+            return ""
+        return puzzle_rel(root, path)
+
+    def puzzle_done(self) -> List[String]:
+        var out = List[String]()
+        var p = join_path(join_path(self.puzzle_practice(), PUZZLES_DIR), "done")
+        if path_exists(p):
+            for l in bytes_to_str(read_file(p)).split("\n"):
+                var s = String(String(l).strip())
+                if s.byte_length() > 0 and s not in out:
+                    out.append(s)
+        return out^
+
+    def puzzle_check(mut self, ei: Int) raises:
+        """Run your copy of a puzzle in each of its modes; finish_task gives the answer."""
+        var path = self.wins[ei].path
+        var rel = self.puzzle_of(path)
+        var name = puzzle_name(rel)
+        var src = to_str(self.wins[ei].buf.all_text())
+        if not puzzle_checks_itself(src):
+            self.say(name + " has no check of its own - read what it prints (Ctrl-F9 runs it)")
+            return
+        if self.job_busy():
+            return
+        if not self.ensure_saved(ei):
+            return
+        var root = join_path(self.doc_home, PUZZLES_DIR)
+        # the puzzles import MAX, which TurboMojo's Mojo does not bring: they are run with
+        # the Mojo of their own environment (made once by `pixi install` in their folder)
+        var mojo = puzzle_mojo(root)
+        if not path_exists(mojo):
+            self.say(name + " needs the puzzles' own environment (Mojo with MAX): run `pixi install` once in " + home_as_tilde(root, env_or("HOME", "")))
+            return
+        var limit = String("timeout 300 ") if which("timeout").byte_length() > 0 else String("")
+        var cmd = "cd " + shell_quote(dirname(path)) + " && (" + puzzle_command(puzzle_runner(root), root, path, puzzle_flags(src), limit) + ") 2>&1"
+        if self.start_job(JOB_TASK, cmd, dirname(path), "puzzle:" + rel):
+            self.task_output("Checking " + name + "...")
+
+    def puzzle_finished(mut self, rel: String, ok: Bool, output: String):
+        """The end of a puzzle's check (from finish_task)."""
+        var name = puzzle_name(rel)
+        var dir = dirname(join_path(join_path(self.puzzle_practice(), PUZZLES_DIR), rel))
+        self.prob_build = parse_compiler_output(output, dir)
+        self.problems_show(False)
+        if ok:
+            var done = self.puzzle_done()
+            if rel not in done:
+                done.append(rel)
+                _ = write_file(join_path(join_path(self.puzzle_practice(), PUZZLES_DIR), "done"), str_bytes("\n".join(done) + "\n"))
+            self.notify_as("exercise", NL_DONE, name + " solved", "Every run checked its answer", True)
+            self.say("✓ " + name + " solved: every run checked its answer")
+        elif len(self.prob_build) > 0:
+            self.say("Not yet: " + String(len(self.prob_build)) + " problem(s) - F1 on the line explains the message")
+        else:
+            self.say("Not yet: " + name + " runs, but its own check fails - the Message window shows what it printed")

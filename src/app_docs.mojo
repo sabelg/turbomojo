@@ -65,6 +65,7 @@ from errhelp import explain_for, err_title
 from docpane import md_section
 from app_explain import *
 from app_keyecho import *
+from puzzlecheck import PUZZLES_DIR
 
 
 comptime DOC_FIND_MAX = 150         # results the finder lists
@@ -701,7 +702,9 @@ __extension App:
                 return False
         self.mode = M_NORMAL
         self.open_path(mine)
-        if fresh:
+        if mine.find("/" + PUZZLES_DIR + "/problems/") > 0:
+            self.say("Your copy of " + basename(mine) + " - fill it in, Ctrl-F9 runs it, Help > Exercise done? checks your answer")
+        elif fresh:
             self.say("Your own copy of " + basename(mine) + " - change it, Ctrl-F9 runs it")
         else:
             self.say("Your copy of " + basename(mine) + ", as you left it - Ctrl-F9 runs it")

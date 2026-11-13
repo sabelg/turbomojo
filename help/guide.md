@@ -65,7 +65,8 @@ there for you. Themes: Options > Colour theme; your own themes are TOML files in
 - Help > Cheat sheet: the keys used most.
 - Help > Tutorial: a file to practise in.
 - Help > Exercises: small programs that are wrong until you fix them; Help >
-  Exercise done? checks yours.
+  Exercise done? checks yours - and your copy of a Mojo GPU Puzzle (O on its program
+  in the documentation reader makes one).
 - Help > Coming from Python: what is different, and the keys next to VS Code's.
 - Help > What's new.
 - In this viewer **/** searches every page, the Mojo documentation too. Find in

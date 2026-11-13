@@ -113,6 +113,7 @@ struct of `appstate.mojo`, one area each.
 | `src/progress.mojo` | The response-time ladder (Nielsen's limits: 0.1 s feels instant, 1 s keeps the flow of thought, 10 s keeps attention): work that ends within a second shows nothing - a spinner that flashes on and off is noise; from one second a spinner and the time on the status line; beyond ten seconds what has been done so far and the key that stops it, in a box that never takes the keyboard. |
 | `src/project.mojo` | The project around the files being edited: where its `pixi.toml` is and which tasks that file defines. |
 | `src/pty.mojo` | A program running on a pseudo-terminal: what the integrated terminal and the REPL run. |
+| `src/puzzlecheck.mojo` | Check my answer for the Mojo GPU Puzzles (P11-10c), as Help > Exercise done? does for the exercises. |
 | `src/regex.mojo` | Regular expressions: a parser, a compiler to a small instruction set, and a Pike VM (Thompson NFA simulation that also tracks capture groups). |
 | `src/report.mojo` | Help > Report a problem (P11-08): a ready-to-file issue text - what to describe, the versions, what the terminal can do (as `tmide --caps` shows), the last crash-log entry and the configuration with anything secret-looking removed. |
 | `src/responsive.mojo` | Responsive layout, first part (P10-16a): what gives way when the terminal or a window is small. |

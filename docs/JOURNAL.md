@@ -5830,3 +5830,45 @@ Not done / unverified:
   window made at the run's end is inserted below it and moves the index, not the focus; the test now
   checks the top window's kind)
 - Gate: CHECK OK (127 test files, 1251 tests, 994 s).
+
+## 2026-11-13 · P11-10c Check my answer for the GPU puzzles · done
+
+What changed:
+- src/puzzlecheck.mojo: puzzle_rel (your copy of a puzzle's program under
+  practice/mojo-gpu-puzzles/problems/pNN/, not the packages of the Python puzzles),
+  puzzle_name, puzzle_flags (each `== "--flag"` in the source, sorted, without --demo -
+  the rule of the course's own solutions/run.sh), puzzle_checks_itself (assert_ or ✅),
+  puzzle_mojo / puzzle_runner (the Mojo of the puzzles' own pixi environment, called with
+  its MODULAR_HOME) and puzzle_command (one run per mode, each under "== --flag", stopping
+  at the first that fails).
+- Help > Exercise done? with such a copy in front runs it as a job; finish_task hands
+  "puzzle:" jobs to puzzle_finished: right when every run ends with status 0 (the puzzles
+  assert their results), noted in practice/mojo-gpu-puzzles/done, a toast; otherwise the
+  output on the Message page and its errors on Problems. A puzzle with no check of its own
+  and a missing environment are said so, and nothing runs. O on a puzzle's program says
+  that the command checks it.
+- README (Exercises), user guide, help guide (re-embedded), whats-new.
+
+Verified:
+- tests/test_puzzle_check.mojo (3 tests): which files are puzzles, the modes (also a
+  variable holding argv()[1], --demo left out, duplicates), the command's text, and the
+  command with a fake Mojo in the environment (no environment: the message and no run; a
+  wrong answer: "Not yet", stopped after the first mode, nothing noted; a right one: both
+  modes, "✓ Puzzle 13 solved", the done file, the copy saved first; no check of its own;
+  another file). 9 mutants all fail it.
+- On this machine's GB10, with the course installed by `pixi install` in a scratch copy
+  (max-nightly, Mojo 1.3.0.dev2026111005; 26 minutes, about 3 GB): the IDE's command with
+  the course's solution of p13 as "your copy" said "✓ Puzzle 13 solved" (both modes
+  printed "Puzzle 13 complete ✅"); the unsolved p01 said "Not yet" with its assertion
+  (line 66) on the Problems page. The first try failed with "unable to locate module
+  'std'": the puzzles' Mojo needs its environment's MODULAR_HOME, now set. The scratch
+  copy was removed afterwards.
+
+Not done / unverified:
+- TurboMojo does not run `pixi install` for the puzzles itself (about 3 GB); it says the
+  command. Puzzles that need a newer GPU than the one here (the course's gate.sh skips
+  them by compute capability) fail their run instead of being skipped. The Python
+  puzzles (p17-p22) are not checked.
+- Gate, first run: FAILED test_exercises (test_not_an_exercise expected the old "Open an exercise first"
+  wording; updated to the new one that names the puzzles)
+- Gate: CHECK OK (128 test files, 1254 tests, 1003 s).

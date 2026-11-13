@@ -4,7 +4,7 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.1.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.2: Ready for other people (in progress: 3 tasks to go)
+## 2.2: Ready for other people (in progress: 2 tasks to go)
 
 - README first screen: a two-line pitch (ready to use, runs over SSH, starts in 50 ms, explains Mojo's errors), a "Why TurboMojo?" section comparing it honestly with VS Code + the Mojo extension, and the terminal-capability details moved to docs/USER_GUIDE.md [8, 9] (P11-01)
 - Pictures of the IDE made from itself: `tmide --screenshot FILE.svg` (the screen buffer as SVG, with the theme's colours) and a script that records a short demo through tmux as an asciinema cast; three screenshots (Turbo Classic, a modern theme, the docs reader) and the cast linked from the README [7] (P11-02)
@@ -15,6 +15,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - Working on a remote machine over SSH: a user-guide page (clipboard through OSC 52, mouse, colours, pictures through tmux, keys that SSH clients take), and tests for what it needs (OSC 52 copy when there is no local clipboard tool, no DISPLAY / WAYLAND_DISPLAY) [10] (P11-07)
 - Help > Report a problem: writes a ready-to-file issue text (versions, `--caps` output, the last crash-log entry, the config with anything secret-looking removed) to a file and the clipboard; it sends nothing [19] (P11-08)
 - Contributing: CONTRIBUTING.md (building, the gate, docs/SOURCE.md, docs/JOURNAL.md), issue templates asking for `tmide --caps` output, and a GitHub Actions workflow that runs the tests (written, not run here) [3, 18] (P11-09)
+- GPU awareness (split into a-c below) [11] (P11-10)
 
 ## 2.1: UI clarity and calm - 2026-11-12
 

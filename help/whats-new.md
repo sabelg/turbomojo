@@ -2,6 +2,8 @@
 
 ## 2.2 (in progress)
 
+- Help > Exercise done? checks your answer to a Mojo GPU Puzzle too: it runs your copy
+  in each of the puzzle's modes, as the course's own tests do.
 - After Ctrl-F9 the Message window says how the run ended, how long it took and, for a
   program that uses the GPU, which GPU it ran on.
 - Options > GPU in the status line shows the GPU your programs will run on (asked once

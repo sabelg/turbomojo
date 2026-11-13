@@ -293,6 +293,10 @@ __extension App:
         if name == "newproject:install":
             self.np_installed(ok, self.job.cancelled, tstr)
             return
+        if name.startswith("puzzle:"):
+            self.task_output("Puzzle checked in " + tstr)
+            self.puzzle_finished(String(name[byte=7:]), ok, bytes_to_str(self.job.data))
+            return
         if name.startswith("exercise:"):
             self.task_output("Exercise checked in " + tstr)
             self.ex_finished(String(name[byte=9:]), ok, bytes_to_str(self.job.data))

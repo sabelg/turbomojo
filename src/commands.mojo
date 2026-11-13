@@ -830,7 +830,7 @@ def build_registry() -> Registry:
     r.cmd(CM_HELP_TUTORIAL, "help.tutorial", "T~u~torial", "A file to practise in: lessons on moving, selecting, finding, running and debugging")
     r.cmd(CM_HELP_ERRORS, "help.errors", "~E~rror messages", "What the Mojo compiler's frequent error messages mean and how to fix them (F1 on a problem explains it)")
     r.cmd(CM_EXERCISES, "help.exercises", "E~x~ercises...", "Practice: small Mojo programs that are wrong until you fix them (Rustlings style)")
-    r.cmd(CM_EX_CHECK, "help.exerciseDone", "Exercise ~d~one?", "Run the exercise in front and say whether it now prints what it should")
+    r.cmd(CM_EX_CHECK, "help.exerciseDone", "Exercise ~d~one?", "Run the exercise or GPU puzzle in front and say whether it is right now")
     r.cmd(CM_TIPS_OFF, "help.noMoreTips", "No more t~i~ps", "Stop the tips that name a quicker way after a slow one (ui.tips)")
     r.cmd(CM_HELP_PYTHON, "help.comingFromPython", "Coming from P~y~thon", "What is different in Mojo for a Python programmer, and the keys next to VS Code's")
     r.cmd(CM_HELP_NEW, "help.whatsNew", "W~h~at's new", "What changed in this version of TurboMojo")
