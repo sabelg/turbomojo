@@ -102,6 +102,10 @@ def main() raises:
             app.open_path(String(args[i]))
         except e:
             print("cannot open", String(args[i]), ":", String(e))
+    if len(args) == 1:
+        # the very first start without a file asks which theme (not with files named:
+        # what is typed then is meant for them)
+        app.theme_marker = state_dir() + "/theme-asked"
     if len(args) == 1 and app.restore_session:
         # started without a file: go on where this project was left
         app.session_dir = state_dir() + "/sessions"

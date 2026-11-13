@@ -134,6 +134,7 @@ __extension App:
             self.term.set_grapheme(True)
             self.scr.clustered = True
         _ = self.sig.open()
+        _ = self.first_run_theme()
         var early = self.term.take_early()
         while self.running:
             var sz = self.term.size()

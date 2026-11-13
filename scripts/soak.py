@@ -73,6 +73,10 @@ def rss_kb(pid):
 def main():
     for d in ("config", "state", "cache", "work"):
         os.makedirs(os.path.join(HOME, d))
+    # started without file names on a fresh state the IDE asks for a colour theme first
+    # (P10-20b); this test is not about that, so the question counts as asked
+    os.makedirs(os.path.join(HOME, "state", "turbomojo"))
+    open(os.path.join(HOME, "state", "turbomojo", "theme-asked"), "w").close()
     original = '"""Soak test file."""\n\n\ndef main():\n    var total = 0\n    for i in range(10):\n        total += i\n    print(total)\n'
     env = "env XDG_CONFIG_HOME=%s/config XDG_STATE_HOME=%s/state XDG_CACHE_HOME=%s/cache " % (HOME, HOME, HOME)
     tmux("kill-server")

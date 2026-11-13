@@ -80,6 +80,7 @@ __extension App:
         if self.macro_rec and len(self.macro) >= MACRO_MAX:
             self.macro_rec = False
             self.say("Macro recording stopped: too long")
+        self.theme_preview()
         if self.mode == M_DIALOG and self.dlg.kind == D_PALETTE:
             self.quick_refresh()
         if self.mode == M_DIALOG and self.dlg.kind == D_DOCFIND:

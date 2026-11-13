@@ -63,8 +63,10 @@ __extension App:
         d.focus = d.button_focus_index(0)
         self.show(d^)
 
-    def theme_dialog(mut self):
-        """Options > Colour theme: every theme, and following the terminal."""
+    def theme_dialog(mut self, welcome: Bool = False):
+        """Options > Colour theme: every theme, and following the terminal. Moving in
+        the list shows the theme at once, behind the box (theme_preview); Cancel or
+        Esc goes back to the one before. `welcome`: asked on the first run."""
         var items = List[String]()
         var data = List[Int]()
         var dark = self.themes.find(self.theme_dark_id)
@@ -78,16 +80,59 @@ __extension App:
             data.append(k)
             if k == self.theme_idx and self.theme_id != "auto":
                 first = len(items) - 1
-        var d = Dialog(D_THEME, "Colour Theme", min(72, self.scr.w - 4), min(20, len(items) + 8))
+        if self.theme_id == "auto":
+            first = 0
+        var d = Dialog(D_THEME, "Welcome to TurboMojo - Colour Theme" if welcome else "Colour Theme", min(72, self.scr.w - 4), min(20, len(items) + (10 if welcome else 8)))
         d.has_list = True
         d.set_items(items^, data^)
         d.list_sel = first
+        if welcome:
+            d.lines.append("Pick a look: each shows at once as you move. Later: Options > Colour theme.")
         d.lines.append("Your own: TOML files in " + config_home() + "/themes/")
+        self.theme_before = self.theme_id
         d.buttons.append("~O~K")
         d.buttons.append("Cancel")
         self.show(d^)
 
+    def theme_preview(mut self):
+        """While the Colour Theme dialog is open: the theme marked in its list, shown
+        (not written anywhere). Once it has closed without OK: the theme before."""
+        if self.theme_before.byte_length() == 0:
+            return
+        if self.mode != M_DIALOG or self.dlg.kind != D_THEME:
+            self.theme_id = self.theme_before
+            self.theme_before = ""
+            self.theme_apply()
+            self.scr.force = True
+            return
+        var sel = self.dlg.selected_item()
+        if sel < 0:
+            return
+        var k = self.dlg.item_data[sel]
+        var id = String("auto") if k < 0 else (self.themes.ids[k] if k < self.themes.count() else self.theme_id)
+        if id != self.theme_id:
+            self.theme_id = id
+            self.theme_apply()
+            self.scr.force = True
+
+    def first_run_theme(mut self) -> Bool:
+        """On the very first run - no config file yet, never asked (theme_marker: set
+        only when started without file names), no NO_COLOR - ask which theme, with the
+        preview; asked once, whatever the answer."""
+        if self.theme_marker.byte_length() == 0 or path_exists(self.theme_marker):
+            return False
+        if self.config_path.byte_length() > 0 and path_exists(self.config_path):
+            return False
+        if env_or("NO_COLOR", "").byte_length() > 0 or self.mode != M_NORMAL:
+            return False
+        if not path_exists(dirname(self.theme_marker)):
+            _ = run_system("mkdir -p " + shell_quote(dirname(self.theme_marker)))
+        _ = write_file(self.theme_marker, str_bytes("asked\n"))
+        self.theme_dialog(True)
+        return True
+
     def theme_chosen(mut self, k: Int):
+        self.theme_before = ""
         if k < 0:
             self.theme_id = "auto"
         elif k < self.themes.count():

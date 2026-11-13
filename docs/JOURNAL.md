@@ -5109,3 +5109,38 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   return), but a terminal that is slow to answer makes the change one reply late;
   20b.
 - Gate: scripts/check.sh printed CHECK OK (111 test files, 1190 tests, 889 s).
+
+## 2026-11-12 · P10-20b The first run asks for a theme, with a preview · done
+- What changed: the Colour Theme dialog previews: `theme_preview`
+  (src/app_dialogs.mojo), called after every event in handle(), applies the theme
+  marked in the list (not written), and once the dialog is gone without OK puts
+  back `theme_before` - so Esc, Cancel and a click outside all go back, whatever
+  closed it; `theme_chosen` (OK) keeps and writes it. Following the terminal
+  ("auto") is marked first when it is the setting. `first_run_theme`: with no
+  config file, no marker (`theme_marker`, state_dir()/theme-asked, set in main.mojo
+  only when started without file names - tests and line mode have none) and no NO_COLOR, the dialog opens at start
+  titled "Welcome to TurboMojo - Colour Theme" with a line on how to change it
+  later; the marker is written at once, so it is asked once whatever the answer.
+  README (Themes row), What's new, the command's description. P10-20 done.
+- Verified: tests/test_theme_first_run.mojo (2 tests): Down in the dialog shows
+  Midnight, then Amber (the status line drawn in its colour), nothing is written
+  meanwhile, Esc gives Classic back; Down and Enter keep Midnight and write theme
+  = "midnight"; moving up to "follow the terminal" previews auto and Cancel (by
+  Tab and Enter) goes back to Midnight. The first run opens the welcome box and
+  writes the marker, Esc keeps the default; the next start does not ask; a config
+  file already there, or no marker path, does not ask. test_access and
+  test_themes (which open the dialog) pass. Mutants (no preview, no restore, no
+  marker, asking with a config file) fail. (A first try called dialog_button
+  directly, which bypasses handle() and so the restore; keys and clicks go through
+  handle(), and the test now uses them.)
+- Not done / unverified: the welcome box was not seen in a real first start;
+  a theme from a project's .turbomojo.toml is not a reason to skip the question
+  (only the user's config file is looked at).
+- Gate, first run: scripts/smoke.sh failed ("no swap file after kill -9"): it
+  starts the real IDE on a file with an empty state and config folder, and the
+  welcome box took the keys it typed. The same would happen to someone whose very
+  first start names a file - type-ahead would jump in the theme list - so the
+  question is asked only when started without file names (theme_marker set in
+  main.mojo only then, not in run()).
+- Gate, second run: the soak step failed ("cycle 1: the file did not open"): scripts/soak.py starts the IDE without file names on a fresh state, so the welcome theme box took its keys. The soak now writes the theme-asked marker into its own state folder; `scripts/soak.sh 1` printed SOAK OK.
+- Gate: scripts/check.sh printed CHECK OK (112 test files, 1192 tests, 899 s).

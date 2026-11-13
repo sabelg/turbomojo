@@ -811,7 +811,7 @@ def build_registry() -> Registry:
     r.cmd(CM_HELP_NEW, "help.whatsNew", "W~h~at's new", "What changed in this version of TurboMojo")
     r.cmd(CM_NOTICES, "help.notifications", "~N~otifications...", "What is running now and the messages of this session (builds, tests, git, the agent)", [fkey(10) | MOD_SHIFT])
     r.cmd(CM_SCREEN_READER, "options.screenReader", "Screen-reader ~m~ode", "A plain, linear screen for screen readers: no frames or shading, the cursor on what has the focus, no animation")
-    r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark")
+    r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark; each shows as you move through the list")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")

@@ -23,6 +23,8 @@
   definitions), so that errors and search hits stand out most.
 - Turbo Muted, Turbo Classic in calm, less saturated colours; `theme = "auto"` follows
   terminals that only tell their background colour live too.
+- Options > Colour theme shows each theme as you move through the list; the first run
+  asks which one, once.
 
 ## 2.0: release
 
