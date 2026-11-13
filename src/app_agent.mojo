@@ -76,6 +76,7 @@ __extension App:
         var root = self.symidx_root()
         self.chat.note("Starting " + self.agent_command + " in " + root + "...")
         var log = state_dir() + "/agent.log"
+        _ = run_system("mkdir -p " + shell_quote(state_dir()))   # (its stderr goes there: a first run has no folder yet)
         self.agent.services = True              # files and terminals through the editor
         self.agent_forget()                     # a new session allows nothing yet
         _ = self.agent.start(self.agent_command, root, log, now_ns())

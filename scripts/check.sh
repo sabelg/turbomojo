@@ -56,6 +56,11 @@ if grep -q "DID NOT BUILD" build/tests/compile.txt; then
 fi
 
 echo "== tests"
+# the tests get a configuration, state and cache of their own, empty at the start - as on
+# a machine where TurboMojo never ran - and never touch yours
+TEST_HOME="$(mktemp -d "${TMPDIR:-/tmp}/turbomojo-check.XXXXXX")"
+trap 'rm -rf "$TEST_HOME"' EXIT
+export XDG_CONFIG_HOME="$TEST_HOME/config" XDG_STATE_HOME="$TEST_HOME/state" XDG_CACHE_HOME="$TEST_HOME/cache"
 count=0
 for t in tests/test_*.mojo; do
   [ -e "$t" ] || continue

@@ -5486,3 +5486,23 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   line (its shell is bash, as for check.sh).
 - Gate, first run: test_project failed - it reads this project's pixi.toml and expected the build task without the -D (its parsing of the escaped quotes was right); its expectation updated.
 - Gate: scripts/check.sh printed CHECK OK (119 test files, 1225 tests, smoke, perf - start-up 62.6 ms - and soak) in 934 s.
+
+## 2026-11-13 · Fix found by GitHub CI: the agent on a first run; tests kept out of the user's state
+- Found: on GitHub's ARM runner (the first CI run after publishing that got past the
+  compiling) test_agentexplain failed: "cannot create ~/.local/state/turbomojo/agent.log:
+  Directory nonexistent", and "the agent ended before it was ready". The agent's stderr
+  is redirected into the state folder, which nothing had made yet on a machine where
+  TurboMojo never ran - so on a first run a coding agent could not start at all. Here it
+  passed only because the folder existed, which also meant the agent tests wrote into
+  the real state folder.
+- What changed: agent_start makes the state folder first. scripts/check.sh runs the
+  tests with XDG_CONFIG_HOME, XDG_STATE_HOME and XDG_CACHE_HOME in a fresh temporary
+  folder (removed at the end), so they start as on a new machine and never touch the
+  user's configuration or state.
+- Verified: test_agentexplain with a state folder that does not exist fails without the
+  fix (the same 60 s wait as on CI) and passes with it, leaving agent.log and
+  import-check in that folder. The whole gate under the new isolation: below.
+- Not done: GitHub's ARM runner took 58 minutes only to compile the test programs four at
+  a time; the gate fits the 120-minute limit there, but CI could be made much quicker
+  (compile once into a cached build, or fewer, larger test programs) - left for P11-09.
+- Gate: scripts/check.sh printed CHECK OK with the tests in an empty configuration and state (119 test files, 1225 tests, smoke, perf, soak) in 936 s.
