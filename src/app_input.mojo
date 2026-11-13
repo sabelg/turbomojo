@@ -182,7 +182,7 @@ __extension App:
                         self.focus(i)
                         return
                 return
-            var m = self.menu_for_letter(lower(c))
+            var m = self.menu_for_letter(hot_key(c))
             if c == 32:
                 m = 0
             if m >= 0:

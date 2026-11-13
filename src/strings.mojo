@@ -18,7 +18,7 @@ English. A file that gives two items of one menu (or two menus) the same hot let
 names an unknown command, or has a title without a hot letter is reported.
 """
 from std.collections import List
-from commands import Registry, plain, hot_char, CM_NONE
+from commands import Registry, plain, hot_char, hot_letter_problem, CM_NONE
 from toml import TomlDoc, toml_parse, toml_quote, T_STR
 from util import lower_str
 
@@ -73,8 +73,9 @@ def apply_strings(mut reg: Registry, doc: TomlDoc, where: String) -> List[String
         known.append(k)
         var v = doc.get_str("menus." + k, "")
         if v.byte_length() > 0:
-            if hot_char(v) < 0:
-                warn.append(where + ": menus." + k + " has no ~hot letter~")
+            var hp = hot_letter_problem(v)
+            if hp.byte_length() > 0:
+                warn.append(where + ": menus." + k + " " + hp)
             reg.menu_titles[i] = v
     for k in doc.keys_in("menus"):
         if k not in known:
@@ -93,8 +94,9 @@ def apply_strings(mut reg: Registry, doc: TomlDoc, where: String) -> List[String
             if v.byte_length() == 0:
                 continue
             if String(table) == "titles":
-                if hot_char(v) < 0 and not reg.is_hidden(reg.cmds[ci].id):
-                    warn.append(where + ": titles." + name + " has no ~hot letter~")
+                var hp = hot_letter_problem(v)
+                if hp.byte_length() > 0 and not reg.is_hidden(reg.cmds[ci].id):
+                    warn.append(where + ": titles." + name + " " + hp)
                 reg.cmds[ci].title = v
             else:
                 reg.cmds[ci].hint = v

@@ -28,6 +28,8 @@
 - Emoji line up in more terminals: the IDE measures at start-up how wide the terminal
   draws a few doubtful glyphs (shown by `tmide --caps`) and lays them out to match; a
   width it still gets wrong spoils one cell, no longer the rest of the line.
+- Translated menus can have hot letters in any script ("~Ф~айл", "~Ö~ffnen"):
+  small or capital, they open the menu, choose the item and press the button.
 
 ## 2.0: release
 

@@ -94,7 +94,7 @@ __extension App:
             self.key_echo(cmd)
             self.cmd_used(cmd)
         elif (k & MOD_ALT) != 0:
-            var m = self.menu_for_letter(lower(k & KEY_MASK))
+            var m = self.menu_for_letter(hot_key(k))
             if m >= 0:
                 self.open_menu(m)
             else:
@@ -109,7 +109,7 @@ __extension App:
             self.key_echo(cmd)
             self.cmd_used(cmd)
         elif k < K_BASE and k > 32:
-            var lk = lower(k)
+            var lk = hot_key(k)
             for i in range(len(self.menus[self.menu_idx].items)):
                 if hot_char(self.menus[self.menu_idx].items[i].label) == lk:
                     var cmd = self.menus[self.menu_idx].items[i].cmd

@@ -292,6 +292,50 @@ def lower(c: Int) -> Int:
     return c
 
 
+def fold_letter(c: Int) -> Int:
+    """The small letter for a capital one, beyond ASCII too: Latin-1 and Latin
+    Extended-A, Greek, Cyrillic, Armenian and the fullwidth Latin letters (simple
+    one-to-one case mapping; anything else is returned as it is). Used where a typed
+    letter is matched with a hot letter."""
+    if c < 0x80:
+        return lower(c)
+    if c >= 0xC0 and c <= 0xDE and c != 0xD7:
+        return c + 32
+    if c >= 0x100 and c <= 0x17F:
+        if c == 0x130:
+            return 0x69                  # İ: i
+        if c == 0x178:
+            return 0xFF                  # Ÿ: ÿ
+        if (c >= 0x139 and c <= 0x148) or (c >= 0x179 and c <= 0x17E):
+            return c + 1 if c % 2 == 1 else c
+        if c == 0x138 or c == 0x149 or c == 0x17F:
+            return c                     # ĸ, ŉ, ſ: small already
+        return c + 1 if c % 2 == 0 else c
+    if c >= 0x386 and c <= 0x3AB:
+        if c == 0x386:
+            return 0x3AC
+        if c >= 0x388 and c <= 0x38A:
+            return c + 37
+        if c == 0x38C:
+            return 0x3CC
+        if c == 0x38E or c == 0x38F:
+            return c + 63
+        if c >= 0x391 and c <= 0x3AB and c != 0x3A2:
+            return c + 32
+        return c
+    if c >= 0x400 and c <= 0x40F:
+        return c + 80
+    if c >= 0x410 and c <= 0x42F:
+        return c + 32
+    if (c >= 0x460 and c <= 0x481) or (c >= 0x48A and c <= 0x4BF) or (c >= 0x4D0 and c <= 0x52F):
+        return c + 1 if c % 2 == 0 else c
+    if c >= 0x531 and c <= 0x556:
+        return c + 48
+    if c >= 0xFF21 and c <= 0xFF3A:
+        return c + 32
+    return c
+
+
 def lower_str(s: String) -> String:
     var cps = decode(s)
     for i in range(len(cps)):

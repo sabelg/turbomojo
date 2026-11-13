@@ -8,7 +8,7 @@ from term import (
     KEY_HOME, KEY_END, KEY_PGUP, KEY_PGDN, KEY_INSERT, KEY_DELETE, KEY_F1, MOD_SHIFT, MOD_ALT,
     MOD_CTRL, KEY_MASK, fkey, ctrl, alt,
 )
-from util import decode, to_str, encode_cp, bytes_to_str, slice_str
+from util import decode, to_str, encode_cp, bytes_to_str, slice_str, fold_letter, char_width
 
 # ------------------------------------------------------------------ command ids
 comptime CM_NONE = 0
@@ -208,15 +208,33 @@ def plain(label: String) -> String:
 
 
 def hot_char(label: String) -> Int:
-    """The (lower-cased) hot letter of a '~X~' label, or -1."""
+    """The hot letter of a '~X~' label as a small letter (any script: "~Ö~ffnen" gives
+    ö, "~Ф~айл" ф), or -1. Compare it with `hot_key` of what was typed."""
     var cps = decode(label)
     for i in range(len(cps) - 1):
         if cps[i] == 126:
-            var c = cps[i + 1]
-            if c >= 65 and c <= 90:
-                c += 32
-            return c
+            return fold_letter(cps[i + 1])
     return -1
+
+
+def hot_key(k: Int) -> Int:
+    """A typed key (Alt or not) as it is compared with `hot_char`."""
+    return fold_letter(k & KEY_MASK)
+
+
+def hot_letter_problem(label: String) -> String:
+    """What is wrong with a label's hot letter for someone typing it ("" if nothing):
+    none at all, or a letter followed by a combining mark (the key gives the
+    precomposed letter, which would never match)."""
+    var cps = decode(label)
+    for i in range(len(cps) - 1):
+        if cps[i] == 126:
+            if cps[i + 1] == 126 or cps[i + 1] == 32:
+                return "has an empty ~hot letter~"
+            if i + 2 < len(cps) and char_width(cps[i + 2]) == 0:
+                return "has a hot letter with a separate accent: write it as one character"
+            return ""
+    return "has no ~hot letter~"
 
 
 def chord(first: Int, second: Int) -> Int:

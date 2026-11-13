@@ -611,7 +611,7 @@ __extension App:
             return
         if k & MOD_ALT != 0 and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE or self.dlg.kind == D_FINDFILES):
             # Alt+letter reaches every control, also while typing in a field
-            var hk = lower(k & KEY_MASK)
+            var hk = hot_key(k)
             for i in range(len(self.dlg.fields)):
                 if hot_char(self.dlg.fields[i].label) == hk:
                     self.dlg.focus = i
@@ -686,7 +686,7 @@ __extension App:
             self.dlg.focus = self.dlg.button_focus_index(nbi)
             return
         if k < K_BASE and k >= 32:
-            var lk = lower(k & KEY_MASK)
+            var lk = hot_key(k)
             for i in range(len(self.dlg.buttons)):
                 if hot_char(self.dlg.buttons[i]) == lk:
                     self.dialog_button(i)
@@ -709,11 +709,11 @@ __extension App:
                 # type-ahead: jump to the first item starting with this letter
                 for i in range(len(self.dlg.shown)):
                     var cps = decode(self.dlg.items[self.dlg.shown[i]])
-                    if len(cps) > 0 and lower(cps[0]) == lk:
+                    if len(cps) > 0 and fold_letter(cps[0]) == lk:
                         self.dlg.list_move(i - self.dlg.list_sel)
                         break
         if k & MOD_ALT != 0:
-            var lk = lower(k & KEY_MASK)
+            var lk = hot_key(k)
             for i in range(len(self.dlg.buttons)):
                 if hot_char(self.dlg.buttons[i]) == lk:
                     self.dialog_button(i)

@@ -5185,3 +5185,36 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   the right half of such a symbol can be covered; a Shift-F3 pressed during the
   start-up probe would be read as a width report.
 - Gate: scripts/check.sh printed CHECK OK (113 test files, 1198 tests, 897 s).
+
+## 2026-11-12 · P10-21b Unicode-safe hot letters · done
+
+- What changed: util.fold_letter (simple one-to-one lower case for Latin-1 and Latin
+  Extended-A, Greek with its accented capitals, Cyrillic, Armenian, fullwidth Latin;
+  ASCII as before). commands.hot_char folds with it (it lowered ASCII only, so "~Ö~"
+  or "~Ф~" never matched a typed ö or ф), `hot_key(k)` folds a typed key the same
+  way, and `hot_letter_problem` says what makes a label's hot letter untypable: none,
+  an empty one (`~~`, `~ ~`), or a letter followed by a combining mark (keys give the
+  composed letter). Used for the menu bar (Alt + letter, app_input and app_menus),
+  items in an open menu, dialog buttons (plain letter on the buttons, Alt + letter),
+  the Find/Replace Alt shortcuts and the type-ahead in dialog lists. strings.mojo
+  warns with hot_letter_problem for menus and titles. A label without a hot letter
+  keeps its place in the menu and the palette (as before; the rule is now in the
+  README). P10-21 done. README (Translations row), What's new.
+- Verified: tests/test_hot_letters.mojo (3 tests): fold_letter on capitals and
+  non-letters of each range (×, ß, Ł / ł, Ÿ, Έ, Ё, CJK), hot_char of "~Ö~ffnen",
+  "~Ф~айл" and "ファイル(~F~)"; the warnings for an accent written apart and an empty
+  hot letter, from a strings file; with a Russian strings file Alt+Ф and Alt+ф open
+  Файл, н chooses ~Н~овый (a new window), Ö chooses ~Ö~ffnen (the Open dialog); in
+  the "save?" question a letter no button has does nothing, О presses ~О~тмена
+  (the window stays), Alt+Н presses ~Н~ет (closed). Mutants (hot_char, the menu bar,
+  the menu items, dialog buttons by letter and by Alt each back to ASCII-only lower
+  case; no accent warning) fail. (The first try of the test closed dialogs with
+  key_event(27); Esc is KEY_ESC.)
+- Not done / unverified: Alt + a non-Latin letter was only fed as events, not typed
+  in a real terminal with a Cyrillic layout (legacy terminals send ESC + the UTF-8
+  letter, which the parser takes as Alt; kitty reports the layout's letter); case
+  pairs outside the ranges above (Georgian, Cherokee, Latin Extended-B and beyond,
+  Turkish dotless ı as a hot letter) are compared as they are; in dialogs with a
+  text field focused a plain letter is still typed into the field, not a button's
+  hot letter (as for ASCII).
+- Gate: scripts/check.sh printed CHECK OK (114 test files, 1201 tests, 909 s).
