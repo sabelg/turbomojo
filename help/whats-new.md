@@ -15,6 +15,10 @@
   keeps its text readable there (Amber CRT and Hacker Matrix lost it before). Theme
   files can set colours by role (`[roles]`) and for each depth (`[colors256]`,
   `[colors16]`).
+- Every theme keeps errors, warnings, git markers and the main code colours apart for
+  colour-blind eyes too; a few colours changed for it (Paper Light's errors are
+  raspberry and its additions blue, Classic's strings light orange, Midnight's numbers
+  pink and definitions yellow).
 
 ## 2.0: release
 

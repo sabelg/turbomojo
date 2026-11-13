@@ -5006,3 +5006,37 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   256- or 16-colour terminal; the drawing code still names palette fields, not
   roles (roles are for theme authors and lookups).
 - Gate: scripts/check.sh printed CHECK OK (109 test files, 1182 tests, 885 s).
+
+## 2026-11-12 · P10-18c Every theme through the colour-vision check · done
+- What changed: `cvd_problems` (src/contrast.mojo) now holds every theme: signal
+  colours (severities, success / failure, git markers) at 20 apart with normal
+  vision and each deficiency, unless the theme is of one hue by design
+  (`Palette.monochrome`, `monochrome = true` in a theme file: Amber CRT, Terminal
+  Mono - they tell these apart by E W i and + ~ ‾ _, as every theme does besides
+  colour); syntax pairs a theme gives (nearly) the same colour on purpose (Classic's
+  white keywords and definitions, Matrix's yellow numbers and definitions) are
+  skipped, the others held at 10 with each deficiency. Colours changed, each
+  designed with the Python prototype and the same floors: Classic - strings
+  #FFC070 (light cyan beside white fell together with protanopia), git additions
+  light cyan (green beside yellow), Message window error / warning #440000 /
+  #220033 (on its cyan only very dark colours reach 4.5:1, so they hardly differ
+  to the eye; the letters carry it); Midnight - numbers #FF7A93, definitions
+  #F0D060; Paper Light - errors and deletions #C00060, warnings and changes
+  #906000, success and additions #0070E0, strings #508030, definitions #1070E0,
+  and its 256-colour strings 256:28; High Contrast - git changes #FFFF00,
+  definitions #FFC040; Hacker Matrix - keywords #00F0A0, strings #C09020 (still
+  brown, more ochre; the test that keeps its four accents updated) with 256:178 and
+  ansi:11 for the lower depths. README, What's new; P10-18 done.
+- Verified: tests/test_cvd_theme.mojo (5 tests, 2 new): every built-in theme has
+  no colour-vision problem (six or more held to the signal rule), Amber and Mono
+  are monochrome and Classic not; Amber's one-colour git markers pass for it and
+  are named once it is not monochrome; Classic's alike keywords and definitions
+  pass, a blue and a purple that fall together only with protanopia are caught,
+  and two alike signal colours are caught with normal vision. test_contrast (all
+  floors and High Contrast's AAA), test_theme_depths (every theme at 256 and 16),
+  test_themes and test_ansi_theme pass. Mutants (no monochrome exemption, syntax
+  never checked, alike syntax checked) fail.
+- Not done / unverified: the measures are the same rough ones as in 18a (CIE76,
+  full dichromacy); nobody colour-blind has looked; the changed colours have not
+  been seen in a terminal, only measured.
+- Gate: scripts/check.sh printed CHECK OK (109 test files, 1184 tests, 886 s).

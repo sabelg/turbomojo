@@ -79,10 +79,10 @@ shadow_bg = "#000000"
 
 [syntax]
 text = "#00D838"
-keyword = "#00FF41"
+keyword = "#00F0A0"
 type = "#3FA9F5"
 comment = "#3E9E4E"
-string = "#D2964A"
+string = "#C09020"
 number = "#FFE45C"
 decorator = "#FF6054"
 symbol = "#47AA5E"
@@ -97,11 +97,15 @@ namespace = "#6CB8FF"
 [colors256]
 btn_fg = "256:46"
 
+[syntax256]
+string = "256:178"
+
 [colors16]
 gutter_fg = "ansi:2"
 doc_dim = "ansi:2"
 
 [syntax16]
+string = "ansi:11"
 type = "ansi:14"
 comment = "ansi:2"
 symbol = "ansi:2"

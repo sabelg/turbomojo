@@ -4,7 +4,7 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.1: UI clarity and calm (in progress: 6 tasks to go)
+## 2.1: UI clarity and calm (in progress: 4 tasks to go)
 
 - Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1] (P10-01)
 - Never colour-only diagnostics: E/W/i glyphs in the gutter and the Problems page, and undercurl with an SGR 58 colour where the terminal supports it (probed), else a plain underline [2] (P10-02)
@@ -30,8 +30,10 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - Navigation memory (split into a-b below): most-recent ordering in the palette and F6, per-tab cursor, scroll and fold state that survives pane moves and restarts (back/forward exists: Alt-, Alt-.) [D] (P10-17)
 - Navigation memory, first part: the commands used last come first in the command palette (kept across restarts), and F6 goes to the window used last, further back on each press in a row [D] (P10-17a)
 - Navigation memory, second part: a file's cursor, scroll and folds remembered when it is closed and across restarts (the session keeps folds too), and kept when a tab moves to another pane [D] (P10-17b)
+- Semantic colour roles under all themes (surface, panel, text, text-muted, text-disabled, border, border-blurred, cursor, cursor-blurred, diag-error, diag-warn) with designed truecolor, 256 and 16 values; an Okabe-Ito colour-blind theme with its own contrast test (split into a-c below) [E] (P10-18)
 - An Okabe-Ito colour-blind theme, with a colour-vision check (simulated protanopia, deuteranopia, tritanopia) that keeps its severities, git markers and main syntax classes apart, and the contrast floors [E] (P10-18a)
 - Semantic colour roles ([roles]: surface, panel, text, text-muted, text-disabled, border, border-blurred, cursor, diag-error, diag-warn) and colours designed for 256 and 16 colours ([colors256], [colors16]) under every built-in theme, each reaching the contrast floors as such a terminal shows it [E] (P10-18b)
+- The other themes through the colour-vision check (Paper Light's error and warning fall together with deuteranopia, High Contrast's git add / change with tritanopia; Classic, Midnight, Amber not yet measured), fixed where they fail [E] (P10-18c)
 
 ## 2.0: Release engineering - 2026-11-12
 

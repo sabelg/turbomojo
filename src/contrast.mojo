@@ -304,11 +304,21 @@ def cvd_pairs(p: Palette) -> List[CvdPair]:
 
 def cvd_problems(p: Palette) -> List[String]:
     """The pairs that come too close with normal vision or one of the three
-    deficiencies ("git_add / git_del: 8.1 with deuteranopia (needs 20)"); pairs with a
-    colour that is not RGB are skipped."""
+    deficiencies ("git_add / git_del: 8.1 with deuteranopia (needs 20)"). Signal
+    colours (severities, success / failure, git markers) must always be apart -
+    except in a theme of one hue by design (`monochrome`: Amber CRT, Terminal Mono),
+    which tells them apart by letters and marks alone. Syntax classes a theme gives
+    alike on purpose (closer than the floor with normal vision) are its choice; the
+    others must stay apart with each deficiency. Pairs with a colour that is not RGB
+    are skipped."""
     var out = List[String]()
     for c in cvd_pairs(p):
         if not is_rgb(c.a) or not is_rgb(c.b):
+            continue
+        var signal = c.floor >= CVD_SIGNAL_MIN
+        if signal and p.monochrome:
+            continue
+        if not signal and cvd_distance(c.a, c.b, CVD_NONE) < c.floor:
             continue
         for kind in range(4):
             var d = cvd_distance(c.a, c.b, kind)

@@ -4,7 +4,9 @@ a red and a green fall together without green cones, blue and green without blue
 the Okabe-Ito theme keeps its problem severities, success and failure, git markers and
 main syntax classes apart with normal vision and protanopia, deuteranopia and
 tritanopia, and reaches the contrast floors; a theme that breaks this is caught, and
-the problem names the pair and the deficiency."""
+the problem names the pair and the deficiency. Every built-in theme passes it too
+(P10-18c): signal colours apart unless the theme is of one hue by design
+(monochrome), syntax classes alike on purpose left alone."""
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from contrast import *
 from themes import ThemeSet, OKABE_ITO
@@ -68,6 +70,47 @@ def test_a_theme_that_breaks_it_is_caught() raises:
     for s in problems:
         if s.startswith("git_add / git_del"):
             assert_true(s.find("normal vision") < 0, s)
+
+
+def test_every_theme_passes() raises:
+    var t = ThemeSet()
+    var checked = 0
+    for k in range(t.count()):
+        var problems = cvd_problems(t.pals[k])
+        assert_equal(len(problems), 0, t.ids[k] + ":\n" + "\n".join(problems))
+        if not t.pals[k].monochrome:
+            checked += 1
+    assert_true(checked >= 6)
+    # one hue by design: Amber CRT and Terminal Mono
+    assert_true(t.pals[t.find("amber")].monochrome)
+    assert_true(t.pals[t.find("mono")].monochrome)
+    assert_false(t.pals[t.find("classic")].monochrome)
+
+
+def test_what_the_rule_leaves_alone() raises:
+    var t = ThemeSet()
+    # Amber's git markers are all one colour: fine for it, caught in another theme
+    var amber = t.pals[t.find("amber")].copy()
+    assert_equal(amber.git_add, amber.git_del)
+    assert_equal(len(cvd_problems(amber)), 0)
+    amber.monochrome = False
+    var named = "\n".join(cvd_problems(amber))
+    assert_true(named.find("git_add / git_del: 0.0 with normal vision") >= 0, named)
+    # syntax classes alike on purpose (Turbo Classic: keywords and definitions white)
+    var c = t.pals[t.find("classic")].copy()
+    assert_equal(c.syn[1], c.syn[10])
+    assert_equal(len(cvd_problems(c)), 0)
+    # ... but alike only with a deficiency is caught: keywords blue, definitions purple
+    c.syn[1] = 0x7AA2F7
+    c.syn[10] = 0xBB9AF7
+    c.ed_bg = 0x1A1B26
+    var syn = "\n".join(cvd_problems(c))
+    assert_true(syn.find("syntax keyword / def:") >= 0 and syn.find("protanopia") >= 0, syn)
+    assert_true(syn.find("keyword / def: 0.0 with normal") < 0, syn)
+    # signal colours alike: always caught, even with normal vision
+    var o = t.pals[t.find("okabe")].copy()
+    o.diag_warn = o.diag_err
+    assert_true("\n".join(cvd_problems(o)).find("diag_err / diag_warn: 0.0 with normal vision") >= 0)
 
 
 def main() raises:

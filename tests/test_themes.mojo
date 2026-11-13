@@ -58,7 +58,7 @@ def test_the_built_in_files_are_the_shipped_files() raises:
     # green, and four accents: blue, yellow, red, brown
     assert_equal(t.pals[5].syn[10], 0xFFE45C)          # def: yellow
     assert_equal(t.pals[5].syn[8], 0x6CB8FF)           # builtin: blue
-    assert_equal(t.pals[5].syn[4], 0xD2964A)           # string: brown
+    assert_equal(t.pals[5].syn[4], 0xC09020)           # string: brown (ochre: apart from the comments with protanopia)
     assert_equal(t.pals[5].syn[6], 0xFF6054)           # decorator: red
     assert_equal(t.pals[5].diag_err, 0xFF6054)         # red, yellow and blue beside the green
     assert_equal(t.pals[5].diag_warn, 0xFFE45C)

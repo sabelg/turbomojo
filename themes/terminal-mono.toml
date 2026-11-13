@@ -6,6 +6,7 @@ name = "Terminal Mono"
 base = "midnight"
 dark = true
 scanlines = false
+monochrome = true
 
 [colors]
 desk_fg = "default"

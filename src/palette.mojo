@@ -106,11 +106,13 @@ struct Palette(Copyable, Movable):
     var shadow_fg: Int
     var shadow_bg: Int
     var scanlines: Bool     # draw every other row a little darker (a CRT look)
+    var monochrome: Bool    # one hue by design: its colours need not differ in hue (contrast.cvd_problems)
 
     def __init__(out self):
         """Turbo Classic."""
         self.name = "Turbo Classic"
         self.scanlines = False
+        self.monochrome = False
         self.desk_fg = BLUE
         self.desk_bg = LGRAY
         self.desk_ch = 0x2591
@@ -153,15 +155,17 @@ struct Palette(Copyable, Movable):
         self.syn = List[Int]()
         # text kw type cmt str num deco sym builtin self def
         # ... then parameter, property, namespace (known only from the language server)
-        for c in [YELLOW, WHITE, LGREEN, LGRAY, LCYAN, 0xFF5AFF, LGREEN, YELLOW, LCYAN, WHITE, WHITE, LGRAY, LCYAN, LGREEN]:
+        # (strings light orange: light cyan beside white keywords fell together with
+        # protanopia)
+        for c in [YELLOW, WHITE, LGREEN, LGRAY, 0xFFC070, 0xFF5AFF, LGREEN, YELLOW, LCYAN, WHITE, WHITE, LGRAY, LCYAN, LGREEN]:
             self.syn.append(c)
         self.msg_fg = BLACK
         self.msg_bg = CYAN
-        self.msg_err = 0x4E0000             # (red and brown on cyan were 2.7 and 1.8:1)
-        self.msg_warn = 0x412000
+        self.msg_err = 0x440000             # (red and brown on cyan were 2.7 and 1.8:1; only
+        self.msg_warn = 0x220033            # dark colours reach 4.5:1 there - E W i tell them)
         self.msg_note = BLUE
         self.msg_ok = GREEN
-        self.git_add = LGREEN
+        self.git_add = LCYAN                # (green beside yellow fell together with protanopia)
         self.git_mod = YELLOW
         self.git_del = LRED
         self.msg_sel_fg = BLACK             # (white on green was 3.1:1)
@@ -231,7 +235,9 @@ def theme(n: Int) -> Palette:
         p.scroll_fg = 0x3B4261
         p.scroll_bg = 0x1A1B26
         p.syn.clear()
-        for c in [0xC0CAF5, 0xBB9AF7, 0x2AC3DE, 0x767D9F, 0x9ECE6A, 0xFF9E64, 0xE0AF68, 0x89DDFF, 0x7DCFFF, 0xF7768E, 0x7AA2F7, 0xE0AF68, 0x73DACA, 0x2AC3DE]:
+        # (numbers pink, definitions yellow: orange beside green and blue beside purple
+        # fell together with deuteranopia and protanopia)
+        for c in [0xC0CAF5, 0xBB9AF7, 0x2AC3DE, 0x767D9F, 0x9ECE6A, 0xFF7A93, 0xE0AF68, 0x89DDFF, 0x7DCFFF, 0xF7768E, 0xF0D060, 0xE0AF68, 0x73DACA, 0x2AC3DE]:
             p.syn.append(c)
         p.msg_fg = 0xA9B1D6
         p.msg_bg = 0x16161E
@@ -270,6 +276,7 @@ def theme(n: Int) -> Palette:
         var bk = 0x0A0700
         var dim = 0x2A1C00
         p.name = "Amber CRT"
+        p.monochrome = True
         p.desk_fg = dim
         p.desk_bg = bk
         p.desk_ch = 0x2591
