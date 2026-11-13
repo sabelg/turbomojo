@@ -1,6 +1,7 @@
 """Compiler integration: background build/format jobs, messages, run."""
 from platform import make_nonblocking
 from std.collections import List, Dict
+from marks import marked_run, marks_wanted
 from std.time import perf_counter_ns
 from std.ffi import external_call
 from term import (
@@ -534,9 +535,8 @@ __extension App:
             self.run_in_window(label, core)
             return
         var cmd = (
-            "clear && printf '\\033[1m$ %s\\033[0m\\n' " + shell_quote(label)
-            + " && " + core
-            + "; printf '\\n\\033[7m Program exited with status %d - press any key to return to TurboMojo \\033[0m' $?"
+            "clear && " + marked_run(label, core, marks_wanted(env_or("TERM", "")), "\\n")
+            + "; printf '\\n\\033[7m Program exited with status %d - press any key to return to TurboMojo \\033[0m' $st"
         )
         self.term.leave()
         _ = run_system(cmd)

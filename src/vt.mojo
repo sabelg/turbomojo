@@ -48,11 +48,13 @@ comptime CELL_WIDE = 3              # (ghostty_cell_get)
 comptime TERM_ACTIVE_SCREEN = 6
 comptime TERM_MOUSE_TRACKING = 11
 comptime TERM_SCROLLBACK_ROWS = 15
+comptime TERM_SCROLLBAR = 9           # {total, offset, len} rows
 comptime OPT_WRITE_PTY = 2
 comptime TERM_MODE = 37
 comptime TERM_VIEWPORT_ACTIVE = 32
 comptime SCROLL_BOTTOM = 1
 comptime SCROLL_DELTA = 2
+comptime SCROLL_PROMPT = 4       # by prompts (OSC 133 marks), negative = back
 comptime MODE_CURSOR_KEYS = 1           # DEC private modes (as the library packs them: no ANSI bit)
 comptime MODE_BRACKETED_PASTE = 2004
 
@@ -328,6 +330,16 @@ struct VtTerm(Movable):
             sv[0] = tag
             sv[1] = delta
             _ = external_call["ghostty_terminal_scroll_viewport", Int32](self.term, sv.unsafe_ptr())
+
+    def view_top(self) -> Int:
+        """The row of the whole scrollable area (scrollback and screen) at the top of
+        the view; -1 if it cannot be read."""
+        if self.term == 0:
+            return -1
+        var sb = List[UInt64](length=3, fill=0)
+        if Int(external_call["ghostty_terminal_get", Int32](self.term, Int32(TERM_SCROLLBAR), sb.unsafe_ptr())) != 0:
+            return -1
+        return Int(sb[1])
 
     def at_bottom(self) -> Bool:
         """The view shows the live screen (not the scrollback)."""

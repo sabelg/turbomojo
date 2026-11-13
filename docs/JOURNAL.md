@@ -4717,3 +4717,36 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   input reads the rest of a piped script; no bell in the line mode.
 - Gate: scripts/check.sh printed CHECK OK (100 test files, 1148 tests, 814 s).
 
+## 2026-11-12 · P10-14c OSC 133 marks around program runs · done
+- What changed: new src/marks.mojo - `marked_run(label, core, marks, eol)` is the
+  shell text of a run: OSC 133 A, the bold "$ label" line, B, C, the command, its
+  status kept in `st`, then D;status. Run on the user screen (src/app_jobs.mojo)
+  uses it and shows "Program exited with status N" from `st`; `marks_wanted(TERM)`
+  leaves the marks out for linux, dumb, vt1xx/vt2xx and an empty TERM (the Linux
+  console prints an OSC it does not know). The Run window (src/app_terminal.mojo)
+  always marks (its libghostty-vt reads them) and ends with `exit $st`, so "ended
+  with status N" is still the program's. In a terminal window Ctrl-Shift-Up /
+  Ctrl-Shift-Down (kept by the IDE, not sent to the program) move the view to the
+  previous / next marked prompt (`VtTerm.scroll_view(SCROLL_PROMPT, d)`, ghostty's
+  prompt scrolling) and say "No earlier run marked here ..." when the view did not
+  move (`VtTerm.view_top`, from the terminal's scrollbar data). The shell window
+  gets the jumps when the shell marks its own prompts. README terminal row; the
+  terminal's first hint mentions the key.
+- Verified: tests/test_run_marks.mojo (4 tests): the marks' order in the shell text,
+  the label quoted (with a quote in it), no marks when off, which TERMs get them;
+  sh running the text writes A, "$ label", B, C, the output, D;3 in that order and
+  keeps the status 3; a 40x6 VtTerm with three marked runs jumps to "$ run 3",
+  "$ run 2", to the first when asked for more than there are, forward again, and
+  does not move without marks; a real Run window (a script standing for mojo, 60
+  lines, exit 5) still says "ended with status 5", Ctrl-Shift-Up brings
+  "$ mojo run prog.mojo" to the top, again says there is no earlier run. Mutants:
+  the Run window without marks, and the key not kept by the IDE, each fail.
+- Not done / unverified: not checked in a real outer terminal (Ghostty, kitty,
+  WezTerm) that the user-screen marks jump there - only the bytes are tested; the
+  Run window holds one run (each Run starts it afresh), so its jumps are mostly
+  "to the start of this run"; no shell integration is injected into the user's
+  shell (bash and zsh mark nothing unless their terminal's integration does);
+  the tests window and tasks are not marked; screen-reader line mode prints no
+  marks by design.
+- Gate: scripts/check.sh printed CHECK OK (101 test files, 1152 tests, 826 s).
+

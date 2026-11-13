@@ -1,6 +1,7 @@
 """The integrated terminal: a shell (Window > Terminal) and the program Run starts, each
 in a window of its own at the bottom, on a pty with libghostty-vt keeping the screen."""
 from std.collections import List, Dict
+from marks import marked_run, marks_wanted
 from std.time import perf_counter_ns
 from std.ffi import external_call
 from term import (
@@ -152,7 +153,7 @@ __extension App:
             argv.append(sh)
             var here = self.cwd
             _ = self.term_start(TS_SHELL, argv, here, "Terminal - " + basename(sh))
-        self.say("Terminal: keys go to the program; F6 or Alt-F11 back to the editor, Shift-PgUp scrolls back")
+        self.say("Terminal: keys go to the program; F6 or Alt-F11 back to the editor, Shift-PgUp scrolls back, Ctrl-Shift-Up goes to the last run")
 
     def term_close_window(mut self, i: Int):
         var y = self.wins[i].y
@@ -310,6 +311,8 @@ __extension App:
             return True
         if k == (KEY_PGUP | MOD_SHIFT) or k == (KEY_PGDN | MOD_SHIFT):
             return True
+        if k == (KEY_UP | MOD_CTRL | MOD_SHIFT) or k == (KEY_DOWN | MOD_CTRL | MOD_SHIFT):
+            return True                 # jump between runs (OSC 133 prompts)
         if k & MOD_ALT != 0 and (k & KEY_MASK) >= 48 and (k & KEY_MASK) <= 57 and k & MOD_CTRL == 0:
             return True                 # Alt-digit: windows by number
         return False
@@ -320,6 +323,9 @@ __extension App:
         if t < 0 or self.wins[t].kind != WK_TERM or self.term_reserved(k):
             if t >= 0 and self.wins[t].kind == WK_TERM and (k == (KEY_PGUP | MOD_SHIFT) or k == (KEY_PGDN | MOD_SHIFT)):
                 self.term_scroll(self.term_kind_of(t), -max(1, self.wins[t].h - 3) if k == (KEY_PGUP | MOD_SHIFT) else max(1, self.wins[t].h - 3))
+                return True
+            if t >= 0 and self.wins[t].kind == WK_TERM and (k == (KEY_UP | MOD_CTRL | MOD_SHIFT) or k == (KEY_DOWN | MOD_CTRL | MOD_SHIFT)):
+                self.term_jump_prompt(self.term_kind_of(t), -1 if k == (KEY_UP | MOD_CTRL | MOD_SHIFT) else 1)
                 return True
             return False
         var which = self.term_kind_of(t)
@@ -363,6 +369,20 @@ __extension App:
         s.vt.scroll_view(SCROLL_DELTA, rows)
         s.vt.update()
         self.term_put(which, s^)
+
+    def term_jump_prompt(mut self, which: Int, d: Int):
+        """The view to the previous (d < 0) or next run: the prompts the program or the
+        shell marked with OSC 133. Nothing marked: says so."""
+        var s = self.term_take(which)
+        s.vt.update()
+        var before = s.vt.view_top()
+        s.vt.scroll_view(SCROLL_PROMPT, d)
+        s.vt.update()
+        var moved = s.vt.view_top() != before
+        s.dirty = True
+        self.term_put(which, s^)
+        if not moved:
+            self.say("No " + ("earlier" if d < 0 else "later") + " run marked here (the shell or program sends OSC 133 marks for this)")
 
     def term_mouse(mut self, i: Int, e: Event) -> Bool:
         """Mouse in a terminal window: the wheel scrolls back; a drag selects, and the
@@ -427,7 +447,8 @@ __extension App:
         var argv = List[String]()
         argv.append("/bin/sh")
         argv.append("-c")
-        argv.append("printf '\\033[1m$ %s\\033[0m\\r\\n' " + shell_quote(label) + "; " + core)
+        # (the marks always: the window's own terminal reads them - Ctrl-Shift-Up/Down)
+        argv.append(marked_run(label, core, True, "\\r\\n") + "; exit $st")
         var here = self.cwd
         _ = self.term_start(TS_RUN, argv, here, "Run - " + label)
 
