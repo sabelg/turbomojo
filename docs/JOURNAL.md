@@ -4810,3 +4810,34 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   two-key chord (the Emacs keymap's Ctrl-X Ctrl-C) cannot be typed on the notice.
 - Gate: scripts/check.sh printed CHECK OK (103 test files, 1159 tests, 829 s).
 
+## 2026-11-12 · P10-16b zoom in three steps · done
+- What changed: Zoom (F5) is `zoom_step()` (src/app_layout.mojo): normal -> half ->
+  full -> normal. Classic layout: half is the left or right half of the desk, full
+  height, whichever half the window's middle is in (`Window.half`, `half_right`;
+  fit_windows keeps it there on a resize). Tiled layout: half places the panes with
+  `Layout.half_ratios(group)` - on the path from the pane to the root its side of
+  each split grows to t, t^k = 1/2 for the k splits of that direction (50%, 70.8%,
+  79.4%, then RATIO_MAX), so it has at least half the width and the height while
+  the other panes stay in view; the saved ratios are not changed (`Layout.place`
+  takes the group to boost). Half is passed over, straight to full, where it would
+  change nothing (a window as big as the desk, two equal panes); the status line
+  says "Zoom: half - F5 again for full" / "Zoom: full" / "Zoom: normal". Dragging,
+  Tile / Cascade and switching layouts clear it; the title's zoom icon shows ↕ for
+  half too. The zoom box on a window's frame stays the Turbo two-step maximize /
+  restore (`zoom_toggle`; from half it restores): the first gate failed in
+  test_mouse's test_zoom_box_toggles, which clicked it and expected full. The
+  command's description and the README desktop row.
+- Verified: tests/test_zoom.mojo (4 tests; the zoom box maximizes, restores, and
+  restores from half): half_ratios gives 30% -> 50%, leaves
+  70% and the saved ratio alone, gives both splits of a two-deep path >= 70.8%
+  (product >= half); a 40x10 window at x=70 goes to the right half 60,1 60xH, then
+  0,1 120xH, then back to 70,5 40x10, one at x=2 to the left half, a desk-sized one
+  straight to full; in the tiled layout a quarter-width pane gets >= half the width
+  with its neighbours still shown, full hides them, normal puts it back and the
+  layout's ratios are unchanged; two equal panes go straight to full. Mutants (no
+  tiled boost, no classic half placement, a smaller growth for two splits) fail.
+- Not done / unverified: the half step is not saved in the session (full is);
+  the bottom panel and other non-editor windows in the tiled layout are not
+  boosted (they go straight to full, as before); not tried by hand in a terminal.
+- Gate: scripts/check.sh printed CHECK OK on the second run (104 test files, 1163 tests, 857 s).
+

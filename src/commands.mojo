@@ -811,7 +811,7 @@ def build_registry() -> Registry:
     r.cmd(CM_SCREEN_READER, "options.screenReader", "Screen-reader ~m~ode", "A plain, linear screen for screen readers: no frames or shading, the cursor on what has the focus, no animation")
     r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark")
     # ---- Window
-    r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge or restore the active window", [fkey(5)])
+    r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")
     r.cmd(CM_CASCADE, "window.cascade", "C~a~scade", "Stack windows on top of each other")
     r.cmd(CM_NEXTWIN, "window.next", "~N~ext", "Make the next window active", [fkey(6)])

@@ -189,7 +189,7 @@ __extension Window:
             scr.put(self.x + 3, self.y, 0x25A0, pal.icon_fg, bg)
             _ = scr.text(self.x + 4, self.y, "]", ffg, bg)
             _ = scr.text(self.x + self.w - 5, self.y, "[", ffg, bg)
-            scr.put(self.x + self.w - 4, self.y, 0x2195 if self.zoomed else 0x2191, pal.icon_fg, bg)
+            scr.put(self.x + self.w - 4, self.y, 0x2195 if self.zoomed or self.half else 0x2191, pal.icon_fg, bg)
             _ = scr.text(self.x + self.w - 3, self.y, "]", ffg, bg)
         if self.number > 0 and self.number < 10 and self.w > 12:
             _ = scr.text(self.x + self.w - 7, self.y, String(self.number), ffg, bg)

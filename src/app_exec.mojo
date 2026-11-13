@@ -621,21 +621,7 @@ __extension App:
             self.persist_option("ui", "screen_reader", toml_bool(self.reader))
             self.say("Screen-reader mode on: plain screen, the cursor on what has the focus" if self.reader else "Screen-reader mode off")
         elif cmd == CM_ZOOM:
-            var t = self.top()
-            if t >= 0:
-                if self.wins[t].zoomed:
-                    self.wins[t].zoomed = False
-                    self.wins[t].x = self.wins[t].sx
-                    self.wins[t].y = self.wins[t].sy
-                    self.wins[t].w = self.wins[t].sw
-                    self.wins[t].h = self.wins[t].sh
-                else:
-                    self.wins[t].sx = self.wins[t].x
-                    self.wins[t].sy = self.wins[t].y
-                    self.wins[t].sw = self.wins[t].w
-                    self.wins[t].sh = self.wins[t].h
-                    self.wins[t].zoomed = True
-                self.fit_windows()
+            self.zoom_step()
         elif cmd == CM_TILE or cmd == CM_CASCADE:
             if self.tiled:
                 self.say("The tiled layout arranges the windows itself (Window > Tiled layout turns it off)")
@@ -730,6 +716,7 @@ __extension App:
                 var r = k // cols
                 var i = idx[k]
                 self.wins[i].zoomed = False
+                self.wins[i].half = False
                 self.wins[i].x = (W * c) // cols
                 self.wins[i].w = (W * (c + 1)) // cols - self.wins[i].x
                 self.wins[i].y = 1 + (dh * r) // rows
@@ -739,6 +726,7 @@ __extension App:
                 var i = idx[k]
                 var off = k % 8
                 self.wins[i].zoomed = False
+                self.wins[i].half = False
                 self.wins[i].x = off
                 self.wins[i].y = 1 + off
                 self.wins[i].w = W - off

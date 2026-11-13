@@ -99,11 +99,13 @@ __extension App:
                 self.wins[t].x = x - self.drag_dx
                 self.wins[t].y = y - self.drag_dy
                 self.wins[t].zoomed = False
+                self.wins[t].half = False
                 self.fit_windows()
             elif self.drag == 2:
                 self.wins[t].w = max(16, x - self.wins[t].x + 1)
                 self.wins[t].h = max(4, y - self.wins[t].y + 1)
                 self.wins[t].zoomed = False
+                self.wins[t].half = False
                 self.fit_windows()
             elif self.drag == 3:
                 var p = self.wins[t].screen_to_pos(x, y)
@@ -231,7 +233,7 @@ __extension App:
                 self.close_window(t, NEXT_CLOSE)
                 return
             if x >= wx + ww - 5 and x <= wx + ww - 3:
-                self.exec(CM_ZOOM)
+                self.zoom_toggle()                  # (the box: maximize or restore)
                 return
             if self.tiled and self.wins[t].kind == WK_EDITOR:
                 return                          # panes are not dragged about

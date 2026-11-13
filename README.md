@@ -133,7 +133,7 @@ auto-detection. The status bar shows the result, for example `LF  Spaces:2`.
 
 | Area | What you get |
 |---|---|
-| Desktop | Overlapping windows with drag-to-move (title bar), drag-to-resize (bottom-right corner), zoom (F5), tile/cascade, Alt-1…9 window numbers, a window list (Alt-0) and drop shadows |
+| Desktop | Overlapping windows with drag-to-move (title bar), drag-to-resize (bottom-right corner), zoom in three steps (F5: half the desk - the half the window is mostly in - then the whole desk, then back; in the tiled layout half gives the pane at least half the width and height with the other panes still in view, and is passed over where it would change nothing), tile/cascade, Alt-1…9 window numbers, a window list (Alt-0) and drop shadows |
 | Editor | Mojo syntax colouring (keywords, types, builtins, strings and docstrings, numbers, decorators, def names), line numbers, current-line highlight, bracket matching, smart Home, auto-indent (indents after `:`), Tab/Shift-Tab block indent, toggle comment, duplicate/delete line, insert/overwrite modes (underline or block cursor) |
 | Undo | Grouped undo/redo. Typing a word undoes as one step, and so does Replace-all or Format |
 | Soft wrap | Options ▸ Soft wrap (Alt-Z): long lines continue on the next screen row, broken after a blank where possible. Up/Down move by screen rows, the view scrolls inside a line taller than the window, and line numbers mark only the first row of each line |

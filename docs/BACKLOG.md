@@ -171,7 +171,7 @@ brackets; where TurboMojo already did part of it, only the rest is a task).
 - [x] P10-15 Cursor discipline in the full UI: the hardware cursor always on the focused caret or row; status, minimap, spinner and toast updates never leave it elsewhere; unchanged cells never rewritten [B]
 - [ ] P10-16 Responsive layout (split into a-c below) [C]
 - [x] P10-16a Responsive layout, first part: a "terminal too small" screen below a minimum size, and the minimap, breadcrumbs and gutter hidden below widths where they would crowd the text [C]
-- [ ] P10-16b One-key zoom of the focused pane in three steps (normal, half, full) [C]
+- [x] P10-16b One-key zoom of the focused pane in three steps (normal, half, full) [C]
 - [ ] P10-16c Stacking on narrow terminals: the tiled layout's side panes go above / below the editor instead of beside it [C]
 - [ ] P10-17 Navigation memory: most-recent ordering in the palette and F6, per-tab cursor, scroll and fold state that survives pane moves and restarts (back/forward exists: Alt-, Alt-.) [D]
 - [ ] P10-18 Semantic colour roles under all themes (surface, panel, text, text-muted, text-disabled, border, border-blurred, cursor, cursor-blurred, diag-error, diag-warn) with designed truecolor, 256 and 16 values; an Okabe-Ito colour-blind theme with its own contrast test [E]

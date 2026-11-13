@@ -84,6 +84,8 @@ struct Window(Copyable, Movable):
     var sw: Int
     var sh: Int
     var zoomed: Bool
+    var half: Bool          # zoom's middle step: half the desk (classic) or half the room (tiled)
+    var half_right: Bool    #   (classic: the right half)
     var sel: Bool
     var ar: Int
     var ac: Int
@@ -150,6 +152,8 @@ struct Window(Copyable, Movable):
         self.sw = w
         self.sh = h
         self.zoomed = False
+        self.half = False
+        self.half_right = False
         self.sel = False
         self.ar = 0
         self.ac = 0

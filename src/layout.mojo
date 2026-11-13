@@ -223,8 +223,45 @@ struct Layout(Copyable, Movable):
         return True
 
     # ------------------------------------------------------------ geometry
-    def place(mut self, x: Int, y: Int, w: Int, h: Int):
-        """Give every node its rectangle inside (x, y, w, h)."""
+    def half_ratios(self, g: Int) -> List[Int]:
+        """The split ratios with group `g` given at least half the width and half the
+        height of the whole (zoom's middle step): on the path from `g` to the root, `g`'s
+        side of each split grows to t, where t^k = 1/2 for the k splits of that
+        direction on the path (within RATIO_MIN..RATIO_MAX). The saved ratios stay."""
+        var r = self.ratio.copy()
+        if g < 0 or g >= len(self.kind):
+            return r^
+        var rows = 0
+        var cols = 0
+        var n = g
+        while self.parent[n] >= 0:
+            if self.kind[self.parent[n]] == L_ROW:
+                rows += 1
+            else:
+                cols += 1
+            n = self.parent[n]
+        n = g
+        while self.parent[n] >= 0:
+            var p = self.parent[n]
+            var k = rows if self.kind[p] == L_ROW else cols
+            var t = 500
+            if k == 2:
+                t = 708
+            elif k == 3:
+                t = 794
+            elif k >= 4:
+                t = RATIO_MAX
+            var share = r[p] if self.first[p] == n else 1000 - r[p]
+            if share < t:
+                share = min(t, RATIO_MAX)
+                r[p] = share if self.first[p] == n else 1000 - share
+            n = p
+        return r^
+
+    def place(mut self, x: Int, y: Int, w: Int, h: Int, boost: Int = -1):
+        """Give every node its rectangle inside (x, y, w, h); with `boost`, as if that
+        group had been given half the room (`half_ratios`)."""
+        var ratio = self.half_ratios(boost) if boost >= 0 else self.ratio.copy()
         var stack = List[Int]()
         self.gx[self.root] = x
         self.gy[self.root] = y
@@ -238,7 +275,7 @@ struct Layout(Copyable, Movable):
             var a = self.first[n]
             var b = self.second[n]
             if self.kind[n] == L_ROW:
-                var wa = (self.gw[n] * self.ratio[n]) // 1000
+                var wa = (self.gw[n] * ratio[n]) // 1000
                 wa = max(min(PANE_MIN_W, self.gw[n] // 2), min(wa, self.gw[n] - min(PANE_MIN_W, self.gw[n] // 2)))
                 self.gx[a] = self.gx[n]
                 self.gw[a] = wa
@@ -249,7 +286,7 @@ struct Layout(Copyable, Movable):
                 self.gh[a] = self.gh[n]
                 self.gh[b] = self.gh[n]
             else:
-                var ha = (self.gh[n] * self.ratio[n]) // 1000
+                var ha = (self.gh[n] * ratio[n]) // 1000
                 ha = max(min(PANE_MIN_H, self.gh[n] // 2), min(ha, self.gh[n] - min(PANE_MIN_H, self.gh[n] // 2)))
                 self.gy[a] = self.gy[n]
                 self.gh[a] = ha

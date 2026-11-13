@@ -1456,6 +1456,12 @@ struct App(Movable):
                 self.wins[i].y = 1
                 self.wins[i].w = W
                 self.wins[i].h = dh
+            elif self.wins[i].half and not self.tiled:
+                var hw = W // 2
+                self.wins[i].x = W - hw if self.wins[i].half_right else 0
+                self.wins[i].y = 1
+                self.wins[i].w = hw if self.wins[i].half_right else W - hw
+                self.wins[i].h = dh
             else:
                 self.wins[i].w = max(16, min(self.wins[i].w, W))
                 self.wins[i].h = max(4, min(self.wins[i].h, dh))

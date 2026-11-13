@@ -106,6 +106,8 @@ __extension App:
             x0 = self.wins[xi].w
         self.lay.place(x0, 1, w - x0, h)
         var zoomed = te >= 0 and self.wins[te].zoomed
+        if te >= 0 and self.wins[te].half and not zoomed:
+            self.lay.place(x0, 1, w - x0, h, self.lay.group_of(self.wins[te].wid))
         for g in self.lay.groups():
             var show = self.lay.shown(g)
             for id in self.lay.tabs[g]:
@@ -126,6 +128,79 @@ __extension App:
                 self.wins[i].w = self.lay.gw[g]
                 self.wins[i].h = self.lay.gh[g]
 
+    def half_rect(self, i: Int, right: Bool) -> Tuple[Int, Int, Int, Int]:
+        """Classic layout, zoom's middle step: the left or right half of the desk."""
+        var W = self.scr.w
+        var hw = W // 2
+        return (W - hw if right else 0, 1, hw if right else W - hw, self.desk_h())
+
+    def zoom_toggle(mut self):
+        """The zoom box on a window's frame: the Turbo maximize / restore, in two steps
+        (from half it restores too)."""
+        var t = self.top()
+        if t < 0:
+            return
+        if self.wins[t].half:
+            self.wins[t].half = False
+            self.wins[t].zoomed = True             # (restored below from the saved place)
+        if self.wins[t].zoomed:
+            self.zoom_step()
+            return
+        self.wins[t].sx = self.wins[t].x
+        self.wins[t].sy = self.wins[t].y
+        self.wins[t].sw = self.wins[t].w
+        self.wins[t].sh = self.wins[t].h
+        self.wins[t].zoomed = True
+        self.fit_windows()
+
+    def zoom_step(mut self):
+        """Zoom (F5) in three steps: normal, half, full, back to normal. Half is the half
+        of the desk the window is mostly in (classic) or half the room for its pane
+        (tiled; the others stay in view); it is passed over where it would change
+        nothing."""
+        var t = self.top()
+        if t < 0:
+            return
+        if self.wins[t].zoomed:
+            self.wins[t].zoomed = False
+            self.wins[t].x = self.wins[t].sx
+            self.wins[t].y = self.wins[t].sy
+            self.wins[t].w = self.wins[t].sw
+            self.wins[t].h = self.wins[t].sh
+            self.fit_windows()
+            self.say("Zoom: normal")
+            return
+        if self.wins[t].half:
+            self.wins[t].half = False
+            self.wins[t].zoomed = True
+            self.fit_windows()
+            self.say("Zoom: full")
+            return
+        self.wins[t].sx = self.wins[t].x
+        self.wins[t].sy = self.wins[t].y
+        self.wins[t].sw = self.wins[t].w
+        self.wins[t].sh = self.wins[t].h
+        var changes = False
+        if self.tiled and self.wins[t].kind == WK_EDITOR:
+            var g = self.lay.group_of(self.wins[t].wid)
+            var hr = self.lay.half_ratios(g)
+            for k in range(len(hr)):
+                if hr[k] != self.lay.ratio[k]:
+                    changes = True
+        else:
+            var right = self.wins[t].x + self.wins[t].w // 2 >= self.scr.w // 2
+            var r = self.half_rect(t, right)
+            self.wins[t].half_right = right
+            changes = r[2] > self.wins[t].w or r[3] > self.wins[t].h
+        if changes:
+            self.wins[t].half = True
+            self.fit_windows()
+            self.say("Zoom: half - " + self.reg.key_label(CM_ZOOM) + " again for full")
+        else:
+            self.wins[t].zoomed = True
+            self.fit_windows()
+            self.say("Zoom: full")
+
     def layout_focus_shown(mut self):
         """Give the keyboard to the window the current pane shows."""
         var i = self.win_by_wid(self.lay.shown(self.lay.cur))
@@ -145,6 +220,7 @@ __extension App:
                 self.wins[i].hidden = False
                 if self.wins[i].kind == WK_EDITOR:
                     self.wins[i].zoomed = False
+                    self.wins[i].half = False
             if self.tiled:
                 self.layout_sync()
                 self.say("Tiled layout: " + self.reg.key_label(CM_SPLIT_RIGHT) + " splits, " + self.reg.key_label(CM_NEXT_TAB) + " next tab, " + self.reg.key_label(CM_NEXT_PANE) + " next pane")
