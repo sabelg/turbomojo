@@ -209,7 +209,7 @@ in the Modular forum [1, 2, 4, 16, 17].
 - [x] P11-08 Help > Report a problem: writes a ready-to-file issue text (versions, `--caps` output, the last crash-log entry, the config with anything secret-looking removed) to a file and the clipboard; it sends nothing [19]
 - [x] P11-09 Contributing: CONTRIBUTING.md (building, the gate, docs/SOURCE.md, docs/JOURNAL.md), issue templates asking for `tmide --caps` output, and a GitHub Actions workflow that runs the tests (written, not run here) [3, 18]
 - [ ] P11-10 GPU awareness (split into a-c below) [11]
-  - [ ] P11-10a The GPU the program will run on (nvidia-smi, rocm-smi, or none) in `--caps` and as an optional status-line item, read once in the background
+  - [x] P11-10a The GPU the program will run on (nvidia-smi, rocm-smi, or none) in `--caps` and as an optional status-line item, read once in the background
   - [ ] P11-10b A run's time and the GPU it used in the Message window after Ctrl-F9
   - [ ] P11-10c "Check my answer" for the GPU puzzles in the docs reader, as the exercises have
 - [ ] P11-11 A copy-to-the-server bundle: `pixi run bundle` makes a tar file with tmide and the Mojo runtime libraries it needs, which runs after unpacking on another Linux machine with the same glibc (checked in a clean folder without the project's .pixi) [12]

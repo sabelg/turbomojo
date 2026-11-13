@@ -62,6 +62,7 @@ from app_newproject import *
 from app_setup import *
 from app_presets import *
 from app_report import *
+from app_gpu import *
 from version import MOJO_BUILT_WITH
 from mojover import mojo_mismatch, mojo_summary
 
@@ -195,6 +196,8 @@ __extension App:
             if sz[0] != self.scr.w or sz[1] != self.scr.h:
                 self.scr.resize(sz[0], sz[1])
                 self.fit_windows()
+            if self.gpu_status_on and not self.gpu_asked:
+                self.gpu_start()
             if self.explorer_at_start:
                 self.explorer_at_start = False      # (once: closing it later is the user's)
                 self.explorer_start()
@@ -237,6 +240,8 @@ __extension App:
                 fds.append(pf)
             for xf in self.extra_fds():
                 fds.append(xf)
+            for gf in self.gpu_fds():
+                fds.append(gf)
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -269,6 +274,7 @@ __extension App:
             self.plugins_tick(now_ns())
             self.extra_tick(now_ns())
             self.symidx_tick()
+            self.gpu_tick()
             self.quick_tick()
             self.explorer_tick(now_ns())
             self.git_tick(now_ns())

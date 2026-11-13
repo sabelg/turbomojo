@@ -28,6 +28,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_git.mojo` | Git in the editor: changed-line markers in the gutter and `git status` colours in the file explorer. |
 | `src/app_gitcmd.mojo` | git commands with dialogs and views: File > Commit, Branch, Blame. |
 | `src/app_gitdiff.mojo` | The diff view and the change (hunk) commands: File > Diff of this file, Stage change, Revert change, Next / Previous change. |
+| `src/app_gpu.mojo` | The GPU on the status line (P11-10a): with `ui.gpu_status` on (Options > GPU in the status line), GPU_QUERY runs once in the background through a non-blocking pipe - the main loop waits on it with the other descriptors - and its answer becomes a status item such as "GPU GB10". |
 | `src/app_input.mojo` | Keyboard and paste input routing. |
 | `src/app_jobs.mojo` | Compiler integration: background build/format jobs, messages, run. |
 | `src/app_keybox.mojo` | After a prefix key (WordStar's Ctrl-K and Ctrl-Q, Emacs's C-x, any two-key binding): if the second key does not come within a moment, a box above the status line lists the keys that may follow, with their commands. |
@@ -81,6 +82,7 @@ struct of `appstate.mojo`, one area each.
 | `src/git.mojo` | Git, as the editor sees it: which repository a file is in, what `git status` says about the files (for the explorer), and the commands that ask git for them. |
 | `src/gitdiff.mojo` | The diff view's model: a unified diff of two versions of a file, and what staging, unstaging or reverting one change (hunk) of it makes of them. |
 | `src/glyphs.mojo` | Glyph tiers (`ui.glyphs`): which characters the IDE's own chrome is drawn with. |
+| `src/gpuinfo.mojo` | Which GPU will the program run on? (P11-10a) Mojo programs that use a GPU take the first one the driver lists (CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES change which), so TurboMojo asks the vendor's tool once - nvidia-smi for NVIDIA, rocm-smi for AMD - and shows the answer in `tmide --caps` and, when `ui.gpu_status` is on, on the status line. |
 | `src/grapheme.mojo` | Grapheme clusters: what a user perceives as one character. |
 | `src/grep.mojo` | Find in files: walks a folder and searches every text file, a little at a time so the editor stays responsive (call `step` from the event loop until `done`). |
 | `src/helpbook.mojo` | TurboMojo's own help: the "TurboMojo" book of the documentation viewer (the guide, the cheat sheet, the keyboard reference, what's new) and the tutorial file. |

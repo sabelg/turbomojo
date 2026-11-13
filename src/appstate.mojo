@@ -72,6 +72,7 @@ from filestate import *
 from markdown import MdLine
 from toml import toml_set, toml_quote, toml_bool
 from setupcheck import SetupItem
+from gpuinfo import GPU_QUERY
 
 comptime M_NORMAL = 0
 comptime M_MENU = 1
@@ -188,6 +189,13 @@ struct App(Movable):
     var setup_offer: Bool             # the first run shows Check setup after its questions
     var setup_list: List[SetupItem]  # Check setup's lines
     var term_probed: Bool            # the terminal was asked what it can do (run())
+    var gpu_status_on: Bool          # ui.gpu_status: the GPU on the status line
+    var gpu_asked: Bool
+    var gpu_query: String            # (gpuinfo.GPU_QUERY; tests give their own)
+    var gpu_fp: Int
+    var gpu_fd: Int
+    var gpu_out: List[UInt8]
+    var gpu_item: String             # "GPU GB10" once known
     var caps_lines: List[String]     # what the terminal said it can do (Report a problem)
     var report_path: String          # where the report goes ("": the state folder)
     var term_kitty_keys: Bool        # ... and it sends every key (kitty keyboard protocol)
@@ -660,6 +668,13 @@ struct App(Movable):
         self.term_probed = False
         self.term_kitty_keys = False
         self.caps_lines = List[String]()
+        self.gpu_status_on = False
+        self.gpu_asked = False
+        self.gpu_query = GPU_QUERY
+        self.gpu_fp = 0
+        self.gpu_fd = -1
+        self.gpu_out = List[UInt8]()
+        self.gpu_item = ""
         self.report_path = ""
         self.notes = NotifyCenter()
         self.toast_rows = List[Int]()
@@ -1383,6 +1398,7 @@ struct App(Movable):
         self.language = language_from(s.language, env_or("LANG", ""))
         self.restore_session = s.restore_session
         self.explorer_at_start = s.explorer
+        self.gpu_status_on = s.gpu_status
         if s.docs_home.byte_length() > 0 and s.docs_home != self.doc_home:
             self.doc_home = s.docs_home
             self.doc_loaded = False

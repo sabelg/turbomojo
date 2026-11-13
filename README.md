@@ -108,6 +108,7 @@ restore_session = true      # started without a file: open what was open in this
 line_numbers = true
 highlight_line = true
 clock = true
+gpu_status = false           # the GPU programs will run on, on the status line (asked once, in the background)
 run_in_terminal = true           # Run in the Run window; false: on the user screen, as before
 show_whitespace = false
 

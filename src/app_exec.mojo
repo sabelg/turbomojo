@@ -53,6 +53,7 @@ from app_newproject import *
 from app_setup import *
 from app_presets import *
 from app_report import *
+from app_gpu import *
 from app_plugins import *
 from plugins import CM_PLUGIN0
 from tips import TK_FIND
@@ -215,6 +216,8 @@ __extension App:
             self.persist_option("ui", "highlight_line", toml_bool(self.hl_line))
         elif cmd == CM_CLOCK:
             self.persist_option("ui", "clock", toml_bool(self.show_clock))
+        elif cmd == CM_GPU_STATUS:
+            self.persist_option("ui", "gpu_status", toml_bool(self.gpu_status_on))
         elif cmd == CM_SHOWWS:
             self.persist_option("ui", "show_whitespace", toml_bool(self.show_ws))
         elif cmd == CM_WRAP:
@@ -579,6 +582,10 @@ __extension App:
             self.hl_line = not self.hl_line
         elif cmd == CM_CLOCK:
             self.show_clock = not self.show_clock
+        elif cmd == CM_GPU_STATUS:
+            self.gpu_status_on = not self.gpu_status_on
+            self.gpu_asked = False if not self.gpu_status_on else self.gpu_asked
+            self.gpu_start()
         elif cmd == CM_SHOWWS:
             self.show_ws = not self.show_ws
         elif cmd == CM_SEMANTIC:

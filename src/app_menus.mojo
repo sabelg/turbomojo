@@ -162,7 +162,7 @@ __extension App:
 
     def toggle_cmds(self) -> List[Int]:
         """The commands that switch something on or off (checked() has those on)."""
-        return [CM_LINENUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
+        return [CM_LINENUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_GPU_STATUS, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
 
     def checked(self) -> List[Int]:
         var out = List[Int]()
@@ -176,6 +176,8 @@ __extension App:
             out.append(CM_HLLINE)
         if self.show_clock:
             out.append(CM_CLOCK)
+        if self.gpu_status_on:
+            out.append(CM_GPU_STATUS)
         if self.show_ws:
             out.append(CM_SHOWWS)
         if self.soft_wrap:

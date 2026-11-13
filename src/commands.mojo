@@ -101,6 +101,7 @@ comptime CM_NEW_PROJECT = 232    # File > New project
 comptime CM_SETUP = 233          # Help > Check setup
 comptime CM_PRESETS = 234        # Options > Presets
 comptime CM_REPORT = 235         # Help > Report a problem
+comptime CM_GPU_STATUS = 236     # Options > GPU in the status line
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -809,6 +810,7 @@ def build_registry() -> Registry:
     r.cmd(CM_LINENUM, "options.lineNumbers", "~L~ine numbers", "Toggle the line number gutter")
     r.cmd(CM_AUTOINDENT, "options.autoIndent", "~A~uto indent", "Toggle smart auto indentation")
     r.cmd(CM_HLLINE, "options.highlightLine", "~H~ighlight line", "Toggle current line highlighting")
+    r.cmd(CM_GPU_STATUS, "options.gpuStatus", "~G~PU in the status line", "Show the GPU your programs run on (asked once, in the background)")
     r.cmd(CM_CLOCK, "options.clock", "Cl~o~ck", "Toggle the menu bar clock")
     r.cmd(CM_SHOWWS, "options.showWhitespace", "Show ~w~hitespace", "Show tab characters as arrows")
     r.cmd(CM_SEMANTIC, "options.semanticColours", "Semant~i~c colours", "Colour names by what the language server says they are")
@@ -1009,6 +1011,7 @@ def build_registry() -> Registry:
     r.item(CM_AUTOINDENT)
     r.item(CM_HLLINE)
     r.item(CM_CLOCK)
+    r.item(CM_GPU_STATUS)
     r.item(CM_SHOWWS)
     r.item(CM_WRAP)
     r.item(CM_SEMANTIC)

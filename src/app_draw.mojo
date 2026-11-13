@@ -25,6 +25,7 @@ from util import *
 from appstate import *
 from responsive import too_small, too_small_lines, MINIMAP_MIN_W, CRUMBS_MIN_W, GUTTER_MIN_W
 from outline import scan_outline, scope_path, breadcrumbs, sticky_rows
+from app_gpu import *
 from app_notify import *
 from app_progress import *
 from app_links import *
@@ -127,6 +128,7 @@ __extension App:
             if self.dbg.active():
                 right += self.debug_badge() + "  "
             right += self.plugins_status()       # the plugins' status items
+            right += self.gpu_status_text()
             right += "INS" if self.insert_mode else "OVR"
             right = busy + right
             facts = True

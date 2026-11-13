@@ -5764,3 +5764,34 @@ Not done / unverified:
   4-core runners compiling the ~125 test programs takes about an hour; a cache would be
   invalidated by most changes (they touch src/, which every test imports).
 - Gate: CHECK OK (125 test files, 1246 tests, 980 s).
+
+## 2026-11-13 · P11-10a The GPU in --caps and on the status line · done
+
+What changed:
+- src/gpuinfo.mojo: one shell command (GPU_QUERY) that asks nvidia-smi
+  (`--query-gpu=name,memory.total,driver_version --format=csv,noheader`) or rocm-smi
+  (`--showproductname --csv`), its first line naming the tool, or says "none"; parse_gpus
+  reads it (memory "[N/A]" - unified memory, as on the GB10 - is left out; "NVIDIA-SMI has
+  failed..." is no GPU); gpu_line for --caps (name, memory, driver, "the first of N") and
+  gpu_short for the status line ("GPU GB10", "GPU H100 80GB HBM3 ×8").
+- src/app_gpu.mojo: with `ui.gpu_status` on, the command runs once through a non-blocking
+  pipe the main loop waits on with the other descriptors; its answer becomes a status item.
+  Nothing runs while it is off; switching it off and on asks again (not while a question is
+  still running).
+- Options > GPU in the status line (options.gpuStatus), saved as `ui.gpu_status`;
+  `tmide --caps` has a "gpu" line. README settings block, user guide (status line),
+  whats-new.
+
+Verified:
+- tests/test_gpu.mojo (2 tests): the GB10's real answer, two H100s, a failing driver, a
+  rocm-smi CSV, none, empty output; the app item with a fake query (off: nothing asked; on:
+  not known at first, then shown on the drawn status line; saved in the config; asked once;
+  off again: gone; no GPU: no item). 7 mutants (the off check, asked-once, the item while
+  off, the failed-driver line, [N/A] memory, the vendor prefix, saving) all fail it.
+- `build/tmide --caps` on this machine: "gpu : NVIDIA GB10, driver 615.71.09".
+
+Not done / unverified:
+- rocm-smi's CSV was written from its documentation, not read from an AMD machine; the
+  column is found by its header ("Card series"), so a renamed column gives "none found".
+- Gate, first run: FAILED test_screen (test_dropdown_golden: the Options menu golden lacked the new item; golden refreshed, the hot letter G is not taken)
+- Gate: CHECK OK (126 test files, 1248 tests, 992 s).

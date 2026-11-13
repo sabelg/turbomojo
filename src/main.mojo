@@ -11,6 +11,7 @@ from config import config_home
 from util import state_dir
 from version import TURBOMOJO_VERSION, MOJO_BUILT_WITH
 from mojover import mojo_summary, mojo_mismatch
+from gpuinfo import GPU_QUERY, parse_gpus, gpu_line
 from util import run_capture, bytes_to_str
 from helpbook import keymap_markdown
 from std.sys.info import CompilationTarget
@@ -142,6 +143,8 @@ def main() raises:
         var warn = mojo_mismatch(MOJO_BUILT_WITH, bytes_to_str(mv.out))
         if warn.byte_length() > 0:
             print("  " + warn)
+        # the GPU a program will run on (the first the driver lists)
+        print("  gpu                 : " + gpu_line(parse_gpus(bytes_to_str(run_capture("(" + GPU_QUERY + ") 2>/dev/null </dev/null").out))))
         return
     var lines = env_or("TERM", "") == "dumb"
     var files = List[String]()

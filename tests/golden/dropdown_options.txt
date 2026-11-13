@@ -4,6 +4,7 @@
                               │ Auto indent              │
                               │ Highlight line           │
                               │ Clock                    │
+                              │ GPU in the status line   │
                               │ Show whitespace          │
                               │ Soft wrap          Alt-Z │
                               │ Semantic colours         │
@@ -15,6 +16,5 @@
                               │ Keys: Modern             │
                               │ Keys: Turbo / WordStar   │
                               │ Keys: Emacs              │
-                              ├──────────────────────────┤
                               └────────────────────────▼─┘
 

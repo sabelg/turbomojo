@@ -2,6 +2,9 @@
 
 ## 2.2 (in progress)
 
+- Options > GPU in the status line shows the GPU your programs will run on (asked once
+  from nvidia-smi or rocm-smi, in the background); `tmide --caps` names it, with its
+  memory and driver.
 - Help > Report a problem... writes a ready-to-file issue text (versions, the terminal,
   the last crash, your settings without secrets), copies it and opens it; nothing is
   sent.

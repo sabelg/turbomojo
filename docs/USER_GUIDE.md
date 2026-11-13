@@ -65,7 +65,10 @@ the test explorer, the docs pane or the agent panel.
 
 The **status line** at the bottom shows the keys that matter where you are, messages,
 and on the right the file's line endings and indentation, LSP while a language server
-runs, and items from plugins.
+runs, and items from plugins. **Options > GPU in the status line** adds the GPU a Mojo
+program will run on (for example "GPU GB10", or "GPU H100 80GB HBM3 ×8" for the first
+of eight); TurboMojo asks `nvidia-smi` or `rocm-smi` once, in the background, and shows
+nothing where neither is found. `tmide --caps` names it too, with its memory and driver.
 
 ## Finding any command
 
