@@ -4964,3 +4964,45 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   measure and the simulation is of full dichromacy; no colour-blind person has
   looked at it. 256 and 16 colours are the automatic nearest ones.
 - Gate: scripts/check.sh printed CHECK OK (108 test files, 1176 tests, 884 s).
+
+## 2026-11-12 · P10-18b Colour roles and colours designed for 256 and 16 colours · done
+- What changed: P10-18b split again, 18c being the other themes through the
+  colour-vision check. src/themes.mojo: `role_keys`, `role_fields`, `role_color`,
+  `set_key` - ten roles, each standing for the palette colours that play that part
+  (cursor_blurred has none: an unfocused window's cursor is the focused one, muted
+  by `dimmed`; so it is not a role). A theme file may have `[roles]`, and for 256
+  and 16 colours `[colors256]` / `[syntax256]` and `[colors16]` / `[syntax16]`
+  (roles may be named there); ThemeSet keeps three palettes per theme
+  (`pals`, `pals256`, `pals16`, `for_depth`), each starting from its base theme's
+  palette for that depth. "256:N" names an xterm colour; the screen sends it as
+  38;5;N (in truecolor too) or, with 16 colours, the nearest slot (`x256_rgb` in
+  src/caps.mojo). `theme_apply` takes the palette for the screen's depth, and run()
+  takes it again once the terminal's depth is known. src/contrast.mojo:
+  `depth_rgb`, `depth_problems` - 256 colours under the truecolor floors, 16
+  colours (whose values are the terminal's own) under the WCAG floors with VGA
+  values, and never text in its background's slot. Designs: Classic (hot letters,
+  doc_dim; in 16 colours its red hot letters on grey are 3.3:1, so they are dark
+  blue there, and errors bright magenta on the blue), Midnight (selection and
+  buttons; in 16 a blue highlight with white text, gutter, def), Amber (in 16:
+  yellow text on black, yellow bars - its brown was 4.0:1 and its disabled items
+  invisible, the same slot as the bar), Paper Light, Hacker Matrix, Okabe-Ito, and
+  Terminal ANSI's hot letters ansi:4 instead of ansi:1 (VGA red on grey 3.3:1).
+  README (Themes row), What's new, the theme file format in the module's text.
+- Verified: tests/test_theme_depths.mojo (6 tests): the "256:N" form and its
+  bounds; xterm values of some indexes; the bytes sent for an index at each depth;
+  the roles and `role_color`; a theme file with [roles], [colors256], [colors16],
+  [syntax16] and an unknown role (reported) - every colour of a role set, [colors]
+  after [roles], each depth's section only in its palette, Amber's 16-colour design
+  carried into a theme based on it; every built-in theme at 256 and 16 colours with
+  no problem over 500+ measured pairs; the nearest colours alone fall short (Amber:
+  16+ pairs, 30+ over all themes), and text in its background's slot is said so;
+  theme_apply with each depth. test_themes, test_ansi_theme, test_contrast and
+  test_cvd_theme pass. Mutants (no 16 palette, no index sent, a role setting one
+  colour, [colors16] ignored, theme_apply ignoring the depth, 16 colours measured
+  as 256) fail.
+- Not done / unverified: run() taking the palette after the probe is not exercised
+  by a test (it needs a terminal); the 16-colour values are judged with VGA
+  values, and a terminal's own palette may differ; nothing was looked at in a real
+  256- or 16-colour terminal; the drawing code still names palette fields, not
+  roles (roles are for theme authors and lookups).
+- Gate: scripts/check.sh printed CHECK OK (109 test files, 1182 tests, 885 s).

@@ -1084,7 +1084,8 @@ struct App(Movable):
 
     def theme_apply(mut self):
         """Use the theme ui.theme names (for "auto": the dark or light one, as the
-        terminal says; dark until it has said)."""
+        terminal says; dark until it has said), in its colours for the terminal's
+        colour depth."""
         var id = self.theme_id
         if id == "auto":
             # the terminal's word first (mode 2031); else its background's lightness
@@ -1097,7 +1098,7 @@ struct App(Movable):
             self.config_warnings.append("ui.theme: there is no theme \"" + id + "\" (themes: " + ", ".join(self.themes.ids) + ")")
             k = 0
         self.theme_idx = k
-        self.pal = self.themes.pals[k].copy()
+        self.pal = self.themes.for_depth(k, self.scr.color_mode)
         if self.scanlines_cfg >= 0:
             self.pal.scanlines = self.scanlines_cfg == 1
 

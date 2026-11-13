@@ -2,7 +2,7 @@
 from palette import ANSI_BASE, COLOR_DEFAULT
 from std.collections import List, Dict
 from util import decode, encode_cp, append_str, append_int, char_width
-from caps import COLOR_16, COLOR_256, COLOR_TRUE, rgb_to_256, rgb_to_16, sgr_16
+from caps import COLOR_16, COLOR_256, COLOR_TRUE, rgb_to_256, rgb_to_16, sgr_16, x256_rgb
 from glyphs import GLYPHS_ASCII, GLYPHS_UNICODE, ascii_look
 
 comptime CONT = -5  # a further cell of a character wider than one cell
@@ -415,7 +415,8 @@ struct Screen(Movable):
 
     def emit_color(self, mut out: List[UInt8], rgb: Int, background: Bool):
         """Append the SGR sequence for one colour in the terminal's colour depth. A
-        palette slot or the terminal's default colour is sent as such at any depth."""
+        palette slot or the terminal's default colour is sent as such at any depth; an
+        xterm-256 index as such in 256 colours and truecolor."""
         if rgb == COLOR_DEFAULT:
             append_str(out, "\x1b[49m" if background else "\x1b[39m")
             return
@@ -423,6 +424,17 @@ struct Screen(Movable):
             var n = rgb - ANSI_BASE
             append_str(out, "\x1b[")
             append_int(out, (40 if background else 30) + n if n < 8 else (100 if background else 90) + n - 8)
+            append_str(out, "m")
+            return
+        if rgb >= ANSI_BASE + 16 and rgb < ANSI_BASE + 256:
+            # an xterm-256 index (a theme's [colors256]): as such, or its nearest of 16
+            var n = rgb - ANSI_BASE
+            if self.color_mode == COLOR_16:
+                append_str(out, "\x1b[")
+                append_int(out, sgr_16(rgb_to_16(x256_rgb(n)), background))
+            else:
+                append_str(out, "\x1b[48;5;" if background else "\x1b[38;5;")
+                append_int(out, n)
             append_str(out, "m")
             return
         if self.color_mode == COLOR_TRUE:

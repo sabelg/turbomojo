@@ -286,6 +286,17 @@ def rgb_to_16(rgb: Int) -> Int:
     return best
 
 
+def x256_rgb(n: Int) -> Int:
+    """The RGB value of xterm-256 palette index n (0..15: the classic VGA values)."""
+    if n < 16:
+        return ansi16_rgb(n)
+    if n >= 232:
+        var v = 8 + 10 * (n - 232)
+        return v << 16 | v << 8 | v
+    var k = n - 16
+    return cube_value(k // 36) << 16 | cube_value((k // 6) % 6) << 8 | cube_value(k % 6)
+
+
 def sgr_16(index: Int, background: Bool) -> Int:
     """SGR parameter for an ANSI colour index: 30-37/90-97 or 40-47/100-107."""
     var base = 40 if background else 30

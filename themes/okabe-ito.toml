@@ -94,3 +94,12 @@ def = "#E192C0"
 param = "#E6E6E6"
 property = "#E6E6E6"
 namespace = "#F0E442"
+
+# Designed for terminals with 256 or 16 colours (else the nearest colour is used):
+[colors16]
+sel_bg = "ansi:4"
+msg_sel_bg = "ansi:4"
+
+[syntax16]
+number = "ansi:11"
+decorator = "ansi:11"

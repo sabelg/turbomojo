@@ -89,3 +89,18 @@ def = "#2E6DB4"
 param = "#5A4FA0"
 property = "#355E8C"
 namespace = "#00708A"
+
+# Designed for terminals with 256 or 16 colours (else the nearest colour is used):
+[colors256]
+menu_hot = "256:124"
+
+[colors16]
+cursor = "ansi:4"
+gutter_fg = "ansi:8"
+
+[syntax16]
+type = "ansi:4"
+builtin = "ansi:4"
+namespace = "ansi:4"
+def = "ansi:12"
+self = "ansi:1"

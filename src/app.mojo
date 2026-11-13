@@ -10,6 +10,7 @@ from term import (
     MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN,
 )
 from screen import Screen
+from caps import COLOR_TRUE
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
@@ -122,6 +123,11 @@ __extension App:
         self.term.enter()
         var caps = self.term.probe(CAPS_TIMEOUT_MS)
         self.scr.color_mode = caps.color
+        if caps.color != COLOR_TRUE:
+            # the theme's colours as designed for 256 or 16 colours
+            self.pal = self.themes.for_depth(self.theme_idx, caps.color)
+            if self.scanlines_cfg >= 0:
+                self.pal.scanlines = self.scanlines_cfg == 1
         self.scr.sync = caps.sync_output
         self.scr.styled_ul = caps.styled_underline
         if caps.kitty_keyboard:

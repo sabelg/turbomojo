@@ -14,7 +14,8 @@ Mono) depends on the terminal and is skipped.
 """
 from std.collections import List
 from std.math import pow
-from palette import Palette, is_rgb, mix
+from palette import Palette, is_rgb, mix, ANSI_BASE
+from caps import COLOR_256, COLOR_16, rgb_to_256, rgb_to_16, x256_rgb, ansi16_rgb
 
 comptime ROLE_TEXT = 0          # body text, code and selections: WCAG 4.5:1 and Lc 45
 comptime ROLE_SECONDARY = 1     # comments, line numbers, dim text: WCAG 3:1 and Lc 30
@@ -313,4 +314,48 @@ def cvd_problems(p: Palette) -> List[String]:
             var d = cvd_distance(c.a, c.b, kind)
             if d < c.floor:
                 out.append(c.what + ": " + one_decimal(d) + " with " + cvd_name(kind) + " (needs " + String(Int(c.floor)) + ")")
+    return out^
+
+
+# ------------------------------------------------- 256 and 16 colours
+def depth_rgb(c: Int, mode: Int) -> Int:
+    """The colour a terminal of depth `mode` shows for c, as RGB: the xterm-256 value
+    of its index, or the VGA value of its slot of 16; -1 when it depends on the
+    terminal (its default colour). An xterm index shown with 16 colours goes to the
+    nearest slot, as the screen sends it."""
+    if c >= ANSI_BASE and c < ANSI_BASE + 256:
+        var n = c - ANSI_BASE
+        if n < 16:
+            return ansi16_rgb(n)
+        return x256_rgb(n) if mode == COLOR_256 else ansi16_rgb(rgb_to_16(x256_rgb(n)))
+    if not is_rgb(c):
+        return -1
+    if mode == COLOR_256:
+        return x256_rgb(rgb_to_256(c))
+    if mode == COLOR_16:
+        return ansi16_rgb(rgb_to_16(c))
+    return c
+
+
+def depth_problems(p: Palette, mode: Int) -> List[String]:
+    """The pairs of a theme's palette for depth `mode` that fall short as the terminal
+    shows them: in 256 colours (whose values terminals share) the same floors as in
+    truecolor; in 16 colours, whose real values are the terminal's own, the WCAG
+    floors with the VGA values and never text in its background's slot."""
+    var out = List[String]()
+    for c in theme_contrast(p):
+        var f = depth_rgb(c.fg, mode)
+        var b = depth_rgb(c.bg, mode)
+        if f < 0 or b < 0:
+            continue
+        var fl = floors(c.role)
+        var w = wcag_ratio(f, b)
+        var l = abs(apca_lc(f, b))
+        if mode == COLOR_16:
+            if f == b and c.role != ROLE_DISABLED:
+                out.append(c.what + ": the same colour as its background")
+            elif w < fl[0] or (c.role == ROLE_DISABLED and f == b):
+                out.append(c.what + ": " + one_decimal(w) + ":1 (needs " + one_decimal(fl[0]) + ":1)")
+        elif w < fl[0] or l < fl[1]:
+            out.append(c.what + ": " + one_decimal(w) + ":1, Lc " + String(Int(l)) + " (needs " + one_decimal(fl[0]) + ":1, Lc " + String(Int(fl[1])) + ")")
     return out^

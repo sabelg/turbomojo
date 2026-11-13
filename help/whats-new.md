@@ -11,6 +11,10 @@
 - Okabe-Ito, a dark theme for colour-blind eyes: errors, warnings, notes, git markers
   and the main code colours stay apart with each of the three common kinds of colour
   blindness (checked in the tests).
+- Themes look as designed in terminals with 256 or 16 colours too: every built-in theme
+  keeps its text readable there (Amber CRT and Hacker Matrix lost it before). Theme
+  files can set colours by role (`[roles]`) and for each depth (`[colors256]`,
+  `[colors16]`).
 
 ## 2.0: release
 

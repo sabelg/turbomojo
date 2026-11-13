@@ -92,3 +92,16 @@ def = "#FFE45C"
 param = "#B6FFB6"
 property = "#00D838"
 namespace = "#6CB8FF"
+
+# Designed for terminals with 256 or 16 colours (else the nearest colour is used):
+[colors256]
+btn_fg = "256:46"
+
+[colors16]
+gutter_fg = "ansi:2"
+doc_dim = "ansi:2"
+
+[syntax16]
+type = "ansi:14"
+comment = "ansi:2"
+symbol = "ansi:2"
