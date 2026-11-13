@@ -55,6 +55,7 @@ comptime D_EX_FILTER = 46       # the explorer's filter (/ in the explorer)
 comptime D_NEW_PROJECT = 47     # File > New project
 comptime D_SETUP = 48           # Help > Check setup
 comptime D_PRESETS = 49         # Options > Presets
+comptime D_PKG = 50             # install a library the program uses (P11-13)
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

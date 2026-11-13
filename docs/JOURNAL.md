@@ -5941,3 +5941,50 @@ Not done / unverified (the [!] part):
   runtime's dylibs load from beside tmide (the rpaths) is unchecked. No macOS bundle or
   package; no osx-64 (Intel).
 - Gate: CHECK OK (130 test files, 1259 tests, 1035 s).
+
+## 2026-11-13 · P11-13 Install what a program uses · done
+
+- Gate: CHECK OK (131 test files, 1265 tests, 996 s).
+
+What changed:
+- src/pkginstall.mojo: reads which libraries a build's or run's output says are missing -
+  Mojo's "unable to locate module 'X'" (counted only when X is what the source line under
+  it imports first: for `from max.tensor import` Mojo names "tensor", a part of max) and
+  Python's "No module named 'X'" (dotted names: their top). Mojo's and Python's own
+  modules are left out (a broken installation, no package). package_for: the conda
+  package (mostly the name; yaml → pyyaml, cv2 → opencv, PIL → pillow, sklearn →
+  scikit-learn and others; Mojo `gpu` → max, with a note that Mojo 1.2 has it as max.gpu).
+  in_env: a command run with the project's environment active (`pixi shell-hook`, bash).
+- src/app_pkginstall.mojo: after a failed build (finish_build) or run (run_report, with the
+  Run window's text) - pkg_check: once a session per library; with a pixi.toml above the
+  file, `pixi search` in the background, then a box (Install / Not now) or "No package X
+  on the project's channels"; without one, Make project and install (the New project
+  pixi.toml). Install runs `pixi add` as a task (Ctrl-F2 cancels), then builds or runs
+  again. Builds and runs of a file in a pixi project with an installed environment run in
+  that environment (env_manifest / with_env), unless a compiler is configured or the IDE
+  already runs in it - otherwise what pixi added would not be found.
+- README, USER_GUIDE (with the MAX activation's telemetry, as with pixi run), What's new.
+
+Verified:
+- tests/test_pkg_install.mojo (6 tests): the messages (real Mojo 1.2 and Python outputs);
+  the packages; the whole flow with a fake mojo and a fake pixi - build fails, search, the
+  box, Install, `pixi add`, built again; a library on no channel; asked once; Not now
+  writes and installs nothing; Make project writes a pixi.toml with Mojo; a failed run
+  (Python's message) offers it with "run again", a run that ended well asks nothing; the
+  environment rules.
+- Mutation checks: 13 mutants, all caught (the submodule rule, Mojo's own modules, once
+  per output, the package map, gpu → max, once a session, the search result, Not now,
+  building again, the environment rule, the build and run hooks, only a failed run,
+  making the project).
+- By hand with the real pixi (a scratch project, numpy and max added with `pixi add`):
+  the in_env command runs a program that imports numpy and one that imports
+  max.gpu.host; without the environment the same mojo fails with "unable to locate
+  module 'max'". `pixi add max` took 80 s, numpy 2.4 s; a failed `pixi add` leaves
+  pixi.toml as it was.
+
+Not done / unverified:
+- The whole flow in the running IDE with the real pixi (only with the fakes in the tests,
+  and the pieces by hand). Mojo packages from other channels (a library on no configured
+  channel is reported, not added). Libraries a program finds through -I paths are not
+  told apart from missing ones except by `pixi search` finding nothing.
+

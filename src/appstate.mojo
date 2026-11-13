@@ -198,7 +198,15 @@ struct App(Movable):
     var gpu_item: String             # "GPU GB10" once known
     var run_t0_ns: Int               # when the last Ctrl-F9 run started (0: none to report)
     var run_label: String
+    var run_file: String             # the file the last Ctrl-F9 ran
     var run_wants_gpu: Bool          # its source uses the GPU
+    var pkg_asked: List[String]      # libraries offered this session ("kind:module")
+    var pkg_kind: Int                # the one being offered or installed (pkginstall.PK_*)
+    var pkg_module: String
+    var pkg_package: String
+    var pkg_dir: String              # the project's folder ('' = none yet)
+    var pkg_file: String             # the program that needs it
+    var pkg_after: Int               # then: 1 build, 2 run again
     var caps_lines: List[String]     # what the terminal said it can do (Report a problem)
     var report_path: String          # where the report goes ("": the state folder)
     var term_kitty_keys: Bool        # ... and it sends every key (kitty keyboard protocol)
@@ -680,7 +688,15 @@ struct App(Movable):
         self.gpu_item = ""
         self.run_t0_ns = 0
         self.run_label = ""
+        self.run_file = ""
         self.run_wants_gpu = False
+        self.pkg_asked = List[String]()
+        self.pkg_kind = 0
+        self.pkg_module = ""
+        self.pkg_package = ""
+        self.pkg_dir = ""
+        self.pkg_file = ""
+        self.pkg_after = 0
         self.report_path = ""
         self.notes = NotifyCenter()
         self.toast_rows = List[Int]()

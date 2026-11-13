@@ -56,6 +56,7 @@ from app_input import *
 from app_mouse import *
 from app_draw import *
 from app_exercises import *
+from app_pkginstall import *
 from app_newproject import *
 
 
@@ -292,6 +293,12 @@ __extension App:
         var ok = status == 0 and not self.job.cancelled
         if name == "newproject:install":
             self.np_installed(ok, self.job.cancelled, tstr)
+            return
+        if name == "pkg:search":
+            self.pkg_searched(ok, bytes_to_str(self.job.data))
+            return
+        if name == "pkg:add":
+            self.pkg_added(ok, self.job.cancelled, tstr)
             return
         if name.startswith("puzzle:"):
             self.task_output("Puzzle checked in " + tstr)
@@ -537,7 +544,10 @@ __extension App:
             for c in self.run_cfgs:
                 if c.name == self.run_active:
                     cfg = c.copy()
-        return run_core_command(cfg, self.symidx_root(), current, self.compiler_cmd(), self.include_flags())
+        var core = run_core_command(cfg, self.symidx_root(), current, self.mojo_for(current), self.include_flags())
+        if core.byte_length() == 0:
+            return core
+        return self.with_env(current, core)      # (in a project's environment: what pixi added is found)
 
     def run_configs_dialog(mut self):
         """Run > Run configurations: choose the one Run uses, edit, add, delete."""

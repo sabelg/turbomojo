@@ -139,6 +139,18 @@ DeviceContext - which GPU it ran on: the first one `nvidia-smi` or `rocm-smi` li
 the one `CUDA_VISIBLE_DEVICES` names. Run > Arguments sets its command line; Run > Run
 configurations keeps several.
 
+When a build or a run fails because the program uses a library that is not installed -
+Mojo says `unable to locate module 'max'`, Python `No module named 'numpy'` - TurboMojo
+looks for its package on the project's channels (`pixi search`) and asks whether to add
+it (`pixi add`, in the background, **Ctrl-F2** cancels); then it builds or runs again.
+A few Python modules come in packages with other names (`yaml` is `pyyaml`, `cv2`
+`opencv`, `sklearn` `scikit-learn`). In a folder with no `pixi.toml` it offers to make
+one (with Mojo) first. Nothing is installed without a yes, and each library is asked
+about once a session. In a pixi project whose environment is installed, builds and runs
+use that environment, as `pixi run` would, so what was added is found; MAX's
+activation script then sends Modular's usage telemetry on its first start, as it does
+with `pixi run`.
+
 Run > Test explorer lists the project's test files (programs that run a `std.testing`
 TestSuite) and their tests; it runs all of them, one file or one test, and a failure
 takes you to the assertion. **Shift-F9** runs one of the project's pixi tasks.

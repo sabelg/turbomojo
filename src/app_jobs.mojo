@@ -50,6 +50,7 @@ from app_mouse import *
 from app_draw import *
 from app_plugins import *
 from app_gpu import *
+from app_pkginstall import *
 from gpuinfo import parse_gpus
 from pty import exit_code
 from runreport import uses_gpu, visible_gpu_index, run_gpu_name, run_summary
@@ -380,7 +381,8 @@ __extension App:
         var path = self.wins[i].path
         var dir = dirname(path)
         var exe = join_path(dir, "build/" + stem(path))
-        var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.compiler_cmd() + " build" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
+        var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
+        cmd = self.with_env(path, cmd)
         if self.start_job(JOB_BUILD, cmd, path, exe):
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_heading(), List[UInt8](), "Compiling...")
@@ -411,6 +413,8 @@ __extension App:
             self.notify_as("build", NL_INFO, "Build cancelled", name, True)
             return
         self.plugins_event("build", path, ok)
+        if not ok and self.pkg_check(bytes_to_str(self.job.data), String(path), 1):
+            return              # a library to install is offered instead of the result box (P11-13)
         if ok:
             self.notify_as("build", NL_DONE if counts[1] == 0 else NL_WARN, "Build succeeded", name + " in " + tstr + ((", " + String(counts[1]) + " warning(s)") if counts[1] > 0 else String("")), True)
         else:
@@ -516,7 +520,7 @@ __extension App:
         self.note_disk_state(i)
         self.say("Formatted " + basename(path))
 
-    def run_report(mut self, status: Int):
+    def run_report(mut self, status: Int, output: String = ""):
         """The run that just ended, as one line on the Message page: its status, its
         time and, when it uses the GPU, which one (P11-10b)."""
         if self.run_t0_ns == 0:
@@ -530,6 +534,9 @@ __extension App:
         self.panel_write(PG_MESSAGE)
         _ = self.fill_messages("Run - " + self.run_label, List[UInt8](), line)
         self.say(line)
+        if status != 0:
+            var f = self.run_file
+            _ = self.pkg_check(output, f, 2)     # a library it lacks? (P11-13)
 
     def run_program(mut self, test: Bool) raises:
         if self.job_busy():
@@ -552,6 +559,7 @@ __extension App:
             label = "configuration " + self.run_active
         # timed, and the GPU learnt meanwhile for a program that uses one (P11-10b)
         self.run_label = label
+        self.run_file = path
         self.run_wants_gpu = uses_gpu(to_str(self.wins[i].buf.all_text()))
         if self.run_wants_gpu:
             self.gpu_start(True)

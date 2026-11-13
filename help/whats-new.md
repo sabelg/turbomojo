@@ -2,6 +2,10 @@
 
 ## 2.2 (in progress)
 
+- A program that uses a library which is not installed (`unable to locate module
+  'max'`, `No module named 'numpy'`): TurboMojo finds its package on the project's
+  channels and offers to install it with `pixi add`, then builds or runs again; with no
+  `pixi.toml` it offers to make the project first. Nothing is installed without a yes.
 - `pixi run bundle` makes a tar file to copy to a server: TurboMojo and the libraries
   it needs, which runs there after unpacking, without pixi.
 - Help > Exercise done? checks your answer to a Mojo GPU Puzzle too: it runs your copy

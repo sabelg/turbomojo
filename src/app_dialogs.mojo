@@ -51,6 +51,7 @@ from app_exercises import *
 from app_newproject import *
 from app_setup import *
 from app_presets import *
+from app_pkginstall import *
 from setupcheck import setup_items, setup_needs_attention
 
 
@@ -349,6 +350,8 @@ __extension App:
             var ps = self.dlg.selected_item()
             if ps >= 0:
                 self.preset_apply(self.dlg.item_data[ps])
+        elif kind == D_PKG:
+            self.pkg_button(b)
         elif kind == D_NEW_PROJECT and b == 0:
             _ = self.new_project_create(self.dlg.field_text(0))
         elif kind == D_EX_FILTER and b == 0:

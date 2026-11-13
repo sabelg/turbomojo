@@ -4,7 +4,7 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.1.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.2: Ready for other people (in progress: 1 task to go)
+## 2.2: Ready for other people - 2026-11-13
 
 - README first screen: a two-line pitch (ready to use, runs over SSH, starts in 50 ms, explains Mojo's errors), a "Why TurboMojo?" section comparing it honestly with VS Code + the Mojo extension, and the terminal-capability details moved to docs/USER_GUIDE.md [8, 9] (P11-01)
 - Pictures of the IDE made from itself: `tmide --screenshot FILE.svg` (the screen buffer as SVG, with the theme's colours) and a script that records a short demo through tmux as an asciinema cast; three screenshots (Turbo Classic, a modern theme, the docs reader) and the cast linked from the README [7] (P11-02)
@@ -17,6 +17,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - Contributing: CONTRIBUTING.md (building, the gate, docs/SOURCE.md, docs/JOURNAL.md), issue templates asking for `tmide --caps` output, and a GitHub Actions workflow that runs the tests (written, not run here) [3, 18] (P11-09)
 - GPU awareness (split into a-c below) [11] (P11-10)
 - A copy-to-the-server bundle: `pixi run bundle` makes a tar file with tmide and the Mojo runtime libraries it needs, which runs after unpacking on another Linux machine with the same glibc (checked in a clean folder without the project's .pixi) [12] (P11-11)
+- Install what a program uses (asked by the user, 2026-11-13): when a build or run fails because a Mojo module (`unable to locate module 'max'`) or a Python one (`No module named 'numpy'`) is not installed, TurboMojo names it, finds the package on the project's channels, and offers to install it (`pixi add`, in the background), then runs again; without a pixi.toml it offers to make one first; nothing is installed without a yes (P11-13)
 
 ## 2.1: UI clarity and calm - 2026-11-12
 

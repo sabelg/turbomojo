@@ -44,6 +44,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_notify.mojo` | Toasts and the notification centre (src/notify.mojo). |
 | `src/app_outline.mojo` | The Outline window: the symbols of the file being edited, as a tree to jump from. |
 | `src/app_pickers.mojo` | List pickers: command palette, symbols, keyboard reference, word completion. |
+| `src/app_pkginstall.mojo` | Install what a program uses (P11-13): after a failed build or run, a library the output names as missing is looked up on the project's channels (`pixi search`) and, if it is there, offered; Install adds it (`pixi add`) and builds or runs again. |
 | `src/app_plugins.mojo` | The plugin host in the IDE (src/plugins.mojo): start the plugins of the plugins folder, poll them with the event loop, answer what they ask, run their commands, send them the events they asked for, and show their status items. |
 | `src/app_presets.mojo` | Options > Presets (P11-06): two ways to start, each in one choice - Turbo (Turbo Classic's blue desktop, overlapping windows) and Modern (your terminal's own colours, panes with tabs, the file explorer open, the keys of current editors). |
 | `src/app_problems.mojo` | The bottom panel's Problems page, for every source: what the language server reports, the errors and warnings of the last build, and the tests that failed. |
@@ -105,6 +106,7 @@ struct of `appstate.mojo`, one area each.
 | `src/notify.mojo` | Notifications: short messages that show for a few seconds at the top right ("toasts") when something finishes or needs attention while you work elsewhere, and are kept in the notification centre (Help > Notifications) with what is running now. |
 | `src/outline.mojo` | The outline of a file: its functions, structs, traits and constants as a tree. |
 | `src/palette.mojo` | Colour themes. |
+| `src/pkginstall.mojo` | Install what a program uses (P11-13). |
 | `src/platform.mojo` | What differs between the systems TurboMojo is built for, chosen when it is compiled: the numbers of system calls' flags and signals, the layout of `struct termios`, and which Linux-only facilities exist. |
 | `src/plugins.mojo` | Plugins: programs of their own that TurboMojo starts and talks to over JSON-RPC, one message per line on their standard input and output (the transport of the agent client). |
 | `src/png.mojo` | PNG decoding to RGBA pixels, for sixel pictures in the docs reader (P10-22c). |

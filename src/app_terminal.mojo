@@ -182,9 +182,10 @@ __extension App:
             self.term_pump(s, replies, self.term_index(which))
             var ended = which == TS_RUN and running and s.ended_note.byte_length() > 0
             var status = exit_code(s.pty.status)
+            var shown = s.vt.text() if ended else String("")
             self.term_put(which, s^)
             if ended:
-                self.run_report(status)
+                self.run_report(status, shown)
 
     def term_take(mut self, which: Int) -> TermSession:
         """A session taken out of the App to work on it (put it back with term_put)."""
