@@ -4931,3 +4931,36 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   close; folds come back only while the file is unchanged on disk (as the undo
   history); not tried by hand in a real terminal.
 - Gate: scripts/check.sh printed CHECK OK (107 test files, 1173 tests, 872 s).
+
+## 2026-11-12 · P10-18a Okabe-Ito theme and a colour-vision check · done
+- What changed: P10-18 split into 18a (this) and 18b (the semantic roles with
+  designed 256 / 16 values, and the other themes through the new check). A theme
+  file themes/okabe-ito.toml, built in as `okabe` (src/themes.mojo, OKABE_ITO):
+  dark, from Okabe and Ito's eight colours, lightened where needed for the
+  contrast floors - errors and deletions vermillion (#F07A45), warnings yellow,
+  notes and additions sky blue, changes and numbers orange, success and strings
+  bluish green, definitions reddish purple, selection a deep blue. The values were
+  designed with a Python prototype of the same measures before they went in.
+  src/contrast.mojo: `cvd_linear` (Machado, Oliveira and Fernandes 2009 full-severity
+  matrices on linear RGB), `cvd_lab`, `cvd_distance` (CIE76), `cvd_pairs` (problem
+  severities in the editor and the Message window, success / failure, git add /
+  change / delete at 20; keyword, type, comment, string, number, def pairwise at 10)
+  and `cvd_problems`. README (Themes row, the config comment), What's new.
+- Verified: tests/test_cvd_theme.mojo (3 tests): grey stays grey under every
+  simulation; a red and a green 70 apart are under 5 apart with deuteranopia, and
+  closer with protanopia, but stay apart with tritanopia, where a blue and a green
+  fall together; L* of white and black; Okabe-Ito loads without problems, has no
+  colour-vision problems over at least 25 pairs, reaches every contrast floor, and
+  its file is the one built in; a green addition beside a red deletion is caught
+  with deuteranopia and named so ("(needs 20)"), and not for normal vision.
+  test_contrast measures the new theme with the others (the first run caught the
+  inactive frame at Lc 14 - lightened); test_themes counts ten themes. Mutants
+  (normal vision only, no red-green simulation, the git add / delete pair not
+  checked) fail.
+- Not done / unverified: only Okabe-Ito is held to the check. A look at the other
+  files with the prototype: Paper Light fails 7 pairs (error / warning 6.4 apart
+  with deuteranopia), High Contrast 1 (add / change with tritanopia), Hacker Matrix
+  none; the three themes in palette.mojo not looked at (18b). CIE76 is a rough
+  measure and the simulation is of full dichromacy; no colour-blind person has
+  looked at it. 256 and 16 colours are the automatic nearest ones.
+- Gate: scripts/check.sh printed CHECK OK (108 test files, 1176 tests, 884 s).

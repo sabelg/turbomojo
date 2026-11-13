@@ -8,6 +8,9 @@
   or dotted - not by colour alone.
 - Terminal ANSI and Terminal Mono themes: your terminal's own colours; `NO_COLOR`
   is honoured.
+- Okabe-Ito, a dark theme for colour-blind eyes: errors, warnings, notes, git markers
+  and the main code colours stay apart with each of the three common kinds of colour
+  blindness (checked in the tests).
 
 ## 2.0: release
 

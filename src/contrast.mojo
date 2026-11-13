@@ -190,3 +190,127 @@ def dimmed(fg: Int, bg: Int) -> Int:
     if not is_rgb(fg) or not is_rgb(bg):
         return fg
     return mix(fg, bg, 55)
+
+
+# ------------------------------------------------- colour-vision deficiency
+comptime CVD_NONE = 0
+comptime CVD_PROTAN = 1         # no long-wave (red) cones
+comptime CVD_DEUTAN = 2         # no medium-wave (green) cones
+comptime CVD_TRITAN = 3         # no short-wave (blue) cones
+comptime CVD_SIGNAL_MIN = 20.0  # CIE76 delta E signal colours keep from each other
+comptime CVD_SYNTAX_MIN = 10.0  # ... and the main syntax classes
+
+
+def cvd_name(kind: Int) -> String:
+    if kind == CVD_PROTAN:
+        return "protanopia"
+    if kind == CVD_DEUTAN:
+        return "deuteranopia"
+    if kind == CVD_TRITAN:
+        return "tritanopia"
+    return "normal vision"
+
+
+def cvd_linear(rgb: Int, kind: Int) -> Tuple[Float64, Float64, Float64]:
+    """The colour as seen with the deficiency `kind` at full severity, as linear RGB
+    (the matrices of Machado, Oliveira and Fernandes 2009, applied to linear RGB)."""
+    var r = lin((rgb >> 16) & 255)
+    var g = lin((rgb >> 8) & 255)
+    var b = lin(rgb & 255)
+    if kind == CVD_NONE:
+        return (r, g, b)
+    var m: List[Float64]
+    if kind == CVD_PROTAN:
+        m = [0.152286, 1.052583, -0.204868, 0.114503, 0.786281, 0.099216, -0.003882, -0.048116, 1.051998]
+    elif kind == CVD_DEUTAN:
+        m = [0.367322, 0.860646, -0.227968, 0.280085, 0.672501, 0.047413, -0.011820, 0.042940, 0.968881]
+    else:
+        m = [1.255528, -0.076749, -0.178779, -0.078411, 0.930809, 0.147602, 0.004733, 0.691367, 0.303900]
+    var o = List[Float64]()
+    for i in range(3):
+        var v = m[3 * i] * r + m[3 * i + 1] * g + m[3 * i + 2] * b
+        o.append(min(1.0, max(0.0, v)))
+    return (o[0], o[1], o[2])
+
+
+def lab_f(t: Float64) -> Float64:
+    if t > 0.008856:
+        return pow(t, 1.0 / 3.0)
+    return 7.787 * t + 16.0 / 116.0
+
+
+def cvd_lab(rgb: Int, kind: Int) -> Tuple[Float64, Float64, Float64]:
+    """CIE L*a*b* (D65) of the colour as seen with `kind`."""
+    var c = cvd_linear(rgb, kind)
+    var x = 0.4124 * c[0] + 0.3576 * c[1] + 0.1805 * c[2]
+    var y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    var z = 0.0193 * c[0] + 0.1192 * c[1] + 0.9505 * c[2]
+    var fx = lab_f(x / 0.95047)
+    var fy = lab_f(y)
+    var fz = lab_f(z / 1.08883)
+    return (116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
+
+
+def cvd_distance(a: Int, b: Int, kind: Int) -> Float64:
+    """How far apart two colours look with `kind` (CIE76 delta E; about 2.3 is just
+    noticeable, 10 plainly different side by side)."""
+    var p = cvd_lab(a, kind)
+    var q = cvd_lab(b, kind)
+    var d0 = p[0] - q[0]
+    var d1 = p[1] - q[1]
+    var d2 = p[2] - q[2]
+    return (d0 * d0 + d1 * d1 + d2 * d2) ** 0.5
+
+
+struct CvdPair(Copyable, Movable):
+    var what: String
+    var a: Int
+    var b: Int
+    var floor: Float64
+
+    def __init__(out self, what: String, a: Int, b: Int, floor: Float64):
+        self.what = what
+        self.a = a
+        self.b = b
+        self.floor = floor
+
+
+def cvd_pairs(p: Palette) -> List[CvdPair]:
+    """The colours that tell things apart and must stay apart: the problem severities
+    (in the editor and the Message window), success against failure, the git
+    markers, and the main syntax classes."""
+    var out = List[CvdPair]()
+    out.append(CvdPair("diag_err / diag_warn", p.diag_err, p.diag_warn, CVD_SIGNAL_MIN))
+    out.append(CvdPair("diag_err / diag_note", p.diag_err, p.diag_note, CVD_SIGNAL_MIN))
+    out.append(CvdPair("diag_warn / diag_note", p.diag_warn, p.diag_note, CVD_SIGNAL_MIN))
+    out.append(CvdPair("msg_err / msg_warn", p.msg_err, p.msg_warn, CVD_SIGNAL_MIN))
+    out.append(CvdPair("msg_err / msg_note", p.msg_err, p.msg_note, CVD_SIGNAL_MIN))
+    out.append(CvdPair("msg_warn / msg_note", p.msg_warn, p.msg_note, CVD_SIGNAL_MIN))
+    out.append(CvdPair("msg_ok / msg_err", p.msg_ok, p.msg_err, CVD_SIGNAL_MIN))
+    out.append(CvdPair("git_add / git_mod", p.git_add, p.git_mod, CVD_SIGNAL_MIN))
+    out.append(CvdPair("git_add / git_del", p.git_add, p.git_del, CVD_SIGNAL_MIN))
+    out.append(CvdPair("git_mod / git_del", p.git_mod, p.git_del, CVD_SIGNAL_MIN))
+    var names = SYNTAX_NAMES.split(" ")
+    var main = [1, 2, 3, 4, 5, 10]          # keyword type comment string number def
+    for x in range(len(main)):
+        for y in range(x + 1, len(main)):
+            var i = main[x]
+            var j = main[y]
+            if j < len(p.syn):
+                out.append(CvdPair("syntax " + String(names[i]) + " / " + String(names[j]), p.syn[i], p.syn[j], CVD_SYNTAX_MIN))
+    return out^
+
+
+def cvd_problems(p: Palette) -> List[String]:
+    """The pairs that come too close with normal vision or one of the three
+    deficiencies ("git_add / git_del: 8.1 with deuteranopia (needs 20)"); pairs with a
+    colour that is not RGB are skipped."""
+    var out = List[String]()
+    for c in cvd_pairs(p):
+        if not is_rgb(c.a) or not is_rgb(c.b):
+            continue
+        for kind in range(4):
+            var d = cvd_distance(c.a, c.b, kind)
+            if d < c.floor:
+                out.append(c.what + ": " + one_decimal(d) + " with " + cvd_name(kind) + " (needs " + String(Int(c.floor)) + ")")
+    return out^
