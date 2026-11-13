@@ -5402,3 +5402,22 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   v2.1.0. The runner goes on committing on `roadmap` and does not push by itself.
 - Checked: test_release and test_docs_files pass; `pixi run package` builds with the
   licence; GitHub reports the licence as MIT.
+
+## 2026-11-13 · P11-01 README first screen · done
+- What changed: the README opens with a two-line pitch (ready to use, in the terminal on a
+  laptop or a GPU server over SSH, about 50 ms, no configuration, Mojo's errors explained),
+  then the Turbo look and the feature list, the screen sketch, and a "Why TurboMojo?"
+  table against VS Code + Modular's Mojo extension that also says where VS Code is
+  better (screen-reader maturity, its marketplace, notebooks). The terminal-capability
+  paragraphs (colour depth, DECRQSS / XTGETTCAP, tmux, GNU screen, late replies, --caps)
+  moved to a new "Your terminal" section of docs/USER_GUIDE.md; the README keeps three
+  lines and a link.
+- Verified: test_docs_files passes; every claim in the table was checked against the
+  code or the journal (OSC 52 copy in appstate.mojo, the Tiled layout command, the start-up
+  and memory figures from P9's perf and soak runs).
+- Not done / unverified: VS Code's start-up and memory are given as "typically" from
+  general knowledge, not measured here; no pictures yet (P11-02).
+- Gate: scripts/check.sh printed CHECK OK (117 test files, 1217 tests, smoke, perf, soak) in 932 s.
+- Also: GitHub CI (first run, after publishing) timed out on both runners at its 30-minute
+  limit while still compiling the tests two at a time (4-CPU runners); the workflow now
+  compiles four at a time (TM_JOBS) with a 120-minute limit.

@@ -1,13 +1,17 @@
 # TurboMojo
 
-A text-mode IDE for [Mojo](https://www.modular.com/mojo), written entirely in Mojo and modelled on
-Borland Turbo C++ 3.0 (1992). It has the blue desktop, double-line windows, drop shadows,
-menus with highlighted hotkeys and the "Compiling… Press any key" box. Under that look it is
-a full IDE: the Mojo language server (problems as you type, completion, hover, go to
-definition, references, rename, quick fixes), build and run, a debugger, integrated
-terminals and the REPL, a test explorer, git, coding agents (ACP), plugins, help that
-explains Mojo's error messages, and a fuzzy command palette - in a program that starts in
-about 50 ms and uses about 12 MB of memory.
+**A ready-to-use IDE for Mojo in the terminal - on your laptop, or on a GPU server over SSH.**
+It starts in about 50 ms, needs no configuration, and explains Mojo's error messages in plain
+words, with a program before and after the fix.
+
+It is written entirely in Mojo and looks like Borland Turbo C++ 3.0 (1992): the blue desktop,
+double-line windows, drop shadows, menus with highlighted hotkeys and the "Compiling... Press
+any key" box. Under that look it is a full IDE: the Mojo language server (problems as you
+type, completion, hover, go to definition, references, rename, quick fixes), build and run, a
+debugger, integrated terminals and the REPL, a test explorer, git, coding agents (ACP),
+plugins, the Mojo documentation offline, and a fuzzy command palette - in about 12 MB of
+memory. Prefer a modern look? Calmer themes and a tiled layout with panes and tabs are one
+setting away ("Tiled layout" in the Ctrl-P palette).
 
 ```
  ≡  File  Edit  Text  Search  Run  Compile  Options  Window  Help           02:31
@@ -18,6 +22,21 @@ about 50 ms and uses about 12 MB of memory.
 ╚═ 7:1 ═══════════◄■▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒►╝
  F1 Help  F2 Save  F3 Open  ^P Commands  F9 Build  ^F9 Run  F10 Menu
 ```
+
+## Why TurboMojo?
+
+Most Mojo developers use VS Code with Modular's Mojo extension, and it is a good choice.
+TurboMojo is for the places and habits where a terminal is better:
+
+| | TurboMojo | VS Code + Mojo extension |
+|---|---|---|
+| On a remote GPU machine | runs in the SSH session itself; copy goes to your own clipboard (OSC 52) | needs Remote-SSH and a VS Code server on the machine |
+| Start-up and memory | about 50 ms, about 12 MB | typically seconds, hundreds of MB |
+| Setup | nothing to configure once Mojo is installed: finds `mojo` and its language server | install the editor and the extension |
+| Learning Mojo | Mojo's error messages explained, the manual, the standard library and the GPU puzzles offline, practice copies of the examples | the documentation website |
+| Accessibility | screen-reader mode with a plain line mode, colour-blind-safe themes | VS Code's own, mature screen-reader support |
+| Extensions | plugins in Mojo (commands, status items, panels) and other language servers | the whole VS Code marketplace |
+| Notebooks, GUI previews | no | yes |
 
 ## Build & run
 
@@ -33,21 +52,10 @@ as `mojo` is on `PATH`: it then works out the toolchain's environment (`MODULAR_
 To use a different compiler binary, set `TURBOMOJO_COMPILER` or change it under
 **Compile ▸ Compiler command…**.
 
-It works best in a terminal with 24-bit colour and SGR mouse support (kitty, WezTerm, iTerm2,
-GNOME Terminal, Windows Terminal and others). Colour depth is taken from `$COLORTERM` and
-`$TERM`, and the IDE falls back to 256 or 16 colours where needed; set
-`TURBOMOJO_COLORS=truecolor|256|16` to override. At start-up the IDE also asks the terminal
-(DECRQSS) whether a 24-bit colour it set took, and (XTGETTCAP) whether it draws coloured,
-curly underlines; a yes adds to what the environment says, a no or no answer takes nothing
-away, and your override always wins. Inside tmux the answers come from tmux itself and are
-believed; without one you get 256 colours unless `COLORTERM=truecolor` is passed through.
-Under GNU screen these two questions are not asked (screen passes such requests on badly).
-Replies that arrive late are swallowed, never typed into the editor. To see what your
-terminal reports:
-
-```bash
-pixi run ./build/tmide --caps
-```
+It works best in a terminal with 24-bit colour and mouse support (kitty, WezTerm, Ghostty,
+iTerm2, GNOME Terminal, Windows Terminal and others) and falls back to 256 or 16 colours
+elsewhere. `tmide --caps` shows what your terminal reports; the user guide's
+[Your terminal](docs/USER_GUIDE.md#your-terminal) says what is asked and how to override it.
 
 ## Installing
 

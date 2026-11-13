@@ -4,6 +4,10 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.1.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
+## 2.2: Ready for other people (in progress: 11 tasks to go)
+
+- README first screen: a two-line pitch (ready to use, runs over SSH, starts in 50 ms, explains Mojo's errors), a "Why TurboMojo?" section comparing it honestly with VS Code + the Mojo extension, and the terminal-capability details moved to docs/USER_GUIDE.md [8, 9] (P11-01)
+
 ## 2.1: UI clarity and calm - 2026-11-12
 
 - Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1] (P10-01)

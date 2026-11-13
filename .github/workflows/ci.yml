@@ -31,7 +31,11 @@ jobs:
           - platform: linux-aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    # GitHub's runners have 4 CPUs: compiling the ~120 test programs alone takes most
+    # of an hour there (it is about 15 min for the whole gate on a large machine).
+    timeout-minutes: 120
+    env:
+      TM_JOBS: "4"
     steps:
       - uses: actions/checkout@v4
       - name: Install tmux (TUI smoke test) and python3 (fake JSON-RPC server)
@@ -54,7 +58,9 @@ jobs:
     name: canary (nightly Mojo)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 120
+    env:
+      TM_JOBS: "4"
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4

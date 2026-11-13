@@ -21,7 +21,8 @@ and inside the IDE **F1** shows the keys of the keymap you use.
 12. [Help while you work](#help-while-you-work)
 13. [Settings, themes and keymaps](#settings-themes-and-keymaps)
 14. [Plugins and other languages](#plugins-and-other-languages)
-15. [When something goes wrong](#when-something-goes-wrong)
+15. [Your terminal](#your-terminal)
+16. [When something goes wrong](#when-something-goes-wrong)
 
 ## Starting
 
@@ -195,6 +196,24 @@ the config file:
     extensions = [".py"]
 
 and **F7** on such a file starts it.
+
+## Your terminal
+
+TurboMojo works best in a terminal with 24-bit colour and SGR mouse support (kitty, WezTerm, iTerm2,
+GNOME Terminal, Windows Terminal and others). Colour depth is taken from `$COLORTERM` and
+`$TERM`, and the IDE falls back to 256 or 16 colours where needed; set
+`TURBOMOJO_COLORS=truecolor|256|16` to override. At start-up the IDE also asks the terminal
+(DECRQSS) whether a 24-bit colour it set took, and (XTGETTCAP) whether it draws coloured,
+curly underlines; a yes adds to what the environment says, a no or no answer takes nothing
+away, and your override always wins. Inside tmux the answers come from tmux itself and are
+believed; without one you get 256 colours unless `COLORTERM=truecolor` is passed through.
+Under GNU screen these two questions are not asked (screen passes such requests on badly).
+Replies that arrive late are swallowed, never typed into the editor. To see what your
+terminal reports:
+
+```bash
+pixi run ./build/tmide --caps
+```
 
 ## When something goes wrong
 

@@ -199,7 +199,7 @@ from in brackets). Not tasks for the runner, because they publish or are the use
 decide: the licence, merging the branches, pushing, the public conda channel, and posting
 in the Modular forum [1, 2, 4, 16, 17].
 
-- [ ] P11-01 README first screen: a two-line pitch (ready to use, runs over SSH, starts in 50 ms, explains Mojo's errors), a "Why TurboMojo?" section comparing it honestly with VS Code + the Mojo extension, and the terminal-capability details moved to docs/USER_GUIDE.md [8, 9]
+- [x] P11-01 README first screen: a two-line pitch (ready to use, runs over SSH, starts in 50 ms, explains Mojo's errors), a "Why TurboMojo?" section comparing it honestly with VS Code + the Mojo extension, and the terminal-capability details moved to docs/USER_GUIDE.md [8, 9]
 - [ ] P11-02 Pictures of the IDE made from itself: `tmide --screenshot FILE.svg` (the screen buffer as SVG, with the theme's colours) and a script that records a short demo through tmux as an asciinema cast; three screenshots (Turbo Classic, a modern theme, the docs reader) and the cast linked from the README [7]
 - [ ] P11-03 Mojo version check: the Mojo version TurboMojo was built with is recorded; when the `mojo` found differs, the status line and `tmide --caps` say so plainly, instead of the language server or builds failing in strange ways [5]
 - [ ] P11-04 File > New project: makes a pixi project with Mojo (`pixi init`, the Modular channel, `mojo` as a dependency), a hello.mojo and a test, and opens them; offered by the welcome screen when the folder has no project [13]
