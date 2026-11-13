@@ -5079,3 +5079,33 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   Colour theme... is below the ▼; the golden file updated (UPDATE_GOLDEN=1, that
   one change only).
 - Gate: scripts/check.sh printed CHECK OK (110 test files, 1187 tests, 892 s).
+
+## 2026-11-12 · P10-20a The theme follows OSC 11 live; Turbo Muted · done
+- What changed: P10-20 split into 20a (this) and 20b (the first run asks, with a
+  preview). Mode 2031 change reports and the CSI ? 996 n answer were followed
+  already, and OSC 11 was asked once at the start; now `background_recheck`
+  (src/appstate.mojo) asks again - on focus-in (mode 1004, app_input) and at most
+  every half minute from theme_tick - when the theme is "auto", the terminal does
+  not report 2031 and has answered OSC 11 before; the query goes out with the next
+  frame, and the reply, read as before, changes the theme in theme_tick. A theme
+  file themes/turbo-muted.toml, built in as `muted` (TURBO_MUTED): Classic's parts
+  in navy, cream, muted teal and green and warm grey, designed against every check
+  (the first draft failed six: a parameter grey at Lc 43, success and error in the
+  Message window 6.8 apart with deuteranopia, types and strings 7.5 with
+  protanopia, and with 16 colours everything - so 16 colours are Classic's look,
+  in its [colors16] / [syntax16]). README (Themes row, auto), What's new.
+- Verified: tests/test_theme_live.mojo (3 tests): a terminal that answered a dark
+  background gets Midnight; focus lost asks nothing, focus back asks once; a light
+  answer gives Paper Light; not again within half a minute, then again; a terminal
+  reporting 2031, one that never answered OSC 11, and a fixed theme are not asked.
+  Turbo Muted loads, is the shipped file, has under half Classic's mean chroma
+  (CIE C* over its colours), a dark bluish editor and a light grey menu bar with
+  black text, and passes the contrast, colour-vision and both depth checks; with 16
+  colours its editor is ansi:4. test_themes counts eleven; test_contrast,
+  test_theme_depths, test_cvd_theme and test_quiet_colors take it in. Mutants (no
+  ask on focus, no periodic ask, asking with 2031 or a fixed theme) fail.
+- Not done / unverified: no real terminal was switched between schemes; whether
+  a terminal answers OSC 11 while it lacks the focus does not matter here (asked on
+  return), but a terminal that is slow to answer makes the change one reply late;
+  20b.
+- Gate: scripts/check.sh printed CHECK OK (111 test files, 1190 tests, 889 s).

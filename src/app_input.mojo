@@ -90,6 +90,8 @@ __extension App:
     def handle_event(mut self, e: Event) raises:
         if e.kind == EV_FOCUS:
             self.focused = e.key == 1           # (the next frame is drawn dimmed or not)
+            if self.focused:
+                self.background_recheck(True)   # (its colours may have changed meanwhile)
             return
         if too_small(self.scr.w, self.scr.h):
             # nothing to see: nothing is typed or clicked anywhere; only quitting works

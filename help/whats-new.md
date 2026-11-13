@@ -21,6 +21,8 @@
   pink and definitions yellow).
 - Options > Quiet code colours: four code colours (text, comments, strings,
   definitions), so that errors and search hits stand out most.
+- Turbo Muted, Turbo Classic in calm, less saturated colours; `theme = "auto"` follows
+  terminals that only tell their background colour live too.
 
 ## 2.0: release
 

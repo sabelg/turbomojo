@@ -16,6 +16,7 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from themes import ThemeSet, scheme_from, animations_off
+from caps import OSC11_QUERY
 from contrast import quiet_syntax
 from strings import apply_strings, language_from
 from notify import NotifyCenter, TYPING_PAUSE_MS
@@ -172,6 +173,7 @@ struct App(Movable):
     var scheme_seen: Int        # the terminal's light/dark that the theme follows (0: none yet)
     var desktop_scheme: Int     # the desktop's (COLORFGBG, GNOME's setting) when the terminal is silent
     var desktop_checked_ns: Int
+    var bg_asked_ns: Int             # when the terminal was last asked its background (OSC 11)
     var notes: NotifyCenter     # toasts and the notification centre
     var toast_rows: List[Int]   # the toasts as drawn: which notice, top and bottom row
     var toast_y0: List[Int]
@@ -608,6 +610,7 @@ struct App(Movable):
         self.scheme_seen = 0
         self.desktop_scheme = 0
         self.desktop_checked_ns = 0
+        self.bg_asked_ns = 0
         self.notes = NotifyCenter()
         self.toast_rows = List[Int]()
         self.toast_y0 = List[Int]()
@@ -1113,11 +1116,25 @@ struct App(Movable):
             g = bytes_to_str(run_capture("gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null").out)
         return scheme_from(env_or("COLORFGBG", ""), g)
 
+    def background_recheck(mut self, now_too: Bool):
+        """Ask a terminal that reports its background colour (OSC 11) but not its light
+        or dark (mode 2031) again: when it gets the focus back (`now_too`) and at most
+        every half minute while the IDE is in use - so a change of its colour scheme is
+        followed. The reply comes as input and changes the theme in theme_tick."""
+        if self.theme_id != "auto" or self.term.scheme != 0 or self.term.caps.background < 0:
+            return
+        var now = Int(now_ns())
+        if now_too or now - self.bg_asked_ns > 30 * 1000000000:
+            self.bg_asked_ns = now
+            append_str(self.term.out, OSC11_QUERY)
+
     def theme_tick(mut self):
-        """Follow the terminal's light or dark (mode 2031) - or, when it says nothing,
-        the desktop's, looked at every half minute."""
+        """Follow the terminal's light or dark (mode 2031; or its background colour,
+        asked again now and then) - or, when it says neither, the desktop's, looked at
+        every half minute."""
         if self.theme_id != "auto":
             return
+        self.background_recheck(False)
         if self.term.scheme == 0 and self.term.bg_scheme == 0:
             var now = Int(now_ns())
             if self.desktop_checked_ns == 0 or now - self.desktop_checked_ns > 30 * 1000000000:

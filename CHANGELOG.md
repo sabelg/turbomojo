@@ -4,7 +4,7 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.1: UI clarity and calm (in progress: 3 tasks to go)
+## 2.1: UI clarity and calm (in progress: 4 tasks to go)
 
 - Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1] (P10-01)
 - Never colour-only diagnostics: E/W/i glyphs in the gutter and the Problems page, and undercurl with an SGR 58 colour where the terminal supports it (probed), else a plain underline [2] (P10-02)
@@ -35,6 +35,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - Semantic colour roles ([roles]: surface, panel, text, text-muted, text-disabled, border, border-blurred, cursor, diag-error, diag-warn) and colours designed for 256 and 16 colours ([colors256], [colors16]) under every built-in theme, each reaching the contrast floors as such a terminal shows it [E] (P10-18b)
 - The other themes through the colour-vision check (Paper Light's error and warning fall together with deuteranopia, High Contrast's git add / change with tritanopia; Classic, Midnight, Amber not yet measured), fixed where they fail [E] (P10-18c)
 - A restrained syntax palette (4-6 token classes, errors, search hits and the current line most salient) as the default's alternative, richer colouring stays a theme option [F] (P10-19)
+- The theme follows the terminal live where it only reports its background (OSC 11 asked again on focus and every half minute; 2031 / 996 were followed already), and Turbo Muted, a low-saturation Turbo Classic [G] (P10-20a)
 
 ## 2.0: Release engineering - 2026-11-12
 
