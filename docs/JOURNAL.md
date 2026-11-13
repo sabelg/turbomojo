@@ -5457,3 +5457,32 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   uploaded anywhere (asciinema.org would publish it - the user's call); the docs reader is
   not pictured (it needs the downloaded documentation).
 - Gate: scripts/check.sh printed CHECK OK (118 test files, 1221 tests, smoke, perf, soak) in 936 s.
+
+## 2026-11-13 · P11-03 Mojo version check · done
+- What changed: every build of TurboMojo (`pixi run build`, scripts/check.sh, the conda
+  recipe) passes what `mojo --version` says with `-D TURBOMOJO_MOJO=...`; it is
+  version.MOJO_BUILT_WITH (get_defined_string, "" when built without it).
+  src/mojover.mojo reads the version out of such text (releases and nightlies) and words
+  a mismatch. After the first frame the IDE asks the configured compiler (`compiler`,
+  TURBOMOJO_COMPILER) once, with its environment; a different release goes to the
+  status line and the crash log, and stays in App.mojo_warning (for the setup checklist,
+  P11-05). `tmide --caps` has a "mojo" line: the version found, the one built with,
+  "DIFFERENT" and the message when they differ, "not found" when there is none. README,
+  user guide (When something goes wrong), What's new.
+- Verified: tests/test_mojo_version.mojo (4 tests): versions read from release,
+  nightly and older outputs and from a line after a warning, nothing from "not found";
+  no message when equal or when either side is unknown, a message naming both and what
+  to do when not, a nightly of the same number counted as different; the App with a fake
+  compiler says it once and stores it, says nothing for the same release and does not
+  even run the compiler when the build has no record; `build/tmide --caps` with a fake
+  9.9.0 compiler shows "DIFFERENT" and the built-with version (so the gate's build
+  recorded it), and "not found" for a missing one. Mutants: a tmide built without the
+  -D fails the --caps test; dropping the equality check fails three tests. Seen by hand:
+  `--caps` here says "1.2.0 (TurboMojo was built with 1.2.0)"; pixi's task shell runs
+  the `$(mojo --version)` in pixi.toml.
+- Not done / unverified: that the check runs after the first frame (not before) is only
+  read in the code, not tested - the perf gate's start-up time is the check that it adds
+  nothing before the first frame; `pixi run package` was not rerun with the new recipe
+  line (its shell is bash, as for check.sh).
+- Gate, first run: test_project failed - it reads this project's pixi.toml and expected the build task without the -D (its parsing of the escaped quotes was right); its expectation updated.
+- Gate: scripts/check.sh printed CHECK OK (119 test files, 1225 tests, smoke, perf - start-up 62.6 ms - and soak) in 934 s.

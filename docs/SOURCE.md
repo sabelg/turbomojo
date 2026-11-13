@@ -94,6 +94,7 @@ struct of `appstate.mojo`, one area each.
 | `src/markdown.mojo` | Markdown to styled text lines, for hover windows and documentation panels. |
 | `src/marks.mojo` | OSC 133 marks ("semantic prompts", FinalTerm's sequences) around a program run. |
 | `src/menu.mojo` | Menu bar structures and drawing. |
+| `src/mojover.mojo` | Is the Mojo found the one TurboMojo was built with? (P11-03) |
 | `src/notify.mojo` | Notifications: short messages that show for a few seconds at the top right ("toasts") when something finishes or needs attention while you work elsewhere, and are kept in the notification centre (Help > Notifications) with what is running now. |
 | `src/outline.mojo` | The outline of a file: its functions, structs, traits and constants as a tree. |
 | `src/palette.mojo` | Colour themes. |

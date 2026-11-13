@@ -58,6 +58,8 @@ from app_docpane import *
 from app_keybox import *
 from app_plugins import *
 from app_lspextra import *
+from version import MOJO_BUILT_WITH
+from mojover import mojo_mismatch, mojo_summary
 
 
 __extension App:
@@ -133,6 +135,19 @@ __extension App:
         self.gfx_on = (kitty or six) and not self.reader
         self.gfx_sixel = six and self.gfx_on
 
+    def mojo_version_check(mut self, built_with: String = MOJO_BUILT_WITH):
+        """Ask the configured compiler its version, once; if it is not the release this
+        TurboMojo was built with, say so (src/mojover.mojo)."""
+        self.mojo_checked = True
+        if built_with.byte_length() == 0:
+            return
+        var r = run_capture(self.compiler_cmd() + " --version 2>&1 < /dev/null")
+        self.mojo_warning = mojo_mismatch(built_with, bytes_to_str(r.out))
+        if self.mojo_warning.byte_length() > 0:
+            self.log_error("toolchain: " + self.mojo_warning)
+            var msg = self.mojo_warning.copy()
+            self.say(msg)
+
     def run(mut self) raises:
         self.frec_path = state_dir() + "/opened"
         self.frec.decode_text(read_text(self.frec_path))
@@ -183,6 +198,8 @@ __extension App:
             if six.byte_length() > 0:
                 append_str(self.term.out, six)
             self.term.flush()
+            if not self.mojo_checked:
+                self.mojo_version_check()       # (after the first frame: start-up stays quick)
             if self.fault.byte_length() > 0:
                 self.inject_fault()
             # sleep until input, compiler output or the next timer

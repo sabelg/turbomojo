@@ -9,7 +9,9 @@ from commands import CM_NEW, build_registry
 from strings import strings_template
 from config import config_home
 from util import state_dir
-from version import TURBOMOJO_VERSION
+from version import TURBOMOJO_VERSION, MOJO_BUILT_WITH
+from mojover import mojo_summary, mojo_mismatch
+from util import run_capture, bytes_to_str
 from helpbook import keymap_markdown
 from std.sys.info import CompilationTarget
 from svgshot import screen_svg
@@ -134,6 +136,12 @@ def main() raises:
         print("TurboMojo terminal capabilities")
         for line in caps.describe():
             print("  " + line)
+        # the toolchain beside the terminal: is it the Mojo TurboMojo was built with?
+        var mv = run_capture(app.compiler_cmd() + " --version 2>&1 < /dev/null")
+        print("  mojo                : " + mojo_summary(MOJO_BUILT_WITH, bytes_to_str(mv.out)))
+        var warn = mojo_mismatch(MOJO_BUILT_WITH, bytes_to_str(mv.out))
+        if warn.byte_length() > 0:
+            print("  " + warn)
         return
     var lines = env_or("TERM", "") == "dumb"
     var files = List[String]()

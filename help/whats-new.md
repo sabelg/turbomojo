@@ -2,6 +2,9 @@
 
 ## 2.2 (in progress)
 
+- If the Mojo found is another release than the one TurboMojo was built with, the status
+  line says so at start-up, instead of the language server or builds failing without
+  saying why; `tmide --caps` shows both versions.
 - `tmide --screenshot OUT.svg` draws the IDE without a terminal and saves the screen as
   an SVG picture (`--size`, `--theme`, `--command` to open the palette, the explorer...);
   it changes none of your settings.

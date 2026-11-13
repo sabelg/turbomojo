@@ -217,6 +217,10 @@ pixi run ./build/tmide --caps
 
 ## When something goes wrong
 
+- The status line says TurboMojo was built with another Mojo than the one found: Mojo
+  still changes between releases, so the language server, builds or running may fail.
+  Rebuild TurboMojo with the Mojo you use (`pixi run build`), or use the Mojo it names.
+  `tmide --caps` shows both versions.
 - The language server stops: it is started again by itself, up to three times a minute;
   then **F7** tries again.
 - TurboMojo crashes: your terminal is put back, the next start offers your unsaved work,

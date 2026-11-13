@@ -29,7 +29,7 @@ VT_LINK="-Xlinker $($PIXI_RUN printenv CONDA_PREFIX)/lib/libghostty-vt.a"
 export MOJO VT_LINK
 
 echo "== build"
-"$MOJO" build -I src src/main.mojo -o build/tmide $VT_LINK 2> >(grep -v Crashpad >&2)
+"$MOJO" build -D "TURBOMOJO_MOJO=$("$MOJO" --version)" -I src src/main.mojo -o build/tmide $VT_LINK 2> >(grep -v Crashpad >&2)
 
 JOBS="${TM_JOBS:-$(( $(nproc) / 2 ))}"
 [ "$JOBS" -ge 1 ] || JOBS=1

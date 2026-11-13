@@ -28,7 +28,7 @@ default = ["stable"]
 nightly = ["nightly"]
 
 [tasks]
-build = "mkdir -p build && mojo build -I src src/main.mojo -o build/tmide -Xlinker $CONDA_PREFIX/lib/libghostty-vt.a"
+build = "mkdir -p build && mojo build -D \"TURBOMOJO_MOJO=$(mojo --version)\" -I src src/main.mojo -o build/tmide -Xlinker $CONDA_PREFIX/lib/libghostty-vt.a"
 run = { cmd = "./build/tmide", depends-on = ["build"] }
 check = "scripts/check.sh"
 canary = "TM_ENV=nightly scripts/check.sh"
