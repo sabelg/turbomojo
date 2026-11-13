@@ -2,6 +2,8 @@
 
 ## 2.2 (in progress)
 
+- `pixi run bundle` makes a tar file to copy to a server: TurboMojo and the libraries
+  it needs, which runs there after unpacking, without pixi.
 - Help > Exercise done? checks your answer to a Mojo GPU Puzzle too: it runs your copy
   in each of the puzzle's modes, as the course's own tests do.
 - After Ctrl-F9 the Message window says how the run ended, how long it took and, for a

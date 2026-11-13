@@ -212,5 +212,5 @@ in the Modular forum [1, 2, 4, 16, 17].
   - [x] P11-10a The GPU the program will run on (nvidia-smi, rocm-smi, or none) in `--caps` and as an optional status-line item, read once in the background
   - [x] P11-10b A run's time and the GPU it used in the Message window after Ctrl-F9
   - [x] P11-10c "Check my answer" for the GPU puzzles in the docs reader, as the exercises have
-- [ ] P11-11 A copy-to-the-server bundle: `pixi run bundle` makes a tar file with tmide and the Mojo runtime libraries it needs, which runs after unpacking on another Linux machine with the same glibc (checked in a clean folder without the project's .pixi) [12]
+- [x] P11-11 A copy-to-the-server bundle: `pixi run bundle` makes a tar file with tmide and the Mojo runtime libraries it needs, which runs after unpacking on another Linux machine with the same glibc (checked in a clean folder without the project's .pixi) [12]
 - [ ] P11-12 macOS, first part: osx-arm64 in pixi's platforms and the build linked for it where the toolchain allows that here; running it needs a Mac, so that part becomes [!] with what was checked [6]

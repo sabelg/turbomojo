@@ -31,6 +31,8 @@ nightly = ["nightly"]
 build = "mkdir -p build && mojo build -D \"TURBOMOJO_MOJO=$(mojo --version)\" -I src src/main.mojo -o build/tmide -Xlinker $CONDA_PREFIX/lib/libghostty-vt.a"
 run = { cmd = "./build/tmide", depends-on = ["build"] }
 check = "scripts/check.sh"
+# a tar file to copy to a server: tmide and the libraries it loads (scripts/bundle.sh)
+bundle = { cmd = "scripts/bundle.sh", depends-on = ["build"] }
 canary = "TM_ENV=nightly scripts/check.sh"
 # the conda package (recipe/recipe.yaml) into build/conda
 package = "pixi exec rattler-build build --recipe recipe/ -c https://conda.modular.com/max -c conda-forge --output-dir build/conda"

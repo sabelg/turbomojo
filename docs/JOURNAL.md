@@ -5872,3 +5872,31 @@ Not done / unverified:
 - Gate, first run: FAILED test_exercises (test_not_an_exercise expected the old "Open an exercise first"
   wording; updated to the new one that names the puzzles)
 - Gate: CHECK OK (128 test files, 1254 tests, 1003 s).
+
+## 2026-11-13 · P11-11 A copy-to-the-server bundle · done
+
+What changed:
+- scripts/bundle.sh and `pixi run bundle` (after `build`): build/turbomojo-<version>-linux-<arch>.tar.gz
+  with bin/tmide, lib/ (what ldd finds for tmide outside the system's folders: the Mojo
+  runtime's libKGENCompilerRTShared, libMSupportGlobals, libAsyncRTRuntimeGlobals, and the
+  environment's libstdc++ and libgcc_s - their own RPATHs already start with $ORIGIN) and
+  README.txt. tmide's RUNPATH (the environment's absolute lib folder) is rewritten in the
+  copy to $ORIGIN/../lib by overwriting the string in place (padded with NULs; refused if
+  the new one were longer) - no patchelf needed. The README names the glibc it needs: the
+  newest GLIBC_ symbol version of any file (2.35 here, from libAsyncRTRuntimeGlobals - one
+  newer than the 2.34 pixi.toml names for building).
+- README (Installing: copied to a server), user guide (remote machine), whats-new.
+
+Verified:
+- tests/test_bundle.mojo: the bundle made from the gate's build/tmide has the files and
+  no system library; unpacked in a clean folder, with `env -i` (no PATH into the project,
+  no MODULAR_HOME, an empty HOME) ldd finds every library in the bundle and none in the
+  project, `tmide --version` and `--caps` run; the README names the glibc; the build's own
+  tmide keeps its RUNPATH; a missing tmide is reported. 3 mutants (no RUNPATH change, no
+  library copied, system libraries copied too) fail it. 14 MB on aarch64.
+
+Not done / unverified:
+- Run here only, on the machine that built it (glibc 2.39): not on another machine or an
+  older glibc; the x86-64 bundle is made by the same script but not tried. The binary
+  still contains the source files' paths (for assertion messages), not used at run time.
+- Gate: CHECK OK (129 test files, 1255 tests, 1018 s).

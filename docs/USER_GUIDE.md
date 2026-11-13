@@ -255,6 +255,14 @@ the screen travels. Nothing needs to be installed on your own computer but a ter
     ssh you@gpu-box
     cd my-project && tmide          # or: pixi run ./build/tmide
 
+To put TurboMojo on a server that has no copy of it, make a bundle where you built it
+and unpack it there - it runs without pixi, as long as the server's glibc is as new as
+its README.txt says:
+
+    pixi run bundle
+    scp build/turbomojo-*-linux-*.tar.gz you@gpu-box:
+    ssh you@gpu-box 'tar -xzf turbomojo-*-linux-*.tar.gz'   # then turbomojo-*/bin/tmide
+
 - **Copying.** Copy (Ctrl-C, Ctrl-Ins) sends the text to *your* terminal's clipboard
   with OSC 52 - the only way TurboMojo copies, so it needs no X11, no Wayland and no
   clipboard program on the server. Most terminals accept it (kitty, WezTerm, Ghostty,

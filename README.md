@@ -91,6 +91,19 @@ environment are tested; `pixi global install` itself was not run here.
 libraries in this project's `.pixi` environment, so run it from there (`pixi run
 ./build/tmide`) or keep that environment.
 
+**Copied to a server.** `pixi run bundle` makes `build/turbomojo-<version>-linux-<arch>.tar.gz`
+(about 14 MB): `tmide` and the libraries it loads from the environment (the Mojo
+runtime, libstdc++, libgcc_s), with its library path pointing beside it. Unpack it on
+another Linux machine of the same architecture and run `bin/tmide`; nothing else is
+needed to start it, and its README.txt names the glibc it needs (2.35 or newer for this
+build). To build and run Mojo programs there, that machine needs Mojo itself.
+
+```bash
+pixi run bundle
+scp build/turbomojo-*-linux-*.tar.gz gpu-box:
+ssh gpu-box 'tar -xzf turbomojo-*-linux-*.tar.gz'
+```
+
 `tmide --version` prints the version, `tmide --help` the command line.
 
 ## Configuration
