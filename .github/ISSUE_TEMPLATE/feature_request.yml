@@ -1,0 +1,16 @@
+name: Idea
+description: Something TurboMojo could do, or do better
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to do?
+      description: The task you have in mind, not only the feature - it helps to find the simplest way.
+    validations:
+      required: true
+  - type: textarea
+    id: now
+    attributes:
+      label: How do you do it now?
+      description: In TurboMojo, or in another editor.

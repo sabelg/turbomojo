@@ -344,6 +344,10 @@ scripts/tui-test.sh stop
 - A macro is kept only until the IDE exits, there is one of it, mouse actions are not recorded, and each recorded step is its own undo step.
 - Ctrl-F9 runs the program in the Run window, a terminal of its own; with `run_in_terminal = false` it gets the whole terminal instead, the way Turbo's user screen did. Build, Format and tests run in the background.
 
+## Contributing
+
+Problem reports, ideas and changes are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) explains building, the tests and where things are. In the IDE, **Help ▸ Report a problem…** writes a ready-to-file report.
+
 ## Licence
 
 MIT - see [LICENSE](LICENSE). The integrated terminal links in `libghostty-vt`

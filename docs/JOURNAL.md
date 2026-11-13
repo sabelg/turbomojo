@@ -5733,3 +5733,34 @@ Not done / unverified:
   cleaning is a heuristic: it can miss a secret with an innocent name and look, which is
   why the report is opened for reading before anything is posted.
 - Gate: CHECK OK (124 test files, 1244 tests, 950 s; the same run as the entry before).
+
+## 2026-11-13 · P11-09 Contributing: CONTRIBUTING.md, issue templates · done
+
+What changed:
+- CONTRIBUTING.md: reporting a problem (Help > Report a problem, or --caps and
+  --version), building and running, the gate (what it does, how long, TM_JOBS, building
+  one test, SKIP_SMOKE / SKIP_PERF / SKIP_SOAK, the canary), the tests' own config and
+  state, where things are (docs/SOURCE.md, docs/JOURNAL.md - "search it for a feature's
+  name before changing it" -, BACKLOG, ROADMAP, the user docs), the conventions (tests in
+  the same commit and tried against a mutant; whats-new embedded and checked; gen_docs
+  and KEYMAP; plain English; nothing sent unasked), the licence.
+- .github/ISSUE_TEMPLATE: a problem form (what happened; `tmide --caps` and `--version`
+  output required; terminal / tmux / SSH; the last crash-log entry, to be checked for
+  private things first; it starts by pointing to Help > Report a problem), an idea form,
+  and a link to the user guide.
+- The GitHub Actions workflow already ran the gate on both platforms (made with
+  publishing, fixed after its first runs); it is unchanged. README links CONTRIBUTING.
+
+Verified:
+- tests/test_contributing.mojo (2 tests): every pixi task, script, file and variable
+  CONTRIBUTING.md names exists (and the variables are read by check.sh); the problem
+  template asks for --caps and --version, which `tmide --help` lists; the commands named
+  exist; CI runs `pixi run check`.
+- The one-test build command in CONTRIBUTING.md was run as written (test_window, 53
+  tests pass).
+
+Not done / unverified:
+- The issue forms are seen on GitHub only after a push. CI is not faster: on GitHub's
+  4-core runners compiling the ~125 test programs takes about an hour; a cache would be
+  invalidated by most changes (they touch src/, which every test imports).
+- Gate: CHECK OK (125 test files, 1246 tests, 980 s).

@@ -207,7 +207,7 @@ in the Modular forum [1, 2, 4, 16, 17].
 - [x] P11-06 A "Modern" start besides the Turbo look, in the first-run question: tiled layout, explorer open, VS Code keys and a calm theme in one choice (and Options > Presets to switch later) [15]
 - [x] P11-07 Working on a remote machine over SSH: a user-guide page (clipboard through OSC 52, mouse, colours, pictures through tmux, keys that SSH clients take), and tests for what it needs (OSC 52 copy when there is no local clipboard tool, no DISPLAY / WAYLAND_DISPLAY) [10]
 - [x] P11-08 Help > Report a problem: writes a ready-to-file issue text (versions, `--caps` output, the last crash-log entry, the config with anything secret-looking removed) to a file and the clipboard; it sends nothing [19]
-- [ ] P11-09 Contributing: CONTRIBUTING.md (building, the gate, docs/SOURCE.md, docs/JOURNAL.md), issue templates asking for `tmide --caps` output, and a GitHub Actions workflow that runs the tests (written, not run here) [3, 18]
+- [x] P11-09 Contributing: CONTRIBUTING.md (building, the gate, docs/SOURCE.md, docs/JOURNAL.md), issue templates asking for `tmide --caps` output, and a GitHub Actions workflow that runs the tests (written, not run here) [3, 18]
 - [ ] P11-10 GPU awareness (split into a-c below) [11]
   - [ ] P11-10a The GPU the program will run on (nvidia-smi, rocm-smi, or none) in `--caps` and as an optional status-line item, read once in the background
   - [ ] P11-10b A run's time and the GPU it used in the Message window after Ctrl-F9

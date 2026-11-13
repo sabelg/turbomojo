@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Using TurboMojo
+    url: https://github.com/sabelg/turbomojo/blob/main/docs/USER_GUIDE.md
+    about: The user guide - also inside the IDE (Help > TurboMojo guide)
