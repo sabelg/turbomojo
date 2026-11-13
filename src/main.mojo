@@ -3,6 +3,8 @@ from std.sys import argv
 from std.ffi import external_call
 from app import *
 from term import is_terminal
+from linemode import *
+from util import env_or
 from commands import CM_NEW, build_registry
 from strings import strings_template
 from config import config_home
@@ -23,6 +25,8 @@ FOLDER opens the Open dialog there.
   --keys          every command's keys in the three keymaps (docs/KEYMAP.md)
   --strings       the UI's English words, as a strings file to translate
   --caps          what this terminal reports it can do
+  --lines         the line mode: commands and answers as lines, no screen
+                  (also when TERM=dumb; for screen readers and Emacs shells)
 
 Configuration: ~/.config/turbomojo/config.toml (Options writes there).
 Documentation: Help (Alt-H) inside TurboMojo."""
@@ -64,6 +68,23 @@ def main() raises:
         print("TurboMojo terminal capabilities")
         for line in caps.describe():
             print("  " + line)
+        return
+    var lines = env_or("TERM", "") == "dumb"
+    var files = List[String]()
+    for k in range(1, len(args)):
+        if String(args[k]) == "--lines":
+            lines = True
+        else:
+            files.append(String(args[k]))
+    if lines:
+        # no cursor addressing: read commands as lines, answer in lines (src/linemode.mojo)
+        app.reader = True
+        for f in files:
+            try:
+                app.open_path(f)
+            except e:
+                print("cannot open", f, ":", String(e))
+        app.run_lines()
         return
     if not is_terminal():
         print("TurboMojo needs an interactive terminal (input or output is redirected).")

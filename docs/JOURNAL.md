@@ -4674,3 +4674,46 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   configurable apart from the mode; TERM=dumb still gets the full-screen UI with
   cursor addressing, which a real dumb terminal cannot show (P10-14b).
 - Gate: scripts/check.sh printed CHECK OK (99 test files, 1143 tests, 806 s).
+
+## 2026-11-12 · P10-14b line mode for TERM=dumb · done
+- What changed: new src/linemode.mojo - `tmide --lines`, and TERM=dumb by itself,
+  start a line mode instead of the screen: a `tm> ` prompt, one command per line,
+  answers as plain lines, no escape sequences at all (src/main.mojo chooses it before
+  the "needs an interactive terminal" check, so piped input works). Commands: open,
+  files, use, print [N[-M]], a bare N, find, set / insert / append (the text after
+  the line number exactly as typed, indentation kept), delete N[-M], undo, save,
+  build (waits for it; the compiler's messages, the Turbo summary box said as lines,
+  then the notice "build: error: Build failed: ..."), errors, next / prev (the
+  message and the source line), run / test (the program's own output on the same
+  terminal, then "run: exited with status N"), help, quit (refuses while files are
+  unsaved, naming them) and quit!. It drives the same App - buffers, undo groups,
+  ensure_saved, the build job, the error list, dialogs: a dialog that opens (Save
+  as, Folder trust, a file changed on disk) is read out with its text, fields and
+  numbered buttons, and the next line answers it - a digit or y / n through the
+  dialog's own keys (P10-14a), other text becomes the field's value and Enter, an
+  empty line or "cancel" closes it; an answer that lets a build start (trusting the
+  folder) waits for the build and reports it. The end of the input leaves, saying
+  which files were left unsaved. `--help` and the README's accessibility row.
+- Verified: tests/test_line_mode.mojo (5 tests): the range / text helpers; open,
+  print, go to a line, find, set and insert keeping indentation, append, delete of
+  the last lines, undo bringing them back, quit refusing with "unsaved: a.mojo",
+  save writing exactly the edited text, quit, quit!; an untitled buffer's save
+  reads out the Save as dialog (a field, numbered buttons), the next line names the
+  file and it is written, an empty line cancels; a real failing build says the
+  'pritn' error and "build: error: Build failed", leaves no dialog open, errors
+  lists it and next answers "1/1: ..." and "bad.mojo 2:     pritn(1)"; build/tmide
+  --lines with piped commands (in a HOME of its own) answers at the prompt, saves,
+  says bye and sends no ESC byte; TERM=dumb without --lines does the same. By hand:
+  a piped session with the Folder trust question answered by "1", then build,
+  errors, next, quit. A mutant that strips the text's indentation in set fails
+  (build/lm_m.log); the dialog answer that typed after the pre-filled path, and the
+  missing build report after a trust answer, were real bugs the tests and the
+  hand run found first.
+- Not done / unverified: not tried with Orca, emacs M-x shell or a braille display;
+  no line editing or history at the prompt (the terminal's or Emacs' own); a
+  dialog with a list (the Open dialog's file list, the palette) is read out without
+  its items; the debugger, the agent, git, the terminal window and the tests panel
+  have no line commands yet; run inherits the terminal, so a program that reads
+  input reads the rest of a piped script; no bell in the line mode.
+- Gate: scripts/check.sh printed CHECK OK (100 test files, 1148 tests, 814 s).
+

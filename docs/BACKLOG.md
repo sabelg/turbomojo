@@ -166,7 +166,7 @@ brackets; where TurboMojo already did part of it, only the rest is a task).
 - [x] P10-12 text-muted and text-disabled colours used consistently in menus, the palette and the status line; dim the UI while the terminal loses focus (mode 1004) [12]
 - [x] P10-13 Counts and filters in titles: Problems "(3 E, 7 W)", the explorer's filter, the palette's "12/340" [14]
 - [x] P10-14a Screen-reader mode, first part: labelled status lines (build:, agent:, test:, git:, error:, warning:), numbered menus (with "(on)" / "(not now)") and dialog buttons picked by their number, typed y/n, the bell when a build, the tests, a task or the agent finishes or asks; on with TERM=dumb as with TURBOMOJO_SCREEN_READER=1 [A]
-- [ ] P10-14b Screen-reader mode as a true linear mode: a line mode without cursor addressing for TERM=dumb (prompts and output as lines, as in an Emacs shell buffer) [A]
+- [x] P10-14b Screen-reader mode as a true linear mode: a line mode without cursor addressing for TERM=dumb (prompts and output as lines, as in an Emacs shell buffer) [A]
 - [ ] P10-14c OSC 133 marks (prompt, command, output, end) around a program run on the user screen and in the IDE's terminal windows, so terminals can jump between runs [A]
 - [ ] P10-15 Cursor discipline in the full UI: the hardware cursor always on the focused caret or row; status, minimap, spinner and toast updates never leave it elsewhere; unchanged cells never rewritten [B]
 - [ ] P10-16 Responsive layout: stacking on narrow terminals, one-key zoom of the focused pane (normal/half/full), minimap, breadcrumbs and gutter hidden below widths, a "terminal too small" screen [C]

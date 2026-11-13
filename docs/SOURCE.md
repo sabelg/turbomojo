@@ -84,6 +84,7 @@ struct of `appstate.mojo`, one area each.
 | `src/json.mojo` | JSON reader and writer (RFC 8259). |
 | `src/layout.mojo` | The tiled layout: a tree of splits whose leaves are tab groups. |
 | `src/linediff.mojo` | Line diff: which lines of an old text became which lines of a new one. |
+| `src/linemode.mojo` | The line mode (P10-14b): TurboMojo without cursor addressing, for TERM=dumb and `tmide --lines`. |
 | `src/links.mojo` | Hyperlinks on file:line references (OSC 8). |
 | `src/lsp.mojo` | Language Server Protocol client (first slice: lifecycle, document sync, diagnostics). |
 | `src/lspextra.mojo` | Language servers for other languages ([lsp.<name>] in the config file): what one is, and making the list from the settings (src/app_lspextra.mojo does the rest). |
