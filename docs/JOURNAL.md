@@ -5391,3 +5391,14 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   use.md became Phase 11 in docs/BACKLOG.md (P11-01 to P11-12). Left out, being the
   user's to do or decide: the licence, merging the branches, pushing, a public conda
   channel, posting in the Modular forum. The runner goes on with P11-01.
+
+## 2026-11-13 · Licence and publishing (the user's decisions)
+- MIT licence (LICENSE, `license` / `license_file` in recipe/recipe.yaml, a Licence
+  section in the README); the conda package now carries info/licenses/LICENSE.
+- Before publishing, at the user's choice, the author and committer address of every
+  commit was changed to the GitHub no-reply address (so commit hashes named earlier in
+  this journal no longer match). `main` moved up to `roadmap`.
+- Published as https://github.com/sabelg/turbomojo (public): `main` and the tag
+  v2.1.0. The runner goes on committing on `roadmap` and does not push by itself.
+- Checked: test_release and test_docs_files pass; `pixi run package` builds with the
+  licence; GitHub reports the licence as MIT.
