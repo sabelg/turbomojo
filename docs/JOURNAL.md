@@ -4867,3 +4867,36 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   panes stack); band heights cannot be dragged; not tried by hand.
 - Gate: scripts/check.sh printed CHECK OK (105 test files, 1166 tests, 840 s).
 
+## 2026-11-12 · P10-17a recent commands first, F6 to the window used last · done
+- Split P10-17 into 17a (this) and 17b (a file's cursor, scroll and folds kept on
+  close, across restarts and when a tab moves pane).
+- What changed: `cmd_used(cmd)` (src/app_pickers.mojo) - a command chosen by name, in
+  the palette or a menu (Enter, its hot letter, its number in screen-reader mode) -
+  goes to the front of `App.cmd_rec`, a Frecency keyed by the command's stable name
+  ("window.zoom"), at most CMD_RECENT_MAX (20), written to the state directory's
+  `commands-used` and read back at start; keys do not count. The palette's command
+  list gives the one used last (20 - place) * 20 points, so with nothing typed they
+  come first in that order and typing still decides what is listed.
+  `Frecency.decode_text(text, paths)` reads keys that are not paths when asked (it
+  dropped every line not starting with "/", which the first run of the new test
+  showed). F6 is `next_window` (src/app_layout.mojo): the windows by when they were
+  used (the stacking order from the top, by wid - non-editor windows get one) are
+  taken when a run of presses begins (`event_seq`, counted in handle(); `f6_seq`),
+  and each F6 in the run goes one further, Shift-F6 one back; Shift-F6 not after F6
+  goes to the window used least lately (the old F6), so every window is reached in
+  turn. Descriptions of both commands, README rows.
+- Verified: tests/test_nav_memory.mojo (2 tests): Zoom chosen in the palette is
+  first in it next time; New from the File menu then first and Zoom second; F5
+  (Zoom by its key) changes nothing; the file holds file.new before window.zoom,
+  and an App reading it lists them first (the test reads it as App.run does -
+  run() itself is not exercised); typed "about" lists About and not New. With a, b,
+  c open: F6 b, F6 a, Shift-F6 b, F6 F6 round to c; after another key F6 toggles c
+  and b; Shift-F6 alone goes to a. test_tiled and test_terminal (F6 from a terminal
+  window to the editor) pass unchanged. Mutants (no recency, no chain, the old F6)
+  fail.
+- Not done / unverified: the run of F6 presses ends at any event, a mouse move
+  too; no on-screen list while cycling (Alt-0 has the window list); recent
+  commands are not marked as such in the palette; the files' ranking is unchanged
+  (frecency, as before).
+- Gate: scripts/check.sh printed CHECK OK (106 test files, 1168 tests, 839 s).
+

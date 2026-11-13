@@ -73,8 +73,10 @@ struct Frecency(Copyable, Movable):
             s += String(self.counts[k]) + " " + String(self.last[k]) + " " + self.paths[k] + "\n"
         return s
 
-    def decode_text(mut self, text: String):
-        """Read what encode() wrote; lines that do not fit are skipped."""
+    def decode_text(mut self, text: String, paths: Bool = True):
+        """Read what encode() wrote; lines that do not fit are skipped (with `paths`,
+        those whose key is not an absolute path - False for other keys, such as the
+        command names of the palette's recent commands)."""
         self.paths.clear()
         self.counts.clear()
         self.last.clear()
@@ -91,7 +93,7 @@ struct Frecency(Copyable, Movable):
                 var count = atol(String(line[byte=0:a]))
                 var when = atol(String(rest[byte=0:b]))
                 var path = String(rest[byte=b + 1:])
-                if count > 0 and when >= 0 and path.startswith("/") and self.find(path) < 0 and len(self.paths) < FREC_MAX:
+                if count > 0 and when >= 0 and (path.startswith("/") or not paths) and String(path.strip()).byte_length() > 0 and self.find(path) < 0 and len(self.paths) < FREC_MAX:
                     self.paths.append(path)
                     self.counts.append(count)
                     self.last.append(when)

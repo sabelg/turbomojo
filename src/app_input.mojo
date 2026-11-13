@@ -67,6 +67,7 @@ __extension App:
                 self.macro_cmd_start = at       # a new key, or the first key of a sequence
             self.macro.append(e.copy())
         self.macro_key_live = recording
+        self.event_seq += 1
         self.handle_event(e)
         self.macro_key_live = False
         self.sig_follow()

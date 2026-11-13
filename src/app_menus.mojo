@@ -92,6 +92,7 @@ __extension App:
             self.macro_note_cmd(cmd)
             self.exec(cmd)
             self.key_echo(cmd)
+            self.cmd_used(cmd)
         elif (k & MOD_ALT) != 0:
             var m = self.menu_for_letter(lower(k & KEY_MASK))
             if m >= 0:
@@ -106,6 +107,7 @@ __extension App:
             self.macro_note_cmd(cmd)
             self.exec(cmd)
             self.key_echo(cmd)
+            self.cmd_used(cmd)
         elif k < K_BASE and k > 32:
             var lk = lower(k)
             for i in range(len(self.menus[self.menu_idx].items)):
@@ -115,6 +117,7 @@ __extension App:
                     self.macro_note_cmd(cmd)
                     self.exec(cmd)
                     self.key_echo(cmd)
+                    self.cmd_used(cmd)
                     return
         else:
             var cmd = self.shortcut(k)

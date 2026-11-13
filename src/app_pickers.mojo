@@ -58,6 +58,7 @@ comptime QM_COMMANDS = 1
 comptime QM_SYMBOLS = 2
 comptime QM_WSYMBOLS = 3
 comptime QM_LINE = 4
+comptime CMD_RECENT_MAX = 20     # commands remembered as used last
 comptime QM_DOCS = 5          # "?": hand the text to the documentation finder
 
 
@@ -70,6 +71,34 @@ __extension App:
             if not path_exists(dirname(self.frec_path)):
                 _ = run_system("mkdir -p " + shell_quote(dirname(self.frec_path)))
             _ = write_file(self.frec_path, str_bytes(self.frec.encode()))
+
+    def cmd_key(self, cmd: Int) -> String:
+        var i = self.reg.index_of(cmd)
+        return self.reg.cmds[i].name if i >= 0 else String(cmd)
+
+    def cmd_used(mut self, cmd: Int):
+        """A command chosen by name - in the palette or a menu: it comes first in the
+        palette from now on, and still after a restart (the state directory's
+        commands-used)."""
+        if cmd == CM_NONE:
+            return
+        self.cmd_rec.note(self.cmd_key(cmd), unix_time())
+        while len(self.cmd_rec.paths) > CMD_RECENT_MAX:
+            _ = self.cmd_rec.paths.pop()
+            _ = self.cmd_rec.counts.pop()
+            _ = self.cmd_rec.last.pop()
+        if self.cmd_rec_path.byte_length() > 0:
+            if not path_exists(dirname(self.cmd_rec_path)):
+                _ = run_system("mkdir -p " + shell_quote(dirname(self.cmd_rec_path)))
+            _ = write_file(self.cmd_rec_path, str_bytes(self.cmd_rec.encode()))
+
+    def cmd_recency(self, cmd: Int) -> Int:
+        """What a command's place among those used last adds to its palette score: the
+        one used last the most, nothing for those not used lately."""
+        var k = self.cmd_rec.find(self.cmd_key(cmd))
+        if k < 0:
+            return 0
+        return (CMD_RECENT_MAX - k) * 20
 
     def quick_dialog(mut self, start: String):
         """The palette: one field for going anywhere. What is typed decides what is
@@ -154,6 +183,7 @@ __extension App:
                     seen.append(it.cmd)
                     items.append(pad_right(title + ": " + plain(it.label), 40) + self.reg.all_keys_label(it.cmd))
                     data.append(it.cmd)
+                    boost.append(self.cmd_recency(it.cmd))
                     off.append(self.cmd_unavailable(it.cmd))
         elif mode == QM_FILES:
             self.quick_files = self.fidx.files.copy() if self.fidx.built else self.fidx.fresh.copy()
@@ -272,6 +302,7 @@ __extension App:
             var pc = self.dlg.item_data[s]
             self.exec(pc)
             self.key_echo(pc)
+            self.cmd_used(pc)
         elif mode == QM_FILES:
             var k = self.dlg.item_data[s]
             if k < 0 or k >= len(self.quick_files):

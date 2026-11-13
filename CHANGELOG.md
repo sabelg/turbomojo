@@ -4,7 +4,7 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.1: UI clarity and calm (in progress: 6 tasks to go)
+## 2.1: UI clarity and calm (in progress: 7 tasks to go)
 
 - Redundant focus cues in both layouts: the focused window/pane with a bright double frame, bold title and the only cursor; unfocused ones with a dim single frame and a muted "inactive selection" row; the active tab marked by glyph as well as colour [1] (P10-01)
 - Never colour-only diagnostics: E/W/i glyphs in the gutter and the Problems page, and undercurl with an SGR 58 colour where the terminal supports it (probed), else a plain underline [2] (P10-02)
@@ -27,6 +27,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - Responsive layout, first part: a "terminal too small" screen below a minimum size, and the minimap, breadcrumbs and gutter hidden below widths where they would crowd the text [C] (P10-16a)
 - One-key zoom of the focused pane in three steps (normal, half, full) [C] (P10-16b)
 - Stacking on narrow terminals: the tiled layout's side panes go above / below the editor instead of beside it [C] (P10-16c)
+- Navigation memory, first part: the commands used last come first in the command palette (kept across restarts), and F6 goes to the window used last, further back on each press in a row [D] (P10-17a)
 
 ## 2.0: Release engineering - 2026-11-12
 

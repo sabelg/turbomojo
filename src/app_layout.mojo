@@ -193,6 +193,38 @@ __extension App:
             self.wins[k].stacked = True
         return True
 
+    def next_window(mut self, forward: Bool):
+        """Next window (F6): the window used last, and on each press in a row the one
+        used before it (the order as it was when the presses began, like Alt-Tab);
+        Previous window (Shift-F6) goes back along it. Shift-F6 not after F6 goes to
+        the window used least lately, so every window can be reached in turn."""
+        if len(self.wins) < 2:
+            return
+        var chain = self.f6_seq + 1 == self.event_seq and len(self.f6_chain) > 1
+        if not chain and not forward:
+            self.focus(0)
+            self.f6_seq = -5
+            return
+        if not chain:
+            # the windows used last first: the stacking order, from the top
+            self.f6_chain.clear()
+            var i = len(self.wins) - 1
+            while i >= 0:
+                if self.wins[i].wid == 0:
+                    self.wins[i].wid = self.next_wid
+                    self.next_wid += 1
+                self.f6_chain.append(self.wins[i].wid)
+                i -= 1
+            self.f6_at = 0
+        var n = len(self.f6_chain)
+        for _ in range(n):
+            self.f6_at = (self.f6_at + (1 if forward else n - 1)) % n
+            var w = self.win_by_wid(self.f6_chain[self.f6_at])
+            if w >= 0:
+                self.focus(w)
+                break
+        self.f6_seq = self.event_seq
+
     def half_rect(self, i: Int, right: Bool) -> Tuple[Int, Int, Int, Int]:
         """Classic layout, zoom's middle step: the left or right half of the desk."""
         var W = self.scr.w

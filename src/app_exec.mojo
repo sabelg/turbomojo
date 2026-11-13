@@ -629,13 +629,8 @@ __extension App:
                 self.arrange(cmd == CM_TILE)
         elif cmd >= CM_TILED and cmd <= CM_PANE_SHRINK:
             self.layout_command(cmd)
-        elif cmd == CM_NEXTWIN:
-            if len(self.wins) > 1:
-                self.focus(0)
-        elif cmd == CM_PREVWIN:
-            if len(self.wins) > 1:
-                var w = self.wins.pop()
-                self.wins.insert(0, w^)
+        elif cmd == CM_NEXTWIN or cmd == CM_PREVWIN:
+            self.next_window(cmd == CM_NEXTWIN)
         elif cmd == CM_MESSAGE or cmd == CM_SEARCHRES or cmd == CM_PROBLEMS:
             self.panel_show(PG_MESSAGE if cmd == CM_MESSAGE else (PG_SEARCH if cmd == CM_SEARCHRES else PG_PROBLEMS))
             self.focus(self.msg_index())

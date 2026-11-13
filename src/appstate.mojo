@@ -470,6 +470,12 @@ struct App(Movable):
     var trash_dir: String            # where deleted files go
     var fidx: FileIndex              # the project's files, for the palette
     var frec: Frecency               # which files were opened how often and when
+    var cmd_rec: Frecency            # the commands chosen by name, used last first
+    var cmd_rec_path: String         #   where that is kept ('' = not kept)
+    var event_seq: Int               # events handled so far (F6's chain: presses in a row)
+    var f6_seq: Int                  #   the event of the last Next / Previous window
+    var f6_chain: List[Int]          #   the windows (wid), used last first, when the chain began
+    var f6_at: Int                   #   where in it the chain is
     var frec_path: String            # where that is kept ('' = not kept)
     var quick_mode: Int              # what the open palette lists (QM_*)
     var quick_text: String           # its field when the list was last matched
@@ -905,6 +911,12 @@ struct App(Movable):
         self.trash_dir = default_trash_dir()
         self.fidx = FileIndex()
         self.frec = Frecency()
+        self.cmd_rec = Frecency()
+        self.cmd_rec_path = ""
+        self.event_seq = 0
+        self.f6_seq = -5
+        self.f6_chain = List[Int]()
+        self.f6_at = 0
         self.frec_path = ""
         self.quick_mode = -1
         self.quick_text = ""

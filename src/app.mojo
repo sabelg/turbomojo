@@ -108,6 +108,8 @@ __extension App:
     def run(mut self) raises:
         self.frec_path = state_dir() + "/opened"
         self.frec.decode_text(read_text(self.frec_path))
+        self.cmd_rec_path = state_dir() + "/commands-used"
+        self.cmd_rec.decode_text(read_text(self.cmd_rec_path), False)
         self.log_path = state_dir() + "/crash.log"
         self.term.crash_log = self.log_path
         for w in self.config_warnings:
