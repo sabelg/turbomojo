@@ -5988,3 +5988,13 @@ Not done / unverified:
   channel is reported, not added). Libraries a program finds through -I paths are not
   told apart from missing ones except by `pixi search` finding nothing.
 
+
+## 2026-11-13 · Phase 11 summary
+
+- Phase 11 (making TurboMojo easy to start with and to take elsewhere) is done: P11-01 to
+  P11-11 and P11-13 [x]; P11-12 (macOS) [!] - it compiles and links for arm64 macOS
+  here, but running it needs a Mac. P1-20 stays [!] (no Mojo tree-sitter grammar).
+- Not pushed: 1529cdf (P11-11), c4043c7 (P11-12), 2ee92ed (P11-13) and this note are on
+  `roadmap` only; each push waits for the user's word.
+- Last gate: CHECK OK, 131 test files, 1265 tests, 996 s.
+- From here the wake-ups only look for new tasks in the backlog.
