@@ -1,4 +1,5 @@
 """The tiled layout in the application: panes with tabs that share the screen."""
+from responsive import STACK_W, band_heights, explorer_width, outline_width, docpane_width
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
@@ -94,20 +95,31 @@ __extension App:
         var mi = self.msg_index()
         if mi >= 0 and self.wins[mi].y - 1 >= 6:
             h = self.wins[mi].y - 1
+        var y0 = 1
+        if self.stack_side_panes(h):
+            # a narrow terminal: the side panes are bands above and below the editors
+            var xi0 = self.explorer_index()
+            if xi0 >= 0:
+                y0 = self.wins[xi0].y + self.wins[xi0].h
+            var bottom = 1 + h
+            for k in [self.outline_index(), self.docpane_index()]:
+                if k >= 0:
+                    bottom = min(bottom, self.wins[k].y)
+            h = bottom - y0
         var oi = self.outline_index()
-        if oi >= 0 and self.wins[oi].x >= 20:
+        if oi >= 0 and self.wins[oi].x >= 20 and not self.wins[oi].stacked:
             w = self.wins[oi].x
         var dpi = self.docpane_index()
-        if dpi >= 0 and self.wins[dpi].x >= 20 and self.wins[dpi].x < w:
+        if dpi >= 0 and self.wins[dpi].x >= 20 and self.wins[dpi].x < w and not self.wins[dpi].stacked:
             w = self.wins[dpi].x
         var x0 = 0
         var xi = self.explorer_index()
-        if xi >= 0 and w - self.wins[xi].w >= 20:
+        if xi >= 0 and w - self.wins[xi].w >= 20 and not self.wins[xi].stacked:
             x0 = self.wins[xi].w
-        self.lay.place(x0, 1, w - x0, h)
+        self.lay.place(x0, y0, w - x0, h)
         var zoomed = te >= 0 and self.wins[te].zoomed
         if te >= 0 and self.wins[te].half and not zoomed:
-            self.lay.place(x0, 1, w - x0, h, self.lay.group_of(self.wins[te].wid))
+            self.lay.place(x0, y0, w - x0, h, self.lay.group_of(self.wins[te].wid))
         for g in self.lay.groups():
             var show = self.lay.shown(g)
             for id in self.lay.tabs[g]:
@@ -118,7 +130,7 @@ __extension App:
                     self.wins[i].hidden = i != te
                     if i == te:
                         self.wins[i].x = x0
-                        self.wins[i].y = 1
+                        self.wins[i].y = y0
                         self.wins[i].w = w - x0
                         self.wins[i].h = h
                     continue
@@ -127,6 +139,59 @@ __extension App:
                 self.wins[i].y = self.lay.gy[g]
                 self.wins[i].w = self.lay.gw[g]
                 self.wins[i].h = self.lay.gh[g]
+
+    def stack_side_panes(mut self, h: Int) -> Bool:
+        """Tiled layout: on a terminal narrower than STACK_W, the explorer becomes a band
+        above the editors and the outline and the docs pane bands below them, the full
+        width (True); wide enough, those that were stacked go back beside the editors
+        (False). `h`: the rows the panes share."""
+        var W = self.scr.w
+        var xi = self.explorer_index()
+        var below = List[Int]()
+        for k in [self.docpane_index(), self.outline_index()]:
+            if k >= 0:
+                below.append(k)
+        var bands = band_heights(h, 1 if xi >= 0 else 0, len(below))
+        var stack = W < STACK_W and (bands[0] > 0 or bands[1] > 0)
+        if not stack:
+            # beside the editors again (as they are opened)
+            var right = W
+            var oi = self.outline_index()
+            if oi >= 0 and self.wins[oi].stacked:
+                var ow = outline_width(W)
+                self.wins[oi].x = W - ow
+                self.wins[oi].w = ow
+            if oi >= 0:
+                right = self.wins[oi].x
+            var dpi = self.docpane_index()
+            if dpi >= 0 and self.wins[dpi].stacked:
+                var dw = docpane_width(W)
+                self.wins[dpi].x = max(0, right - dw)
+                self.wins[dpi].w = dw
+            if xi >= 0 and self.wins[xi].stacked:
+                self.wins[xi].x = 0
+                self.wins[xi].w = explorer_width(W)
+            for k in [xi, oi, dpi]:
+                if k >= 0 and self.wins[k].stacked:
+                    self.wins[k].y = 1
+                    self.wins[k].h = h
+                    self.wins[k].stacked = False
+            return False
+        if xi >= 0:
+            self.wins[xi].x = 0
+            self.wins[xi].y = 1
+            self.wins[xi].w = W
+            self.wins[xi].h = bands[0]
+            self.wins[xi].stacked = True
+        var y = 1 + h
+        for k in below:
+            y -= bands[1]
+            self.wins[k].x = 0
+            self.wins[k].y = y
+            self.wins[k].w = W
+            self.wins[k].h = bands[1]
+            self.wins[k].stacked = True
+        return True
 
     def half_rect(self, i: Int, right: Bool) -> Tuple[Int, Int, Int, Int]:
         """Classic layout, zoom's middle step: the left or right half of the desk."""

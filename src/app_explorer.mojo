@@ -1,4 +1,5 @@
 """The file explorer window: the project's files as a tree at the left edge."""
+from responsive import explorer_width, outline_width, docpane_width
 from glyphs import GLYPHS_NERD
 from std.collections import List, Dict
 from std.time import perf_counter_ns
@@ -79,7 +80,7 @@ __extension App:
                     self.wins[i].w += w
             self.layout_sync()
             return
-        var w = max(20, min(30, self.scr.w // 4))
+        var w = explorer_width(self.scr.w)
         var h = self.desk_h()
         var mi = self.msg_index()
         if mi >= 0:

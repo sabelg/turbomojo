@@ -1,4 +1,5 @@
 """The Outline window: the symbols of the file being edited, as a tree to jump from."""
+from responsive import explorer_width, outline_width, docpane_width
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
@@ -75,7 +76,7 @@ __extension App:
                 if self.wins[i].kind == WK_EDITOR and self.wins[i].x + self.wins[i].w == x:
                     self.wins[i].w = self.scr.w - self.wins[i].x
             return
-        var w = max(22, min(36, self.scr.w // 3))
+        var w = outline_width(self.scr.w)
         var x = self.scr.w - w
         var h = self.desk_h()
         var mi = self.msg_index()

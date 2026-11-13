@@ -84,6 +84,7 @@ struct Window(Copyable, Movable):
     var sw: Int
     var sh: Int
     var zoomed: Bool
+    var stacked: Bool       # a side pane put above / below the editors (narrow terminal, tiled)
     var half: Bool          # zoom's middle step: half the desk (classic) or half the room (tiled)
     var half_right: Bool    #   (classic: the right half)
     var sel: Bool
@@ -153,6 +154,7 @@ struct Window(Copyable, Movable):
         self.sh = h
         self.zoomed = False
         self.half = False
+        self.stacked = False
         self.half_right = False
         self.sel = False
         self.ar = 0

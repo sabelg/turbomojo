@@ -10,6 +10,7 @@ and Describe symbol put their answers here while the pane is open, looking furth
 (Ctrl-F1 runs `mojo doc` if needed). Enter in the pane opens the page in the full
 documentation viewer, for study; Esc goes back to the code.
 """
+from responsive import explorer_width, outline_width, docpane_width
 from std.collections import List
 from appstate import *
 from util import *
@@ -49,7 +50,7 @@ __extension App:
         var oi = self.outline_index()
         if oi >= 0:
             right = self.wins[oi].x
-        var w = max(30, min(56, self.scr.w // 3))
+        var w = docpane_width(self.scr.w)
         var x = right - w
         if x < 20:
             self.say("The screen is too narrow for the docs pane")

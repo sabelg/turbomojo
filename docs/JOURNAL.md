@@ -4841,3 +4841,29 @@ lab hotkey use from 28.9% to 66-94%; menu labels alone did not).
   boosted (they go straight to full, as before); not tried by hand in a terminal.
 - Gate: scripts/check.sh printed CHECK OK on the second run (104 test files, 1163 tests, 857 s).
 
+## 2026-11-12 · P10-16c stacking on narrow terminals · done
+- What changed: `stack_side_panes(h)` (src/app_layout.mojo), called by layout_sync
+  in the tiled layout: below STACK_W (90) columns the explorer becomes a band across
+  the top and the docs pane and the outline bands across the bottom, each the full
+  width (`Window.stacked`), and the panes are placed between them; `band_heights`
+  (src/responsive.mojo) gives each band max(5, h / (n + 2)) rows, shrinking to
+  leave the editors EDITOR_MIN_ROWS (6) and not stacking at all when even 5-row
+  bands would not. Wide again, stacked windows go back beside the editors at the
+  widths they are opened with - `explorer_width`, `outline_width`, `docpane_width`,
+  now shared with the code that opens them. Zoomed and half-zoomed panes use the
+  room between the bands. With this P10-16 (a-c) is done. README row "Small
+  terminals".
+- Verified: tests/test_stacking.mojo (3 tests): band heights for 28, 16, 12, 17 and
+  20 rows; at 80x30 with the explorer and the outline open in the tiled layout:
+  the explorer at row 1 and the outline below, both 80 wide, every shown editor
+  0..80 wide exactly between them, at least 6 rows, nothing overlapping, the
+  explorer's title drawn on row 1; resized to 140 the panes are beside again at
+  their usual widths with the editors between, not overlapping; at 90 columns, at
+  80x14 (no room) and in the classic layout nothing is stacked. Mutants (never
+  stacking, never going back, the editors not moved below the top band) fail.
+- Not done / unverified: the bottom panel (Message, Problems) stays where it is,
+  under everything; the agent panel and plugin panels are not stacked; vertical
+  splits between editors stay side by side on a narrow terminal (only the side
+  panes stack); band heights cannot be dragged; not tried by hand.
+- Gate: scripts/check.sh printed CHECK OK (105 test files, 1166 tests, 840 s).
+
