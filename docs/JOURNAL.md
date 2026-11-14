@@ -6258,3 +6258,37 @@ Not done: search as you type (incsearch), command-line history and Tab completio
 :s's c flag (confirm), ~ in patterns and replacements, :g, :e! and :qa! (:qa asks
 instead), ranges on other commands than :s :d :y, `:` as a motion after an operator
 (d: cancels). Registers are P12-04.
+
+## 2026-11-14 · P12-04 Registers and the clipboard (vim) · done
+
+- Gate: CHECK OK (136 test files, 1300 tests, 1096 s).
+
+What changed: `"x` before a delete, change, copy or put names a register (src/vim.mojo,
+src/app_vim.mojo): "a to "z, "A to "Z adding to them (whole lines stay whole lines -
+characters added to lines become a line, lines added to characters start on a line of
+their own), "0 the last copy made without a name (a delete leaves it), "_ the black
+hole, "" the unnamed one, and "+ / "* the clipboard: TurboMojo's own (Ctrl-V pastes it;
+a put from "+ takes it, as whole lines when it ends with a line break) and the
+terminal's, with OSC 52 as TurboMojo's Copy sends it (over SSH too). The unnamed register
+holds what the last command stored (all of "a after "A) and TurboMojo's clipboard
+follows it, as before. A name works with counts ("a2p), operators and text objects
+("adiw), Visual mode (before the selection or after it) and `.`; Esc, or a command that
+stores nothing, drops it. "z with nothing in it: E353; "? : not a register.
+`VimState.clip_sent` counts what "+ sent to the terminal - the bytes themselves go out at
+once (Terminal.flush) and no test could see them.
+
+Verified: tests/test_vim_regs.mojo, 5 tests - named registers with copies, deletes,
+text objects, counts and puts; adding to them, all four ways of characters and lines;
+"0 against a delete and a named copy; the black hole storing and putting nothing;
+"+ and "* putting TurboMojo's clipboard, "+y setting it and counting one OSC 52 send
+(and a copy without "+ none); Visual mode both ways; `.` keeping the register; Esc and
+a motion dropping it; the reference's row. The other three vim test files pass with it.
+- Mutation checks: 18 mutants. 14 caught on the first run; of the 4 that survived,
+  3 were missing tests (the unnamed register after "A, "0 after a named copy, a name
+  not used by a motion), now caught. The 4th - "" stored as the name " rather than
+  as none - behaved the same, so the special case is gone ("" with nothing in it now
+  says vim's E353).
+
+Not done: the numbered registers "1 to "9 and "- (small deletes), the read-only ones
+(". ": "% "/), :registers, Ctrl-R in Insert mode, and reading the system clipboard ("+p
+puts TurboMojo's clipboard: a terminal does not hand its clipboard to a program).

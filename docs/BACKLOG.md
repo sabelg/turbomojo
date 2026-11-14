@@ -230,5 +230,5 @@ The Turbo, Modern and Emacs keymaps stay as they are.
 - [x] P12-01 Modal editing core: `ui.keymap = "vim"` (and Options > Keys); Normal, Insert and Visual (characters and lines) modes; the mode in the status line; the cursor a block in Normal and a bar in Insert (DECSCUSR, where the terminal has it); Esc and i a I A o O v V
 - [x] P12-02 Motions and operators: h j k l w b e W B E 0 ^ $ gg G f t F T ; , % { } with counts; d c y p P x r J > < with motions and counts (dd, 3dw, cw, yy); text objects iw aw i" a" i( a( i{ ip; `.` repeats the last change; u and Ctrl-R undo and redo
 - [x] P12-03 Search and commands: / ? n N * #; `:w :q :wq :x :q! :e FILE :N :s/a/b/g :%s/a/b/g`, and `:` with TurboMojo's own commands (`:build`, `:run`, the command palette's names)
-- [ ] P12-04 Registers and the clipboard: the unnamed register, "a-"z, "0, and "+ / "* through the clipboard TurboMojo already uses (OSC 52 over SSH)
+- [x] P12-04 Registers and the clipboard: the unnamed register, "a-"z, "0, and "+ / "* through the clipboard TurboMojo already uses (OSC 52 over SSH)
 - [ ] P12-05 A "Vim" preset (Options > Presets, and the first-run question): the Modern look, the vim keys, relative line numbers (`editor.relative_numbers`, new); the menu bar still reachable with F10 and Alt

@@ -75,10 +75,16 @@ __extension App:
         self.vim.op_n = 0
         self.vim.pend = 0
         self.vim.count = 0
+        self.vim.regname = 0
 
     def vim_done(mut self):
         """After a key: when the command is whole (Normal mode, nothing waiting), its
         keys are kept for . if it changed the text."""
+        if self.vim.reg_wait:
+            self.vim.reg_wait = False                   # ("x: its command comes next)
+            return
+        if self.vim.mode == VM_NORMAL and self.vim.op == 0 and self.vim.pend == 0 and not self.vim.cl_on:
+            self.vim.regname = 0                        # (a register nothing used)
         if self.vim.mode != VM_NORMAL or self.vim.op != 0 or self.vim.pend != 0 or self.vim.count != 0 or self.vim.cl_on:
             return
         if self.vim.changed and not self.vim.replaying:
@@ -122,11 +128,18 @@ __extension App:
         if not self.vim.replaying:
             self.vim.cur.append(k)
         var p = self.vim.pend
-        if is_find(p) or p == 114:
-            # f t F T r: the next key is the character itself
+        if is_find(p) or p == 114 or p == 34:
+            # f t F T r ": the next key is the character itself
             self.vim.pend = 0
             if base >= K_BASE:
                 self.vim_cancel()
+            elif p == 34:
+                if (base >= 97 and base <= 122) or (base >= 65 and base <= 90) or base == 48 or base == 43 or base == 42 or base == 95 or base == 34:
+                    self.vim.regname = base     # ("" is the unnamed one)
+                    self.vim.reg_wait = True
+                else:
+                    self.vim_cancel()
+                    self.say("Not a register: \"" + chr(base))
             elif p == 114:
                 self.vim_replace(t, base)
             else:
@@ -292,9 +305,11 @@ __extension App:
             self.vim.pend = 0
             var span = vim_object(self.wins[t].buf, self.wins[t].cr, self.wins[t].cc, p == CH_I, ch)
             var op = self.vim.op
+            var name = self.vim.regname
             self.vim_cancel()
             if not span.ok:
                 return
+            self.vim.regname = name                 # ("adiw)
             self.vim_apply(t, op, span)
             return
         if self.vim.op != 0:
@@ -314,6 +329,8 @@ __extension App:
         if ch == 58:                                # :
             self.vim.count = 0
             self.vim_cmdline_start(t, ch)
+        elif ch == 34:                              # ": a register's name follows
+            self.vim.pend = 34
         elif is_operator(ch):
             self.vim.op = ch
             self.vim.op_n = self.vim.count
@@ -449,12 +466,43 @@ __extension App:
         self.vim_settle(t)
 
     # ------------------------------------------------------------ the changes
-    def vim_store(mut self, text: List[Int], lines: Bool):
-        """What was deleted or copied: vim's register, and TurboMojo's clipboard (Ctrl-V
-        pastes it too)."""
-        self.vim.reg = text.copy()
-        self.vim.reg_lines = lines
-        self.clipboard = text.copy()
+    def vim_store(mut self, text: List[Int], lines: Bool, yank: Bool):
+        """What was deleted or copied (`yank`): into the register "x named before the
+        command - "a to "z, "A to "Z adding to it, "+ and "* the clipboard (and the
+        terminal's, with OSC 52), "_ nowhere - and the unnamed one, which TurboMojo's
+        clipboard follows (Ctrl-V pastes it too); a copy also goes to "0."""
+        var name = self.vim.regname
+        self.vim.regname = 0
+        if name == 95:                                  # "_: the black hole
+            return
+        var t = text.copy()
+        var l = lines
+        if name >= 97 and name <= 122:
+            self.vim.regs[name - 97] = text.copy()
+            self.vim.regs_lines[name - 97] = lines
+        elif name >= 65 and name <= 90:
+            var i = name - 65
+            if self.vim.regs_lines[i] and not lines:
+                for c in text:
+                    self.vim.regs[i].append(c)
+                self.vim.regs[i].append(10)             # (whole lines stay whole lines)
+            else:
+                if lines and not self.vim.regs_lines[i] and len(self.vim.regs[i]) > 0:
+                    self.vim.regs[i].append(10)
+                for c in text:
+                    self.vim.regs[i].append(c)
+            self.vim.regs_lines[i] = self.vim.regs_lines[i] or lines
+            t = self.vim.regs[i].copy()
+            l = self.vim.regs_lines[i]
+        elif name == 43 or name == 42:                  # "+ "*
+            self.osc52(text.copy())
+            self.vim.clip_sent += 1
+        if yank and (name == 0 or name == 34):
+            self.vim.reg0 = text.copy()
+            self.vim.reg0_lines = lines
+        self.vim.reg = t.copy()
+        self.vim.reg_lines = l
+        self.clipboard = t^
 
     def vim_span_text(self, t: Int, s: VimSpan) -> List[Int]:
         if not s.lines:
@@ -476,7 +524,7 @@ __extension App:
                 self.say(String(n_lines) + " lines " + (">" if op == OP_GT else "<") + "ed 1 time")
             return
         var text = self.vim_span_text(t, s)
-        self.vim_store(text, s.lines)
+        self.vim_store(text, s.lines, op == OP_Y)
         if op == OP_Y:
             if s.lines:
                 self.wins[t].cr = s.r1
@@ -580,17 +628,38 @@ __extension App:
     def vim_put(mut self, t: Int, after: Bool):
         """p P: the register after / before the cursor - whole lines below / above."""
         var n = self.vim.take_count()
-        if len(self.vim.reg) == 0:
-            self.say("Nothing to put yet")
+        var name = self.vim.regname
+        self.vim.regname = 0
+        var src = self.vim.reg.copy()
+        var src_lines = self.vim.reg_lines
+        if name == 48:                                  # "0
+            src = self.vim.reg0.copy()
+            src_lines = self.vim.reg0_lines
+        elif name >= 97 and name <= 122:
+            src = self.vim.regs[name - 97].copy()
+            src_lines = self.vim.regs_lines[name - 97]
+        elif name >= 65 and name <= 90:
+            src = self.vim.regs[name - 65].copy()
+            src_lines = self.vim.regs_lines[name - 65]
+        elif name == 43 or name == 42:                  # "+ "*: TurboMojo's clipboard
+            src = self.clipboard.copy()
+            src_lines = len(src) > 0 and src[len(src) - 1] == 10
+        elif name == 95:
+            return
+        if len(src) == 0:
+            if name == 0:
+                self.say("Nothing to put yet")
+            else:
+                self.say("E353: Nothing in register " + chr(name))
             return
         var text = List[Int]()
         for _ in range(n):
-            for ch in self.vim.reg:
+            for ch in src:
                 text.append(ch)
         var g = self.wins[t].new_group()
         var r = self.wins[t].cr
         self.vim.changed = True
-        if self.vim.reg_lines:
+        if src_lines:
             var row = r
             if not after:
                 _ = self.wins[t].buf.insert(r, 0, text, r, self.wins[t].cc, g)
@@ -654,6 +723,8 @@ __extension App:
         if ch == 58:                                  # : - with '<,'> for the selection's lines
             self.vim.count = 0
             self.vim_cmdline_start(t, ch)
+        elif ch == 34:                                # "x
+            self.vim.pend = 34
         elif ch == 118 or ch == 86:                     # v V: the other kind, or back to Normal
             var want = VM_VISUAL if ch == 118 else VM_VLINE
             if self.vim.mode == want:

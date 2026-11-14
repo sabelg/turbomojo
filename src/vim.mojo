@@ -53,6 +53,13 @@ struct VimState(Copyable, Movable):
     var cl_v2: Int
     var s_pat: List[Int]    # the last search, in vim's syntax (n N repeat it; :s uses it)
     var s_fwd: Bool         # ...forwards (/ *) or backwards (? #)
+    var regname: Int        # the register "x names for the command being typed (0: the unnamed one)
+    var reg_wait: Bool      # ...just named: the command is still to come
+    var regs: List[List[Int]]   # "a to "z
+    var regs_lines: List[Bool]
+    var reg0: List[Int]     # "0: what was copied (yanked) last - a delete leaves it
+    var reg0_lines: Bool
+    var clip_sent: Int      # how many times "+ / "* sent text to the terminal's clipboard
 
     def __init__(out self):
         self.mode = VM_NORMAL
@@ -78,6 +85,16 @@ struct VimState(Copyable, Movable):
         self.cl_v2 = -1
         self.s_pat = List[Int]()
         self.s_fwd = True
+        self.regname = 0
+        self.reg_wait = False
+        self.regs = List[List[Int]]()
+        self.regs_lines = List[Bool]()
+        for _ in range(26):
+            self.regs.append(List[Int]())
+            self.regs_lines.append(False)
+        self.reg0 = List[Int]()
+        self.reg0_lines = False
+        self.clip_sent = 0
 
     def counted(self) -> Bool:
         """Was a count typed (before the operator or after it)?"""
@@ -132,6 +149,7 @@ def vim_keys_markdown() -> String:
         ["r", "Normal", "Replace the character under the cursor with the next one typed"],
         ["J", "Normal, Visual", "Join the line and the next (the lines selected)"],
         ["p P", "Normal", "Put what was deleted or copied after / before the cursor (whole lines: below / above)"],
+        ["\"x", "Normal, Visual", "The register for the next delete, copy or put: \"a to \"z (\"A to \"Z add to it), \"0 the last copy, \"+ \"* the clipboard, \"_ none"],
         [".", "Normal", "Repeat the last change"],
         ["u Ctrl-R", "Normal", "Undo / redo"],
         ["v V", "Normal, Visual", "Visual mode: characters / whole lines (again: back to Normal)"],

@@ -10,7 +10,8 @@
   and Alt keys, the F-keys and the menus stay TurboMojo's in every mode. / ? n N * #
   search with vim's patterns, and `:` opens vim's command line on the status row -
   :w :q :wq :x :e :42 :%s/a/b/g and TurboMojo's own commands by name (:build, :run).
-  Registers follow in this release.
+  Registers too: "a to "z ("A adds), "0 the last copy, "_ none, and "+ the clipboard,
+  which reaches the terminal's clipboard over SSH as well.
 
 ## 2.2: ready for other people
 

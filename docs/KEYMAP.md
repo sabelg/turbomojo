@@ -222,6 +222,7 @@ vim's. A number before a command repeats it (3j, 2dd, 3.).
 | r | Normal | Replace the character under the cursor with the next one typed |
 | J | Normal, Visual | Join the line and the next (the lines selected) |
 | p P | Normal | Put what was deleted or copied after / before the cursor (whole lines: below / above) |
+| "x | Normal, Visual | The register for the next delete, copy or put: "a to "z ("A to "Z add to it), "0 the last copy, "+ "* the clipboard, "_ none |
 | . | Normal | Repeat the last change |
 | u Ctrl-R | Normal | Undo / redo |
 | v V | Normal, Visual | Visual mode: characters / whole lines (again: back to Normal) |

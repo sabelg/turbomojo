@@ -241,7 +241,9 @@ repeat the last change, i a I A o O into Insert mode (a bar cursor), v and V for
 Visual selection, and a number before a command to repeat it (3j, 2dd). / and ? search
 (n N again, * # the word under the cursor), and : opens vim's command line on the status
 row: :w, :q, :wq, :e FILE, :42, :%s/old/new/g, and TurboMojo's own commands by name
-(:build, :run). Esc goes back to Normal. F1 lists every vim key.
+(:build, :run). "a to "z before a delete, copy or put name a register ("A adds to it),
+"0 holds the last copy, and "+ is the clipboard - TurboMojo's, which Ctrl-V pastes, and
+the terminal's (over SSH too). Esc goes back to Normal. F1 lists every vim key.
 Ctrl and Alt keys, the F-keys and the menus are TurboMojo's in every mode, so Ctrl-S
 saves and F9 builds as before. Options > Screen-reader mode gives a plain screen with the cursor on
 what has the focus. The README lists every setting.
