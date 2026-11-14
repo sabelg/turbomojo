@@ -6324,3 +6324,21 @@ in the gutter with the cursor on line 4, F10 opening the File menu.
 Not done: vim's `numberwidth`, relative numbers alone without the cursor's absolute
 number (vim's relativenumber without number), and a :set command for it (`:set` is not
 TurboMojo's way of changing settings; Options is).
+
+## 2026-11-14 · Summary (Phase 12, a vim interface)
+
+- Phase 12 (P12-01 to P12-05, asked for by the user) is done: Options > Keys: Vim gives
+  the editor vim's Normal, Insert and Visual modes - motions, operators with counts and
+  text objects, `.`, undo and redo, / ? n N * #, the `:` command line (:w :q :wq :x :e
+  :s :%s and TurboMojo's commands by name), registers with the clipboard over OSC 52 -
+  and a Vim preset (also "Vim start" in the first run's question) with relative line
+  numbers. Ctrl and Alt keys, the F-keys and the menus stay TurboMojo's in every mode.
+- The backlog: 164 tasks [x], 2 [!] (P1-20, no Mojo tree-sitter grammar; P11-12, macOS
+  needs a Mac). The last gate: CHECK OK, 137 test files, 1305 tests, in 1146 s.
+- Not pushed: 9 commits on `roadmap` after `origin/main` (P11-15 to P12-05 and the 2.2.0
+  release commit) and the local tag v2.2.0. What's new says "2.3 (in progress)": calling
+  it 2.3.0, and pushing, are the user's decisions.
+- The vim interface's limits are listed in the README (no macros, marks, :set or
+  .vimrc; no search as you type; no numbered registers).
+- The runner has nothing left to do; its loop stays armed and each wake-up only checks
+  docs/BACKLOG.md for new tasks.
