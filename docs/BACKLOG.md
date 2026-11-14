@@ -219,7 +219,7 @@ in the Modular forum [1, 2, 4, 16, 17].
 - [x] P11-14 The documentation of what a program uses (asked by the user with P11-13, 2026-11-13): F1 / Ctrl-F1 on a name of a Python library the file imports (`np.zeros` with `var np = Python.import_module("numpy")`) shows pydoc's text from the project's Python; the language server runs in the project's environment, so the Mojo packages installed there (which come compiled) have their documentation on hover and Ctrl-F1, completion and errors; an install restarts it
 - [x] P11-15 Install and documentation in the running IDE (asked by the user, 2026-11-13): with scripts/tui-test.sh, the real TurboMojo and the real pixi in a scratch project - a file that imports numpy fails, the offer, Install, it runs; F1 on `np.zeros`; hover on a MAX name with the project's language server. Fix what breaks
 - [x] P11-16 The language server follows the project: when the file in front belongs to another pixi environment than the running server's, the server is started again for it (its packages, its include paths)
-- [ ] P11-17 Release 2.2: TurboMojo 2.2.0 (version, What's new, CHANGELOG, the conda package built and its tests run); the tag is made here and pushed only with the user's word
+- [x] P11-17 Release 2.2: TurboMojo 2.2.0 (version, What's new, CHANGELOG, the conda package built and its tests run); the tag is made here and pushed only with the user's word
 
 ## Phase 12: A vim interface (v2.3)
 

@@ -1,6 +1,6 @@
 # What's new
 
-## 2.2 (in progress)
+## 2.2: ready for other people
 
 - A program that uses a library which is not installed (`unable to locate module
   'max'`, `No module named 'numpy'`): TurboMojo finds its package on the project's

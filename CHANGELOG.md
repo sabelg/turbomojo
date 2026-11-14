@@ -1,10 +1,10 @@
 # Changelog
 
 What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.md) and the
-day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.1.0;
+day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.2.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.2: Ready for other people (in progress: 1 task to go)
+## 2.2: Ready for other people - 2026-11-13
 
 - README first screen: a two-line pitch (ready to use, runs over SSH, starts in 50 ms, explains Mojo's errors), a "Why TurboMojo?" section comparing it honestly with VS Code + the Mojo extension, and the terminal-capability details moved to docs/USER_GUIDE.md [8, 9] (P11-01)
 - Pictures of the IDE made from itself: `tmide --screenshot FILE.svg` (the screen buffer as SVG, with the theme's colours) and a script that records a short demo through tmux as an asciinema cast; three screenshots (Turbo Classic, a modern theme, the docs reader) and the cast linked from the README [7] (P11-02)
@@ -21,6 +21,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - The documentation of what a program uses (asked by the user with P11-13, 2026-11-13): F1 / Ctrl-F1 on a name of a Python library the file imports (`np.zeros` with `var np = Python.import_module("numpy")`) shows pydoc's text from the project's Python; the language server runs in the project's environment, so the Mojo packages installed there (which come compiled) have their documentation on hover and Ctrl-F1, completion and errors; an install restarts it (P11-14)
 - Install and documentation in the running IDE (asked by the user, 2026-11-13): with scripts/tui-test.sh, the real TurboMojo and the real pixi in a scratch project - a file that imports numpy fails, the offer, Install, it runs; F1 on `np.zeros`; hover on a MAX name with the project's language server. Fix what breaks (P11-15)
 - The language server follows the project: when the file in front belongs to another pixi environment than the running server's, the server is started again for it (its packages, its include paths) (P11-16)
+- Release 2.2: TurboMojo 2.2.0 (version, What's new, CHANGELOG, the conda package built and its tests run); the tag is made here and pushed only with the user's word (P11-17)
 
 ## 2.1: UI clarity and calm - 2026-11-12
 

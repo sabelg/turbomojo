@@ -6112,3 +6112,20 @@ Verified:
 Not done: include paths of the first file's folder stay those of the file the server was
 started for, within a project (as before).
 
+## 2026-11-13 · P11-17 Release 2.2 · done
+
+- Gate: CHECK OK (132 test files, 1271 tests, 1002 s).
+
+What changed: version 2.2.0 in src/version.mojo, pixi.toml and recipe/recipe.yaml; What's
+new's "2.2 (in progress)" is "2.2: ready for other people" (help/whats-new.md and its
+copy in src/helpbook.mojo); CHANGELOG.md and docs/KEYMAP.md made again.
+
+Verified: `tmide --version` prints "TurboMojo 2.2.0 (linux)"; `pixi run package` built
+build/conda/linux-aarch64/turbomojo-2.2.0-he8cfe8b_0.conda (4.3 MiB) in 49 s and its test
+(`tmide --version` in a fresh environment) passed; test_release checks the version is the
+same everywhere.
+
+Not done: the tag v2.2.0 is made here only after the gate, and pushed - like every push -
+only with the user's word. The package is not published to a channel (the user's call).
+Only linux-aarch64 was built (this machine).
+
