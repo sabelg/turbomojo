@@ -6062,3 +6062,27 @@ Not done / unverified:
   text objects, search, `:` commands, registers, a Vim preset), not Vimscript or plugins.
 - A README recording was suggested too, but P11-02 already made one (an asciinema cast,
   linked from the README); dropped.
+
+## 2026-11-13 · P11-15 Install and documentation in the running IDE · done
+
+- Gate: not run (no code changed; the last gate, for P11-14, was CHECK OK).
+
+What was done (scripts/tui-test.sh: build/tmide in a private tmux, the real pixi, scratch
+projects in $TMPDIR with only Mojo as a dependency, linux-aarch64):
+- A program with `var np = Python.import_module("numpy")`, Ctrl-F9: the run ends with
+  "No module named 'numpy'", the box "Install numpy ... numpy (a Python package) is on the
+  project's channels ... then run again?"; Install: `pixi add numpy`, the program runs
+  again and prints "sum 0.0"; numpy is in pixi.toml.
+- F1 on `zeros` in `np.zeros(3)`: "numpy.zeros - Python's documentation (pydoc), from
+  <project>/.pixi/envs/default/bin/python3" and numpy's docstring.
+- `from max.gpu.host import DeviceContext`, F9 in a project without max: the box "Install
+  max ... max (a Mojo package)", Install: `pixi add max`, built again (1.4 s, Success); the
+  Message page shows the build's command with the project's environment.
+- F7 (the language server) in a project with max: the server running is the project's
+  (its crash handler from the project's environment) and reports no error for the max
+  import; Ctrl-F1 on DeviceContext shows its documentation from the server.
+- A broken pixi.toml (a table twice - my own mistake while setting up) made `pixi add`
+  fail: the IDE showed pixi's error on the Message page and changed nothing.
+
+Nothing needed fixing. Not done: running the GPU program itself (it builds).
+
