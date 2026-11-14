@@ -83,9 +83,9 @@ def test_normal_moves() raises:
     assert_equal(at(app), "3:4")
     # letters do not go into the text in Normal mode
     var before = to_str(app.wins[0].buf.get_text(0, 0, 4, 4))
-    keys(app, "qQ;")
+    keys(app, "q;Q")
     assert_equal(to_str(app.wins[0].buf.get_text(0, 0, 4, 4)), before)
-    assert_true(app.status.startswith("Not a vim command: ;"), app.status)
+    assert_true(app.status.startswith("Not a vim command: Q"), app.status)
     assert_equal(app.vim.mode, VM_NORMAL)
 
 

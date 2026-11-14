@@ -4,9 +4,10 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.2.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
-## 2.3: A vim interface (in progress: 4 tasks to go)
+## 2.3: A vim interface (in progress: 3 tasks to go)
 
 - Modal editing core: `ui.keymap = "vim"` (and Options > Keys); Normal, Insert and Visual (characters and lines) modes; the mode in the status line; the cursor a block in Normal and a bar in Insert (DECSCUSR, where the terminal has it); Esc and i a I A o O v V (P12-01)
+- Motions and operators: h j k l w b e W B E 0 ^ $ gg G f t F T ; , % { } with counts; d c y p P x r J > < with motions and counts (dd, 3dw, cw, yy); text objects iw aw i" a" i( a( i{ ip; `.` repeats the last change; u and Ctrl-R undo and redo (P12-02)
 
 ## 2.2: Ready for other people - 2026-11-13
 

@@ -3,11 +3,12 @@
 ## 2.3 (in progress): a vim interface
 
 - Options > Keys: Vim (`keymap = "vim"`) gives the editor vim's modes. Normal mode
-  (NORMAL in the status line, a block cursor) has h j k l, x, i a I A o O, v and V
-  for a Visual selection that d deletes and y copies, and counts such as 3j; Esc goes
-  back from Insert mode (a bar cursor). Ctrl and Alt keys, the F-keys and the menus
-  stay TurboMojo's in every mode. More of vim (words, operators, search, `:`
-  commands, registers) follows in this release.
+  (NORMAL in the status line, a block cursor) has vim's motions (w b e, 0 ^ $, gg G,
+  f t ; ,, %, { } and the rest), its operators with motions, counts and text objects
+  (dw, 3dd, cw, yy, di(, ci", dap), x r J p P, `.` to repeat a change, u and Ctrl-R,
+  and Visual mode with v and V; Esc goes back from Insert mode (a bar cursor). Ctrl
+  and Alt keys, the F-keys and the menus stay TurboMojo's in every mode. Search, `:`
+  commands and registers follow in this release.
 
 ## 2.2: ready for other people
 

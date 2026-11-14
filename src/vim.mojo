@@ -36,6 +36,16 @@ struct VimState(Copyable, Movable):
     var ac: Int
     var reg: List[Int]      # the unnamed register: what was deleted or yanked last
     var reg_lines: Bool     # ...whole lines (they are put on lines of their own)
+    var op: Int             # an operator waiting for its motion (d c y > <; 0: none)
+    var op_n: Int           # ...and the count typed before it (0: none)
+    var pend: Int           # a key waiting for one more: g, f t F T, r, or i / a after an operator
+    var f_kind: Int         # the last f t F T, for ; and , (0: none yet)
+    var f_ch: Int
+    var cur: List[Int]      # the keys of the command being typed (for .)
+    var dot: List[Int]      # the keys of the last change, which . types again
+    var changed: Bool       # the command being typed changes the text
+    var replaying: Bool     # . is typing
+    var ins_group: Int      # the undo group an Insert started by a command joins (0: none)
 
     def __init__(out self):
         self.mode = VM_NORMAL
@@ -44,6 +54,28 @@ struct VimState(Copyable, Movable):
         self.ac = 0
         self.reg = List[Int]()
         self.reg_lines = False
+        self.op = 0
+        self.op_n = 0
+        self.pend = 0
+        self.f_kind = 0
+        self.f_ch = 0
+        self.cur = List[Int]()
+        self.dot = List[Int]()
+        self.changed = False
+        self.replaying = False
+        self.ins_group = 0
+
+    def counted(self) -> Bool:
+        """Was a count typed (before the operator or after it)?"""
+        return self.count > 0 or self.op_n > 0
+
+    def total_count(mut self) -> Int:
+        """The count for an operator's motion - the two counts multiplied (2d3w is six
+        words) - used up."""
+        var n = max(self.op_n, 1) * max(self.count, 1)
+        self.count = 0
+        self.op_n = 0
+        return n
 
     def take_count(mut self) -> Int:
         """The count for the command being run (1 when none was typed); it is used up."""
@@ -54,16 +86,39 @@ struct VimState(Copyable, Movable):
 
 def vim_keys_markdown() -> String:
     """The vim keymap's section of docs/KEYMAP.md."""
-    var out = String("\n## Vim (Options > Keys: Vim)\n\nIn Normal and Visual mode vim has the plain keys; Ctrl and Alt keys, the F-keys and\nthe menus are TurboMojo's (the Modern keys) in every mode. In Insert mode only Esc is\nvim's. A number before a command repeats it (3j).\n\n| Key | Mode | What it does |\n|---|---|---|\n")
+    var out = String("\n## Vim (Options > Keys: Vim)\n\nIn Normal and Visual mode vim has the plain keys; Ctrl and Alt keys, the F-keys and\nthe menus are TurboMojo's (the Modern keys) in every mode. In Insert mode only Esc is\nvim's. A number before a command repeats it (3j, 2dd, 3.).\n\n| Key | Mode | What it does |\n|---|---|---|\n")
     var rows = [
-        ["Esc", "Insert, Visual", "Back to Normal mode"],
+        ["Esc", "Insert, Visual", "Back to Normal mode (also cancels a half-typed command)"],
         ["i a", "Normal", "Insert before / after the cursor"],
         ["I A", "Normal", "Insert at the line's first character / its end"],
         ["o O", "Normal", "Open a line below / above and insert"],
         ["h j k l", "Normal, Visual", "Left, down, up, right (also the arrows, Backspace, Space, Enter)"],
-        ["x", "Normal", "Delete the character under the cursor"],
+        ["w b e", "Normal, Visual", "Next word, back a word, end of the word"],
+        ["W B E", "Normal, Visual", "The same for words between blanks"],
+        ["0 ^ $", "Normal, Visual", "The line's start, its first character, its end"],
+        ["+ - Enter", "Normal, Visual", "The first character of the next / the line before"],
+        ["gg G", "Normal, Visual", "The first / the last line (with a count: that line)"],
+        ["f t F T", "Normal, Visual", "To / just before the next character typed (F T: to the left)"],
+        ["; ,", "Normal, Visual", "The last f t F T again / the other way"],
+        ["%", "Normal, Visual", "The matching bracket"],
+        ["{ }", "Normal, Visual", "The empty line before / after the paragraph"],
+        ["d c y", "Normal", "Delete / change / copy (yank) what the motion or text object covers: dw, c$, y3j, dd, cc, yy"],
+        ["> <", "Normal", "Indent / unindent the lines the motion covers: >>, <ip"],
+        ["iw aw iW aW", "after d c y", "The word (aw: with the blanks after it)"],
+        ["i\" a\" i' a'", "after d c y", "Inside the quotes (a: with them)"],
+        ["i( a( i{ a{ i[ a[ i< a<", "after d c y", "Inside the brackets (a: with them); ib iB too"],
+        ["ip ap", "after d c y", "The paragraph (ap: with the empty lines after it)"],
+        ["x X", "Normal", "Delete the character under / before the cursor"],
+        ["D C Y", "Normal", "d$, c$, yy"],
+        ["s S", "Normal", "Change the character / the line"],
+        ["r", "Normal", "Replace the character under the cursor with the next one typed"],
+        ["J", "Normal, Visual", "Join the line and the next (the lines selected)"],
+        ["p P", "Normal", "Put what was deleted or copied after / before the cursor (whole lines: below / above)"],
+        [".", "Normal", "Repeat the last change"],
+        ["u Ctrl-R", "Normal", "Undo / redo"],
         ["v V", "Normal, Visual", "Visual mode: characters / whole lines (again: back to Normal)"],
-        ["d x y", "Visual", "Delete / delete / copy the selection"],
+        ["o", "Visual", "To the other end of the selection"],
+        ["d x y c > < J", "Visual", "Delete, delete, copy, change, indent, unindent, join the selection"],
     ]
     for r in rows:
         out += "| " + String(r[0]) + " | " + String(r[1]) + " | " + String(r[2]) + " |\n"

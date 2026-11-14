@@ -234,9 +234,12 @@ Contrast, Hacker Matrix, Terminal ANSI - your terminal's own colours -, Terminal
 themes are TOML files in `~/.config/turbomojo/themes/`. Options > Keys picks the keymap -
 Modern, Turbo (WordStar, as in Turbo C++), Emacs or Vim - and `[keys]` in the config file
 changes single keys. With Vim the editor has vim's modes: Normal mode (the status line
-says NORMAL, the cursor is a block) takes the plain keys as vim commands - h j k l, x,
-i a I A o O into Insert mode (a bar cursor), v and V for a Visual selection that d or y
-cuts or copies, a number before a command to repeat it - and Esc goes back to Normal.
+says NORMAL, the cursor is a block) takes the plain keys as vim commands: the motions
+(h j k l, w b e, 0 ^ $, gg G, f t and ; , , %, { }), the operators d c y > < with a
+motion or a text object (dw, c$, yy, di(, ci", dap), x r J p P, u and Ctrl-R, `.` to
+repeat the last change, i a I A o O into Insert mode (a bar cursor), v and V for a
+Visual selection, and a number before a command to repeat it (3j, 2dd). Esc goes back
+to Normal. F1 lists every vim key.
 Ctrl and Alt keys, the F-keys and the menus are TurboMojo's in every mode, so Ctrl-S
 saves and F9 builds as before. Options > Screen-reader mode gives a plain screen with the cursor on
 what has the focus. The README lists every setting.

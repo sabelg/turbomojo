@@ -55,7 +55,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_terminal.mojo` | The integrated terminal: a shell (Window > Terminal) and the program Run starts, each in a window of its own at the bottom, on a pty with libghostty-vt keeping the screen. |
 | `src/app_tests.mojo` | The test explorer: the project's TestSuite files and their tests, run by file or one at a time, with the place of each failure (see testexp.mojo). |
 | `src/app_tips.mojo` | The tips of src/tips.mojo in the IDE: the editor's keys and the Find dialog feed the rules; a tip comes as a notice, so while you type it waits for the pause (P7-12), and a screen reader hears it then. |
-| `src/app_vim.mojo` | The vim interface's keys (Phase 12; see vim.mojo): Normal, Insert and Visual modes in front of TurboMojo's own bindings. |
+| `src/app_vim.mojo` | The vim interface's keys (Phase 12; see vim.mojo and vim_motion.mojo): Normal, Insert and Visual modes in front of TurboMojo's own bindings. |
 | `src/app_watch.mojo` | Reacting to files that were changed by another program while open in the IDE. |
 | `src/appstate.mojo` | Application state: the App struct, its fields and small shared helpers. |
 | `src/breakpoints.mojo` | Breakpoints: where the debugger is to stop. |
@@ -147,6 +147,7 @@ struct of `appstate.mojo`, one area each.
 | `src/util.mojo` | Small helpers: UTF-8 codecs, byte buffers, processes and the filesystem. |
 | `src/version.mojo` | TurboMojo's version: the one place it is written (the help book, the About box, `tmide --version`, the What's new notice and the conda package all take it from here). |
 | `src/vim.mojo` | The vim interface (Phase 12): `ui.keymap = "vim"`. |
+| `src/vim_motion.mojo` | The vim interface's motions and text objects (P12-02), worked out on the text alone: where w b e W B E, f t F T, %, { } and the rest go from a position, and what iw aw i" a" i( a( i{ ip and their kin cover. |
 | `src/vt.mojo` | Terminal emulation for the integrated terminal: libghostty-vt (Ghostty's terminal core, MIT, from conda-forge) parses what a program writes - every CSI, SGR with 256 colours and truecolor, the alternate screen, scroll regions, cursor and keyboard modes, wide characters, scrollback - and keeps the screen. |
 | `src/watch.mojo` | Detecting changes made to files by other programs. |
 | `src/window.mojo` | Editor / message windows: state, cursor, selection and editing commands. |

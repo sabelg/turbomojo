@@ -6166,3 +6166,50 @@ the status line.
 
 Not done: words, operators with motions, text objects, `.`, u / Ctrl-R (P12-02); search
 and `:` commands (P12-03); registers (P12-04). `u` is not undo yet - Ctrl-Z is.
+
+## 2026-11-13 · P12-02 Motions and operators (vim) · done
+
+- Gate: CHECK OK (134 test files, 1288 tests, 1047 s).
+
+What changed: src/vim_motion.mojo (new) works out vim's motions and text objects on
+the text alone - w b e W B E (an empty line is a word; letters past ASCII are a word's
+letters), 0 ^ $, + - _, gg G (a count: that line), f t F T and ; , (t again does not
+stick in front of its character), % (the first bracket at or after the cursor), { },
+and iw aw iW aW, i" a" i' a' i` a` (escaped quotes skipped), i( a( ib i[ a[ i{ a{ iB
+i< a< (a block whose brackets end and start their lines: the lines inside), ip ap -
+with vim's rules for exclusive, inclusive and linewise motions (an exclusive motion
+ending at a later line's start ends at the line before; whole lines when it began at
+the indentation: d} at a paragraph's first line) and its exceptions (cw is ce; dw on a
+line's last word keeps the line break). src/app_vim.mojo is rewritten around a command
+typed in parts (count, operator, count, motion / text object / the operator again):
+d c y > < (dd cc yy >> <<, 2d3w multiplies), x X D C s S Y r J p P (whole lines below /
+above), u and Ctrl-R (with counts), `.` (the keys of the last change kept and typed
+again; a count repeats it), and d x y c > < J on a Visual selection. Insert mode
+started by a command is one undo step with the command's own change (`Window.
+forced_group`), as in vim. The keymap reference's Vim section has every key.
+
+Verified: tests/test_vim_ops.mojo, 10 tests - each motion over a text with punctuation,
+blanks, empty lines and brackets; the operators with motions, counts, text objects and
+their edge cases (the last line, the first line, nothing above, an indented next line,
+a word's last character, outside any brackets, an unknown object leaving nothing
+waiting); put, replace, join; `.` after dw, cw, A, o, x and V d; undo of a change and
+its typing in one step, redo with a count; Visual operators; the engine on a bare
+TextBuffer; the reference rows. tests/test_vim.mojo (P12-01) passes on the rewrite.
+By hand in the real IDE (tui-test, `keymap = "vim"` in a scratch config): `jwwfa` then
+`ci(z<Esc>` made `f(a, b)` `f(z)`; `jdd`, `u` and Ctrl-R deleted, restored and deleted
+the line again.
+Tracing the expected values by hand before the first run found two bugs, fixed: di(
+outside any brackets took the last pair before the cursor, and a count before Ctrl-R
+was dropped.
+- Mutation checks: 33 mutants. 30 caught - 3 of them only after new tests (the line
+  break kept by dw before an indented line, cw on a word's last character with a word
+  after it, and % passing a <). Of the other 3: the extra test for < in % was dead
+  code (bracket_kind has no < >) and is gone; J putting the cursor back on its line
+  was redundant (join_lines does it) and is gone; J restoring an undo group it found
+  set, rather than clearing it, matters only inside another grouped edit and no test
+  makes one. Esc after a half-typed command now always goes on to TurboMojo's Esc as
+  well (the only difference, untested, was whether it did).
+
+Not done: a count before i a o (3ix) does not repeat the typed text; text objects in
+Visual mode (viw); `.` after a Visual change repeats its keys, not the same-size span;
+g~ gu gU, ~, macros, marks. Search and `:` commands are P12-03, registers P12-04.
