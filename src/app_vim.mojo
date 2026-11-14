@@ -15,6 +15,7 @@ from window import WK_EDITOR, Range
 from vim import *
 from vim_motion import *
 from app_input import *
+from app_vimcmd import *
 
 comptime CH_G = 103
 comptime CH_I = 105
@@ -78,7 +79,7 @@ __extension App:
     def vim_done(mut self):
         """After a key: when the command is whole (Normal mode, nothing waiting), its
         keys are kept for . if it changed the text."""
-        if self.vim.mode != VM_NORMAL or self.vim.op != 0 or self.vim.pend != 0 or self.vim.count != 0:
+        if self.vim.mode != VM_NORMAL or self.vim.op != 0 or self.vim.pend != 0 or self.vim.count != 0 or self.vim.cl_on:
             return
         if self.vim.changed and not self.vim.replaying:
             self.vim.dot = self.vim.cur.copy()
@@ -100,6 +101,12 @@ __extension App:
                 self.vim_done()
                 return True
             return False
+        if self.vim.cl_on:                          # the command line takes every key
+            if not self.vim.replaying:
+                self.vim.cur.append(k)
+            self.vim_cmdline_key(t, k)
+            self.vim_done()
+            return True
         if k == (114 | MOD_CTRL):                   # Ctrl-R: redo
             var n = self.vim.take_count()
             self.vim_cancel()
@@ -201,6 +208,16 @@ __extension App:
         if is_motion(ch):
             self.vim_do_motion(t, ch, 0, False)
             return True
+        if ch == 47 or ch == 63:                    # / ?: the command line
+            self.vim_cmdline_start(t, ch)
+            return True
+        if ch == 110 or ch == 78:                   # n N: the last search again (N: the other way)
+            var fwd = self.vim.s_fwd if ch == 110 else not self.vim.s_fwd
+            self.vim_search_go(t, fwd, self.wins[t].cr, self.wins[t].cc)
+            return True
+        if ch == 42 or ch == 35:                    # * #: the word under the cursor
+            self.vim_star(t, ch == 42)
+            return True
         return False
 
     def vim_do_motion(mut self, t: Int, ch: Int, arg: Int, again: Bool):
@@ -294,7 +311,10 @@ __extension App:
             return
         if self.vim_motion_key(t, ch):
             return
-        if is_operator(ch):
+        if ch == 58:                                # :
+            self.vim.count = 0
+            self.vim_cmdline_start(t, ch)
+        elif is_operator(ch):
             self.vim.op = ch
             self.vim.op_n = self.vim.count
             self.vim.count = 0
@@ -631,7 +651,10 @@ __extension App:
     def vim_visual_key(mut self, t: Int, ch: Int):
         if self.vim_motion_key(t, ch):
             return
-        if ch == 118 or ch == 86:                     # v V: the other kind, or back to Normal
+        if ch == 58:                                  # : - with '<,'> for the selection's lines
+            self.vim.count = 0
+            self.vim_cmdline_start(t, ch)
+        elif ch == 118 or ch == 86:                     # v V: the other kind, or back to Normal
             var want = VM_VISUAL if ch == 118 else VM_VLINE
             if self.vim.mode == want:
                 self.vim_normal(t, False)

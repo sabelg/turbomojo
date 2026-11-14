@@ -206,6 +206,10 @@ vim's. A number before a command repeats it (3j, 2dd, 3.).
 | ; , | Normal, Visual | The last f t F T again / the other way |
 | % | Normal, Visual | The matching bracket |
 | { } | Normal, Visual | The empty line before / after the paragraph |
+| / ? | Normal, Visual | Search forwards / backwards: type the pattern on the status row, then Enter |
+| n N | Normal, Visual | The last search again / the other way |
+| * # | Normal, Visual | Search for the word under the cursor, forwards / backwards |
+| : | Normal, Visual | A command line (in Visual mode for the selection's lines): see below |
 | d c y | Normal | Delete / change / copy (yank) what the motion or text object covers: dw, c$, y3j, dd, cc, yy |
 | > < | Normal | Indent / unindent the lines the motion covers: >>, <ip |
 | iw aw iW aW | after d c y | The word (aw: with the blanks after it) |
@@ -223,3 +227,19 @@ vim's. A number before a command repeats it (3j, 2dd, 3.).
 | v V | Normal, Visual | Visual mode: characters / whole lines (again: back to Normal) |
 | o | Visual | To the other end of the selection |
 | d x y c > < J | Visual | Delete, delete, copy, change, indent, unindent, join the selection |
+
+Patterns are vim's: `\(` `\)` `\|` `\+` `\{n,m}` `\<` `\>` are operators and a bare `(` `|` `+` is the
+character; `\c` ignores case. Matches are marked until `:noh`.
+
+| Command line | What it does |
+|---|---|
+| :w | Save (:w FILE writes a copy; :w! FILE over an existing file) |
+| :q :q! | Close the window (:q! without saving) |
+| :wq :x | Save and close (:x saves only when changed) |
+| :wa :qa :wqa | Save all / quit (asking about unsaved files) / both |
+| :e FILE | Open a file |
+| :N | Go to line N (also :$, :.+3) |
+| :s/a/b/g | Replace in this line; :%s for every line, :N,M for some, :'<,'> the selection; flags g i I; & and \1 in the replacement |
+| :d :y | Delete / copy lines (with a range: :2,5d) |
+| :noh | Unmark the search's matches |
+| :NAME | One of TurboMojo's commands: :build, :run, :gotoLine, :compile.build, or its menu title |

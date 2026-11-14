@@ -6213,3 +6213,48 @@ was dropped.
 Not done: a count before i a o (3ix) does not repeat the typed text; text objects in
 Visual mode (viw); `.` after a Visual change repeats its keys, not the same-size span;
 g~ gu gU, ~, macros, marks. Search and `:` commands are P12-03, registers P12-04.
+
+## 2026-11-13 · P12-03 Search and commands (vim) · done
+
+- Gate: CHECK OK (135 test files, 1295 tests, 1090 s).
+
+What changed: src/vim_cmd.mojo (new) turns vim's "magic" patterns into TurboMojo's
+regular expressions (\( \) \| \+ \? \= \{n,m} as operators and a bare ( | + as the
+character, \< \> word boundaries, [..] as it is, \c / \C, \v), a `:s` replacement into
+the form Search.replacement expands (& \0-\9 \& \r \t, $ kept), and splits `:s/a/b/gi`
+(any delimiter, \ and the delimiter for it, flags g i I) and a command line (ranges: N,
+., $, %, '<,'>, + and - after them, two addresses with , or ;; the name, !, the
+argument). src/app_vimcmd.mojo (new) is the command line on the status row (Enter runs
+it; Esc, Ctrl-C, or Backspace on an empty line drop it; Ctrl-U empties it; the end of a
+long line shown) and runs it: / ? with counts, going round the text's end with vim's
+messages, an empty pattern for the last one, after an operator (d/foo, and . repeats
+it) and in Visual mode; n N; * # (whole word under or after the cursor); the matches
+marked until :noh; :w, :w FILE (a copy; ! over an existing file), :q, :q! (E37 when
+unsaved), :wq, :x (saves only when changed), :wa, :qa (asks), :wqa, :e FILE, :N and :$,
+:s / :%s / :N,Ms / :'<,'>s (one undo step; empty matches too, as :%s/^/# /), :d :y with
+a range, :noh, :set (says it is not there), and any other name as one of TurboMojo's
+commands - its whole name, its last part (:build, :run, :gotoLine) or its menu title
+in one word - with "Which one?" when several fit. `.` does not repeat a : command.
+
+Verified: tests/test_vim_cmd.mojo, 7 tests: the pattern and replacement translations,
+the parsers (ranges backwards, out of range, '<,'> without a selection), search in both
+directions with wrapping and counts, operators and Visual mode with search, * and #, the
+command line's keys and its drawing (cursor, long lines, the status line back after),
+:s with every flag and range, the empty-pattern case, a line break in a replacement,
+non-overlapping /g, . after :s and :d, :N :$ :d :y, TurboMojo's commands three ways and
+an ambiguous name, and files in $TMPDIR: :q refused, :w, :w FILE, :w! FILE, :e, :q!,
+:wq, :x not writing an unchanged file (changed on disk behind it, so a save would ask).
+tests/test_vim.mojo and tests/test_vim_ops.mojo pass with it.
+By hand in the real IDE (tui-test): `/pri` showed on the status row as it was typed;
+`:%s/x/y/g` changed both lines and said "2 substitutions on 2 lines".
+- Mutation checks: 37 lines tried, 3 of them not applied (mistyped targets: they
+  changed nothing and tell nothing). Of the 34 run, 24 were caught at first; the 10 that
+  survived each showed a missing test - ] first in a class, \$ in a replacement, + / -
+  without a number, * from inside a word, /g not overlapping, I over \c, :x on an
+  unchanged file, . after :d, a command line longer than the screen, a command by its
+  whole name - and all 10 are caught with the tests added.
+
+Not done: search as you type (incsearch), command-line history and Tab completion,
+:s's c flag (confirm), ~ in patterns and replacements, :g, :e! and :qa! (:qa asks
+instead), ranges on other commands than :s :d :y, `:` as a motion after an operator
+(d: cancels). Registers are P12-04.

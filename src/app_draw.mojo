@@ -2,6 +2,7 @@
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from vim import vim_mode_name, KEYMAP_VIM, VM_INSERT
+from app_vimcmd import *
 from std.ffi import external_call
 from term import (
     Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE, K_BASE, KEY_ESC, KEY_ENTER, KEY_TAB,
@@ -374,6 +375,8 @@ __extension App:
                 self.draw_completion(cx, cy)
             if self.mode == M_HOVER:
                 self.draw_hover(cx, cy)
+        if self.keymap == KEYMAP_VIM and self.vim.cl_on and self.mode == M_NORMAL:
+            self.vim_draw_cmdline()                 # vim's command line over the status row
         if self.mode == M_NORMAL and t >= 0 and self.wins[t].kind == WK_AGENT:
             self.agent_cursor(t)
         if self.mode == M_DIALOG:

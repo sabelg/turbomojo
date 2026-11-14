@@ -7,8 +7,10 @@
   f t ; ,, %, { } and the rest), its operators with motions, counts and text objects
   (dw, 3dd, cw, yy, di(, ci", dap), x r J p P, `.` to repeat a change, u and Ctrl-R,
   and Visual mode with v and V; Esc goes back from Insert mode (a bar cursor). Ctrl
-  and Alt keys, the F-keys and the menus stay TurboMojo's in every mode. Search, `:`
-  commands and registers follow in this release.
+  and Alt keys, the F-keys and the menus stay TurboMojo's in every mode. / ? n N * #
+  search with vim's patterns, and `:` opens vim's command line on the status row -
+  :w :q :wq :x :e :42 :%s/a/b/g and TurboMojo's own commands by name (:build, :run).
+  Registers follow in this release.
 
 ## 2.2: ready for other people
 

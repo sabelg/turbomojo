@@ -46,6 +46,13 @@ struct VimState(Copyable, Movable):
     var changed: Bool       # the command being typed changes the text
     var replaying: Bool     # . is typing
     var ins_group: Int      # the undo group an Insert started by a command joins (0: none)
+    var cl_on: Bool         # the command line (/ ? :) is being typed on the status row
+    var cl_kind: Int        # ...its first character: / ? or :
+    var cl_text: List[Int]
+    var cl_v1: Int          # the Visual selection's rows when : was typed there (-1: none)
+    var cl_v2: Int
+    var s_pat: List[Int]    # the last search, in vim's syntax (n N repeat it; :s uses it)
+    var s_fwd: Bool         # ...forwards (/ *) or backwards (? #)
 
     def __init__(out self):
         self.mode = VM_NORMAL
@@ -64,6 +71,13 @@ struct VimState(Copyable, Movable):
         self.changed = False
         self.replaying = False
         self.ins_group = 0
+        self.cl_on = False
+        self.cl_kind = 0
+        self.cl_text = List[Int]()
+        self.cl_v1 = -1
+        self.cl_v2 = -1
+        self.s_pat = List[Int]()
+        self.s_fwd = True
 
     def counted(self) -> Bool:
         """Was a count typed (before the operator or after it)?"""
@@ -102,6 +116,10 @@ def vim_keys_markdown() -> String:
         ["; ,", "Normal, Visual", "The last f t F T again / the other way"],
         ["%", "Normal, Visual", "The matching bracket"],
         ["{ }", "Normal, Visual", "The empty line before / after the paragraph"],
+        ["/ ?", "Normal, Visual", "Search forwards / backwards: type the pattern on the status row, then Enter"],
+        ["n N", "Normal, Visual", "The last search again / the other way"],
+        ["* #", "Normal, Visual", "Search for the word under the cursor, forwards / backwards"],
+        [":", "Normal, Visual", "A command line (in Visual mode for the selection's lines): see below"],
         ["d c y", "Normal", "Delete / change / copy (yank) what the motion or text object covers: dw, c$, y3j, dd, cc, yy"],
         ["> <", "Normal", "Indent / unindent the lines the motion covers: >>, <ip"],
         ["iw aw iW aW", "after d c y", "The word (aw: with the blanks after it)"],
@@ -122,4 +140,19 @@ def vim_keys_markdown() -> String:
     ]
     for r in rows:
         out += "| " + String(r[0]) + " | " + String(r[1]) + " | " + String(r[2]) + " |\n"
+    out += "\nPatterns are vim's: `\\(` `\\)` `\\|` `\\+` `\\{n,m}` `\\<` `\\>` are operators and a bare `(` `|` `+` is the\ncharacter; `\\c` ignores case. Matches are marked until `:noh`.\n\n| Command line | What it does |\n|---|---|\n"
+    var ex = [
+        [":w", "Save (:w FILE writes a copy; :w! FILE over an existing file)"],
+        [":q :q!", "Close the window (:q! without saving)"],
+        [":wq :x", "Save and close (:x saves only when changed)"],
+        [":wa :qa :wqa", "Save all / quit (asking about unsaved files) / both"],
+        [":e FILE", "Open a file"],
+        [":N", "Go to line N (also :$, :.+3)"],
+        [":s/a/b/g", "Replace in this line; :%s for every line, :N,M for some, :'<,'> the selection; flags g i I; & and \\1 in the replacement"],
+        [":d :y", "Delete / copy lines (with a range: :2,5d)"],
+        [":noh", "Unmark the search's matches"],
+        [":NAME", "One of TurboMojo's commands: :build, :run, :gotoLine, :compile.build, or its menu title"],
+    ]
+    for e in ex:
+        out += "| " + String(e[0]) + " | " + String(e[1]) + " |\n"
     return out^
