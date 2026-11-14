@@ -232,7 +232,7 @@ def test_typing_one_character_at_a_time() raises:
     var r = Rope()
     var m = List[Int]()
     var text = decode("def main():\n    print(\"日本語 🔥\")\n")
-    for round in range(120):
+    for _ in range(120):
         for c in text:
             var one = List[Int]()
             one.append(c)

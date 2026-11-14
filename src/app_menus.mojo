@@ -132,8 +132,10 @@ __extension App:
     def cmd_unavailable(self, cmd: Int) -> Bool:
         """Commands that can do nothing now - shown dimmed in the menus, the command
         palette and the status line. Chosen anyway, each says why (as before)."""
-        if cmd == CM_STEP_INTO or cmd == CM_STEP_OVER or cmd == CM_STEP_OUT:
+        if cmd == CM_STEP_INTO or cmd == CM_STEP_OVER or cmd == CM_STEP_OUT or cmd == CM_DEBUG_GPU_LANE:
             return self.dbg.state != DS_STOPPED
+        if cmd == CM_AGENT_REVERT:
+            return len(self.agent_snap_paths) == 0 and len(self.agent_changed_files) == 0
         if cmd == CM_PAUSE:
             return self.dbg.state != DS_RUNNING
         if cmd == CM_RESET:
@@ -164,7 +166,7 @@ __extension App:
 
     def toggle_cmds(self) -> List[Int]:
         """The commands that switch something on or off (checked() has those on)."""
-        return [CM_LINENUM, CM_RELNUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_GPU_STATUS, CM_GIT_LINEBLAME, CM_FORMAT_SAVE, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
+        return [CM_LINENUM, CM_RELNUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_GPU_STATUS, CM_GIT_LINEBLAME, CM_FORMAT_SAVE, CM_INDENT_GUIDES, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
 
     def checked(self) -> List[Int]:
         var out = List[Int]()
@@ -186,6 +188,8 @@ __extension App:
             out.append(CM_GIT_LINEBLAME)
         if self.format_on_save:
             out.append(CM_FORMAT_SAVE)
+        if self.indent_guides:
+            out.append(CM_INDENT_GUIDES)
         if self.show_ws:
             out.append(CM_SHOWWS)
         if self.soft_wrap:

@@ -50,6 +50,8 @@ from docs import *
 from docpane import infer_receiver_owner
 from pydocs import dotted_at
 from project import *
+from gpuinfo import parse_kernel_profile
+from termsession import TS_RUN
 from runconfig import *
 from trust import *
 from toml import toml_parse
@@ -347,6 +349,69 @@ __extension App:
                 _ = self.lsp_follow_project(now_ns())
         self.say("Pixi environment: " + clean)
 
+    def _max_custom_arch_dir(self) -> String:
+        var root = self.symidx_root()
+        for sub in ["architectures", "src/architectures"]:
+            var cand = join_path(root, String(sub))
+            if path_exists(cand) and is_dir(cand):
+                return shell_quote(cand)
+        return ""
+
+    def max_serve_dialog(mut self):
+        """Compile > MAX serve / benchmark: launch `max serve`, `max generate`, or
+        `max benchmark` in the integrated Run terminal."""
+        var root = self.symidx_root()
+        var ptxt = read_text(join_path(root, "pixi.toml"))
+        if ptxt.byte_length() == 0:
+            ptxt = read_text(join_path(root, "pyproject.toml"))
+        var src_txt = String("")
+        var ti = self.top_editor()
+        if ti >= 0 and not self.wins[ti].buf.large:
+            src_txt = to_str(self.wins[ti].buf.all_text())
+        var is_max = detect_max_project(ptxt, src_txt)
+        var arch_dir = self._max_custom_arch_dir()
+        var default_model = self.max_model_args if self.max_model_args.byte_length() > 0 else String("modularai/Llama-3.1-8B-Instruct-GGUF")
+        var built = build_max_commands(default_model, arch_dir)
+        self.max_presets = built[0].copy()
+        self.max_cmds = built[1].copy()
+        var items = List[String]()
+        var data = List[Int]()
+        for k in range(len(self.max_presets)):
+            items.append(self.max_presets[k])
+            data.append(k)
+        var d = Dialog(D_MAX_SERVE, "MAX Serve & Benchmark", min(80, self.scr.w - 4), 16)
+        d.lines.append(
+            ("MAX project detected in " + root) if is_max else ("Project: " + root + " (MAX CLI runs in Pixi/PATH environment)")
+        )
+        d.fields.append(Field("~M~odel ID or flags", default_model))
+        d.has_list = True
+        d.set_items(items^, data^)
+        d.list_sel = 0
+        d.focus = 1
+        d.buttons.append("~R~un in Terminal")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def max_serve_run(mut self, preset_idx: Int, model_args: String):
+        if self.term_session_busy(TS_RUN):
+            self.say("The Run terminal is already running a process - stop or close it first")
+            return
+        self.max_model_args = String(model_args.strip())
+        var built = build_max_commands(self.max_model_args, self._max_custom_arch_dir())
+        var cmds = built[1].copy()
+        var idx = max(0, min(preset_idx, len(cmds) - 1))
+        var cmd = cmds[idx]
+        var sh = self.shell_program
+        if sh.byte_length() == 0 or not path_exists(sh):
+            sh = "/bin/sh"
+        var argv = List[String]()
+        argv.append(sh)
+        argv.append("-c")
+        argv.append("echo '$ " + cmd.replace("'", "'\\''") + "'; " + cmd + "; st=$?; echo; echo \"[exit $st]\"; exit $st")
+        var root = self.symidx_root()
+        if self.term_start(TS_RUN, argv, root, "MAX"):
+            self.say("Running in terminal: " + cmd)
+
     def task_output(mut self, footer: String):
         """The running (or finished) task's output on the Message page."""
         self.panel_write(PG_MESSAGE)
@@ -378,6 +443,15 @@ __extension App:
             self.task_output("Exercise checked in " + tstr)
             self.ex_finished(String(name[byte=9:]), ok, bytes_to_str(self.job.data))
             return
+        var has_prof_summary = False
+        if name.startswith("profile:"):
+            var summary = parse_kernel_profile(bytes_to_str(self.job.data))
+            if len(summary) > 0:
+                has_prof_summary = True
+                var combined = str_bytes("\n".join(summary) + "\n\n--- Raw Profiler Output ---\n")
+                for b in self.job.data:
+                    combined.append(b)
+                self.job.data = combined^
         var result = String("Task " + name + " finished in " + tstr)
         if self.job.cancelled:
             result = "Task " + name + " cancelled after " + tstr
@@ -386,8 +460,9 @@ __extension App:
         self.task_output(result)
         var mi = self.msg_index()
         if mi >= 0:
-            # the end of the output is what one wants to see
-            self.wins[mi].cr = self.wins[mi].buf.count() - 1
+            # the end of the output is what one wants to see (except when a profile summary is at the top)
+            self.wins[mi].cr = 0 if (has_prof_summary and ok) else (self.wins[mi].buf.count() - 1)
+            self.wins[mi].top = 0 if (has_prof_summary and ok) else self.wins[mi].top
             self.wins[mi].follow = True
             if len(self.errs) > 0:
                 self.err_idx = 0

@@ -17,6 +17,7 @@ from helpbook import keymap_markdown
 from std.sys.info import CompilationTarget
 from svgshot import screen_svg
 from util import write_file, str_bytes
+from ipc import parse_file_loc, ipc_open_in_running_ide
 
 
 comptime USAGE = """Usage: tmide [FILE|FOLDER]...
@@ -30,6 +31,7 @@ FOLDER opens the Open dialog there.
   --keys          every command's keys in the three keymaps (docs/KEYMAP.md)
   --strings       the UI's English words, as a strings file to translate
   --caps          what this terminal reports it can do
+  --reuse         open FILE[:LINE[:COL]] in the running TurboMojo instance if any
   --lines         the line mode: commands and answers as lines, no screen
   --screenshot OUT.svg [--size WxH] [--theme ID] [--command NAME]... [FILE]...
                   draw the IDE without a terminal and save the screen as SVG
@@ -113,7 +115,7 @@ def shell_completions(sh: String) -> String:
             "_tmide() {\n"
             "  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n"
             "  if [[ \"$cur\" == -* ]]; then\n"
-            "    COMPREPLY=( $(compgen -W \"-h --help -V --version --keys --strings --caps --lines --screenshot --warm-docs --completions\" -- \"$cur\") )\n"
+            "    COMPREPLY=( $(compgen -W \"-h --help -V --version --keys --strings --caps --reuse --lines --screenshot --warm-docs --completions\" -- \"$cur\") )\n"
             "  else\n"
             "    COMPREPLY=( $(compgen -f -- \"$cur\") )\n"
             "  fi\n"
@@ -129,6 +131,7 @@ def shell_completions(sh: String) -> String:
             "  '--keys[Print keymap reference]' \\\n"
             "  '--strings[Print translatable UI strings]' \\\n"
             "  '--caps[Probe terminal capabilities]' \\\n"
+            "  '--reuse[Open in running TurboMojo instance if any]' \\\n"
             "  '--lines[Line-oriented screen-reader mode]' \\\n"
             "  '--screenshot[Render SVG screenshot]:output file:_files' \\\n"
             "  '--warm-docs[Pre-build documentation index]:docs folder:_files -/' \\\n"
@@ -142,6 +145,7 @@ def shell_completions(sh: String) -> String:
             "complete -c tmide -l keys -d 'Print keymap reference'\n"
             "complete -c tmide -l strings -d 'Print translatable UI strings'\n"
             "complete -c tmide -l caps -d 'Probe terminal capabilities'\n"
+            "complete -c tmide -l reuse -d 'Open in running TurboMojo instance if any'\n"
             "complete -c tmide -l lines -d 'Line-oriented screen-reader mode'\n"
             "complete -c tmide -l screenshot -r -d 'Render SVG screenshot'\n"
             "complete -c tmide -l warm-docs -d 'Pre-build documentation index'\n"
@@ -208,18 +212,29 @@ def main() raises:
         print("  gpu                 : " + gpu_line(parse_gpus(bytes_to_str(run_capture("(" + GPU_QUERY + ") 2>/dev/null </dev/null").out))))
         return
     var lines = env_or("TERM", "") == "dumb"
+    var reuse = False
     var files = List[String]()
     for k in range(1, len(args)):
-        if String(args[k]) == "--lines":
+        var ak = String(args[k])
+        if ak == "--lines":
             lines = True
+        elif ak == "--reuse":
+            reuse = True
         else:
-            files.append(String(args[k]))
+            files.append(ak)
+    if reuse and not lines:
+        if ipc_open_in_running_ide(state_dir() + "/ide-state.json", String(app.cwd), files):
+            return
     if lines:
         # no cursor addressing: read commands as lines, answer in lines (src/linemode.mojo)
         app.reader = True
         for f in files:
             try:
-                app.open_path(f)
+                var loc = parse_file_loc(f)
+                app.open_path(loc.path)
+                if loc.line > 0 and app.top_editor() >= 0:
+                    var ti = app.top_editor()
+                    app.wins[ti].goto(loc.line - 1, max(0, loc.col - 1))
             except e:
                 print("cannot open", f, ":", String(e))
         app.run_lines()
@@ -234,19 +249,24 @@ def main() raises:
     app.ex_home = state_dir() + "/exercises"
     app.agent_sessions_dir = state_dir() + "/agent-sessions"
     app.ide_state_path = state_dir() + "/ide-state.json"
+    app.ipc_enable(state_dir() + "/ipc")
     app.plugins_dir = config_home() + "/plugins"
     app.plugins_log_dir = state_dir()
     app.whats_new_check(state_dir() + "/seen-version")
-    for i in range(1, len(args)):
+    for f in files:
         try:
-            app.open_path(String(args[i]))
+            var loc = parse_file_loc(f)
+            app.open_path(loc.path)
+            if loc.line > 0 and app.top_editor() >= 0:
+                var ti = app.top_editor()
+                app.wins[ti].goto(loc.line - 1, max(0, loc.col - 1))
         except e:
-            print("cannot open", String(args[i]), ":", String(e))
-    if len(args) == 1:
+            print("cannot open", f, ":", String(e))
+    if len(files) == 0:
         # the very first start without a file asks which theme (not with files named:
         # what is typed then is meant for them)
         app.theme_marker = state_dir() + "/theme-asked"
-    if len(args) == 1 and app.restore_session:
+    if len(files) == 0 and app.restore_session:
         # started without a file: go on where this project was left
         app.session_dir = state_dir() + "/sessions"
         try:

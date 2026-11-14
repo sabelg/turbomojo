@@ -710,8 +710,19 @@ struct App(Movable):
     var auto_pairs: Bool
     var word_hl: Bool                # editor.highlight_word
     var trim_trailing: Bool
+    var indent_guides: Bool
     var rulers: List[Int]
     var next_clone_group: Int
+    var ipc_dir: String
+    var agent_snap_paths: List[String]
+    var agent_snap_before: List[String]
+    var agent_snap_existed: List[Bool]
+    var agent_changed_files: List[String]
+    var dbg_gpu_block: String
+    var dbg_gpu_thread: String
+    var max_model_args: String
+    var max_presets: List[String]
+    var max_cmds: List[String]
 
     def __init__(out self):
         self.term = Terminal()
@@ -1256,8 +1267,19 @@ struct App(Movable):
         self.auto_pairs = True
         self.word_hl = True
         self.trim_trailing = False
+        self.indent_guides = False
         self.rulers = List[Int]()
         self.next_clone_group = 1
+        self.ipc_dir = ""
+        self.agent_snap_paths = List[String]()
+        self.agent_snap_before = List[String]()
+        self.agent_snap_existed = List[Bool]()
+        self.agent_changed_files = List[String]()
+        self.dbg_gpu_block = "0,0,0"
+        self.dbg_gpu_thread = "0,0,0"
+        self.max_model_args = ""
+        self.max_presets = List[String]()
+        self.max_cmds = List[String]()
 
     # =================================================================== utils
     def desk_h(self) -> Int:
@@ -1434,6 +1456,8 @@ struct App(Movable):
             t = min(t, 100)             # code waits for the REPL to be ready
         if self.watch_enabled and not self.watch.active():
             t = min(t, max(1, (self.watch_due - now) // 1000000 + 1))
+        if self.ipc_dir.byte_length() > 0 and not (self.watch.active() and (self.ipc_dir in self.watch.dirs)):
+            t = min(t, 250)
         for wi in range(len(self.wins)):
             if self.wins[wi].kind == WK_GPU:
                 t = min(t, 1500)
@@ -1488,6 +1512,7 @@ struct App(Movable):
         self.scheme_seen = 0
         self.line_numbers = s.line_numbers
         self.rel_numbers = s.relative_numbers
+        self.indent_guides = s.indent_guides
         self.auto_indent = s.auto_indent
         self.hl_line = s.highlight_line
         self.show_clock = s.clock
@@ -1503,6 +1528,7 @@ struct App(Movable):
         self.word_hl = s.highlight_word
         for i in range(len(self.wins)):
             self.wins[i].word_hl = self.word_hl
+            self.wins[i].indent_guides = self.indent_guides
         self.persistent_undo = s.persistent_undo
         self.trim_trailing = s.trim_trailing
         self.format_on_save = s.format_on_save

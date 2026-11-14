@@ -287,6 +287,7 @@ __extension App:
             self.agent.answer_error(p.request, ERR_REFUSED, "the user rejected the change to " + p.path)
             self.chat.note("Rejected the change to " + self.agent_rel(p.path))
         else:
+            self.agent_record_before_write(p.path, p.old, p.exists)
             var ok = True
             if not p.exists:
                 _ = run_system("mkdir -p " + shell_quote(dirname(p.path)))
@@ -300,6 +301,8 @@ __extension App:
                 else:
                     ok = False
             if ok:
+                if p.path not in self.agent_changed_files:
+                    self.agent_changed_files.append(p.path)
                 self.agent.answer(p.request, "{}")
                 self.chat.note("Accepted the change to " + self.agent_rel(p.path) + " (saved; Undo in the editor takes it back)")
             else:

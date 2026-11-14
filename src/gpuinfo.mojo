@@ -266,3 +266,142 @@ def format_gpu_monitor(samples: List[GpuSample], procs: List[String], hist: List
         for p in procs:
             out.append("  " + p)
     return out^
+
+
+@fieldwise_init
+struct KernelStat(Copyable, Movable):
+    var pct: Int
+    var time_txt: String
+    var calls: String
+    var name: String
+
+
+def _ws_tokens(line: String) -> List[String]:
+    var out = List[String]()
+    var cur = String("")
+    for ch in line.codepoint_slices():
+        var s = String(ch)
+        if s == " " or s == "\t" or s == "|":
+            if cur.byte_length() > 0:
+                out.append(cur)
+                cur = ""
+        else:
+            cur += s
+    if cur.byte_length() > 0:
+        out.append(cur)
+    return out^
+
+
+def _strip_quotes(s: String) -> String:
+    var t = String(s.strip())
+    if t.byte_length() >= 2 and ((t.startswith("\"") and t.endswith("\"")) or (t.startswith("'") and t.endswith("'"))):
+        return String(t[byte=1:t.byte_length() - 1])
+    return t
+
+
+def _looks_numeric(s: String) -> Bool:
+    var t = _strip_quotes(s)
+    if t.endswith("%"):
+        var sub = String(t[byte=0:t.byte_length() - 1])
+        t = sub
+    if t.byte_length() == 0:
+        return False
+    var digits = 0
+    for b in t.as_bytes():
+        var c = Int(b)
+        if c >= 48 and c <= 57:
+            digits += 1
+        elif c != 44 and c != 46:
+            return False
+    return digits > 0
+
+
+def parse_kernel_profile(output: String) -> List[String]:
+    """Extract a concise Top-GPU-Kernels summary from `nsys profile --stats=true`,
+    `rocprofv3 --kernel-trace --stats` / `rocprof --stats`, or `compute-sanitizer`."""
+    var stats = List[KernelStat]()
+    var sanitizer_notes = List[String]()
+    var in_nsys_kern = False
+    var roc_hdr = List[String]()
+    var roc_name_col = -1
+    var roc_calls_col = -1
+    var roc_dur_col = -1
+    var roc_pct_col = -1
+
+    for raw in output.split("\n"):
+        var line = String(String(raw).strip())
+        if line.byte_length() == 0:
+            if in_nsys_kern and len(stats) > 0:
+                in_nsys_kern = False
+            continue
+        if line.startswith("========="):
+            var body = String(String(line[byte=9:]).strip())
+            if body.startswith("ERROR SUMMARY:") or body.find("in kernel") >= 0 or body.startswith("Invalid ") or body.startswith("Race reported"):
+                sanitizer_notes.append(body)
+            continue
+        var low = line.lower()
+        # Detect nsys GPU kernel summary table header
+        if low.find("time (%)") >= 0 and low.find("instances") >= 0 and low.find("name") >= 0:
+            in_nsys_kern = True
+            continue
+        if in_nsys_kern:
+            if line.startswith("---"):
+                continue
+            var toks = _ws_tokens(line)
+            if len(toks) >= 4 and _looks_numeric(toks[0]) and _looks_numeric(toks[1]) and _looks_numeric(toks[2]):
+                var pct = parse_int_or(toks[0].replace(",", ""), 0)
+                var total_ns = toks[1] + " ns"
+                var inst = toks[2]
+                # Kernel name is the trailing non-numeric token(s) after the numeric stat columns
+                var name_start = 3
+                while name_start < len(toks) - 1 and _looks_numeric(toks[name_start]):
+                    name_start += 1
+                var kname = String("")
+                for j in range(name_start, len(toks)):
+                    kname += (" " if kname.byte_length() > 0 else "") + toks[j]
+                stats.append(KernelStat(pct, total_ns, inst, _strip_quotes(kname)))
+                continue
+            else:
+                in_nsys_kern = False
+
+        # Detect rocprof / rocprofv3 CSV or pipe table
+        if line.find(",") >= 0 and (low.find("kernel") >= 0 or low.find("name") >= 0) and (low.find("duration") >= 0 or low.find("totalduration") >= 0 or low.find("calls") >= 0):
+            roc_hdr.clear()
+            var cells = csv_cells(line)
+            for j in range(len(cells)):
+                var h = _strip_quotes(cells[j]).lower()
+                roc_hdr.append(h)
+                if h == "name" or h == "kernelname" or h == "kernel_name":
+                    roc_name_col = j
+                elif h == "calls" or h == "instances" or h == "dispatch_count":
+                    roc_calls_col = j
+                elif h.find("totalduration") >= 0 or h == "durationns" or h == "total_duration_ns" or h == "duration_ns":
+                    roc_dur_col = j
+                elif h.find("percent") >= 0 or h == "pct":
+                    roc_pct_col = j
+            continue
+        if len(roc_hdr) > 0 and line.find(",") >= 0 and roc_name_col >= 0:
+            var cells = csv_cells(line)
+            if roc_name_col < len(cells):
+                var kname = _strip_quotes(cells[roc_name_col])
+                var calls = _strip_quotes(cells[roc_calls_col]) if roc_calls_col >= 0 and roc_calls_col < len(cells) else String("1")
+                var dur = (_strip_quotes(cells[roc_dur_col]) + " ns") if roc_dur_col >= 0 and roc_dur_col < len(cells) else String("")
+                var pct = parse_int_or(_strip_quotes(cells[roc_pct_col]), -1) if roc_pct_col >= 0 and roc_pct_col < len(cells) else -1
+                if kname.byte_length() > 0 and _looks_numeric(calls):
+                    stats.append(KernelStat(pct, dur, calls, kname))
+
+    var out = List[String]()
+    if len(stats) == 0 and len(sanitizer_notes) == 0:
+        return out^
+    out.append("=== GPU Kernel Profile Summary ===")
+    if len(stats) > 0:
+        for k in range(min(10, len(stats))):
+            var st = stats[k].copy()
+            var bar = gpu_bar(st.pct, 12) + " " + (String(st.pct) + "%" if st.pct >= 0 else String("n/a"))
+            var meta = ("  " + st.time_txt) if st.time_txt.byte_length() > 0 else String("")
+            if st.calls.byte_length() > 0:
+                meta += "  (" + st.calls + "x)"
+            out.append("  " + bar + meta + "  " + st.name)
+    for note in sanitizer_notes:
+        out.append("  [sanitizer] " + note)
+    return out^

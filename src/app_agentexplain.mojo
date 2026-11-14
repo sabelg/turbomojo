@@ -167,6 +167,7 @@ __extension App:
             self.exec(CM_AGENT_START)
             if not self.agent.active():
                 return                          # (folder trust was not given)
+        self.agent_snapshot_turn()
         self.chat.user(shown)
         var blocks = self.agent_blocks(full)
         if self.agent.state == AS_READY:

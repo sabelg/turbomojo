@@ -31,6 +31,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_gitdiff.mojo` | The diff view and the change (hunk) commands: File > Diff of this file, Stage change, Revert change, Next / Previous change. |
 | `src/app_gpu.mojo` | The GPU on the status line (P11-10a) and the live GPU telemetry monitor (`Window > GPU queue & monitor`, WK_GPU). |
 | `src/app_input.mojo` | Keyboard and paste input routing. |
+| `src/app_ipc.mojo` | IDE-side handler for file-queue IPC (`src/ipc.mojo`): handles `ping`, `open_location`, `get_buffer`, and `apply_edits` from `tmide --reuse` and `tmide-mcp`. |
 | `src/app_jobs.mojo` | Compiler integration: background build/format jobs, messages, run. |
 | `src/app_keybox.mojo` | After a prefix key (WordStar's Ctrl-K and Ctrl-Q, Emacs's C-x, any two-key binding): if the second key does not come within a moment, a box above the status line lists the keys that may follow, with their commands. |
 | `src/app_keyecho.mojo` | The calm key echo (P7-07): after a command is run from a menu, the command palette or a click, the status line says which key does it - "Next time: Ctrl-K B" - in the keymap in use. |
@@ -93,6 +94,7 @@ struct of `appstate.mojo`, one area each.
 | `src/helpbook.mojo` | TurboMojo's own help: the "TurboMojo" book of the documentation viewer (the guide, the cheat sheet, the keyboard reference, what's new) and the tutorial file. |
 | `src/highlight.mojo` | Mojo syntax highlighter (line-based with triple-quoted string state). |
 | `src/inflate.mojo` | Inflate: the zlib / DEFLATE decompressor (RFC 1950, 1951), for PNG pictures. |
+| `src/ipc.mojo` | Portable file-queue IPC between CLI (`tmide --reuse`), MCP (`tmide-mcp`), and a live IDE. |
 | `src/json.mojo` | JSON reader and writer (RFC 8259). |
 | `src/kittygfx.mojo` | Kitty graphics protocol, for pictures in the documentation reader (P10-22b). |
 | `src/layout.mojo` | The tiled layout: a tree of splits whose leaves are tab groups. |

@@ -48,6 +48,48 @@ def console_command(text: String) -> String:
     return t
 
 
+def parse_xyz_triple(text: String) -> Tuple[Int, Int, Int]:
+    """Parse `x,y,z` or `x y z` or `x` into non-negative 3D coordinates."""
+    var nums = List[Int]()
+    var cur = 0
+    var have = False
+    for b in text.as_bytes():
+        var c = Int(b)
+        if c >= 48 and c <= 57:
+            cur = cur * 10 + (c - 48)
+            have = True
+        else:
+            if have:
+                nums.append(cur)
+                cur = 0
+                have = False
+    if have:
+        nums.append(cur)
+    var x = nums[0] if len(nums) > 0 else 0
+    var y = nums[1] if len(nums) > 1 else 0
+    var z = nums[2] if len(nums) > 2 else 0
+    return (x, y, z)
+
+
+def format_gpu_focus_command(adapter: String, block_xyz: String, thread_xyz: String) -> String:
+    """Build the debugger REPL command that switches focus to a GPU block/thread or lane
+    across `cuda-gdb`, `rocgdb`, and `mojo-lldb-dap` / `lldb-dap`."""
+    var b = parse_xyz_triple(block_xyz)
+    var t = parse_xyz_triple(thread_xyz)
+    var low = adapter.lower()
+    if low.find("cuda-gdb") >= 0:
+        return (
+            "cuda block ("
+            + String(b[0]) + "," + String(b[1]) + "," + String(b[2])
+            + ") thread ("
+            + String(t[0]) + "," + String(t[1]) + "," + String(t[2])
+            + ")"
+        )
+    if low.find("rocgdb") >= 0:
+        return "lane " + String(t[0])
+    return "`thread select " + String(max(1, t[0]))
+
+
 def console_result(text: String) -> String:
     """A console answer for one value, "(String)  = \"mojo\"", as "\"mojo\"   String";
     anything else (several lines, command output) stays as it is."""

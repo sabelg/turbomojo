@@ -122,6 +122,13 @@ comptime CM_CODEGEN = 252        # Compile > Inspect generated code
 comptime CM_GPU_PROFILE = 253    # Compile > Profile GPU kernels
 comptime CM_GPU_WIN = 254        # Window > GPU queue & monitor
 comptime CM_CLONE_VIEW = 255     # Window > Split joint view
+comptime CM_AGENT_REVERT = 256   # ≡ > Revert last agent turn
+comptime CM_DEBUG_GPU_LANE = 257 # Run > GPU thread / lane...
+comptime CM_MAX_SERVE = 258      # Compile > MAX serve / benchmark...
+comptime CM_EXPAND_SEL = 259     # Edit > Expand selection
+comptime CM_SHRINK_SEL = 260     # Edit > Shrink selection
+comptime CM_SKIPNEXT = 261       # Edit > Skip occurrence
+comptime CM_INDENT_GUIDES = 262  # Palette: Indent guides
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -737,6 +744,9 @@ def build_registry() -> Registry:
     r.cmd(CM_COMMENT, "edit.toggleComment", "Toggle co~m~ment", "Comment or uncomment the selected lines", [ctrl(47)])
     r.cmd(CM_DUPLINE, "edit.duplicateLine", "~D~uplicate line", "Duplicate the current line", [ctrl(100)])
     r.cmd(CM_ADDNEXT, "edit.addNextOccurrence", "Add ~n~ext occurrence", "Select the word, then add a cursor at its next occurrence", [alt(100)])
+    r.cmd(CM_SKIPNEXT, "edit.skipNextOccurrence", "S~k~ip occurrence", "Move the last multi-cursor match to the next occurrence", [alt(107)])
+    r.cmd(CM_EXPAND_SEL, "edit.expandSelection", "Expand ~s~election", "Expand selection outward: word, quotes/brackets, line, indented block", [KEY_RIGHT | MOD_ALT | MOD_SHIFT])
+    r.cmd(CM_SHRINK_SEL, "edit.shrinkSelection", "S~h~rink selection", "Shrink selection back to the previous range", [KEY_LEFT | MOD_ALT | MOD_SHIFT])
     r.cmd(CM_CURABOVE, "edit.addCursorAbove", "Add cursor a~b~ove", "Add a cursor on the line above", [KEY_UP | MOD_CTRL | MOD_ALT, KEY_UP | MOD_SHIFT | MOD_ALT])
     r.cmd(CM_CURBELOW, "edit.addCursorBelow", "Add cursor b~e~low", "Add a cursor on the line below", [KEY_DOWN | MOD_CTRL | MOD_ALT, KEY_DOWN | MOD_SHIFT | MOD_ALT])
     r.cmd(CM_FOLD, "edit.toggleFold", "~F~old or unfold", "Hide or show the indented block at the cursor", [alt(45)])
@@ -791,6 +801,7 @@ def build_registry() -> Registry:
     r.cmd(CM_DEBUGWIN, "debug.window", "Call stac~k~ and variables", "Show or hide the Debug window: the call stack and the variables of the stopped program", [fkey(3) | MOD_CTRL])
     r.cmd(CM_WATCH_ADD, "debug.addWatch", "Add ~w~atch...", "Watch a variable or field (a, a.b): its value is shown at every stop", [fkey(7) | MOD_CTRL])
     r.cmd(CM_EVALUATE, "debug.evaluate", "E~v~aluate...", "Evaluate a name, or run a debugger command (a line starting with :), while the program is stopped", [fkey(4) | MOD_CTRL])
+    r.cmd(CM_DEBUG_GPU_LANE, "debug.gpuLane", "GPU ~y~/x/z thread...", "Switch debugger focus to a GPU block (x,y,z) and thread/lane (x,y,z)")
     r.cmd(CM_CPUWIN, "debug.cpu", "CPU - mac~h~ine code, registers, memory", "Machine code, registers and memory of the stopped program; F7/F8 there step one instruction", [fkey(2) | MOD_ALT])
     r.cmd(CM_BP_TOGGLE, "debug.toggleBreakpoint", "Toggle ~b~reakpoint", "Set or remove a breakpoint on the cursor's line (also: click the line number)", [fkey(8) | MOD_CTRL])
     r.cmd(CM_BP_EDIT, "debug.editBreakpoint", "Breakpoint c~o~ndition...", "Condition, hit count and log message of the breakpoint on this line (sets one if there is none)")
@@ -820,6 +831,7 @@ def build_registry() -> Registry:
     r.cmd(CM_AGENT_THINKING, "agent.thinking", "Agent ~t~hinking...", "Choose the coding agent's thinking level")
     r.cmd(CM_AGENT_NEW, "agent.newSession", "~N~ew agent session", "Start a fresh coding agent conversation for this project")
     r.cmd(CM_AGENT_PROBLEMS, "agent.sendProblems", "Send ~d~iagnostics to agent", "Send all current language server, build, and test problems to the coding agent")
+    r.cmd(CM_AGENT_REVERT, "agent.revertTurn", "Re~v~ert last agent turn", "Restore files modified or created by the last coding agent turn")
     r.cmd(CM_GIT_COMMIT, "git.commit", "Comm~i~t...", "Commit what is staged (or every change to tracked files) with a message")
     r.cmd(CM_GIT_BRANCH, "git.branch", "~B~ranch...", "Switch to another branch of the repository, or make a new one")
     r.cmd(CM_GIT_BLAME, "git.blame", "Blam~e~", "Who last changed each line of this file, when, and in which commit")
@@ -838,6 +850,7 @@ def build_registry() -> Registry:
     r.cmd(CM_FORMAT, "compile.format", "~F~ormat source", "Reformat the current file with `mojo format`", [fkey(9) | MOD_ALT])
     r.cmd(CM_CODEGEN, "compile.inspectCodegen", "~I~nspect generated code", "Emit assembly or LLVM IR with SIMD vectorization and stack-spill badges")
     r.cmd(CM_GPU_PROFILE, "compile.profileGpu", "Profile ~G~PU kernels", "Profile GPU kernels with nsys or rocprofv3 into the Message window")
+    r.cmd(CM_MAX_SERVE, "run.maxServe", "~M~AX serve / benchmark...", "Launch max serve or max benchmark for a MAX project or Hugging Face model")
     r.cmd(CM_NEXTERR, "compile.nextMessage", "~N~ext message", "Jump to the next compiler message", [fkey(8) | MOD_ALT])
     r.cmd(CM_PREVERR, "compile.previousMessage", "~P~revious message", "Jump to the previous compiler message", [fkey(7) | MOD_ALT])
     r.cmd(CM_CANCEL, "compile.cancel", "C~a~ncel build", "Stop the running build or format", [fkey(2) | MOD_CTRL])
@@ -880,6 +893,7 @@ def build_registry() -> Registry:
     r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark; each shows as you move through the list")
     r.cmd(CM_PIXI_ENV, "options.pixiEnvironment", "Pi~x~i environment...", "Select which Pixi environment builds, runs, tests, formatting, terminal, debugger and LSP use")
     r.hide(CM_FORMAT_SAVE, "options.formatOnSave", "Format on save", "Reformat Mojo files automatically with mojo format when saving")
+    r.hide(CM_INDENT_GUIDES, "options.indentGuides", "Indent guides", "Show subtle vertical guides on indentation columns")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")
@@ -929,6 +943,7 @@ def build_registry() -> Registry:
     r.item(CM_AGENT_THINKING)
     r.item(CM_AGENT_NEW)
     r.item(CM_AGENT_PROBLEMS)
+    r.item(CM_AGENT_REVERT)
     r.sep()
     r.item(CM_REFRESH)
 
@@ -975,6 +990,9 @@ def build_registry() -> Registry:
     r.item(CM_COMPLETE)
     r.sep()
     r.item(CM_ADDNEXT)
+    r.item(CM_SKIPNEXT)
+    r.item(CM_EXPAND_SEL)
+    r.item(CM_SHRINK_SEL)
     r.item(CM_CURABOVE)
     r.item(CM_CURBELOW)
     r.sep()
@@ -1032,6 +1050,7 @@ def build_registry() -> Registry:
     r.item(CM_RESET)
     r.item(CM_WATCH_ADD)
     r.item(CM_EVALUATE)
+    r.item(CM_DEBUG_GPU_LANE)
     r.item(CM_TEST)
     r.item(CM_TEST_CURSOR)
     r.item(CM_TESTEXP)
@@ -1054,6 +1073,7 @@ def build_registry() -> Registry:
     r.item(CM_FORMAT)
     r.item(CM_CODEGEN)
     r.item(CM_GPU_PROFILE)
+    r.item(CM_MAX_SERVE)
     r.sep()
     r.item(CM_NEXTERR)
     r.item(CM_PREVERR)

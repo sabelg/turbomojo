@@ -46,33 +46,63 @@ JOBS="${TM_JOBS:-$(( $(nproc) / 2 ))}"
 [ "$JOBS" -ge 1 ] || JOBS=1
 SRC_SIG="$({ "$MOJO" --version; sha256sum src/*.mojo; } | sha256sum | awk '{print $1}')"
 export SRC_SIG
-echo "== compiling the tests ($JOBS at a time)"
-# each one's messages go to build/tests/<name>.log; unchanged test binaries use build/tests/<name>.sha256
-compile_one() {
-  local t="$1" name sig
-  name="$(basename "$t" .mojo)"
-  sig="$({ printf '%s\n' "$SRC_SIG"; sha256sum "$t"; } | sha256sum | awk '{print $1}')"
-  if [ "${TM_FORCE_REBUILD:-0}" != "1" ] && [ -x "build/tests/$name" ] && [ -f "build/tests/$name.sha256" ] && [ "$(cat "build/tests/$name.sha256")" = "$sig" ]; then
-    echo "cached $t"
-    return 0
-  fi
-  if "$MOJO" build -I src "$t" -o "build/tests/$name" $VT_LINK > "build/tests/$name.log" 2>&1; then
-    printf '%s\n' "$sig" > "build/tests/$name.sha256"
-    echo "built $t"
-  else
-    rm -f "build/tests/$name.sha256"
-    echo "DID NOT BUILD: $t"
-  fi
-}
-export -f compile_one
 rm -f build/tests/*.log
-ls tests/test_*.mojo | xargs -P "$JOBS" -I{} bash -c 'compile_one "$@"' _ {} | sort > build/tests/compile.txt
-if grep -q "DID NOT BUILD" build/tests/compile.txt; then
-  for t in $(grep "DID NOT BUILD" build/tests/compile.txt | sed 's/DID NOT BUILD: //'); do
-    echo "FAILED: $t (compile)"
-    grep -v -e Crashpad -e warning -e '^ ' -e '^Included' "build/tests/$(basename "$t" .mojo).log" | head -40
-  done
-  exit 1
+
+if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
+  echo "== compiling the tests individually ($JOBS at a time)"
+  compile_one() {
+    local t="$1" name sig
+    name="$(basename "$t" .mojo)"
+    sig="$({ printf '%s\n' "$SRC_SIG"; sha256sum "$t"; } | sha256sum | awk '{print $1}')"
+    if [ "${TM_FORCE_REBUILD:-0}" != "1" ] && [ -x "build/tests/$name" ] && [ -f "build/tests/$name.sha256" ] && [ "$(cat "build/tests/$name.sha256")" = "$sig" ]; then
+      echo "cached $t"
+      return 0
+    fi
+    if "$MOJO" build -I src "$t" -o "build/tests/$name" $VT_LINK > "build/tests/$name.log" 2>&1; then
+      printf '%s\n' "$sig" > "build/tests/$name.sha256"
+      echo "built $t"
+    else
+      rm -f "build/tests/$name.sha256"
+      echo "DID NOT BUILD: $t"
+    fi
+  }
+  export -f compile_one
+  ls tests/test_*.mojo | xargs -P "$JOBS" -I{} bash -c 'compile_one "$@"' _ {} | sort > build/tests/compile.txt
+  if grep -q "DID NOT BUILD" build/tests/compile.txt; then
+    for t in $(grep "DID NOT BUILD" build/tests/compile.txt | sed 's/DID NOT BUILD: //'); do
+      echo "FAILED: $t (compile)"
+      grep -v -e Crashpad -e warning -e '^ ' -e '^Included' "build/tests/$(basename "$t" .mojo).log" | head -40
+    done
+    exit 1
+  fi
+else
+  python3 scripts/gen_test_runner.py --out build/tests --app-shards "${TM_TEST_SHARDS:-8}" --src-sig "$SRC_SIG"
+  SHARD_COUNT="$(wc -l < build/tests/shards.txt | tr -d ' ')"
+  echo "== compiling $SHARD_COUNT test shard(s) ($JOBS at a time)"
+  compile_shard() {
+    local s="$1" want
+    want="$(cat "build/tests/$s.want_sha256")"
+    if [ "${TM_FORCE_REBUILD:-0}" != "1" ] && [ -x "build/tests/$s" ] && [ -f "build/tests/$s.sha256" ] && [ "$(cat "build/tests/$s.sha256")" = "$want" ]; then
+      echo "cached $s"
+      return 0
+    fi
+    if "$MOJO" build -I src -I tests "build/tests/$s.mojo" -o "build/tests/$s" $VT_LINK > "build/tests/$s.log" 2>&1; then
+      printf '%s\n' "$want" > "build/tests/$s.sha256"
+      echo "built $s"
+    else
+      rm -f "build/tests/$s.sha256"
+      echo "DID NOT BUILD: $s"
+    fi
+  }
+  export -f compile_shard
+  cat build/tests/shards.txt | xargs -P "$JOBS" -I{} bash -c 'compile_shard "$@"' _ {} | sort > build/tests/compile.txt
+  if grep -q "DID NOT BUILD" build/tests/compile.txt; then
+    for s in $(grep "DID NOT BUILD" build/tests/compile.txt | sed 's/DID NOT BUILD: //'); do
+      echo "FAILED: $s (compile)"
+      grep -v -e Crashpad -e warning -e '^ ' -e '^Included' "build/tests/$s.log" | head -40
+    done
+    exit 1
+  fi
 fi
 
 echo "== tests"
@@ -87,12 +117,21 @@ if [ -z "${TERM:-}" ] || [ "$TERM" = "dumb" ]; then
 fi
 unset TURBOMOJO_SCREEN_READER NO_COLOR
 count=0
-for t in tests/test_*.mojo; do
-  [ -e "$t" ] || continue
-  echo "-- $t"
-  "build/tests/$(basename "$t" .mojo)" | grep -v "    PASS" || { echo "FAILED: $t"; exit 1; }
-  count=$((count + 1))
-done
+if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
+  for t in tests/test_*.mojo; do
+    [ -e "$t" ] || continue
+    echo "-- $t"
+    "build/tests/$(basename "$t" .mojo)" | grep -v "    PASS" || { echo "FAILED: $t"; exit 1; }
+    count=$((count + 1))
+  done
+else
+  while IFS=$'\t' read -r t shard; do
+    [ -n "$t" ] || continue
+    echo "-- $t"
+    TURBOMOJO_TEST_SUITE="$t" "build/tests/$shard" | grep -v "    PASS" || { echo "FAILED: $t"; exit 1; }
+    count=$((count + 1))
+  done < build/tests/shard_map.tsv
+fi
 echo "$count test file(s) passed"
 
 if [ "${SKIP_SMOKE:-0}" != "1" ] && command -v tmux >/dev/null; then

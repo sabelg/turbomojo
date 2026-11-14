@@ -325,3 +325,43 @@ def parse_pixi_environments(text: String) -> List[String]:
         if k.byte_length() > 0 and cur.peek() == 61 and not (k in envs):
             envs.append(k)
     return envs^
+
+
+def detect_max_project(pixi_toml: String, source: String = "") -> Bool:
+    """True when `pixi.toml` / `pyproject.toml` or the open Mojo file uses Modular MAX."""
+    var low = pixi_toml.lower()
+    if (
+        low.find("max-nightly") >= 0
+        or low.find("max-core") >= 0
+        or low.find("\"max\"") >= 0
+        or low.find("\nmax ") >= 0
+        or low.find("\nmax=") >= 0
+        or low.find("max serve") >= 0
+        or low.find("max benchmark") >= 0
+    ):
+        return True
+    for raw in source.split("\n"):
+        var ln = String(String(raw).strip())
+        if ln.startswith("from max") or ln.startswith("import max"):
+            return True
+    return False
+
+
+def build_max_commands(model_or_args: String, custom_arch_dir: String = "") -> Tuple[List[String], List[String]]:
+    """Build preset labels and CLI commands for `Compile > MAX serve / benchmark...`."""
+    var target = String(model_or_args.strip())
+    if target.byte_length() == 0:
+        target = "modularai/Llama-3.1-8B-Instruct-GGUF"
+    var arch = (" --custom-architectures " + custom_arch_dir) if custom_arch_dir.byte_length() > 0 else String("")
+    var model_arg = target if target.startswith("-") else ("--model-path " + target)
+    var labels = List[String]()
+    var cmds = List[String]()
+    labels.append("Serve OpenAI endpoint        max serve " + model_arg)
+    cmds.append("max serve " + model_arg + arch)
+    labels.append("Smoke generate               max generate " + model_arg)
+    cmds.append("max generate " + model_arg + arch + " --prompt \"Hello from TurboMojo\" --max-new-tokens 64")
+    labels.append("Benchmark running server     max benchmark (32 prompts)")
+    cmds.append("max benchmark --backend modular --endpoint /v1/chat/completions --num-prompts 32" + ("" if target.startswith("-") else (" --model " + target)))
+    labels.append("Inspect MAX CLI & flags      max --version / max serve --help")
+    cmds.append("max --version && max serve --help | head -n 28")
+    return (labels^, cmds^)

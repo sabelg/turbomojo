@@ -73,6 +73,50 @@ def braille_dot(col: Int, row: Int) -> Int:
 
 
 __extension Window:
+    def _indent_vcol_row(self, r: Int) -> Int:
+        var ln = self.buf.line(r)
+        var v = 0
+        for ch in ln:
+            if ch == 32:
+                v += 1
+            elif ch == 9:
+                v += self.buf.tab_width - v % self.buf.tab_width
+            else:
+                return v
+        return -1
+
+    def _indent_guide_vcol(self, r: Int) -> Int:
+        var v = self._indent_vcol_row(r)
+        if v >= 0:
+            return v
+        var n = self.buf.count()
+        var up = -1
+        var up_colon = False
+        var rr = r - 1
+        while rr >= max(0, r - 24):
+            up = self._indent_vcol_row(rr)
+            if up >= 0:
+                var uln = self.buf.line(rr)
+                var last = -1
+                for ch in uln:
+                    if ch == 35:
+                        break
+                    if ch != 32 and ch != 9:
+                        last = ch
+                up_colon = last == 58
+                break
+            rr -= 1
+        var dn = -1
+        for dr in range(r + 1, min(n, r + 25)):
+            dn = self._indent_vcol_row(dr)
+            if dn >= 0:
+                break
+        if up_colon and dn > up:
+            return dn
+        if up >= 0 and dn >= 0:
+            return min(up, dn)
+        return 0
+
     def draw_sticky(self, mut scr: Screen, pal: Palette, cx0: Int, cls: Int):
         """The headers of the scopes the view is in, pinned on the top rows."""
         for i in range(len(self.sticky)):
@@ -410,6 +454,18 @@ __extension Window:
                     scr.put(sx, yy, ch, cfg, cbg)
                     lastx = sx
                 v += a
+            # vertical indentation scope guides across leading spaces and blank lines inside blocks
+            if self.indent_guides and not is_msg and not plain and seg == 0 and not scr.plain:
+                var step = max(2, self.buf.indent_size)
+                var glim = self._indent_guide_vcol(r)
+                var gch = 124 if scr.glyphs == GLYPHS_ASCII else 0x2506
+                var gv = 0
+                while gv < glim:
+                    if gv >= off and gv < lim:
+                        var gx = cx0 + gv - off
+                        if scr.bg_at(gx, yy) == rowbg:
+                            scr.put(gx, yy, gch, pal.gutter_fg, rowbg)
+                    gv += step
             # the additional cursors: the terminal has one real cursor, these are drawn
             for e in self.extra:
                 if e.r != r:

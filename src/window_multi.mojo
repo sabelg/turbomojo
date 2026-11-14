@@ -333,6 +333,335 @@ __extension Window:
                 c = m[1]
         return False
 
+    def skip_next_occurrence(mut self) -> Bool:
+        """Advance the main cursor's selection to the next unselected match without
+        keeping the current occurrence."""
+        if not self.has_sel():
+            return self.select_word_here()
+        var q = self.sel_range()
+        if q.r1 != q.r2:
+            return False
+        var text = self.selected_text()
+        var s = make_search(text, True, False, False)
+        var cs = self.all_cursors()
+        var n = self.buf.count()
+        for k in range(n + 1):
+            var r = (q.r2 + k) % n
+            var ln = self.buf.line(r)
+            var c = q.c2 if k == 0 else 0
+            while True:
+                var m = s.caps_in(ln, c)
+                if len(m) == 0:
+                    break
+                var taken = False
+                for cur in cs:
+                    var st = cur_start(cur)
+                    if st.r == r and st.c == m[0]:
+                        taken = True
+                if not taken:
+                    var kept = List[Cur]()
+                    for e in self.extra:
+                        kept.append(self.clamp_cur(e))
+                    var main_idx = len(kept)
+                    kept.append(self.clamp_cur(Cur(r, m[1], True, r, m[0], self.vcol(r, m[1]))))
+                    self.set_cursors(kept^, main_idx)
+                    self.break_group()
+                    self.follow = True
+                    return True
+                c = m[1]
+        return False
+
+    # ------------------------------------------------------- structural selection
+    def _try_candidate(self, cur: Range, cand: Range, mut best: Range, mut found: Bool):
+        if cand.r1 == cand.r2 and cand.c1 == cand.c2:
+            return
+        var starts_le = cand.r1 < cur.r1 or (cand.r1 == cur.r1 and cand.c1 <= cur.c1)
+        var ends_ge = cand.r2 > cur.r2 or (cand.r2 == cur.r2 and cand.c2 >= cur.c2)
+        var same = cand.r1 == cur.r1 and cand.c1 == cur.c1 and cand.r2 == cur.r2 and cand.c2 == cur.c2
+        if not (starts_le and ends_ge) or same:
+            return
+        if not found:
+            best = cand.copy()
+            found = True
+            return
+        var cand_in_best = (best.r1 < cand.r1 or (best.r1 == cand.r1 and best.c1 <= cand.c1)) and (
+            best.r2 > cand.r2 or (best.r2 == cand.r2 and best.c2 >= cand.c2)
+        )
+        var best_in_cand = (cand.r1 < best.r1 or (cand.r1 == best.r1 and cand.c1 <= best.c1)) and (
+            cand.r2 > best.r2 or (cand.r2 == best.r2 and cand.c2 >= best.c2)
+        )
+        if cand_in_best and not best_in_cand:
+            best = cand.copy()
+        elif not best_in_cand:
+            var cand_rows = cand.r2 - cand.r1
+            var best_rows = best.r2 - best.r1
+            if cand_rows < best_rows or (cand_rows == 0 and best_rows == 0 and (cand.c2 - cand.c1) < (best.c2 - best.c1)):
+                best = cand.copy()
+
+    def _line_indent_spaces(self, r: Int) -> Int:
+        var ln = self.buf.line(r)
+        var cols = 0
+        for ch in ln:
+            if ch == 32:
+                cols += 1
+            elif ch == 9:
+                cols += self.buf.tab_width - cols % self.buf.tab_width
+            else:
+                return cols
+        return -1
+
+    def _line_ends_colon(self, r: Int) -> Bool:
+        var ln = self.buf.line(r)
+        var last = -1
+        for ch in ln:
+            if ch == 35:   # '#'
+                break
+            if ch != 32 and ch != 9:
+                last = ch
+        return last == 58  # ':'
+
+    def _block_end_from(self, hr: Int, h_ind: Int) -> Int:
+        var n = self.buf.count()
+        var last_body = hr
+        for r in range(hr + 1, min(n, hr + 2000)):
+            var ind = self._line_indent_spaces(r)
+            if ind < 0:
+                continue
+            if ind <= h_ind:
+                break
+            last_body = r
+        return last_body
+
+    def _find_matching_close(self, orow: Int, ocol: Int, open_ch: Int, close_ch: Int) -> Pos:
+        var depth = 1
+        var n = self.buf.count()
+        var limit = min(n, orow + 400)
+        for r in range(orow, limit):
+            var ln = self.buf.line(r)
+            var c0 = ocol + 1 if r == orow else 0
+            var in_str = 0
+            var esc = False
+            for c in range(c0, len(ln)):
+                var ch = ln[c]
+                if in_str != 0:
+                    if esc:
+                        esc = False
+                    elif ch == 92:
+                        esc = True
+                    elif ch == in_str:
+                        in_str = 0
+                    continue
+                if ch == 35:
+                    break
+                if ch == 34 or ch == 39:
+                    in_str = ch
+                    continue
+                if ch == open_ch:
+                    depth += 1
+                elif ch == close_ch:
+                    depth -= 1
+                    if depth == 0:
+                        return Pos(r, c)
+        return Pos(-1, -1)
+
+    def expand_selection(mut self) -> Bool:
+        """Grow the selection concentrically: word -> dotted name -> quotes ->
+        brackets -> trimmed line -> full line -> indentation block -> buffer."""
+        self.collapse()
+        var had_sel = self.has_sel()
+        if not had_sel:
+            self.sel_hist.clear()
+        var cur = self.sel_range() if had_sel else Range(self.cr, self.cc, self.cr, self.cc)
+        var best = Range(0, 0, 0, 0)
+        var found = False
+
+        if cur.r1 == cur.r2:
+            var r = cur.r1
+            var ln = self.buf.line(r)
+            var n = len(ln)
+            # 1. identifier & dotted chain
+            var a = min(cur.c1, n)
+            var b = min(cur.c2, n)
+            while a > 0 and is_ident(ln[a - 1]):
+                a -= 1
+            while b < n and is_ident(ln[b]):
+                b += 1
+            if a < b:
+                self._try_candidate(cur, Range(r, a, r, b), best, found)
+            var da = min(cur.c1, n)
+            var db = min(cur.c2, n)
+            while da > 0 and (is_ident(ln[da - 1]) or ln[da - 1] == 46):
+                da -= 1
+            while db < n and (is_ident(ln[db]) or ln[db] == 46):
+                db += 1
+            if da < db:
+                self._try_candidate(cur, Range(r, da, r, db), best, found)
+
+            # 2. single-line quoted strings
+            var i = 0
+            while i < n:
+                var ch = ln[i]
+                if ch == 35:
+                    break
+                if ch == 34 or ch == 39:
+                    var j = i + 1
+                    var esc = False
+                    while j < n:
+                        if esc:
+                            esc = False
+                        elif ln[j] == 92:
+                            esc = True
+                        elif ln[j] == ch:
+                            break
+                        j += 1
+                    if j < n and i <= cur.c1 and cur.c2 <= j + 1:
+                        self._try_candidate(cur, Range(r, i + 1, r, j), best, found)
+                        self._try_candidate(cur, Range(r, i, r, j + 1), best, found)
+                    i = j + 1
+                    continue
+                i += 1
+
+            # 3. trimmed line and full line
+            var first_ns = 0
+            while first_ns < n and (ln[first_ns] == 32 or ln[first_ns] == 9):
+                first_ns += 1
+            var last_ns = n
+            while last_ns > first_ns and (ln[last_ns - 1] == 32 or ln[last_ns - 1] == 9):
+                last_ns -= 1
+            if first_ns < last_ns:
+                self._try_candidate(cur, Range(r, first_ns, r, last_ns), best, found)
+            if n > 0:
+                self._try_candidate(cur, Range(r, 0, r, n), best, found)
+
+        # 4. enclosing balanced brackets (), [], {}
+        var d_paren = 0
+        var d_brack = 0
+        var d_brace = 0
+        var min_r = max(0, cur.r1 - 400)
+        var r_scan = cur.r1
+        while r_scan >= min_r:
+            var ln = self.buf.line(r_scan)
+            var c_scan = (min(cur.c1, len(ln) - 1) if not had_sel else cur.c1 - 1) if r_scan == cur.r1 else len(ln) - 1
+            while c_scan >= 0:
+                var ch = ln[c_scan]
+                if ch == 41:
+                    d_paren += 1
+                elif ch == 40:
+                    if d_paren > 0:
+                        d_paren -= 1
+                    else:
+                        var cl = self._find_matching_close(r_scan, c_scan, 40, 41)
+                        if cl.r >= 0:
+                            self._try_candidate(cur, Range(r_scan, c_scan + 1, cl.r, cl.c), best, found)
+                            self._try_candidate(cur, Range(r_scan, c_scan, cl.r, cl.c + 1), best, found)
+                elif ch == 93:
+                    d_brack += 1
+                elif ch == 91:
+                    if d_brack > 0:
+                        d_brack -= 1
+                    else:
+                        var cl = self._find_matching_close(r_scan, c_scan, 91, 93)
+                        if cl.r >= 0:
+                            self._try_candidate(cur, Range(r_scan, c_scan + 1, cl.r, cl.c), best, found)
+                            self._try_candidate(cur, Range(r_scan, c_scan, cl.r, cl.c + 1), best, found)
+                elif ch == 125:
+                    d_brace += 1
+                elif ch == 123:
+                    if d_brace > 0:
+                        d_brace -= 1
+                    else:
+                        var cl = self._find_matching_close(r_scan, c_scan, 123, 125)
+                        if cl.r >= 0:
+                            self._try_candidate(cur, Range(r_scan, c_scan + 1, cl.r, cl.c), best, found)
+                            self._try_candidate(cur, Range(r_scan, c_scan, cl.r, cl.c + 1), best, found)
+                c_scan -= 1
+            r_scan -= 1
+
+        # 5. enclosing indentation block (header + body)
+        var start_ind = self._line_indent_spaces(cur.r1)
+        if start_ind >= 0 and self._line_ends_colon(cur.r1):
+            var bend = self._block_end_from(cur.r1, start_ind)
+            if bend > cur.r1:
+                self._try_candidate(cur, Range(cur.r1, 0, bend, self.buf.llen(bend)), best, found)
+        var ref_ind = start_ind
+        if ref_ind < 0:
+            for rr in range(cur.r1, cur.r2 + 1):
+                var ri = self._line_indent_spaces(rr)
+                if ri >= 0 and (ref_ind < 0 or ri < ref_ind):
+                    ref_ind = ri
+        if ref_ind > 0:
+            var up_r = cur.r1 - 1
+            var target_ind = ref_ind
+            while up_r >= max(0, cur.r1 - 2000):
+                var ui = self._line_indent_spaces(up_r)
+                if ui >= 0 and ui < target_ind:
+                    if self._line_ends_colon(up_r):
+                        var bend = self._block_end_from(up_r, ui)
+                        if bend >= cur.r2:
+                            # body only first, then header + body
+                            var body_start = up_r + 1
+                            while body_start < bend and self._line_indent_spaces(body_start) < 0:
+                                body_start += 1
+                            if body_start <= bend:
+                                var bs_ln = self.buf.line(body_start)
+                                var bs_c = 0
+                                while bs_c < len(bs_ln) and (bs_ln[bs_c] == 32 or bs_ln[bs_c] == 9):
+                                    bs_c += 1
+                                self._try_candidate(cur, Range(body_start, bs_c, bend, self.buf.llen(bend)), best, found)
+                            self._try_candidate(cur, Range(up_r, 0, bend, self.buf.llen(bend)), best, found)
+                    target_ind = ui
+                    if target_ind == 0:
+                        break
+                up_r -= 1
+
+        # 6. full buffer
+        var last_row = self.buf.count() - 1
+        self._try_candidate(cur, Range(0, 0, last_row, self.buf.llen(last_row)), best, found)
+
+        if not found:
+            return False
+        self.sel_hist.append(cur^)
+        self.sel = True
+        self.ar = best.r1
+        self.ac = best.c1
+        self.cr = best.r2
+        self.cc = best.c2
+        self.sync_want()
+        self.break_group()
+        self.follow = True
+        return True
+
+    def shrink_selection(mut self) -> Bool:
+        """Step back through previous `expand_selection` ranges, or collapse selection."""
+        if len(self.sel_hist) > 0:
+            var prev = self.sel_hist.pop()
+            if prev.r1 == prev.r2 and prev.c1 == prev.c2:
+                self.sel = False
+                self.ar = prev.r1
+                self.ac = prev.c1
+                self.cr = prev.r1
+                self.cc = prev.c1
+            else:
+                self.sel = True
+                self.ar = prev.r1
+                self.ac = prev.c1
+                self.cr = prev.r2
+                self.cc = prev.c2
+            self.sync_want()
+            self.break_group()
+            self.follow = True
+            return True
+        if self.has_sel():
+            var sr = self.sel_range()
+            self.sel = False
+            self.cr = sr.r1
+            self.cc = sr.c1
+            self.sync_want()
+            self.break_group()
+            self.follow = True
+            return True
+        return False
+
     # ------------------------------------------------------- column selection
     def box_select(mut self, ar: Int, av: Int, r: Int, v: Int):
         """Select the rectangle between two corners given as (row, screen column): one

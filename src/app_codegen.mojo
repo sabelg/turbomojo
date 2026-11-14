@@ -167,8 +167,9 @@ __extension App:
         var rocprof = which("rocprofv3")
         if rocprof.byte_length() == 0:
             rocprof = which("rocprof")
-        if nsys.byte_length() == 0 and rocprof.byte_length() == 0:
-            self.info("Profile GPU Kernels", "Neither `nsys` (NVIDIA Nsight Systems) nor `rocprofv3` (AMD ROCm) was found on PATH.")
+        var sanitizer = which("compute-sanitizer")
+        if nsys.byte_length() == 0 and rocprof.byte_length() == 0 and sanitizer.byte_length() == 0:
+            self.info("Profile GPU Kernels", "None of `nsys` (Nsight Systems), `rocprofv3` (ROCm), or `compute-sanitizer` was found on PATH.")
             return
         var dir = dirname(path)
         var exe = join_path(dir, "build/" + stem(path))
@@ -178,12 +179,15 @@ __extension App:
         if nsys.byte_length() > 0:
             tool_name = "nsys"
             prof_cmd = shell_quote(nsys) + " profile --stats=true --force-overwrite=true -o " + shell_quote(prof_out) + " " + shell_quote(exe) + "; st=$?; rm -f " + shell_quote(prof_out) + "* 2>/dev/null; exit $st"
-        else:
+        elif rocprof.byte_length() > 0:
             tool_name = basename(rocprof)
             if tool_name == "rocprofv3":
                 prof_cmd = shell_quote(rocprof) + " --kernel-trace --stats -- " + shell_quote(exe)
             else:
                 prof_cmd = shell_quote(rocprof) + " --stats " + shell_quote(exe)
+        else:
+            tool_name = "compute-sanitizer"
+            prof_cmd = shell_quote(sanitizer) + " --tool memcheck " + shell_quote(exe)
         var inner = "cd " + shell_quote(dir) + " && mkdir -p build && " + self.mojo_for(path) + " build" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " && " + prof_cmd
         var cmd = self.with_env(path, inner) + " 2>&1 </dev/null"
         if self.start_job(JOB_TASK, cmd, dir, "profile:" + tool_name):

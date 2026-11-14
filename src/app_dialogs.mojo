@@ -498,6 +498,11 @@ __extension App:
             if s >= 0 and s < len(self.dlg.keys):
                 var env_choice = String(self.dlg.keys[s])
                 self.pixi_env_choose(env_choice)
+        elif kind == D_GPU_LANE and b == 0:
+            self.gpu_lane_apply(self.dlg.field_text(0), self.dlg.field_text(1))
+        elif kind == D_MAX_SERVE and b == 0:
+            var s = self.dlg.selected_item()
+            self.max_serve_run(self.dlg.item_data[s] if s >= 0 else 0, self.dlg.field_text(0))
 
     # ------------------------------------------------------------ find / replace
     def current_search(self) -> Search:

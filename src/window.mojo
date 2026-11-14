@@ -148,6 +148,8 @@ struct Window(Copyable, Movable):
     var test_lens_states: List[Int]
     var clone_group: Int
     var sync_ver: Int
+    var indent_guides: Bool
+    var sel_hist: List[Range]
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
         self.kind = kind
@@ -231,6 +233,8 @@ struct Window(Copyable, Movable):
         self.hint_end = -1
         self.clone_group = 0
         self.sync_ver = 0
+        self.indent_guides = False
+        self.sel_hist = List[Range]()
 
     # ------------------------------------------------------------ geometry
     def contains(self, px: Int, py: Int) -> Bool:
@@ -753,6 +757,7 @@ struct Window(Copyable, Movable):
                 self.ac = self.cc
         else:
             self.sel = False
+        self.sel_hist.clear()
         self.break_group()
         self.follow = True
 
@@ -772,6 +777,7 @@ struct Window(Copyable, Movable):
     def goto(mut self, r: Int, c: Int):
         self.extra.clear()
         self.sel = False
+        self.sel_hist.clear()
         self.cr = r
         self.cc = c
         self.clamp()

@@ -3,4 +3,5 @@ examples/build/
 .pixi/
 probe/
 .claude/
+__pycache__/
 *.swp

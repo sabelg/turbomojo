@@ -47,6 +47,9 @@ This file is made by `tmide --keys` (TurboMojo 2.2.0).
 | Delete line | Ctrl-K | Ctrl-Y | - |
 | Complete word | Ctrl-Space | Ctrl-Space | Ctrl-Space |
 | Add next occurrence | Alt-D | Alt-D, Ctrl-K T | - |
+| Skip occurrence | Alt-K | Alt-K | Alt-K |
+| Expand selection | Alt-Shift-Right | Alt-Shift-Right | Alt-Shift-Right |
+| Shrink selection | Alt-Shift-Left | Alt-Shift-Left | Alt-Shift-Left |
 | Add cursor above | Ctrl-Alt-Up, Alt-Shift-Up | Ctrl-Alt-Up, Alt-Shift-Up | Ctrl-Alt-Up, Alt-Shift-Up |
 | Add cursor below | Ctrl-Alt-Down, Alt-Shift-Down | Ctrl-Alt-Down, Alt-Shift-Down | Ctrl-Alt-Down, Alt-Shift-Down |
 | Fold or unfold | Alt-- | Alt-- | Alt-- |

@@ -68,7 +68,7 @@ from app_vim import *
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
@@ -227,6 +227,8 @@ __extension App:
             self.persist_option("ui", "line_blame", toml_bool(self.git_line_blame))
         elif cmd == CM_FORMAT_SAVE:
             self.persist_option("editor", "format_on_save", toml_bool(self.format_on_save))
+        elif cmd == CM_INDENT_GUIDES:
+            self.persist_option("editor", "indent_guides", toml_bool(self.indent_guides))
         elif cmd == CM_SHOWWS:
             self.persist_option("ui", "show_whitespace", toml_bool(self.show_ws))
         elif cmd == CM_WRAP:
@@ -250,7 +252,7 @@ __extension App:
         var ai = self.active_editor()
         if ai >= 0 and self.wins[ai].has_multi():
             # only these know about several cursors; everything else works on the main one
-            if not (cmd == CM_ADDNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO or cmd == CM_MACRO_REC or cmd == CM_MACRO_PLAY or (cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE)):
+            if not (cmd == CM_ADDNEXT or cmd == CM_SKIPNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO or cmd == CM_MACRO_REC or cmd == CM_MACRO_PLAY or (cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE)):
                 self.wins[ai].collapse()
         if cmd == CM_REPORT:
             self.report_problem()
@@ -406,6 +408,20 @@ __extension App:
                     self.say("No more occurrences")
                 elif self.wins[ai].has_multi():
                     self.say(String(self.wins[ai].cursor_count()) + " cursors")
+        elif cmd == CM_SKIPNEXT:
+            if ai >= 0:
+                if not self.wins[ai].skip_next_occurrence():
+                    self.say("No more occurrences to skip to")
+                elif self.wins[ai].has_multi():
+                    self.say(String(self.wins[ai].cursor_count()) + " cursors")
+        elif cmd == CM_EXPAND_SEL:
+            if ai >= 0:
+                if not self.wins[ai].expand_selection():
+                    self.say("Selection already covers the buffer")
+        elif cmd == CM_SHRINK_SEL:
+            if ai >= 0:
+                if not self.wins[ai].shrink_selection():
+                    self.say("Nothing selected")
         elif cmd == CM_CURABOVE or cmd == CM_CURBELOW:
             if ai >= 0:
                 if self.wins[ai].add_cursor_vert(-1 if cmd == CM_CURABOVE else 1):
@@ -491,6 +507,8 @@ __extension App:
             self.watch_dialog(-1)
         elif cmd == CM_EVALUATE:
             self.eval_dialog("", List[String]())
+        elif cmd == CM_DEBUG_GPU_LANE:
+            self.gpu_lane_dialog()
         elif cmd == CM_GIT_DIFF:
             self.git_diff_open(False)
         elif cmd == CM_GIT_STATUS:
@@ -519,6 +537,8 @@ __extension App:
             self.agent_new_session()
         elif cmd == CM_AGENT_PROBLEMS:
             self.agent_send_problems()
+        elif cmd == CM_AGENT_REVERT:
+            self.agent_revert_turn()
         elif cmd == CM_GIT_COMMIT:
             self.git_commit_dialog()
         elif cmd == CM_GIT_BRANCH:
@@ -608,6 +628,8 @@ __extension App:
             self.codegen_open()
         elif cmd == CM_GPU_PROFILE:
             self.gpu_profile_command()
+        elif cmd == CM_MAX_SERVE:
+            self.max_serve_dialog()
         elif cmd == CM_GPU_WIN:
             self.gpuwin_toggle()
         elif cmd == CM_NEXTERR:
@@ -642,6 +664,12 @@ __extension App:
         elif cmd == CM_FORMAT_SAVE:
             self.format_on_save = not self.format_on_save
             self.say("Format on save " + ("on" if self.format_on_save else "off"))
+        elif cmd == CM_INDENT_GUIDES:
+            self.indent_guides = not self.indent_guides
+            for i in range(len(self.wins)):
+                if self.wins[i].kind == WK_EDITOR:
+                    self.wins[i].indent_guides = self.indent_guides
+            self.say("Indent guides " + ("on" if self.indent_guides else "off"))
         elif cmd == CM_SHOWWS:
             self.show_ws = not self.show_ws
         elif cmd == CM_SEMANTIC:

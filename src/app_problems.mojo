@@ -12,6 +12,7 @@ from commands import CM_LSP, CM_AGENT_EXPLAIN
 from window import WK_EDITOR, WK_MESSAGE
 from lsp import uri_to_path, utf16_to_col
 from json import JsonWriter
+from signals import own_pid
 from problems import *
 from testexp import TS_FAIL, def_line
 from tips import TK_ERROR
@@ -269,6 +270,8 @@ __extension App:
             return
         var w = JsonWriter()
         w.begin_obj()
+        w.kv_int("pid", own_pid())
+        w.kv_str("ipc_dir", self.ipc_dir)
         w.kv_str("project_dir", self.symidx_root())
         var te = self.top_editor()
         w.kv_str("active_file", self.wins[te].path if te >= 0 else String(""))

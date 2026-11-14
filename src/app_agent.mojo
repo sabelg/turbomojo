@@ -14,6 +14,9 @@ write files through the editor and what it asks permission for is refused.
 """
 from std.collections import List
 from appstate import *
+from watch import file_sig
+from symindex import FileIndex
+from swap import delete_file
 from app_notify import *
 from util import *
 from window import Window, WK_EDITOR, WK_AGENT
@@ -172,6 +175,7 @@ __extension App:
                     self.chat.note("The agent asks to " + self.agent_what(e) + ": Y allows it once, A for this session, N refuses")
             elif e.kind == AE_TURN_END:
                 self.chat.cancel_open_tools()
+                self.agent_finish_turn_checkpoint()
                 self.agent_check_answer()
                 self.export_ide_state()
                 if self.top() != self.agent_index():
@@ -287,10 +291,181 @@ __extension App:
         self.agent_perms.clear()
         self.agent_allowed.clear()
 
+    # ------------------------------------------------- checkpoints & rollback
+    def agent_record_before_write(mut self, path: String, old_text: String, existed: Bool):
+        """Remember the pre-turn state of `path` the first time it is touched in a turn."""
+        var p = normalize_path(path)
+        if p in self.agent_snap_paths:
+            return
+        self.agent_snap_paths.append(p)
+        self.agent_snap_before.append(old_text)
+        self.agent_snap_existed.append(existed)
+
+    def agent_snapshot_turn(mut self):
+        """Capture a lightweight snapshot of open buffers and small project files before
+        an agent turn starts so `CM_AGENT_REVERT` can roll back both ACP writes and direct
+        on-disk edits."""
+        self.agent_snap_paths.clear()
+        self.agent_snap_before.clear()
+        self.agent_snap_existed.clear()
+        self.agent_changed_files.clear()
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EDITOR and self.wins[i].path.byte_length() > 0 and not self.wins[i].buf.large:
+                var wpath = String(self.wins[i].path)
+                var wtxt = to_str(self.wins[i].buf.all_text())
+                self.agent_record_before_write(wpath, wtxt, path_exists(wpath))
+        var root = self.symidx_root()
+        if not self.fidx.building and (not self.fidx.built or self.fidx.root != root):
+            self.fidx.start(root)
+            self.fidx.step(250)
+        var files = self.fidx.files.copy() if self.fidx.built else self.fidx.fresh.copy()
+        var count = 0
+        for fp in files:
+            if count >= 400:
+                break
+            var p = normalize_path(fp)
+            if p in self.agent_snap_paths:
+                continue
+            var sig = file_sig(p)
+            if not sig.exists or sig.size > 524288:
+                continue
+            self.agent_record_before_write(p, read_text(p), True)
+            count += 1
+
+    def agent_finish_turn_checkpoint(mut self):
+        """Compute which files changed during the turn (including newly created files)."""
+        self.agent_changed_files.clear()
+        var root = self.symidx_root()
+        # also detect any newly created files in the project folder
+        var fresh_idx = FileIndex()
+        fresh_idx.start(root)
+        fresh_idx.step(300)
+        var cur_files = fresh_idx.files.copy() if fresh_idx.built else fresh_idx.fresh.copy()
+        for fp in cur_files:
+            var p = normalize_path(fp)
+            if p not in self.agent_snap_paths and len(self.agent_snap_paths) > 0:
+                self.agent_record_before_write(p, "", False)
+        for k in range(len(self.agent_snap_paths)):
+            var p = self.agent_snap_paths[k]
+            var got = self.agent_file_text(p)
+            var changed = False
+            if not self.agent_snap_existed[k]:
+                changed = got[1]
+            elif not got[1] or got[0] != self.agent_snap_before[k]:
+                changed = True
+            if changed and p not in self.agent_changed_files:
+                self.agent_changed_files.append(p)
+        if len(self.agent_changed_files) > 0:
+            var rels = List[String]()
+            for k in range(min(4, len(self.agent_changed_files))):
+                rels.append(self.agent_rel(self.agent_changed_files[k]))
+            var summary = ", ".join(rels)
+            if len(self.agent_changed_files) > 4:
+                summary += " +" + String(len(self.agent_changed_files) - 4) + " more"
+            self.chat.note("Checkpoint: " + String(len(self.agent_changed_files)) + " file(s) changed (" + summary + ") — ≡ > Revert last agent turn rolls back")
+
+    def agent_revert_turn(mut self) raises:
+        """Roll back all file modifications and newly created files from the last agent turn."""
+        if len(self.agent_snap_paths) == 0:
+            self.say("No agent turn checkpoint to revert")
+            return
+        var root = self.symidx_root()
+        var fresh_idx = FileIndex()
+        fresh_idx.start(root)
+        fresh_idx.step(300)
+        var cur_files = fresh_idx.files.copy() if fresh_idx.built else fresh_idx.fresh.copy()
+        for fp in cur_files:
+            var p = normalize_path(fp)
+            if p not in self.agent_snap_paths:
+                self.agent_record_before_write(p, "", False)
+        var reverted = 0
+        for k in range(len(self.agent_snap_paths)):
+            var p = self.agent_snap_paths[k]
+            var existed = self.agent_snap_existed[k]
+            var before = self.agent_snap_before[k]
+            var got = self.agent_file_text(p)
+            if not existed:
+                if got[1] or path_exists(p):
+                    delete_file(p)
+                    var ei = self.find_editor(p)
+                    if ei >= 0:
+                        self.replace_text_min(ei, List[Int]())
+                        self.wins[ei].buf.modified = False
+                    reverted += 1
+            else:
+                if not got[1] or got[0] != before or (path_exists(p) and read_text(p) != before):
+                    _ = run_system("mkdir -p " + shell_quote(dirname(p)))
+                    _ = write_file(p, str_bytes(before))
+                    var ei = self.find_editor(p)
+                    if ei >= 0:
+                        self.replace_text_min(ei, decode(before))
+                        _ = self.save_window(ei, NEXT_NONE)
+                    reverted += 1
+        self.agent_snap_paths.clear()
+        self.agent_snap_before.clear()
+        self.agent_snap_existed.clear()
+        self.agent_changed_files.clear()
+        self.fidx.built = False
+        self.git_saved()
+        self.export_ide_state()
+        if reverted == 0:
+            self.say("Nothing changed since the last agent checkpoint")
+        else:
+            var msg = "Reverted " + String(reverted) + " file(s) from the last agent turn"
+            self.chat.note(msg)
+            self.say(msg)
+
+    def agent_virtual_context(mut self, kind: String) -> Tuple[String, String]:
+        """Build live context for `@problems`, `@git`, and `@terminal` mentions."""
+        var root = self.symidx_root()
+        if kind == "problems":
+            var probs = self.problems_collect()
+            if len(probs) == 0:
+                return (String("turbomojo://context/problems"), String("(no current LSP, build, or test problems)"))
+            var lines = List[String]()
+            for k in range(min(50, len(probs))):
+                ref p = probs[k]
+                var sev = String("error") if p.severity == 1 else (String("warning") if p.severity == 2 else String("note"))
+                var rel = self.agent_rel(p.path) if p.path.byte_length() > 0 else String("<project>")
+                lines.append(rel + ":" + String(max(1, p.line)) + ":" + String(max(1, p.col)) + " [" + sev + "]: " + p.message)
+                for m in p.more:
+                    lines.append("  " + m)
+            return (String("turbomojo://context/problems"), "\n".join(lines))
+        if kind == "git":
+            var r = run_capture("cd " + shell_quote(root) + " && git status --short --branch 2>&1 && echo '---' && git diff --stat 2>&1 && echo '---' && git diff 2>&1")
+            var out = bytes_to_str(r.out)
+            if out.byte_length() > 16384:
+                var trimmed = String(out[byte=0:16384])
+                out = trimmed + "\n...(git diff truncated)"
+            if String(out.strip()).byte_length() == 0:
+                out = "(clean git working tree)"
+            return (String("turbomojo://context/git"), out)
+        if kind == "terminal":
+            var parts = List[String]()
+            var run_txt = String(self.trun.vt.text().strip())
+            if run_txt.byte_length() > 0:
+                parts.append("[Run terminal]\n" + tail_lines(run_txt, 60))
+            var sh_txt = String(self.tshell.vt.text().strip())
+            if sh_txt.byte_length() > 0:
+                parts.append("[Shell terminal]\n" + tail_lines(sh_txt, 60))
+            for k in range(len(self.agent_terms)):
+                var atxt = String(bytes_to_str(self.agent_terms[k].output).strip())
+                if atxt.byte_length() > 0:
+                    parts.append("[Agent terminal: " + self.agent_terms[k].title + "]\n" + tail_lines(atxt, 40))
+            if len(parts) == 0:
+                var mi = self.msg_index()
+                if mi >= 0:
+                    var mtxt = String(to_str(self.wins[mi].buf.all_text()).strip())
+                    if mtxt.byte_length() > 0:
+                        parts.append("[Message output]\n" + tail_lines(mtxt, 60))
+            var body = "\n\n".join(parts) if len(parts) > 0 else String("(no terminal or build output yet)")
+            return (String("turbomojo://context/terminal"), body)
+        return (String(""), String(""))
+
     # -------------------------------------------------------------- prompts
     def agent_blocks(mut self, text: String) -> String:
         """The prompt as ACP content blocks: the text, then each mentioned file (or its
-        lines) - embedded when the agent takes embedded context, else as a link."""
+        lines) or live `@problems` / `@git` / `@terminal` context."""
         var w = JsonWriter()
         w.begin_arr()
         w.begin_obj()
@@ -300,6 +475,26 @@ __extension App:
         var root = self.symidx_root()
         var seen = List[String]()
         for m in find_mentions(text):
+            if m.path == "problems" or m.path == "git" or m.path == "terminal":
+                var vkey = "@" + m.path
+                if vkey in seen:
+                    continue
+                seen.append(vkey)
+                var vc = self.agent_virtual_context(m.path)
+                w.begin_obj()
+                if self.agent.embedded_context:
+                    w.kv_str("type", "resource")
+                    w.key("resource")
+                    w.begin_obj()
+                    w.kv_str("uri", vc[0])
+                    w.kv_str("mimeType", "text/plain")
+                    w.kv_str("text", vc[1])
+                    w.end_obj()
+                else:
+                    w.kv_str("type", "text")
+                    w.kv_str("text", "### Context (@" + m.path + ")\n" + vc[1])
+                w.end_obj()
+                continue
             var path = abs_path(root, m.path)
             if not path_exists(path) or is_dir(path):
                 continue
@@ -345,6 +540,7 @@ __extension App:
             self.agent_history.append(text)
         self.agent_hist_idx = -1
         self.agent_draft.clear()
+        self.agent_snapshot_turn()
         self.chat.user(text)
         var blocks = self.agent_blocks(text)
         if self.agent.state == AS_READY:
@@ -519,20 +715,25 @@ __extension App:
                 raw.append(self.wins[i].path)
         var rels = List[String]()
         var matches = List[String]()
+        for vk in ["problems", "git", "terminal"]:
+            var vs = String(vk)
+            rels.append(vs)
+            if fuzzy_score(vs, prefix) >= 0:
+                matches.append(vs)
         for fp in raw:
             var rel = String(fp[byte=root.byte_length() + 1:]) if fp.startswith(root + "/") else fp
             rels.append(rel)
             if fuzzy_score(rel, prefix) >= 0:
                 matches.append(rel)
         if len(matches) == 0:
-            self.say("No project file matches @" + prefix)
+            self.say("No project file or @context matches @" + prefix)
             return
         if len(matches) == 1 and prefix.byte_length() > 0:
             self.agent_replace_at(at_pos, matches[0])
             return
         self.agent_at_start = at_pos
         self.agent_files = rels^
-        var d = Dialog(D_AGENT_FILE, "Mention File (@)", min(72, self.scr.w - 4), min(20, self.desk_h()))
+        var d = Dialog(D_AGENT_FILE, "Mention Context or File (@)", min(72, self.scr.w - 4), min(20, self.desk_h()))
         d.fields.append(Field("~F~ile", prefix))
         d.list_filter = True
         var items = List[String]()
@@ -540,10 +741,20 @@ __extension App:
         var keys = List[String]()
         for k in range(len(self.agent_files)):
             var rel = self.agent_files[k]
-            var name = basename(rel)
-            var where = dirname(rel) if rel != name else String("")
-            items.append(pad_right(name, 30) + " " + where)
-            keys.append(name + "  " + rel)
+            if rel == "problems":
+                items.append(pad_right("@problems", 30) + " current LSP, build & test diagnostics")
+                keys.append("problems diagnostics errors warnings")
+            elif rel == "git":
+                items.append(pad_right("@git", 30) + " git status & working-tree diff")
+                keys.append("git status diff changes")
+            elif rel == "terminal":
+                items.append(pad_right("@terminal", 30) + " recent Run / Shell terminal output")
+                keys.append("terminal output shell run")
+            else:
+                var name = basename(rel)
+                var where = dirname(rel) if rel != name else String("")
+                items.append(pad_right(name, 30) + " " + where)
+                keys.append(name + "  " + rel)
             data.append(k)
         d.keys = keys^
         d.set_items(items^, data^)
@@ -768,7 +979,10 @@ __extension App:
         elif self.agent_scroll > 0:
             sep = " " + String(self.agent_scroll) + " rows back - Down / PgDn "
         elif self.agent.current_model.byte_length() > 0:
-            sep = " " + self.agent.model_name(self.agent.current_model) + " · " + self.agent_effective_mode() + " "
+            var chg = (" · " + String(len(self.agent_changed_files)) + " changed") if len(self.agent_changed_files) > 0 else String("")
+            sep = " " + self.agent.model_name(self.agent.current_model) + " · " + self.agent_effective_mode() + chg + " "
+        elif len(self.agent_changed_files) > 0:
+            sep = " " + String(len(self.agent_changed_files)) + " changed "
         self.scr.fill(x, y + area, w, 1, 0x2500, p.frame_inact, p.ed_bg)
         if sep.byte_length() > 0:
             _ = self.scr.text(x + 1, y + area, sep, p.frame_act, p.ed_bg)

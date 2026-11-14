@@ -3,10 +3,14 @@
 and offline Mojo 1.2 documentation search to coding agents (e.g. `agy acp`)."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+_IPC_SEQ = 0
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATE_FILE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "turbomojo" / "ide-state.json"
@@ -63,6 +67,84 @@ TOOLS = [
                 },
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "turbomojo_open_location",
+        "description": "Open a file and jump to a 1-based line and column in the running TurboMojo IDE session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path to open in TurboMojo."},
+                "line": {"type": "integer", "description": "1-based line number (default 1)."},
+                "col": {"type": "integer", "description": "1-based column number (default 1)."},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "turbomojo_get_buffer_text",
+        "description": (
+            "Read the live editor buffer text (including unsaved edits) from a running TurboMojo session, "
+            "falling back to disk if no live IDE session has the file open."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to the file or open editor buffer."},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "turbomojo_apply_buffer_edits",
+        "description": (
+            "Apply 1-based line or character-range edits directly into TurboMojo's live editor buffer "
+            "(as a single Ctrl-Z undoable step), falling back to editing on disk when no live IDE is running."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to the target file."},
+                "save": {"type": "boolean", "description": "Save buffer to disk after applying edits (default false)."},
+                "edits": {
+                    "type": "array",
+                    "description": "List of 1-based edits ({start_line, end_line, text} or {start_line, start_col, end_line, end_col, text}).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "start_line": {"type": "integer"},
+                            "end_line": {"type": "integer"},
+                            "start_col": {"type": "integer"},
+                            "end_col": {"type": "integer"},
+                            "text": {"type": "string"},
+                        },
+                        "required": ["start_line", "text"],
+                    },
+                },
+            },
+            "required": ["path", "edits"],
+        },
+    },
+    {
+        "name": "turbomojo_inspect_codegen",
+        "description": (
+            "Emit assembly (asm) or LLVM IR (llvm) for a Mojo file and return SIMD vectorization counts, "
+            "stack-spill warnings, function symbols, and annotated codegen lines."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to the .mojo file to inspect."},
+                "stage": {"type": "string", "enum": ["asm", "llvm"], "description": "Codegen stage: 'asm' (default) or 'llvm'."},
+                "filter_symbol": {"type": "string", "description": "Optional substring filter for function/symbol names."},
+                "include_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional extra -I include directories.",
+                },
+            },
+            "required": ["file_path"],
         },
     },
 ]
@@ -235,6 +317,185 @@ def search_docs(query: str, limit: int = 8) -> dict:
     }
 
 
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def send_ide_ipc(op: str, payload: dict, timeout_s: float = 1.5):
+    global _IPC_SEQ
+    state = read_ide_state()
+    if not isinstance(state, dict):
+        return None
+    pid = int(state.get("pid") or 0)
+    ipc_dir_raw = state.get("ipc_dir") or ""
+    if not ipc_dir_raw or not _pid_alive(pid):
+        return None
+    ipc_dir = Path(ipc_dir_raw)
+    if not ipc_dir.is_dir():
+        return None
+    _IPC_SEQ += 1
+    req_id = f"{os.getpid()}-{_IPC_SEQ}"
+    msg = dict(payload)
+    msg["id"] = req_id
+    msg["op"] = op
+    req_tmp = ipc_dir / f".req-{req_id}.tmp"
+    req_path = ipc_dir / f"req-{req_id}.json"
+    resp_path = ipc_dir / f"resp-{req_id}.json"
+    try:
+        resp_path.unlink(missing_ok=True)
+        req_tmp.write_text(json.dumps(msg) + "\n", encoding="utf-8")
+        os.replace(req_tmp, req_path)
+    except OSError:
+        return None
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if resp_path.is_file():
+            try:
+                txt = resp_path.read_text(encoding="utf-8", errors="replace")
+                resp_path.unlink(missing_ok=True)
+                return json.loads(txt)
+            except Exception:
+                return None
+        time.sleep(0.01)
+    try:
+        req_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    return None
+
+
+def apply_disk_edits(file_path: Path, edits: list[dict]) -> dict:
+    raw = file_path.read_text(encoding="utf-8", errors="replace")
+    trailing_nl = raw.endswith("\n")
+    lines = raw.splitlines()
+    if not lines:
+        lines = [""]
+    ordered = sorted(
+        edits,
+        key=lambda e: (int(e.get("start_line") or 1), int(e.get("start_col") or 0)),
+        reverse=True,
+    )
+    for ed in ordered:
+        sl = max(1, int(ed.get("start_line") or 1))
+        el = int(ed.get("end_line") if ed.get("end_line") is not None else sl)
+        sc = int(ed.get("start_col") or 0)
+        ec = int(ed.get("end_col") or 0)
+        txt = str(ed.get("text") or "")
+        if sc > 0 or ec > 0:
+            r1 = min(sl - 1, len(lines) - 1)
+            r2 = min(max(r1, el - 1), len(lines) - 1)
+            c1 = min(max(0, sc - 1), len(lines[r1]))
+            c2 = min(max(0, (ec if ec > 0 else sc) - 1), len(lines[r2]))
+            prefix = lines[r1][:c1]
+            suffix = lines[r2][c2:]
+            merged = (prefix + txt + suffix).split("\n")
+            lines[r1 : r2 + 1] = merged
+        else:
+            r1 = max(0, sl - 1)
+            r2 = el - 1
+            clean = txt[:-2] if txt.endswith("\r\n") else (txt[:-1] if txt.endswith("\n") else txt)
+            repl_lines = clean.split("\n") if txt != "" else []
+            if r2 < r1:
+                idx = min(r1, len(lines))
+                lines[idx:idx] = repl_lines
+            else:
+                lines[min(r1, len(lines)) : min(r2 + 1, len(lines))] = repl_lines
+    out = "\n".join(lines) + ("\n" if trailing_nl and lines else "")
+    file_path.write_text(out, encoding="utf-8")
+    return {
+        "ok": True,
+        "live": False,
+        "path": str(file_path),
+        "applied": len(ordered),
+        "modified": False,
+        "lines": len(lines),
+    }
+
+
+def run_codegen_inspect(file_path: str, stage: str, filter_symbol: str, include_paths: list[str]) -> dict:
+    p = Path(file_path).expanduser().resolve()
+    if not p.is_file():
+        return {"ok": False, "error": f"File not found: {p}"}
+    emit = "llvm" if stage == "llvm" else "asm"
+    ext = ".ll" if emit == "llvm" else ".s"
+    out_file = Path(f"/tmp/turbomojo-mcp-codegen-{os.getpid()}{ext}")
+    mojo_bin = shutil.which("mojo") or str(Path.home() / ".local/bin/mojo")
+    cmd = [mojo_bin, "build", f"--emit={emit}"]
+    inc_set = []
+    for inc in include_paths:
+        if inc not in inc_set:
+            inc_set.append(inc)
+    if p.parent.name == "src" and str(p.parent) not in inc_set:
+        inc_set.append(str(p.parent))
+    elif (p.parent.parent / "src").is_dir() and str(p.parent.parent / "src") not in inc_set:
+        inc_set.append(str(p.parent.parent / "src"))
+    for inc in inc_set:
+        cmd.extend(["-I", inc])
+    cmd.extend([str(p), "-o", str(out_file)])
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=str(p.parent))
+        if proc.returncode != 0 or not out_file.is_file():
+            return {
+                "ok": False,
+                "stage": emit,
+                "exit_code": proc.returncode,
+                "output": (proc.stdout + proc.stderr).strip(),
+            }
+        raw = out_file.read_text(encoding="utf-8", errors="replace")
+        simd_re = re.compile(r"\b(vmov|vadd|vmul|vfma|vpadd|vpxor|zmm|ymm|xmm|<\d+\s*x\s*)", re.IGNORECASE)
+        spill_re = re.compile(r"(%rsp\)|\[sp,|#.*spill|alloca\b)", re.IGNORECASE)
+        simd_ops = 0
+        spill_ops = 0
+        functions = []
+        annotated = []
+        keep_fn = True
+        flt = filter_symbol.lower().strip()
+        for line in raw.splitlines():
+            stripped = line.strip()
+            if emit == "asm" and stripped.endswith(":") and not stripped.startswith("."):
+                fn_name = stripped[:-1]
+                functions.append(fn_name)
+                keep_fn = (not flt) or (flt in fn_name.lower())
+            elif emit == "llvm" and stripped.startswith("define "):
+                functions.append(stripped[:120])
+                keep_fn = (not flt) or (flt in stripped.lower())
+            if not keep_fn:
+                continue
+            tag = ""
+            if simd_re.search(line):
+                simd_ops += 1
+                tag = "[SIMD] "
+            if spill_re.search(line):
+                spill_ops += 1
+                tag = "[SPILL] " + tag
+            if len(annotated) < 250 and stripped and not stripped.startswith((".cfi_", "; ModuleID")):
+                annotated.append(f"{tag}{line}")
+        return {
+            "ok": True,
+            "file": str(p),
+            "stage": emit,
+            "simd_ops": simd_ops,
+            "spill_ops": spill_ops,
+            "functions": functions[:50],
+            "lines": annotated,
+        }
+    except Exception as exc:
+        return {"ok": False, "stage": emit, "error": str(exc)}
+    finally:
+        try:
+            out_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
 def handle_call(name: str, args: dict) -> dict:
     if name == "turbomojo_get_diagnostics":
         out = {"ide_state": read_ide_state() or {"note": "No live TurboMojo session state file yet."}}
@@ -247,6 +508,8 @@ def handle_call(name: str, args: dict) -> dict:
         if not state:
             return {"note": "No live TurboMojo session state file found yet (~/.local/state/turbomojo/ide-state.json)."}
         return {
+            "pid": state.get("pid", 0),
+            "ipc_dir": state.get("ipc_dir", ""),
             "project_dir": state.get("project_dir", ""),
             "active_file": state.get("active_file", ""),
             "agent_mode": state.get("agent_mode", ""),
@@ -257,6 +520,40 @@ def handle_call(name: str, args: dict) -> dict:
         q = (args or {}).get("query", "")
         lim = int((args or {}).get("limit", 8) or 8)
         return search_docs(q, max(1, min(25, lim)))
+    if name == "turbomojo_open_location":
+        p = str(Path((args or {}).get("path", "")).expanduser().resolve())
+        line = max(1, int((args or {}).get("line", 1) or 1))
+        col = max(1, int((args or {}).get("col", 1) or 1))
+        rep = send_ide_ipc("open_location", {"path": p, "line": line, "col": col})
+        if rep is not None:
+            return rep
+        return {"ok": False, "live": False, "note": "No live TurboMojo TUI session is currently running.", "path": p, "line": line, "col": col}
+    if name == "turbomojo_get_buffer_text":
+        p = Path((args or {}).get("path", "")).expanduser().resolve()
+        rep = send_ide_ipc("get_buffer", {"path": str(p)})
+        if rep is not None:
+            return rep
+        if not p.is_file():
+            return {"ok": False, "error": f"File not found: {p}"}
+        txt = p.read_text(encoding="utf-8", errors="replace")
+        return {"ok": True, "live": False, "modified": False, "path": str(p), "lines": len(txt.splitlines()), "text": txt}
+    if name == "turbomojo_apply_buffer_edits":
+        p = Path((args or {}).get("path", "")).expanduser().resolve()
+        edits = (args or {}).get("edits") or []
+        save = bool((args or {}).get("save", False))
+        rep = send_ide_ipc("apply_edits", {"path": str(p), "edits": edits, "save": save})
+        if rep is not None:
+            rep["live"] = True
+            return rep
+        if not p.is_file():
+            return {"ok": False, "error": f"File not found: {p}"}
+        return apply_disk_edits(p, edits)
+    if name == "turbomojo_inspect_codegen":
+        fp = (args or {}).get("file_path", "")
+        stage = (args or {}).get("stage", "asm") or "asm"
+        flt = (args or {}).get("filter_symbol", "") or ""
+        incs = (args or {}).get("include_paths") or []
+        return run_codegen_inspect(fp, stage, flt, incs)
     raise ValueError(f"Unknown tool: {name}")
 
 

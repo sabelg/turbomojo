@@ -25,14 +25,19 @@
   banners on older course pages, 27 built-in Mojo 1.2 error pages, 13 interactive
   exercises, and one-click background `pixi install` for the Mojo GPU Puzzles.
 - Coding agent upgrades: `auto`, `accept-edits`, and `ask` permission modes (`Alt-M`),
-  model & thinking selectors (`Alt-O`, `Alt-T`), `@file` Tab-completion, `Alt-Up` /
-  `Alt-Down` prompt history, persistent sessions, Send diagnostics to agent, and a
-  built-in MCP workspace server (`scripts/mcp_server.py`).
+  model & thinking selectors (`Alt-O`, `Alt-T`), `@file` and virtual `@problems`, `@git`,
+  `@terminal` Tab-completion, `Alt-Up` / `Alt-Down` prompt history, persistent sessions,
+  per-turn snapshots with one-step File > Revert last agent turn, Send diagnostics to
+  agent, `tmide --reuse file:line[:col]`, and a two-way live MCP workspace server
+  (`scripts/mcp_server.py`: diagnostics, open editors, docs search, live buffer read/edit,
+  open location, and ASM/LLVM codegen inspection).
 - Full IDE audit & Mojo 1.2 GPU/SIMD upgrades:
-  - **Vim power suite**: `Ctrl-D`/`U`/`F`/`B` scrolling, `Ctrl-O`/`I` jumplist, `Ctrl-W`
+  - **Vim & Structural editing**: `Ctrl-D`/`U`/`F`/`B` scrolling, `Ctrl-O`/`I` jumplist, `Ctrl-W`
     pane navigation, `Ctrl-V` Visual-Block column editing, `q<reg>`/`@<reg>`/`@@`
-    register macros, `gd`/`gr`/`K` LSP navigation, and `:sp`/`:vsp` synchronized split
-    views of the same file (also Window > Split joint view).
+    register macros, `gd`/`gr`/`K` LSP navigation, `:sp`/`:vsp` synchronized split views
+    (Window > Split joint view), Edit > Expand / Shrink selection (`Alt-Shift-Right` /
+    `Alt-Shift-Left`), Edit > Skip and add next (`Alt-K`), and Options > Indent guides
+    (`editor.indent_guides`).
   - **Search & Git**: Search > Replace in files... with file globs and atomic multi-file
     undo; File > Git status panel (`s`/`u`/`a`/`r`/`d`/`c`), Git stash / pop, remote
     branch tracking checkout, Options > Inline git blame, untracked-file hunk staging,
@@ -41,12 +46,15 @@
     warm 2-server LSP pool, automatic LSP start (`[tools] lsp_auto_start`), `textDocument/typeDefinition`,
     `completionItem/resolve`, viewport-chunked inlay hints, diff-hunk `mojo format` +
     Format on save, inline `[PASS]`/`[FAIL]` test lens + Run > Quick-run test at cursor,
-    live inline debugger variable ghosts, and CPU window SIMD lane formatting (`v`/`V`).
-  - **GPU & Codegen**: Window > GPU queue & monitor (live compute/VRAM sparklines,
+    fast sharded `scripts/check.sh` test compilation, live inline debugger variable ghosts,
+    Run > GPU thread / block focus (`cuda-gdb` / `rocgdb` / `mojo-lldb-dap`), and CPU window
+    SIMD lane formatting (`v`/`V`).
+  - **GPU, Codegen & MAX**: Window > GPU queue & monitor (live compute/VRAM sparklines,
     temperature, power, active processes), Compile > Inspect generated code (ASM / LLVM
     IR with `[SIMD]` and `[SPILL]` badges), Compile > Profile GPU kernels (`nsys` /
-    `rocprofv3`), `gpu_sync = true` run configuration support, and 4 New Project
-    templates (App, Library, GPU Kernel, Python Extension).
+    `rocprofv3` / `compute-sanitizer` with parsed top-kernel summary), Run > MAX serve /
+    benchmark... (`max serve` & `max benchmark`), `gpu_sync = true` run configuration
+    support, and 4 New Project templates (App, Library, GPU Kernel, Python Extension).
 
 ## 2.2: ready for other people
 - A program that uses a library which is not installed (`unable to locate module

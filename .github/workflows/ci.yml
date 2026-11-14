@@ -31,11 +31,9 @@ jobs:
           - platform: linux-aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    # GitHub's runners have 4 CPUs: compiling the ~140 test programs alone takes well
-    # over an hour there (it is about 20 min for the whole gate on a large machine).
-    # The whole gate took 84-90 min on linux-64 in Nov 2026 and went past 120 with 137
-    # test files; 180 leaves room for the tests to grow.
-    timeout-minutes: 180
+    # Tests compile into 4 cached shards (scripts/gen_test_runner.py) instead of 140+
+    # separate AOT binaries; 45 minutes leaves generous headroom on 4-CPU runners.
+    timeout-minutes: 45
     env:
       TM_JOBS: "4"
     steps:
@@ -45,8 +43,18 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.8
         with:
           cache: true
+      - name: Cache compiled test shards
+        uses: actions/cache@v4
+        with:
+          path: build/tests
+          key: tm-test-shards-${{ matrix.platform }}-${{ hashFiles('pixi.lock', 'src/**/*.mojo', 'tests/**/*.mojo', 'scripts/gen_test_runner.py') }}
+          restore-keys: |
+            tm-test-shards-${{ matrix.platform }}-${{ hashFiles('pixi.lock', 'src/**/*.mojo') }}-
+            tm-test-shards-${{ matrix.platform }}-
       - name: Gate on stable Mojo
         run: pixi run check
+      - name: Verify generated docs are up to date
+        run: python3 scripts/gen_docs.py --check
       - name: Upload crash log and screen on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -55,6 +63,33 @@ jobs:
           path: |
             build/state/
           if-no-files-found: ignore
+
+  macos:
+    name: check (osx-arm64)
+    if: github.event_name != 'schedule'
+    runs-on: macos-14
+    timeout-minutes: 45
+    continue-on-error: true
+    env:
+      TM_JOBS: "4"
+      SKIP_SMOKE: "1"
+      SKIP_PERF: "1"
+      SKIP_SOAK: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          cache: true
+      - name: Cache compiled test shards (osx-arm64)
+        uses: actions/cache@v4
+        with:
+          path: build/tests
+          key: tm-test-shards-osx-arm64-${{ hashFiles('pixi.lock', 'src/**/*.mojo', 'tests/**/*.mojo', 'scripts/gen_test_runner.py') }}
+          restore-keys: |
+            tm-test-shards-osx-arm64-${{ hashFiles('pixi.lock', 'src/**/*.mojo') }}-
+            tm-test-shards-osx-arm64-
+      - name: Build and run unit tests on Apple Silicon
+        run: pixi run check && ./build/tmide --version
 
   canary:
     name: canary (nightly Mojo)

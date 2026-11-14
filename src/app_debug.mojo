@@ -1101,6 +1101,37 @@ __extension App:
         waiting.append("(asking the debugger...)")
         self.eval_dialog(expr, waiting)
 
+    def gpu_lane_dialog(mut self):
+        """Run > GPU y/x/z thread: switch GPU block/thread or LLDB thread while stopped."""
+        if not self.dbg.active() or self.dbg.state != DS_STOPPED:
+            self.say("Stop the program at a breakpoint first to switch GPU thread/lane")
+            return
+        var d = Dialog(D_GPU_LANE, "GPU Thread / Block Focus", min(68, self.scr.w - 4), 13)
+        d.lines.append("Adapter: " + self.debug_adapter)
+        d.lines.append("cuda-gdb uses block/thread (x,y,z); rocgdb uses lane x; LLDB selects thread x.")
+        d.fields.append(Field("~B~lock (x,y,z)", self.dbg_gpu_block))
+        d.fields.append(Field("~T~hread / lane (x,y,z)", self.dbg_gpu_thread))
+        d.fields[1].fresh = True
+        d.buttons.append("~S~witch")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def gpu_lane_apply(mut self, block_txt: String, thread_txt: String):
+        self.dbg_gpu_block = String(block_txt.strip()) if String(block_txt.strip()).byte_length() > 0 else String("0,0,0")
+        self.dbg_gpu_thread = String(thread_txt.strip()) if String(thread_txt.strip()).byte_length() > 0 else String("0,0,0")
+        if not self.dbg.active() or self.dbg.state != DS_STOPPED:
+            self.say("The program is no longer stopped")
+            return
+        var cmd = format_gpu_focus_command(self.debug_adapter, self.dbg_gpu_block, self.dbg_gpu_thread)
+        var args = "{\"expression\":" + json_quote(cmd) + ",\"context\":\"repl\""
+        if self.dview.sel < len(self.dview.frames):
+            args += ",\"frameId\":" + String(self.dview.frames[self.dview.sel].id)
+        elif self.dbg.stop_frame >= 0:
+            args += ",\"frameId\":" + String(self.dbg.stop_frame)
+        self.dv_eval_seq = self.dbg.ask("evaluate", args + "}")
+        self.dv_eval_expr = cmd
+        self.say("Debugger focus: " + cmd)
+
     def eval_answer(mut self, ok: Bool, result: String, message: String):
         var text = console_result(result) if ok else ("error: " + message if not message.startswith("error") else message)
         if not ok and message == "error: invalid value object":

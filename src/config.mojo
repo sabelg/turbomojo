@@ -190,6 +190,7 @@ struct Settings(Copyable, Movable):
     var minimap: Bool
     var highlight_word: Bool
     var relative_numbers: Bool
+    var indent_guides: Bool
     var persistent_undo: Bool
     var trim_trailing: Bool
     var rulers: List[Int]
@@ -256,6 +257,7 @@ struct Settings(Copyable, Movable):
         self.minimap = False
         self.highlight_word = True
         self.relative_numbers = False
+        self.indent_guides = False
         self.persistent_undo = True
         self.trim_trailing = False
         self.rulers = List[Int]()
@@ -339,6 +341,7 @@ struct Settings(Copyable, Movable):
         self.minimap = self.take_bool(doc, "editor.minimap", self.minimap)
         self.highlight_word = self.take_bool(doc, "editor.highlight_word", self.highlight_word)
         self.relative_numbers = self.take_bool(doc, "editor.relative_numbers", self.relative_numbers)
+        self.indent_guides = self.take_bool(doc, "editor.indent_guides", self.indent_guides)
         self.persistent_undo = self.take_bool(doc, "editor.persistent_undo", self.persistent_undo)
         self.trim_trailing = self.take_bool(doc, "editor.trim_trailing_whitespace", self.trim_trailing)
         self.format_on_save = self.take_bool(doc, "editor.format_on_save", self.format_on_save)
@@ -524,7 +527,7 @@ struct Settings(Copyable, Movable):
                 self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_blame", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.format_on_save", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.lsp_auto_start", "tools.pixi_env", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_blame", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.indent_guides", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.format_on_save", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.lsp_auto_start", "tools.pixi_env", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):

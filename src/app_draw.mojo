@@ -516,6 +516,7 @@ __extension App:
     def draw_window(mut self, i: Int, active: Bool):
         var p = self.pal.copy()
         self.wins[i].rel_nums = self.rel_numbers
+        self.wins[i].indent_guides = self.indent_guides
         self.wins[i].draw(self.scr, p, self.hl, active, self.hl_line, self.insert_mode, self.show_ws)
 
     def draw_completion(mut self, cx: Int, cy: Int):

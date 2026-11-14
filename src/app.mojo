@@ -64,6 +64,7 @@ from app_presets import *
 from app_report import *
 from app_gpu import *
 from app_codegen import *
+from app_ipc import *
 from version import MOJO_BUILT_WITH
 from mojover import mojo_mismatch, mojo_summary
 
@@ -168,6 +169,9 @@ __extension App:
         self.enable_history()
         self.watch_enabled = True
         _ = self.watch.open()
+        if self.ipc_dir.byte_length() > 0:
+            _ = self.watch.watch_dir(self.ipc_dir)
+        self.export_ide_state()
         self.term.enter()
         var caps = self.term.probe(CAPS_TIMEOUT_MS, True)
         self.scr.color_mode = caps.color
@@ -300,6 +304,7 @@ __extension App:
                     self.git_checked_ns = 0
                     self.git_tick(now_ns())
                 self.watch_tick(now_ns(), woke)
+                _ = self.ipc_tick()
             except err:
                 self.log_error(String(err))
             try:
