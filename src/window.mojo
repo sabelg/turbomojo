@@ -90,6 +90,7 @@ struct Window(Copyable, Movable):
     var sel: Bool
     var ar: Int
     var ac: Int
+    var vsel: Int           # vim's Visual modes: 0 none, 1 the cursor's character included, 2 whole lines
     var number: Int
     var git_rows: List[Int]     # explorer: GS_* of each row's file or folder
     var row_marks: List[Int]    # list windows: RM_* of each row (its colour)
@@ -136,6 +137,7 @@ struct Window(Copyable, Movable):
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
         self.kind = kind
+        self.vsel = 0
         self.title = title
         self.path = path
         self.buf = TextBuffer()
@@ -678,12 +680,28 @@ struct Window(Copyable, Movable):
 
     # --------------------------------------------------------- selection
     def has_sel(self) -> Bool:
+        if self.vsel != 0:
+            return self.sel             # (vim: even one character, or one line)
         return self.sel and (self.ar != self.cr or self.ac != self.cc)
 
     def sel_range(self) -> Range:
+        var r: Range
         if self.ar < self.cr or (self.ar == self.cr and self.ac < self.cc):
-            return Range(self.ar, self.ac, self.cr, self.cc)
-        return Range(self.cr, self.cc, self.ar, self.ac)
+            r = Range(self.ar, self.ac, self.cr, self.cc)
+        else:
+            r = Range(self.cr, self.cc, self.ar, self.ac)
+        if self.vsel == 1:
+            # vim's Visual: the character at the far end is in it too
+            r.c2 = min(r.c2 + 1, self.buf.llen(r.r2))
+        elif self.vsel == 2:
+            # Visual line: whole lines, with the line break after the last one
+            r.c1 = 0
+            if r.r2 + 1 < self.buf.count():
+                r.r2 += 1
+                r.c2 = 0
+            else:
+                r.c2 = self.buf.llen(r.r2)
+        return r^
 
     def in_sel(self, r: Int, c: Int) -> Bool:
         if not self.has_sel():

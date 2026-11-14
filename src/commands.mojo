@@ -64,10 +64,11 @@ comptime CM_UPPER = 120
 comptime CM_LOWER = 121
 comptime CM_MACRO_REC = 122
 comptime CM_MACRO_PLAY = 123
-comptime CM_KEYMAP0 = 124          # modern, turbo, emacs: three consecutive ids
+comptime CM_KEYMAP0 = 124          # modern, turbo, emacs, vim: consecutive ids
 comptime CM_KEYMAP1 = 125
 comptime CM_KEYMAP2 = 126
-comptime KEYMAP_COUNT = 3
+comptime CM_KEYMAP3 = 127
+comptime KEYMAP_COUNT = 4
 # cursor commands: not in any menu, they exist so that keymaps can bind keys to them
 comptime CM_CUR_LEFT = 130
 comptime CM_CUR_RIGHT = 131
@@ -257,17 +258,21 @@ def keymap_name(i: Int) -> String:
         return "turbo"
     if i == 2:
         return "emacs"
+    if i == 3:
+        return "vim"
     return "modern"
 
 
 def keymap_from_name(name: String) -> Int:
-    """0 modern, 1 turbo (also "wordstar"), 2 emacs; -1 if unknown."""
+    """0 modern, 1 turbo (also "wordstar"), 2 emacs, 3 vim; -1 if unknown."""
     if name == "modern":
         return 0
     if name == "turbo" or name == "wordstar":
         return 1
     if name == "emacs":
         return 2
+    if name == "vim":
+        return 3
     return -1
 
 
@@ -822,6 +827,7 @@ def build_registry() -> Registry:
     r.cmd(CM_KEYMAP0, "options.keymapModern", "Keys: Mo~d~ern", "Ctrl-S, Ctrl-C/V, Ctrl-F... as in current editors")
     r.cmd(CM_KEYMAP1, "options.keymapTurbo", "Keys: T~u~rbo / WordStar", "The cursor diamond and Ctrl-K / Ctrl-Q sequences of Turbo's editor")
     r.cmd(CM_KEYMAP2, "options.keymapEmacs", "Keys: Emac~s~", "Ctrl-A/E/F/B/N/P, Ctrl-K, Ctrl-Y and Ctrl-X sequences")
+    r.cmd(CM_KEYMAP3, "options.keymapVim", "Keys: ~V~im", "Normal, Insert and Visual modes, as in vim; Ctrl, Alt and F-keys stay TurboMojo's")
     r.hide(CM_THEME0, "options.themeClassic", "Theme: Turbo Classic", "The 1992 CGA blue look")
     r.hide(CM_THEME1, "options.themeMidnight", "Theme: Midnight Neon", "A modern dark truecolor theme")
     r.hide(CM_THEME2, "options.themeAmber", "Theme: Amber CRT", "Phosphor monochrome terminal")
@@ -1023,6 +1029,7 @@ def build_registry() -> Registry:
     r.item(CM_KEYMAP0)
     r.item(CM_KEYMAP1)
     r.item(CM_KEYMAP2)
+    r.item(CM_KEYMAP3)
     r.sep()
     r.item(CM_PRESETS)
     r.item(CM_THEME_PICK)

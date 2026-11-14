@@ -183,3 +183,20 @@ This file is made by `tmide --keys` (TurboMojo 2.2.0).
 | Alt-1 to Alt-9 | The window with that number |
 | Esc | Close a menu, a dialog or a box; cancel a key sequence |
 | F1 on a problem | Its explanation |
+
+## Vim (Options > Keys: Vim)
+
+In Normal and Visual mode vim has the plain keys; Ctrl and Alt keys, the F-keys and
+the menus are TurboMojo's (the Modern keys) in every mode. In Insert mode only Esc is
+vim's. A number before a command repeats it (3j).
+
+| Key | Mode | What it does |
+|---|---|---|
+| Esc | Insert, Visual | Back to Normal mode |
+| i a | Normal | Insert before / after the cursor |
+| I A | Normal | Insert at the line's first character / its end |
+| o O | Normal | Open a line below / above and insert |
+| h j k l | Normal, Visual | Left, down, up, right (also the arrows, Backspace, Space, Enter) |
+| x | Normal | Delete the character under the cursor |
+| v V | Normal, Visual | Visual mode: characters / whole lines (again: back to Normal) |
+| d x y | Visual | Delete / delete / copy the selection |

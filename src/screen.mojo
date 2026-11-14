@@ -63,12 +63,13 @@ struct Screen(Movable):
     var cy: Int
     var cvis: Bool
     var cblock: Bool
+    var cbar: Bool          # a bar cursor (vim's Insert mode), before cblock
     var fx: Int           # where the cursor waits, hidden, when no caret shows: the
     var fy: Int           #   focused row or control (-1: nowhere in particular)
     var sent_x: Int       # the cursor as the last frame left it on the terminal
     var sent_y: Int       #   (-1: not known - the next frame says it all)
     var sent_vis: Int     # 1 shown, 0 hidden, -1 not known
-    var sent_shape: Int   # 1 block, 3 underline, -1 not known
+    var sent_shape: Int   # 1 block, 3 underline, 5 bar, -1 not known
     var color_mode: Int   # COLOR_TRUE / COLOR_256 / COLOR_16: how colours are sent
     var plain: Bool       # screen-reader mode: box drawing and shading drawn as blanks
     var glyphs: Int       # ui.glyphs: GLYPHS_ASCII sends every symbol as an ASCII look-alike
@@ -105,6 +106,7 @@ struct Screen(Movable):
         self.cy = 0
         self.cvis = False
         self.cblock = False
+        self.cbar = False
         self.fx = -1
         self.fy = -1
         self.sent_x = -1
@@ -515,7 +517,7 @@ struct Screen(Movable):
         var tx = self.cx if self.cvis else self.fx
         var ty = self.cy if self.cvis else self.fy
         var vis = 1 if self.cvis else 0
-        var shape = 1 if self.cblock else 3
+        var shape = 5 if self.cbar else (1 if self.cblock else 3)
         var moved = tx >= 0 and ty >= 0 and (len(body) > 0 or tx != self.sent_x or ty != self.sent_y)
         if len(body) == 0 and not moved and vis == self.sent_vis and (vis == 0 or shape == self.sent_shape):
             return
@@ -538,7 +540,7 @@ struct Screen(Movable):
             self.sent_x = -1                    # (left after the last cell written)
             self.sent_y = -1
         if vis == 1 and shape != self.sent_shape:
-            append_str(out, "\x1b[1 q" if shape == 1 else "\x1b[3 q")
+            append_str(out, "\x1b[" + String(shape) + " q")
             self.sent_shape = shape
         if vis == 1 and (hide or self.sent_vis != 1):
             append_str(out, "\x1b[?25h")

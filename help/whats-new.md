@@ -1,5 +1,14 @@
 # What's new
 
+## 2.3 (in progress): a vim interface
+
+- Options > Keys: Vim (`keymap = "vim"`) gives the editor vim's modes. Normal mode
+  (NORMAL in the status line, a block cursor) has h j k l, x, i a I A o O, v and V
+  for a Visual selection that d deletes and y copies, and counts such as 3j; Esc goes
+  back from Insert mode (a bar cursor). Ctrl and Alt keys, the F-keys and the menus
+  stay TurboMojo's in every mode. More of vim (words, operators, search, `:`
+  commands, registers) follows in this release.
+
 ## 2.2: ready for other people
 
 - A program that uses a library which is not installed (`unable to locate module

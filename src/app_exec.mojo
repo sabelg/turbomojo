@@ -61,6 +61,7 @@ from app_jobs import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
+from app_vim import *
 
 
 
@@ -330,6 +331,7 @@ __extension App:
                 self.wins[ai].multi(OP_DELSEL, 0, False, False, List[Int]())
         elif cmd >= CM_KEYMAP0 and cmd < CM_KEYMAP0 + KEYMAP_COUNT:
             self.keymap = cmd - CM_KEYMAP0
+            self.vim_reset()
             self.rebuild_keys(False)
             self.say("Keys: " + keymap_name(self.keymap))
         elif cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE:

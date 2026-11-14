@@ -17,7 +17,7 @@ Example:
     key_hints = true            # "Next time: <key>" on the status line after a menu or the palette
     tips = true                 # a tip, once, when a slow way is used where there is a quick one
     reduced_motion = "auto"     # no spinner animation; "auto": as the desktop's animations setting
-    keymap = "modern"           # modern | turbo (WordStar keys) | emacs
+    keymap = "modern"           # modern | turbo (WordStar keys) | emacs | vim
     layout = "classic"          # classic (overlapping windows) | tiled (panes with tabs, splits)
     explorer = false            # the file explorer open at start (the Modern preset sets it)
     gpu_status = false          # the GPU programs run on, on the status line (asked once, in the background)
@@ -362,7 +362,7 @@ struct Settings(Copyable, Movable):
         if ki2 >= 0:
             var km = keymap_from_name(doc.vals[ki2].s) if doc.vals[ki2].kind == T_STR else -1
             if km < 0:
-                self.warnings.append("ui.keymap must be \"modern\", \"turbo\" or \"emacs\"")
+                self.warnings.append("ui.keymap must be \"modern\", \"turbo\", \"emacs\" or \"vim\"")
             else:
                 self.keymap = km
         # theme names are checked once the theme files are read (appstate)

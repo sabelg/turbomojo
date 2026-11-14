@@ -122,7 +122,8 @@ def test_keymap_names() raises:
     assert_equal(keymap_from_name("turbo"), 1)
     assert_equal(keymap_from_name("wordstar"), 1)
     assert_equal(keymap_from_name("emacs"), 2)
-    assert_equal(keymap_from_name("vim"), -1)
+    assert_equal(keymap_from_name("vim"), 3)
+    assert_equal(keymap_from_name("nano"), -1)
     for i in range(KEYMAP_COUNT):
         assert_equal(keymap_from_name(keymap_name(i)), i)
 
@@ -311,7 +312,7 @@ def test_keymap_setting_and_user_keys_on_top() raises:
     # the user's keys survive a change of keymap
     app.exec(CM_KEYMAP2)
     assert_equal(app.reg.find_chord(ctrl(107), 122), CM_SAVE)
-    var bad = load_settings("[ui]\nkeymap = \"vim\"\n", "")
+    var bad = load_settings("[ui]\nkeymap = \"nano\"\n", "")
     assert_equal(bad.keymap, 0)
     assert_equal(len(bad.warnings), 1)
     var bad2 = load_settings("[keys]\n\"file.save\" = \"Ctrl-K S T\"\n", "")

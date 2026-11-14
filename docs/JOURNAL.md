@@ -6129,3 +6129,40 @@ Not done: the tag v2.2.0 is made here only after the gate, and pushed - like eve
 only with the user's word. The package is not published to a channel (the user's call).
 Only linux-aarch64 was built (this machine).
 
+
+## 2026-11-13 · P12-01 Modal editing core (vim) · done
+
+- Gate: CHECK OK (133 test files, 1278 tests, 1039 s). The first run stopped at
+  tests/test_keymap.mojo, which used "vim" as its example of an unknown keymap; it uses
+  "nano" now and checks "vim" is keymap 3.
+
+What changed: a fourth keymap, `ui.keymap = "vim"` (Options > Keys: Vim). src/vim.mojo
+has the modes (Normal, Insert, Visual, Visual line), their status-line names, a count
+and an unnamed register, and the keymap reference's Vim section; src/app_vim.mojo
+handles the keys in front of TurboMojo's bindings. In Normal and Visual mode vim takes
+the plain keys: h j k l (and the arrows, Backspace, Space), + / Enter, 0 / Home,
+$ / End, x / Delete, i a I A o O, v V; in Visual mode o, d / x and y (into vim's
+register and TurboMojo's clipboard; whole lines for V). Counts (3j, 3x). In Insert
+mode only Esc is vim's; the cursor steps back as in vim. Ctrl and Alt keys, the F-keys,
+the menus and Shift with an arrow stay TurboMojo's in every mode. The status line shows
+NORMAL / INSERT / VISUAL / V-LINE instead of INS / OVR; the cursor is a block in Normal
+and a bar in Insert (DECSCUSR 5, new `Screen.cbar`). The Visual selection includes the
+character under the cursor (`Window.vsel`: 1 characters, 2 whole lines) and is drawn
+and copied as TurboMojo's own selection. Choosing or leaving the keymap starts again
+in Normal mode.
+
+Verified: tests/test_vim.mojo, 7 tests: the keymap's name both ways and its reference
+section; motions with counts and the special keys; Insert at each of i a I A o O, with
+Overwrite on too; x with a count and not past the line's end, undone with Ctrl-Z;
+Visual characters and lines, o, y, d (the last line too), Esc; the mode in the status
+line, the block / bar cursor and the bar asked of the terminal (CSI 5 SP q); the Modern
+keymap untouched, Shift-Left still selecting in Normal mode, leaving vim clearing its
+marks. By hand in the real IDE (tui-test, 100 columns): NORMAL, INSERT and V-LINE in
+the status line.
+- Mutation checks: 20 mutants, 18 caught. The 2 survivors behave the same: the guard
+  letting Shift with a *character* through (the terminal layer already delivers shifted
+  letters without MOD_SHIFT), and x's clamp at the line's end (the buffer clamps a
+  delete itself). One survivor at first - Insert mode turning Overwrite off - got a test.
+
+Not done: words, operators with motions, text objects, `.`, u / Ctrl-R (P12-02); search
+and `:` commands (P12-03); registers (P12-04). `u` is not undo yet - Ctrl-Z is.

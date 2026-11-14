@@ -1,6 +1,7 @@
 """Drawing the desktop, status line, cursor and popups."""
 from std.collections import List, Dict
 from std.time import perf_counter_ns
+from vim import vim_mode_name, KEYMAP_VIM, VM_INSERT
 from std.ffi import external_call
 from term import (
     Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE, K_BASE, KEY_ESC, KEY_ENTER, KEY_TAB,
@@ -129,7 +130,10 @@ __extension App:
                 right += self.debug_badge() + "  "
             right += self.plugins_status()       # the plugins' status items
             right += self.gpu_status_text()
-            right += "INS" if self.insert_mode else "OVR"
+            if self.keymap == KEYMAP_VIM:
+                right += vim_mode_name(self.vim.mode)      # (Phase 12)
+            else:
+                right += "INS" if self.insert_mode else "OVR"
             right = busy + right
             facts = True
 
@@ -360,6 +364,10 @@ __extension App:
                 self.scr.cy = cy
                 self.scr.cvis = True
                 self.scr.cblock = not self.insert_mode
+                self.scr.cbar = False
+                if self.keymap == KEYMAP_VIM:
+                    self.scr.cblock = self.vim.mode != VM_INSERT
+                    self.scr.cbar = self.vim.mode == VM_INSERT
             if self.sig_on and self.mode != M_HOVER and self.wins[t].path == self.sig_path:
                 self.draw_signature(cx, cy)
             if self.mode == M_COMPLETE:

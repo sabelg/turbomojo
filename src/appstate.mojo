@@ -5,6 +5,7 @@ from glyphs import glyphs_of
 from kittygfx import GFX_FIRST_ID
 from progress import QUIET_MS
 from version import TURBOMOJO_VERSION
+from vim import VimState, VM_NORMAL, VM_INSERT, VM_VISUAL, VM_VLINE, KEYMAP_VIM
 from std.collections import List, Dict
 from std.time import perf_counter_ns
 from std.ffi import external_call
@@ -254,6 +255,7 @@ struct App(Movable):
     var hl: Highlighter
     var wins: List[Window]
     var reg: Registry
+    var vim: VimState          # the vim keymap's mode and what is being typed (Phase 12)
     var keymap: Int            # 0 modern, 1 turbo / WordStar, 2 emacs
     var macro: List[Event]     # the recorded macro: keys, pastes, and commands picked from menus
     var macro_rec: Bool        # recording now
@@ -751,6 +753,7 @@ struct App(Movable):
         self.hl = Highlighter()
         self.wins = List[Window]()
         self.reg = build_registry()
+        self.vim = VimState()
         self.keymap = 0
         self.macro = List[Event]()
         self.macro_rec = False

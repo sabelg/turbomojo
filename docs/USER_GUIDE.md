@@ -232,8 +232,13 @@ Colour theme picks a theme (Turbo Classic, Midnight Neon, Amber CRT, Paper Light
 Contrast, Hacker Matrix, Terminal ANSI - your terminal's own colours -, Terminal Mono, or
 `auto` to follow the terminal's light or dark; `NO_COLOR` starts Terminal Mono); your own
 themes are TOML files in `~/.config/turbomojo/themes/`. Options > Keys picks the keymap -
-Modern, Turbo (WordStar, as in Turbo C++) or Emacs - and `[keys]` in the config file
-changes single keys. Options > Screen-reader mode gives a plain screen with the cursor on
+Modern, Turbo (WordStar, as in Turbo C++), Emacs or Vim - and `[keys]` in the config file
+changes single keys. With Vim the editor has vim's modes: Normal mode (the status line
+says NORMAL, the cursor is a block) takes the plain keys as vim commands - h j k l, x,
+i a I A o O into Insert mode (a bar cursor), v and V for a Visual selection that d or y
+cuts or copies, a number before a command to repeat it - and Esc goes back to Normal.
+Ctrl and Alt keys, the F-keys and the menus are TurboMojo's in every mode, so Ctrl-S
+saves and F9 builds as before. Options > Screen-reader mode gives a plain screen with the cursor on
 what has the focus. The README lists every setting.
 
 ## Plugins and other languages

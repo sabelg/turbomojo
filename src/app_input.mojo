@@ -55,6 +55,7 @@ from app_plugins import *
 from app_jobs import *
 from app_mouse import *
 from app_draw import *
+from app_vim import *
 
 
 __extension App:
@@ -169,6 +170,8 @@ __extension App:
         if k == fkey(10):
             self.open_menu(1)
             return
+        if self.vim_key(k):
+            return                              # vim's Normal and Visual keys (Phase 12)
         var cmd = self.shortcut(k)
         if cmd != CM_NONE:
             self.key_used(cmd)
