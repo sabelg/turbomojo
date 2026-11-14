@@ -151,6 +151,14 @@ use that environment, as `pixi run` would, so what was added is found; MAX's
 activation script then sends Modular's usage telemetry on its first start, as it does
 with `pixi run`.
 
+Their documentation: **F1** (or Help > Topic search) on a name of a Python library the
+file imports - `np.zeros` after `var np = Python.import_module("numpy")` - shows Python's
+own documentation of it (pydoc), from the project's Python where pixi installed the
+library. Mojo packages come compiled, without their sources, so their documentation
+comes from the language server: in a pixi project it runs in the project's environment
+and knows what was installed there (hover, Topic search, completion, errors); an install
+restarts it.
+
 Run > Test explorer lists the project's test files (programs that run a `std.testing`
 TestSuite) and their tests; it runs all of them, one file or one test, and a failure
 takes you to the assertion. **Shift-F9** runs one of the project's pixi tasks.

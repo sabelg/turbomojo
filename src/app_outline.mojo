@@ -489,6 +489,9 @@ __extension App:
             if asked:
                 self.say("Put the cursor on a name first")
             return False
+        var py = self.docs_python(ai)           # a name of a Python library the file imports (P11-14)
+        if py != 0:
+            return py > 0 or asked
         var files = self.docs_files_for(name, asked)
         var md = String("")
         var n = 0

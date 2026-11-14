@@ -17,6 +17,8 @@ from app_files import *
 from app_dialogs import *
 from app_jobs import *
 from app_lspextra import *
+from app_pkginstall import *
+from pkginstall import in_env
 
 comptime LSP_DEBOUNCE_MS = 300     # quiet time after the last edit before the server is told
 
@@ -45,7 +47,11 @@ __extension App:
         resolve: the file's folder, the working directory, and the project's own
         (`tools.include_paths`)."""
         var exe = String(self.lsp_server)
-        return self.tool(exe) + " -I " + shell_quote(dirname(path)) + " -I " + shell_quote(self.cwd) + self.include_flags()
+        var args = " -I " + shell_quote(dirname(path)) + " -I " + shell_quote(self.cwd) + self.include_flags()
+        var manifest = self.lsp_manifest(path)
+        if manifest.byte_length() > 0:
+            return in_env("exec " + exe + args, self.pixi_cmd, manifest)      # sees what the project installed (P11-14)
+        return self.tool(exe) + args
 
     def lsp_command(mut self):
         """Compile > Check with language server: start live diagnostics for the current

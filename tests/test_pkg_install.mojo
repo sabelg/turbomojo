@@ -10,7 +10,7 @@ from std.time import perf_counter_ns
 from pkginstall import *
 from term import wait_readable
 from app import *
-from appstate import App, M_NORMAL, M_DIALOG
+from appstate import App, M_NORMAL, M_DIALOG, now_ns
 from dialog import D_PKG
 from config import read_text
 from signals import own_pid
@@ -101,6 +101,13 @@ def test_offer_install_and_build_again() raises:
     with open(d + "/proj/prog.mojo", "w") as f:
         f.write("from mylib import thing\ndef main():\n    pass\n")
     app.open_path(d + "/proj/prog.mojo")
+    # a language server running (a stand-in that only stays alive): an install restarts
+    # it, so it sees the new package (P11-14)
+    app.tool_env_known = True
+    app.tool_env = ""
+    app.lsp_server = "tail -f /dev/null #"
+    app.lsp_track(app.top_editor(), now_ns())
+    assert_equal(app.lsp.starts, 1)
     app.build()
     wait_jobs(app)                                              # the build, then the search
     assert_equal(app.mode, M_DIALOG)
@@ -114,6 +121,9 @@ def test_offer_install_and_build_again() raises:
     var log = read_text(d + "/pixi.log")
     assert_true(log.find("pixi search mylib") >= 0 and log.find("pixi add mylib") > 0, log)
     assert_true(built(app), app.status)
+    assert_equal(app.lsp.starts, 2)
+    assert_true(app.lsp.active())
+    app.lsp_stop()
     # a library on no channel: said so, nothing offered or added
     with open(d + "/proj/other.mojo", "w") as f:
         f.write("from ghostlib import x\ndef main():\n    pass\n")

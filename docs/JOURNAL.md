@@ -5998,3 +5998,57 @@ Not done / unverified:
   `roadmap` only; each push waits for the user's word.
 - Last gate: CHECK OK, 131 test files, 1265 tests, 996 s.
 - From here the wake-ups only look for new tasks in the backlog.
+
+## 2026-11-13 · P11-14 The documentation of what a program uses · done
+
+- Gate: CHECK OK (132 test files, 1270 tests, 1015 s).
+
+The user asked for this with P11-13 ("auto install for libraries, fetch the documentation").
+
+What was found first (by hand, in a scratch project with max and numpy added):
+- Installed Mojo packages come compiled (`lib/mojo/max.mojoc` and 30 more), without
+  sources. `mojo doc` cannot read them: on max.mojoc it crashes ("invalid redefinition of
+  '##__mojo_closure__##'"), on std.mojoc it reports missing declarations. So TurboMojo's
+  usual way (mojo doc on sources) cannot document them.
+- The language server can: asked for hover on `DeviceContext` (from max.gpu.host), the
+  IDE's own server (its environment has no MAX) answered null; the project's own server,
+  started with the project's environment active, answered with the type and its
+  docstring.
+
+What changed:
+- src/pydocs.mojo: the variables a file binds to Python modules (`var np =
+  Python.import_module("numpy")`, also typed or without var; a later one wins), the dotted
+  name ending at the cursor ("np.linalg" on linalg), what to ask pydoc ("numpy.linalg"),
+  the pydoc command (quoted; "pydoc: why" and exit 1 when Python cannot find it) and its
+  text as a page (cut after 1500 lines).
+- F1 / Topic search (docs_at_cursor) asks Python first when the name is one of those; the
+  project's Python (`.pixi/envs/default/bin/python3`) or the one on PATH. Not found: the
+  status line says why, and F1 falls back to the general help.
+- The language server (lsp_server_command) runs in the project's environment when there is
+  one with its own mojo-lsp-server and the server is not configured to another program;
+  an install (P11-13) stops the server and starts it again for the file in front.
+- README, USER_GUIDE, What's new.
+
+Verified:
+- tests/test_lib_docs.mojo (5 tests): the bindings, the name at the cursor, the real
+  Python's pydoc (json.dumps; a missing name; a name with a quote), F1 with a project's
+  Python (faked, so it says which one answered) and with the one on PATH, the language
+  server command in and outside a project's environment and with a configured server.
+  tests/test_pkg_install.mojo: an install restarts a running server (a stand-in process).
+- Mutation checks: 13 mutants; 12 caught (a later binding wins, the name ends at the word
+  under the cursor, the rest of the chain, the cut, the code fence, the project's Python,
+  F1's fallback, the hook, the server in the environment, a configured server, the
+  restart, a failed pydoc). The 13th (a "=" after the call) survived because the check was
+  redundant - such a line has no plain name before the "=" - so it was removed.
+- By hand: the project's real Python gives pydoc's text of numpy.zeros through the same
+  script; the project's server gives hover documentation of DeviceContext (above).
+
+Not done / unverified:
+- The whole thing in the running IDE with the real server (the command's shape is tested,
+  and the same command by hand). A server already running for one project is not changed
+  when you open a file of another project (Compile > Check with language server, once to
+  stop it and once to start it, does).
+- Mojo packages that ship their sources could also go to the Topic search index
+  (tools.docs_paths does that by hand); not done.
+- pydoc shows what the library's docstrings say, not its website.
+

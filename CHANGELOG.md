@@ -18,6 +18,7 @@ docs/JOURNAL.md has, for every task, what changed, how it was checked and what i
 - GPU awareness (split into a-c below) [11] (P11-10)
 - A copy-to-the-server bundle: `pixi run bundle` makes a tar file with tmide and the Mojo runtime libraries it needs, which runs after unpacking on another Linux machine with the same glibc (checked in a clean folder without the project's .pixi) [12] (P11-11)
 - Install what a program uses (asked by the user, 2026-11-13): when a build or run fails because a Mojo module (`unable to locate module 'max'`) or a Python one (`No module named 'numpy'`) is not installed, TurboMojo names it, finds the package on the project's channels, and offers to install it (`pixi add`, in the background), then runs again; without a pixi.toml it offers to make one first; nothing is installed without a yes (P11-13)
+- The documentation of what a program uses (asked by the user with P11-13, 2026-11-13): F1 / Ctrl-F1 on a name of a Python library the file imports (`np.zeros` with `var np = Python.import_module("numpy")`) shows pydoc's text from the project's Python; the language server runs in the project's environment, so the Mojo packages installed there (which come compiled) have their documentation on hover and Ctrl-F1, completion and errors; an install restarts it (P11-14)
 
 ## 2.1: UI clarity and calm - 2026-11-12
 

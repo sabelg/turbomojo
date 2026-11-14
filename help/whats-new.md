@@ -6,6 +6,9 @@
   'max'`, `No module named 'numpy'`): TurboMojo finds its package on the project's
   channels and offers to install it with `pixi add`, then builds or runs again; with no
   `pixi.toml` it offers to make the project first. Nothing is installed without a yes.
+- F1 on a name of a Python library your program imports (`np.zeros`) shows its
+  documentation, from the project's own Python. The language server runs in the
+  project's environment, so it knows the Mojo packages installed there (MAX and others).
 - `pixi run bundle` makes a tar file to copy to a server: TurboMojo and the libraries
   it needs, which runs there after unpacking, without pixi.
 - Help > Exercise done? checks your answer to a Mojo GPU Puzzle too: it runs your copy
