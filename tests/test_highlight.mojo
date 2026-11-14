@@ -196,5 +196,17 @@ def test_symbols_and_spaces() raises:
     assert_equal(r.cls[7], C_SYM)
 
 
+def test_escaped_quotes_inside_triple_docstring_and_mojo12_types() raises:
+    var a = lex("\"\"\"has \\\"\"\" inside")
+    assert_equal(a.state, 1)
+    assert_true(all_are(a.cls, 0, len(a.cls), C_STR))
+    var b = lex("still \\\"\"\" and close\"\"\" x", a.state)
+    assert_equal(b.state, 0)
+    assert_true(all_are(b.cls, 0, 23, C_STR))
+    assert_equal(b.cls[24], C_TEXT)
+    var gpu_t = lex("var t: TileTensor")
+    assert_true(all_are(gpu_t.cls, 7, 17, C_TYPE))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

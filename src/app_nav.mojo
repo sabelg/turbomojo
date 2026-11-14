@@ -77,8 +77,8 @@ def plan_edits(lines: List[List[Int]], edits: List[LspEdit]) raises -> List[Plan
         var r2 = e.r2
         if r1 > n or r2 > n or (r1 == n and e.c1 > 0) or (r2 == n and e.c2 > 0):
             raise Error("an edit lies beyond the end of the text")
-        var c1 = 0
-        var c2 = 0
+        var c1: Int
+        var c2: Int
         if r1 == n:
             # "line after the last one, column 0" is the very end of the text
             r1 = n - 1
@@ -653,17 +653,168 @@ __extension App:
         return ""
 
     # ========================================================== code actions
+    def make_local_action(self, path: String, title: String, r1: Int, c1_u16: Int, r2: Int, c2_u16: Int, new_text: String, preferred: Bool = True) -> CodeAction:
+        var a = CodeAction()
+        a.title = title
+        a.kind = "quickfix"
+        a.preferred = preferred
+        var uri = path_to_uri(path)
+        a.edit_json = "{\"changes\":{" + json_quote(uri) + ":[{\"range\":{\"start\":{\"line\":" + String(r1) + ",\"character\":" + String(c1_u16) + "},\"end\":{\"line\":" + String(r2) + ",\"character\":" + String(c2_u16) + "}},\"newText\":" + json_quote(new_text) + "}]}}"
+        return a^
+
+    def local_code_actions(self, ai: Int) -> List[CodeAction]:
+        """Built-in quick fixes (merge conflict resolution & Mojo 1.2 syntax/stdlib fixes)
+        available even when the language server is stopped."""
+        var out = List[CodeAction]()
+        if ai < 0:
+            return out^
+        var path = self.wins[ai].path
+        if path.byte_length() == 0:
+            return out^
+        var cr = self.wins[ai].cr
+        var count = self.wins[ai].buf.count()
+        if cr < 0 or cr >= count:
+            return out^
+        # 1. Git merge conflict markers around cr
+        var start_r = -1
+        var r = cr
+        while r >= 0 and cr - r <= 500:
+            var lt = to_str(self.wins[ai].buf.line(r))
+            if lt.startswith(">>>>>>>") and r < cr:
+                break
+            if lt.startswith("<<<<<<<"):
+                start_r = r
+                break
+            r -= 1
+        if start_r >= 0:
+            var mid_r = -1
+            var end_r = -1
+            for k in range(start_r + 1, min(count, start_r + 1000)):
+                var lt = to_str(self.wins[ai].buf.line(k))
+                if lt.startswith("=======") and mid_r < 0:
+                    mid_r = k
+                elif lt.startswith(">>>>>>>") and mid_r >= 0:
+                    end_r = k
+                    break
+                elif lt.startswith("<<<<<<<"):
+                    break
+            if mid_r > start_r and end_r >= cr:
+                var ours = List[String]()
+                for k in range(start_r + 1, mid_r):
+                    ours.append(to_str(self.wins[ai].buf.line(k)))
+                var theirs = List[String]()
+                for k in range(mid_r + 1, end_r):
+                    theirs.append(to_str(self.wins[ai].buf.line(k)))
+                var both = List[String]()
+                for s in ours:
+                    both.append(s)
+                for s in theirs:
+                    both.append(s)
+                for choice in [
+                    ("Accept current change (ours)", "\n".join(ours), len(ours) > 0, True),
+                    ("Accept incoming change (theirs)", "\n".join(theirs), len(theirs) > 0, False),
+                    ("Accept both changes", "\n".join(both), len(both) > 0, False),
+                ]:
+                    if choice[2]:
+                        var end_u16 = self.wins[ai].buf.utf16_col(end_r, len(self.wins[ai].buf.line(end_r)))
+                        out.append(self.make_local_action(path, String(choice[0]), start_r, 0, end_r, end_u16, choice[1], choice[3]))
+                    elif end_r + 1 < count:
+                        out.append(self.make_local_action(path, String(choice[0]), start_r, 0, end_r + 1, 0, "", choice[3]))
+                    elif start_r > 0:
+                        var prev_u16 = self.wins[ai].buf.utf16_col(start_r - 1, len(self.wins[ai].buf.line(start_r - 1)))
+                        var end_u16 = self.wins[ai].buf.utf16_col(end_r, len(self.wins[ai].buf.line(end_r)))
+                        out.append(self.make_local_action(path, String(choice[0]), start_r - 1, prev_u16, end_r, end_u16, "", choice[3]))
+                    else:
+                        var end_u16 = self.wins[ai].buf.utf16_col(end_r, len(self.wins[ai].buf.line(end_r)))
+                        out.append(self.make_local_action(path, String(choice[0]), 0, 0, end_r, end_u16, "", choice[3]))
+        # 2. Mojo 1.2 stdlib prefix & removed-syntax quick fixes
+        if path.endswith(".mojo") or path.endswith(".🔥"):
+            var raw_cps = self.wins[ai].buf.line(cr)
+            var raw = to_str(raw_cps)
+            var end_u16 = self.wins[ai].buf.utf16_col(cr, len(raw_cps))
+            var ind = 0
+            while ind < raw.byte_length() and (Int(raw.as_bytes()[ind]) == 32 or Int(raw.as_bytes()[ind]) == 9):
+                ind += 1
+            var prefix = String(raw[byte=0:ind])
+            var rest = String(raw[byte=ind:])
+            var std_mods = [
+                "collections", "testing", "memory", "sys", "os", "math", "algorithm",
+                "time", "utils", "random", "pathlib", "tempfile", "ffi", "io", "hashlib",
+                "logger", "subprocess", "complex", "bit", "benchmark", "compile",
+                "python", "atomic", "iter", "base64",
+            ]
+            if rest.startswith("from ") or rest.startswith("import "):
+                var is_from = rest.startswith("from ")
+                var after_kw = String(rest[byte=5:] if is_from else rest[byte=7:])
+                var trimmed_after = String(after_kw.lstrip())
+                var mod_end = trimmed_after.byte_length()
+                for k in range(trimmed_after.byte_length()):
+                    var b = Int(trimmed_after.as_bytes()[k])
+                    if b == 46 or b == 32 or b == 44 or b == 9:
+                        mod_end = k
+                        break
+                var mod = String(trimmed_after[byte=0:mod_end])
+                var is_std = False
+                for m in std_mods:
+                    if mod == String(m):
+                        is_std = True
+                        break
+                if is_std:
+                    var kw = String("from std.") if is_from else String("import std.")
+                    out.append(self.make_local_action(path, "Prefix stdlib module with 'std.' (" + kw + mod + ")", cr, 0, cr, end_u16, prefix + kw + trimmed_after))
+                elif mod == "gpu":
+                    var kw_max = String("from max.") if is_from else String("import max.")
+                    out.append(self.make_local_action(path, "Import GPU module from MAX (" + kw_max + mod + ")", cr, 0, cr, end_u16, prefix + kw_max + trimmed_after))
+            if rest.startswith("fn "):
+                out.append(self.make_local_action(path, "Replace removed 'fn' with 'def' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "def " + String(rest[byte=3:])))
+            elif rest.startswith("alias "):
+                out.append(self.make_local_action(path, "Replace removed 'alias' with 'comptime' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "comptime " + String(rest[byte=6:])))
+            elif rest.startswith("let "):
+                out.append(self.make_local_action(path, "Replace removed 'let' with 'var' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "var " + String(rest[byte=4:])))
+            elif rest == "@value" or rest.startswith("@value "):
+                out.append(self.make_local_action(path, "Replace removed '@value' with '@fieldwise_init' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "@fieldwise_init" + String(rest[byte=6:])))
+            elif rest.startswith("@parameter if ") or rest.startswith("@parameter for "):
+                out.append(self.make_local_action(path, "Replace removed '@parameter' with 'comptime' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "comptime " + String(rest[byte=11:])))
+        return out^
+
+    def show_actions_dialog(mut self):
+        var items = List[String]()
+        var data = List[Int]()
+        var widest = 20
+        for k in range(len(self.actions)):
+            var t = self.actions[k].title
+            if self.actions[k].disabled.byte_length() > 0:
+                t += "  (" + self.actions[k].disabled + ")"
+            widest = max(widest, cp_len(t))
+            items.append(t)
+            data.append(k)
+        var d = Dialog(D_ACTIONS, "Quick Fix", max(40, min(self.scr.w - 4, widest + 8)), max(8, min(len(items) + 6, min(20, self.desk_h()))))
+        d.set_items(items^, data^)
+        d.buttons.append("~A~pply")
+        d.buttons.append("~C~ancel")
+        self.say(count_of(len(self.actions), "action") + " offered")
+        self.show(d^)
+
     def actions_command(mut self):
         """Quick fix: ask the language server what it can do about the problems on the
-        cursor's line (or the selection); the offers open in a list (actions_arrived)."""
+        cursor's line (or the selection), plus built-in merge-conflict / Mojo 1.2 fixes."""
         var ai = self.active_editor()
         if ai < 0:
             return
         var path = self.wins[ai].path
+        var local = self.local_code_actions(ai)
         if self.lsp.state != LSP_READY or path.byte_length() == 0 or self.lsp.find_doc(path_to_uri(path)) < 0:
+            if len(local) > 0:
+                self.actions = local^
+                self.show_actions_dialog()
+                return
             self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
             return
         if not self.lsp.table.code_action:
+            if len(local) > 0:
+                self.actions = local^
+                self.show_actions_dialog()
+                return
             self.say("This language server offers no quick fixes")
             return
         self.act_retries = 0
@@ -731,25 +882,12 @@ __extension App:
             self.action_run()
             return
         self.actions = parse_code_actions(m.doc, m.result())
+        for la in self.local_code_actions(ai):
+            self.actions.append(la.copy())
         if len(self.actions) == 0:
             self.say("No quick fixes or actions here")
             return
-        var items = List[String]()
-        var data = List[Int]()
-        var widest = 20
-        for k in range(len(self.actions)):
-            var t = self.actions[k].title
-            if self.actions[k].disabled.byte_length() > 0:
-                t += "  (" + self.actions[k].disabled + ")"
-            widest = max(widest, cp_len(t))
-            items.append(t)
-            data.append(k)
-        var d = Dialog(D_ACTIONS, "Quick Fix", max(40, min(self.scr.w - 4, widest + 8)), max(8, min(len(items) + 6, min(20, self.desk_h()))))
-        d.set_items(items^, data^)
-        d.buttons.append("~A~pply")
-        d.buttons.append("~C~ancel")
-        self.say(count_of(len(self.actions), "action") + " offered")
-        self.show(d^)
+        self.show_actions_dialog()
 
     def action_chosen(mut self, k: Int):
         if k < 0 or k >= len(self.actions):
@@ -772,12 +910,12 @@ __extension App:
         """Carry out self.act_chosen: its edit first, then its command."""
         if self.act_chosen.edit_json.byte_length() > 0:
             self.act_command_due = self.act_chosen.command.byte_length() > 0
-            try:
-                var doc = json_parse(self.act_chosen.edit_json)
-                var title = self.act_chosen.title
-                self.offer_edit(parse_workspace_edit(doc, 0), "Quick fix", "Quick Fix", title, "Applied: " + title)
-            except e:
+            var doc = json_parse(self.act_chosen.edit_json)
+            if not doc.ok:
                 self.say("Quick fix: the server's answer cannot be read")
+                return
+            var title = self.act_chosen.title
+            self.offer_edit(parse_workspace_edit(doc, 0), "Quick fix", "Quick Fix", title, "Applied: " + title)
             return
         self.act_command_due = True
         self.say("Running: " + self.act_chosen.title)
@@ -804,11 +942,11 @@ __extension App:
                 self.say("An edit from the language server was dropped (a dialog was open)")
                 continue
             var label = labels[k] if k < len(labels) and labels[k].byte_length() > 0 else (self.act_chosen.title if self.act_chosen.title.byte_length() > 0 else String("Edit from the language server"))
-            try:
-                var doc = json_parse(pending[k])
-                self.offer_edit(parse_workspace_edit(doc, 0), "Quick fix", "Quick Fix", label, "Applied: " + label)
-            except e:
+            var doc = json_parse(pending[k])
+            if not doc.ok:
                 self.say("Quick fix: the server's edit cannot be read")
+                continue
+            self.offer_edit(parse_workspace_edit(doc, 0), "Quick fix", "Quick Fix", label, "Applied: " + label)
 
     # ====================================================== go to definition
     def definition_command(mut self):
@@ -818,6 +956,7 @@ __extension App:
         if ai < 0:
             return
         self.def_retries = 0
+        self.def_is_type = False
         if not self.definition_request(ai):
             if self.lsp.state == LSP_READY and not self.lsp.table.definition:
                 self.say("This language server does not find definitions")
@@ -826,6 +965,18 @@ __extension App:
             return
         self.say("Asking the language server...")
 
+    def type_definition_command(mut self):
+        """Search > Go to type definition: jump to the definition of the cursor symbol's type."""
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        self.def_retries = 0
+        self.def_is_type = True
+        if not self.typedef_request(ai):
+            self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
+            return
+        self.say("Asking the language server for type definition...")
+
     def definition_request(mut self, ai: Int) -> Bool:
         var path = self.wins[ai].path
         if path.byte_length() == 0 or self.lsp.state != LSP_READY or not self.lsp.table.definition:
@@ -833,9 +984,30 @@ __extension App:
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
             return False
+        self.lsp.cancel_request(self.def_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)
         var id = self.lsp.request_definition(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
+        if id < 0:
+            return False
+        self.def_req_id = id
+        self.def_req_path = path
+        self.def_req_row = self.wins[ai].cr
+        self.def_req_col = self.wins[ai].cc
+        self.def_retry_due = 0
+        return True
+
+    def typedef_request(mut self, ai: Int) -> Bool:
+        var path = self.wins[ai].path
+        if path.byte_length() == 0 or self.lsp.state != LSP_READY:
+            return False
+        var uri = path_to_uri(path)
+        if self.lsp.find_doc(uri) < 0:
+            return False
+        self.lsp.cancel_request(self.def_req_id)
+        var now = now_ns()
+        self.lsp_send_changes(ai, now, False)
+        var id = self.lsp.request_type_definition(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
         if id < 0:
             return False
         self.def_req_id = id
@@ -860,19 +1032,21 @@ __extension App:
                 return
             self.say("Language server: " + m.error_message())
             return
+        var noun = String("type definition") if self.def_is_type else String("definition")
+        var cap_noun = String("Type definition") if self.def_is_type else String("Definition")
         var all_locs = parse_locations(m.doc, m.result())
         var locs = List[LspLocation]()
         for l in all_locs:
             if self.find_editor(l.path) >= 0 or path_exists(l.path):
                 locs.append(l.copy())
         if len(locs) == 0:
-            self.say("No definition found for this place" if len(all_locs) == 0 else "The definition is in a file that cannot be opened")
+            self.say(("No " + noun + " found for this place") if len(all_locs) == 0 else ("The " + noun + " is in a file that cannot be opened"))
             return
         var from_path = self.def_req_path
         var from_row = self.def_req_row
         self.jump_mark()
         if len(locs) > 1:
-            self.show_places("Definitions", locs)
+            self.show_places(cap_noun + "s", locs)
             self.err_idx = 0
         self.open_path(locs[0].path)
         var t = self.top()
@@ -882,8 +1056,8 @@ __extension App:
         var same = locs[0].path == from_path and locs[0].row == from_row
         self.wins[t].goto(locs[0].row, col)
         if len(locs) > 1:
-            self.say("Definition 1 of " + String(len(locs)) + " - " + self.reg.key_label(CM_NEXTERR) + " shows the next")
+            self.say(cap_noun + " 1 of " + String(len(locs)) + " - " + self.reg.key_label(CM_NEXTERR) + " shows the next")
         elif same:
-            self.say("This is the definition")
+            self.say("This is the " + noun)
         else:
             self.say(basename(locs[0].path) + ":" + String(locs[0].row + 1))

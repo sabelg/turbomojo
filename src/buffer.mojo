@@ -776,7 +776,7 @@ struct TextBuffer(Copyable, Movable):
                 loaded = True
             var col = max(0, min(h.col, len(line)))
             var label = String(h.label.strip())
-            var piece = String("")
+            var piece: String
             if h.kind == 2 or (h.kind == 0 and label.endswith(":")):
                 # the argument the name belongs to
                 var e = col

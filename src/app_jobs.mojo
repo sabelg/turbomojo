@@ -33,6 +33,7 @@ from watch import *
 from app_swap import *
 from swap import *
 from app_files import *
+from gitdiff import Side, side_hunks
 from app_dialogs import *
 from app_menus import *
 from app_exec import *
@@ -50,10 +51,12 @@ from app_mouse import *
 from app_draw import *
 from app_plugins import *
 from app_gpu import *
+from app_codegen import *
 from app_pkginstall import *
 from gpuinfo import parse_gpus
 from pty import exit_code
 from runreport import uses_gpu, visible_gpu_index, run_gpu_name, run_summary
+from grep import collect_search_files, file_matches_filter, MAX_FILE_BYTES, is_binary
 
 
 
@@ -169,7 +172,7 @@ __extension App:
             self.info("Error", "Could not start: " + cmd)
             return False
         var fd = Int(external_call["fileno", Int32](fp))
-        var fl = external_call["fcntl", Int32](Int32(fd), Int32(3), Int32(0))
+        _ = external_call["fcntl", Int32](Int32(fd), Int32(3), Int32(0))
         make_nonblocking(fd)
         self.job.active = True
         self.job.kind = kind
@@ -186,6 +189,35 @@ __extension App:
         self.job.version = self.wins[i].buf.version if i >= 0 else -1
         return True
 
+    def start_aux_job(mut self, kind: Int, cmd: String, path: String, exe: String) -> Bool:
+        """Start a lightweight background job (`JOB_FORMAT` or `JOB_CODEGEN`) on `aux_job`
+        so formatting and codegen run concurrently even while `self.job` builds or tests."""
+        if self.aux_job.active:
+            self.say("Background format/codegen job is already running")
+            return False
+        var c = "echo __PID__$$ && " + cmd
+        var fp = popen_read(c)
+        if fp == 0:
+            self.info("Error", "Could not start: " + cmd)
+            return False
+        var fd = Int(external_call["fileno", Int32](fp))
+        _ = external_call["fcntl", Int32](Int32(fd), Int32(3), Int32(0))
+        make_nonblocking(fd)
+        self.aux_job.active = True
+        self.aux_job.kind = kind
+        self.aux_job.fp = fp
+        self.aux_job.fd = fd
+        self.aux_job.pid = 0
+        self.aux_job.data.clear()
+        self.aux_job.t0 = Int(perf_counter_ns())
+        self.aux_job.path = path
+        self.aux_job.exe = exe
+        self.aux_job.cmd = cmd
+        self.aux_job.cancelled = False
+        var i = self.find_editor(path)
+        self.aux_job.version = self.wins[i].buf.version if i >= 0 else -1
+        return True
+
     def find_editor(self, path: String) -> Int:
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].path == path:
@@ -199,18 +231,65 @@ __extension App:
         return False
 
     # -------------------------------------------------- find in files
-    def start_file_search(mut self, s: Search):
+    def start_file_search(mut self, s: Search, filter_glob: String = ""):
         """Search the project folder in the background; hits go to the Message window."""
         if self.job_busy():
             return
-        self.fsearch.start(self.cwd, s)
+        self.fsearch.start(self.cwd, s, filter_glob)
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_EDITOR and self.wins[k].buf.modified and self.wins[k].path.byte_length() > 0:
+                self.fsearch.set_overlay(self.wins[k].path, self.wins[k].buf.to_bytes())
         self.fsearch_shown = -1
         self.fsearch_draw_ns = 0
         self.show_search_results()
 
     def search_title(self) -> String:
         var what = "/" + to_str(self.fsearch.s.pat) + "/" if self.fsearch.s.use_regex else "\"" + to_str(self.fsearch.s.pat) + "\""
-        return what + " in " + self.fsearch.root
+        var title = what + " in " + self.fsearch.root
+        if self.fsearch.filter_glob.byte_length() > 0:
+            title += " (" + self.fsearch.filter_glob + ")"
+        return title
+
+    def replace_in_files(mut self, s: Search, rep: List[Int], filter_glob: String) raises:
+        """Build a multi-file WorkspaceEdit across matching files (overlaying unsaved
+        open buffers) and present it through offer_edit() for preview and 1-step Undo."""
+        self.snapshot_versions()
+        var paths = collect_search_files(self.cwd, filter_glob)
+        var prefix = self.cwd + "/"
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_EDITOR and self.wins[k].path.startswith(prefix):
+                var wp = self.wins[k].path
+                if not (wp in paths) and file_matches_filter(self.cwd, wp, filter_glob):
+                    paths.append(wp)
+        var we = WorkspaceEdit()
+        for p in paths:
+            var wi = self.find_editor(p)
+            if wi < 0:
+                var raw = read_file(p)
+                if len(raw) == 0 or len(raw) > MAX_FILE_BYTES or is_binary(raw):
+                    continue
+            var lines: List[List[Int]]
+            try:
+                lines = self.lines_of(p)
+            except:
+                continue
+            for r in range(len(lines)):
+                var ln = lines[r].copy()
+                var col = 0
+                while col <= len(ln):
+                    var caps = s.caps_in(ln, col)
+                    if len(caps) == 0:
+                        break
+                    var repl_cps = s.replacement(rep, ln, caps)
+                    var c1_u16 = col_to_utf16(ln, caps[0])
+                    var c2_u16 = col_to_utf16(ln, caps[1])
+                    we.add(p, LspEdit(r, c1_u16, r, c2_u16, to_str(repl_cps)))
+                    col = max(caps[1], caps[0] + 1)
+        if we.count() == 0:
+            self.say("Replace in Files: 0 matches found")
+            return
+        var what = "/" + to_str(s.pat) + "/" if s.use_regex else "\"" + to_str(s.pat) + "\""
+        self.offer_edit(we^, "Replace in Files", "Replace in Files", "Replace " + what + " with \"" + to_str(rep) + "\"", "Replaced")
 
     def show_search_results(mut self):
         """Put the hits found so far into the Message window, one per line as
@@ -280,6 +359,12 @@ __extension App:
             self.finish_file_search()
             return
         if not self.job.active:
+            if self.aux_job.active:
+                if self.aux_job.pid > 0:
+                    _ = external_call["kill", Int32](Int32(self.aux_job.pid), Int32(15))
+                self.aux_job.cancelled = True
+                self.say("Cancelling...")
+                return
             self.say("Nothing to cancel")
             return
         if self.job.pid > 0:
@@ -368,6 +453,50 @@ __extension App:
             self.finish_tests(st, secs)
         else:
             self.finish_format(st)
+
+    def poll_aux_job(mut self) raises:
+        if not self.aux_job.active:
+            return
+        var buf = List[UInt8](length=16384, fill=0)
+        var eof = False
+        for _ in range(64):
+            var n = external_call["read", Int](Int32(self.aux_job.fd), buf.unsafe_ptr(), Int(16384))
+            if n > 0:
+                for k in range(n):
+                    self.aux_job.data.append(buf[k])
+            else:
+                eof = n == 0
+                break
+        if self.aux_job.pid == 0 and len(self.aux_job.data) >= 8 and self.aux_job.data[0] == 95:
+            var nl = -1
+            for k in range(len(self.aux_job.data)):
+                if self.aux_job.data[k] == 10:
+                    nl = k
+                    break
+            if nl > 0:
+                var digits = List[UInt8]()
+                for k in range(7, nl):
+                    digits.append(self.aux_job.data[k])
+                try:
+                    self.aux_job.pid = atol(bytes_to_str(digits))
+                except:
+                    self.aux_job.pid = -1
+                var rest = List[UInt8]()
+                for k in range(nl + 1, len(self.aux_job.data)):
+                    rest.append(self.aux_job.data[k])
+                self.aux_job.data = rest^
+        if eof:
+            var st = Int(external_call["pclose", Int32](self.aux_job.fp))
+            self.aux_job.active = False
+            if self.aux_job.kind == JOB_CODEGEN:
+                self.finish_codegen(st)
+            else:
+                var p = String(self.aux_job.path)
+                var v = self.aux_job.version
+                var c = String(self.aux_job.cmd)
+                var d = self.aux_job.data.copy()
+                var canc = self.aux_job.cancelled
+                self.finish_format_job(st, p, v, c, d, canc)
 
     def build(mut self) raises:
         if self.job_busy():
@@ -475,49 +604,134 @@ __extension App:
                 self.say(to_str(self.wins[mi].buf.line(e.msg_line)))
 
     def format_file(mut self) raises:
-        if self.job_busy():
-            return
         var i = self.top_editor()
         if i < 0 or not self.ensure_saved(i):
             return
-        var path = self.wins[i].path
-        var cmd = "cd " + shell_quote(dirname(path)) + " && exec " + self.compiler_cmd() + " format -q " + shell_quote(path) + " 2>&1"
+        var path = String(self.wins[i].path)
+        var inner = "cd " + shell_quote(dirname(path)) + " && exec " + self.mojo_for(path) + " format -q " + shell_quote(path)
+        var cmd = self.with_env(path, inner) + " 2>&1"
+        if self.job.active:
+            if self.start_aux_job(JOB_FORMAT, cmd, path, ""):
+                self.say("Formatting " + basename(path) + "...")
+            return
         if self.start_job(JOB_FORMAT, cmd, path, ""):
             self.say("Formatting " + basename(path) + "...")
 
     def finish_format(mut self, status: Int) raises:
-        var path = self.job.path
-        if self.job.cancelled:
+        var p = String(self.job.path)
+        var v = self.job.version
+        var c = String(self.job.cmd)
+        var d = self.job.data.copy()
+        var canc = self.job.cancelled
+        self.finish_format_job(status, p, v, c, d, canc)
+
+    def finish_format_job(mut self, status: Int, path: String, version: Int, cmd: String, data: List[UInt8], cancelled: Bool) raises:
+        if cancelled:
             self.say("Format cancelled")
             return
         if status != 0:
             self.panel_write(PG_MESSAGE)
-            _ = self.fill_messages(self.job_heading(), self.job.data.copy(), "Format failed")
+            var shown = shown_command(cmd)
+            var heading = "Formatting " + path + " ..." + (("\n$ " + shown) if shown.byte_length() > 0 else String(""))
+            _ = self.fill_messages(heading, data.copy(), "Format failed")
             self.say("mojo format failed - see the Message window")
             return
         var i = self.find_editor(path)
         if i < 0:
             self.say("Formatted " + basename(path))
             return
-        if self.wins[i].buf.version != self.job.version:
+        if self.wins[i].buf.version != version:
             self.say("Edited while formatting - buffer not reloaded (file on disk is formatted)")
             return
         var txt: String
         with open(path, "r") as f:
             txt = f.read()
+        var old_txt = bytes_to_str(self.wins[i].buf.text_bytes())
+        var on_disk = str_bytes(txt)
+        if old_txt == txt:
+            self.wins[i].buf.modified = False
+            self.wins[i].disk_hash = content_hash(on_disk)
+            self.wins[i].disk_size = len(on_disk)
+            self.note_disk_state(i)
+            self.say("Formatted " + basename(path) + " (no changes)")
+            return
         var cr = self.wins[i].cr
         var cc = self.wins[i].cc
-        var tmp = TextBuffer()
-        tmp.load(decode(txt))
-        self.wins[i].replace_all_text(tmp.all_text())
+        var top = self.wins[i].top
+        var old_side = Side.of(old_txt)
+        var new_side = Side.of(txt)
+        var hunks = side_hunks(old_side, new_side)
+        if len(hunks) > 0 and len(hunks) <= 500:
+            var g = self.wins[i].new_group()
+            var hi = len(hunks) - 1
+            while hi >= 0:
+                var hk = hunks[hi].copy()
+                var nlines = self.wins[i].buf.count()
+                # Build replacement codepoint sequence for new_side.lines[hk.b .. hk.b + hk.lb]
+                var repl = List[Int]()
+                for li in range(hk.lb):
+                    if li > 0:
+                        repl.append(10)
+                    for cp in decode(new_side.lines[hk.b + li]):
+                        if cp != 13:
+                            repl.append(cp)
+                if hk.la == 0:
+                    # Pure insertion before line hk.a
+                    if hk.a < nlines:
+                        repl.append(10)
+                        _ = self.wins[i].buf.insert(hk.a, 0, repl, cr, cc, g)
+                    else:
+                        var last_r = max(0, nlines - 1)
+                        var ins = List[Int]()
+                        ins.append(10)
+                        for cp in repl:
+                            ins.append(cp)
+                        _ = self.wins[i].buf.insert(last_r, self.wins[i].buf.llen(last_r), ins, cr, cc, g)
+                    if cr >= hk.a:
+                        cr += hk.lb
+                elif hk.lb == 0:
+                    # Pure deletion of lines [hk.a .. hk.a + hk.la)
+                    if hk.a + hk.la < nlines:
+                        _ = self.wins[i].buf.delete(hk.a, 0, hk.a + hk.la, 0, cr, cc, g)
+                    elif hk.a > 0:
+                        _ = self.wins[i].buf.delete(hk.a - 1, self.wins[i].buf.llen(hk.a - 1), nlines - 1, self.wins[i].buf.llen(nlines - 1), cr, cc, g)
+                    else:
+                        _ = self.wins[i].buf.delete(0, 0, nlines - 1, self.wins[i].buf.llen(nlines - 1), cr, cc, g)
+                    if cr >= hk.a + hk.la:
+                        cr -= hk.la
+                    elif cr >= hk.a:
+                        cr = hk.a
+                else:
+                    # Replace lines [hk.a .. hk.a + hk.la - 1] in place
+                    var end_r = min(nlines - 1, hk.a + hk.la - 1)
+                    _ = self.wins[i].buf.delete(hk.a, 0, end_r, self.wins[i].buf.llen(end_r), cr, cc, g)
+                    if len(repl) > 0:
+                        _ = self.wins[i].buf.insert(hk.a, 0, repl, cr, cc, g)
+                    if cr > end_r:
+                        cr += hk.lb - hk.la
+                    elif cr >= hk.a:
+                        cr = min(hk.a + hk.lb - 1, cr)
+                hi -= 1
+            self.wins[i].sel = False
+            self.wins[i].break_group()
+            # Verify exact textual parity; fall back to full replace if trailing-newline edge differed
+            if bytes_to_str(self.wins[i].buf.text_bytes()) != txt:
+                var tmp = TextBuffer()
+                tmp.load(decode(txt))
+                self.wins[i].replace_all_text(tmp.all_text())
+        else:
+            var tmp = TextBuffer()
+            tmp.load(decode(txt))
+            self.wins[i].replace_all_text(tmp.all_text())
         self.wins[i].cr = cr
         self.wins[i].cc = cc
+        self.wins[i].top = max(0, min(top, self.wins[i].buf.count() - 1))
         self.wins[i].clamp()
         self.wins[i].buf.modified = False
-        var on_disk = str_bytes(txt)
         self.wins[i].disk_hash = content_hash(on_disk)
         self.wins[i].disk_size = len(on_disk)
         self.note_disk_state(i)
+        self.sync_shared_buffers(i)
         self.say("Formatted " + basename(path))
 
     def run_report(mut self, status: Int, output: String = ""):

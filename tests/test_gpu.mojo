@@ -4,10 +4,11 @@ the status line, and the setting that asks once in the background and shows it."
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
 from gpuinfo import *
+from codegen import analyze_codegen, format_codegen_header, CG_ASM, CG_LLVM
 from term import wait_readable
 from app import *
 from appstate import App
-from commands import CM_GPU_STATUS, build_registry
+from commands import CM_GPU_STATUS, CM_GPU_WIN, build_registry
 from config import load_settings, read_text
 from signals import own_pid
 from util import env_or, run_system, to_str
@@ -89,6 +90,41 @@ def test_the_status_item() raises:
     wait_gpu(bare)
     assert_equal(bare.gpu_status_text(), "")
     _ = run_system("rm -rf '" + d + "'")
+
+
+def test_telemetry_monitor_and_codegen_inspector() raises:
+    var parsed = parse_gpu_samples(
+        "nvidia\n0, NVIDIA H100 80GB HBM3, 82, 40960, 81559, 64, 345.2\n__PROCS__\n0000:01:00.0, 4321, mojo, 2048\n"
+    )
+    assert_equal(len(parsed[0]), 1)
+    assert_equal(parsed[0][0].util_pct, 82)
+    assert_equal(parsed[0][0].mem_used_mib, 40960)
+    assert_equal(parsed[0][0].temp_c, 64)
+    assert_equal(len(parsed[1]), 1)
+    var hist = List[List[Int]]()
+    hist.append([20, 50, 82])
+    var mon = "\n".join(format_gpu_monitor(parsed[0], parsed[1], hist))
+    assert_true(mon.find("82%") >= 0 and mon.find("40960 / 81559 MiB") >= 0 and mon.find("PID 4321") >= 0, mon)
+    var app = App()
+    app.scr.resize(120, 32)
+    app.gpu_mon_query = "echo nvidia; echo '0, NVIDIA GB10, 45, [N/A], [N/A], 52, 28.5'; echo __PROCS__"
+    app.exec(CM_GPU_WIN)
+    assert_true(app.gpuwin_index() >= 0)
+    var guard = 0
+    while app.gpu_mon_fd >= 0 and guard < 100:
+        guard += 1
+        _ = wait_readable(app.gpu_fds(), 30)
+        app.gpu_tick()
+    var gi = app.gpuwin_index()
+    var gtxt = to_str(app.wins[gi].buf.all_text())
+    assert_true(gtxt.find("NVIDIA GB10") >= 0 and gtxt.find("45%") >= 0, gtxt)
+    var asm_s = analyze_codegen("kernel:\n\t.cfi_startproc\n\tvfmadd213ps %zmm0, %zmm1, %zmm2\n\tvmovups %zmm0, 64(%rsp)\n\tretq\n", CG_ASM)
+    assert_equal(asm_s.simd_ops, 1)
+    assert_equal(asm_s.spill_ops, 1)
+    var hdr = "\n".join(format_codegen_header("k.mojo", CG_ASM, asm_s))
+    assert_true(hdr.find("[SIMD]") >= 0 and hdr.find("[SPILL]") >= 0, hdr)
+    var ir_s = analyze_codegen("define void @k() {\n  %0 = fadd <8 x float> %a, %b\n  ret void\n}\n", CG_LLVM)
+    assert_equal(ir_s.simd_ops, 1)
 
 
 def main() raises:

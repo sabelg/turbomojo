@@ -64,7 +64,7 @@ def built_in(kind: Int, module: String) -> Bool:
 def imported_top(source_line: String) -> String:
     """The first name of what a `from a.b import c` / `import a.b` line imports ("a")."""
     var s = String(source_line.strip())
-    var rest = String("")
+    var rest: String
     if s.startswith("from "):
         rest = String(s[byte=5:])
     elif s.startswith("import "):
@@ -126,15 +126,17 @@ def package_for(kind: Int, module: String) -> String:
         for k in range(len(names)):
             if module == String(names[k]):
                 return String(pkgs[k])
-    elif module == "gpu":
-        return "max"            # (Mojo 1.2: the GPU modules are part of MAX, as max.gpu)
+    elif module == "gpu" or module == "layout" or module == "tensor" or module == "engine" or module == "driver":
+        return "max"            # (Mojo 1.2: GPU and layout/TileTensor modules ship in MAX)
     return module.lower()
 
 
 def import_note(kind: Int, module: String) -> String:
     """What else the program needs besides the package ("" mostly)."""
     if kind == PK_MOJO and module == "gpu":
-        return "In Mojo 1.2 the GPU modules are part of MAX: import them as max.gpu (from max.gpu.host import DeviceContext)."
+        return "In Mojo 1.2 the GPU modules ship in MAX as max.gpu (from max.gpu.host import DeviceContext; host checks via from std.sys import has_accelerator)."
+    if kind == PK_MOJO and module == "layout":
+        return "TileTensor and row_major live in the layout package bundled with MAX (from layout import TileTensor, row_major)."
     return ""
 
 
@@ -142,8 +144,11 @@ def what_it_is(kind: Int) -> String:
     return "a Mojo package" if kind == PK_MOJO else String("a Python package")
 
 
-def in_env(cmd: String, pixi_cmd: String, manifest: String) -> String:
+def in_env(cmd: String, pixi_cmd: String, manifest: String, env: String = "default") -> String:
     """`cmd` run with the project's environment active, as `pixi run` has it (its
     activation scripts are bash, so bash runs it)."""
-    var hook = "eval \"$(" + pixi_cmd + " shell-hook --shell bash --manifest-path " + "'" + manifest.replace("'", "'\\''") + "')\" && "
+    var eflag = ""
+    if env.byte_length() > 0 and env != "default":
+        eflag = " -e '" + env.replace("'", "'\\''") + "'"
+    var hook = "eval \"$(" + pixi_cmd + " shell-hook --shell bash" + eflag + " --manifest-path " + "'" + manifest.replace("'", "'\\''") + "')\" && "
     return "bash -c '" + (hook + cmd).replace("'", "'\\''") + "'"

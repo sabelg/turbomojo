@@ -36,6 +36,9 @@ comptime RM_DIM = 4
 comptime WK_DOCPANE = 12     # the docs pane: documentation of the name at the cursor, at the right edge
 comptime WK_EXPLAIN = 11     # the explanation of a Mojo error message, beside the code
 comptime WK_DIFF = 8         # a file's changes against git's index (or the index's against HEAD)
+comptime WK_GIT = 14         # repository status panel: staged, modified, untracked, conflicted
+comptime WK_GPU = 15         # live GPU telemetry monitor
+comptime WK_CODEGEN = 16     # Mojo generated assembly / LLVM IR inspector
 
 comptime ACT_NONE = 0
 comptime ACT_TYPE = 1
@@ -129,12 +132,22 @@ struct Window(Copyable, Movable):
     var lsp_sent_version: Int   # buffer version the language server has
     var sem_version: Int        # buffer version semantic colours were last asked for
     var hint_version: Int       # ... and inlay hints
+    var hint_top: Int           # viewport range covered by last inlay hint request
+    var hint_end: Int
     var lsp_seen_version: Int   # buffer version when an edit was last noticed
     var lsp_due: Int            # when the pending edits go to the server (0 = nothing pending)
     var disk_hash: Int       # hash and size of the file's bytes when last loaded or saved
     var disk_size: Int       # (-1: unknown); the undo history on disk is tied to them
     var disk_sig: FileSig    # size/mtime of the file when it was last loaded or saved
     var swap_version: Int    # buffer version the swap file holds (-1 if none)
+    var inline_blame: String # dimmed current-line git blame summary
+    var inline_blame_row: Int
+    var dbg_inline_rows: List[Int]
+    var dbg_inline_vals: List[String]
+    var test_lens_rows: List[Int]
+    var test_lens_states: List[Int]
+    var clone_group: Int
+    var sync_ver: Int
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
         self.kind = kind
@@ -208,6 +221,16 @@ struct Window(Copyable, Movable):
         self.swap_version = -1
         self.disk_sig = FileSig()
         self.overwrite_ok = False
+        self.inline_blame = ""
+        self.inline_blame_row = -1
+        self.dbg_inline_rows = List[Int]()
+        self.dbg_inline_vals = List[String]()
+        self.test_lens_rows = List[Int]()
+        self.test_lens_states = List[Int]()
+        self.hint_top = -1
+        self.hint_end = -1
+        self.clone_group = 0
+        self.sync_ver = 0
 
     # ------------------------------------------------------------ geometry
     def contains(self, px: Int, py: Int) -> Bool:
@@ -584,7 +607,6 @@ struct Window(Copyable, Movable):
 
     def ensure_visible(mut self):
         var rws = self.rows()
-        var cls = self.cols()
         self.reveal_cursor()
         if self.rowwise():
             if self.wrap:

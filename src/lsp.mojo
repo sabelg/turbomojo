@@ -318,6 +318,10 @@ struct CompletionItem(Copyable, Movable):
     var sort: String        # the key the server wants the list ordered by
     var filter: String      # the text typed characters are matched against
     var raw: String         # the item as received, for completionItem/resolve
+    var insert_format: Int  # 1 PlainText, 2 Snippet
+    var has_edit: Bool
+    var edit: LspEdit
+    var extra_edits: List[LspEdit]
 
     def __init__(out self):
         self.label = ""
@@ -328,6 +332,83 @@ struct CompletionItem(Copyable, Movable):
         self.sort = ""
         self.filter = ""
         self.raw = ""
+        self.insert_format = 1
+        self.has_edit = False
+        self.edit = LspEdit(0, 0, 0, 0, "")
+        self.extra_edits = List[LspEdit]()
+
+
+def expand_lsp_snippet(raw: String) -> Tuple[String, Int]:
+    """Expand an LSP snippet string (`$1`, `${1:placeholder}`, `$0`, `\\$`) into plain text
+    and the 0-based codepoint offset of the primary cursor tabstop (`-1` if none)."""
+    var cps = decode(raw)
+    var out = List[Int]()
+    var tab1 = -1
+    var tab0 = -1
+    var i = 0
+    var n = len(cps)
+    while i < n:
+        var c = cps[i]
+        if c == 92 and i + 1 < n:
+            out.append(cps[i + 1])
+            i += 2
+            continue
+        if c == 36 and i + 1 < n:
+            if cps[i + 1] >= 48 and cps[i + 1] <= 57:
+                var num = 0
+                var j = i + 1
+                while j < n and cps[j] >= 48 and cps[j] <= 57:
+                    num = num * 10 + (cps[j] - 48)
+                    j += 1
+                if num == 1 and tab1 < 0:
+                    tab1 = len(out)
+                elif num == 0 and tab0 < 0:
+                    tab0 = len(out)
+                i = j
+                continue
+            if cps[i + 1] == 123:
+                var j = i + 2
+                var has_digits = False
+                var num = 0
+                while j < n and cps[j] >= 48 and cps[j] <= 57:
+                    has_digits = True
+                    num = num * 10 + (cps[j] - 48)
+                    j += 1
+                if has_digits and j < n and cps[j] == 125:
+                    if num == 1 and tab1 < 0:
+                        tab1 = len(out)
+                    elif num == 0 and tab0 < 0:
+                        tab0 = len(out)
+                    i = j + 1
+                    continue
+                if has_digits and j < n and cps[j] == 58:
+                    j += 1
+                    var start_pos = len(out)
+                    var depth = 1
+                    while j < n and depth > 0:
+                        if cps[j] == 92 and j + 1 < n:
+                            out.append(cps[j + 1])
+                            j += 2
+                            continue
+                        if cps[j] == 123:
+                            depth += 1
+                        elif cps[j] == 125:
+                            depth -= 1
+                            if depth == 0:
+                                j += 1
+                                break
+                        out.append(cps[j])
+                        j += 1
+                    if num == 1 and tab1 < 0:
+                        tab1 = start_pos
+                    elif num == 0 and tab0 < 0:
+                        tab0 = start_pos
+                    i = j
+                    continue
+        out.append(c)
+        i += 1
+    var cur = tab1 if tab1 >= 0 else tab0
+    return (to_str(out), cur)
 
 
 struct CompletionList(Movable):
@@ -364,9 +445,28 @@ def parse_completion_item(doc: Json, node: Int) -> CompletionItem:
     var ins = doc.get(node, "insertText")
     if ins >= 0 and doc.str(ins).byte_length() > 0:
         it.insert = doc.str(ins)
-    var te = doc.path(node, "textEdit/newText")
-    if te >= 0 and doc.str(te).byte_length() > 0:
-        it.insert = doc.str(te)
+    it.insert_format = doc.int(doc.get(node, "insertTextFormat"), 1)
+    var te_node = doc.get(node, "textEdit")
+    if te_node >= 0 and not doc.is_null(te_node):
+        var nt = doc.get(te_node, "newText")
+        if nt >= 0 and doc.str(nt).byte_length() > 0:
+            it.insert = doc.str(nt)
+        var rng = doc.get(te_node, "range")
+        if rng < 0:
+            rng = doc.get(te_node, "insert")
+        var s = doc.get(rng, "start") if rng >= 0 else -1
+        var e = doc.get(rng, "end") if rng >= 0 else -1
+        if s >= 0 and e >= 0 and nt >= 0:
+            it.edit = LspEdit(doc.int(doc.get(s, "line"), 0), doc.int(doc.get(s, "character"), 0), doc.int(doc.get(e, "line"), 0), doc.int(doc.get(e, "character"), 0), doc.str(nt))
+            it.has_edit = True
+    var add_node = doc.get(node, "additionalTextEdits")
+    if add_node >= 0 and doc.kind(add_node) == 4:
+        for ae in doc.children(add_node):
+            var s2 = doc.path(ae, "range/start")
+            var e2 = doc.path(ae, "range/end")
+            var nt2 = doc.get(ae, "newText")
+            if s2 >= 0 and e2 >= 0 and nt2 >= 0:
+                it.extra_edits.append(LspEdit(doc.int(doc.get(s2, "line"), 0), doc.int(doc.get(s2, "character"), 0), doc.int(doc.get(e2, "line"), 0), doc.int(doc.get(e2, "character"), 0), doc.str(nt2)))
     it.raw = doc.dump(node)
     return it^
 
@@ -810,7 +910,7 @@ def find_cps(hay: List[Int], needle: List[Int], start: Int) -> Int:
     return -1
 
 
-def parse_signature(doc: Json, result: Int) -> SigInfo:
+def parse_signature(doc: Json, result: Int, preferred_sig: Int = -1) -> SigInfo:
     """Read a signatureHelp result. `ok` is False when there is nothing to show."""
     var info = SigInfo()
     if result < 0 or doc.is_null(result):
@@ -820,6 +920,8 @@ def parse_signature(doc: Json, result: Int) -> SigInfo:
     if n == 0:
         return info^
     var which = doc.int(doc.get(result, "activeSignature"), 0)
+    if preferred_sig >= 0 and preferred_sig < n:
+        which = preferred_sig
     if which < 0 or which >= n:
         which = 0
     var sig = doc.at(sigs, which)
@@ -1078,6 +1180,10 @@ struct LspClient(Copyable, Movable):
         w.begin_obj()
         w.kv_bool("linkSupport", True)
         w.end_obj()
+        w.key("typeDefinition")
+        w.begin_obj()
+        w.kv_bool("linkSupport", True)
+        w.end_obj()
         w.key("signatureHelp")
         w.begin_obj()
         w.kv_bool("contextSupport", True)
@@ -1100,7 +1206,7 @@ struct LspClient(Copyable, Movable):
         w.kv_bool("contextSupport", True)
         w.key("completionItem")
         w.begin_obj()
-        w.kv_bool("snippetSupport", False)
+        w.kv_bool("snippetSupport", True)
         w.key("documentationFormat")
         w.begin_arr()
         w.str("plaintext")
@@ -1110,7 +1216,7 @@ struct LspClient(Copyable, Movable):
         w.end_obj()
         w.key("publishDiagnostics")
         w.begin_obj()
-        w.kv_bool("relatedInformation", False)
+        w.kv_bool("relatedInformation", True)
         w.kv_bool("versionSupport", True)
         w.end_obj()
         w.end_obj()
@@ -1135,6 +1241,11 @@ struct LspClient(Copyable, Movable):
 
     def active(self) -> Bool:
         return self.state == LSP_STARTING or self.state == LSP_READY
+
+    def cancel_request(mut self, id: Int):
+        """Cancel an in-flight LSP request locally and send $/cancelRequest to the server."""
+        if id >= 0 and self.conn.cancel(id) and self.state == LSP_READY:
+            self.conn.notify("$/cancelRequest", "{\"id\":" + String(id) + "}")
 
     def supports(self, capability: String) -> Bool:
         """Whether the server advertised a capability (present and not `false`)."""
@@ -1293,6 +1404,12 @@ struct LspClient(Copyable, Movable):
             return -1
         return self.conn.request("textDocument/definition", self.position_params(uri, line, character) + "}", now)
 
+    def request_type_definition(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
+        """Ask where the type of the symbol at a position is defined."""
+        if self.state != LSP_READY or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/typeDefinition", self.position_params(uri, line, character) + "}", now)
+
     def request_references(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
         """Ask for every use of the symbol at a position, its declaration included.
         -1 if the server cannot be asked now."""
@@ -1354,11 +1471,13 @@ struct LspClient(Copyable, Movable):
             return -1
         return self.conn.request("textDocument/semanticTokens/full", "{\"textDocument\":{\"uri\":" + json_quote(uri) + "}}", now)
 
-    def request_inlay(mut self, uri: String, rows: Int, now: Int) -> Int:
-        """Ask for the inlay hints of lines 0..rows of a document."""
+    def request_inlay(mut self, uri: String, rows: Int, now: Int, start_line: Int = 0) -> Int:
+        """Ask for the inlay hints of lines start_line..rows of a document."""
         if self.state != LSP_READY or not self.table.inlay_hint or self.find_doc(uri) < 0:
             return -1
-        return self.conn.request("textDocument/inlayHint", "{\"textDocument\":{\"uri\":" + json_quote(uri) + "},\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":" + String(rows) + ",\"character\":0}}}", now)
+        var s0 = max(0, start_line)
+        var e0 = max(s0, rows)
+        return self.conn.request("textDocument/inlayHint", "{\"textDocument\":{\"uri\":" + json_quote(uri) + "},\"range\":{\"start\":{\"line\":" + String(s0) + ",\"character\":0},\"end\":{\"line\":" + String(e0) + ",\"character\":0}}}", now)
 
     def request_prepare_rename(mut self, uri: String, line: Int, character: Int, now: Int) -> Int:
         """Ask whether the symbol at a position can be renamed. -1 if the server cannot
@@ -1446,13 +1565,23 @@ struct LspClient(Copyable, Movable):
         self.diags[i].raw.clear()
         self.diags[i].version = m.doc.int(m.doc.get(p, "version"), -1)
         for d in m.doc.children(m.doc.get(p, "diagnostics")):
+            var msg = m.doc.str(m.doc.get(d, "message"))
+            var rel_info = m.doc.get(d, "relatedInformation")
+            if rel_info >= 0:
+                for ri in m.doc.children(rel_info):
+                    var ruri = m.doc.str(m.doc.path(ri, "location/uri"))
+                    var rline = m.doc.int(m.doc.path(ri, "location/range/start/line"), 0) + 1
+                    var rmsg = m.doc.str(m.doc.get(ri, "message"))
+                    if rmsg.byte_length() > 0:
+                        var rpath = uri_to_path(ruri) if ruri.startswith("file://") else ruri
+                        msg += "\n" + (rpath + ":" + String(rline) + ": " if rpath.byte_length() > 0 else String("")) + rmsg
             self.diags[i].items.append(Diag(
                 m.doc.int(m.doc.path(d, "range/start/line")),
                 m.doc.int(m.doc.path(d, "range/start/character")),
                 m.doc.int(m.doc.path(d, "range/end/line")),
                 m.doc.int(m.doc.path(d, "range/end/character")),
                 m.doc.int(m.doc.get(d, "severity"), SEV_ERROR),
-                m.doc.str(m.doc.get(d, "message")),
+                msg,
             ))
             self.diags[i].raw.append(m.doc.dump(d))
         if not (uri in self.updated):

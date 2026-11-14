@@ -63,6 +63,7 @@ from app_setup import *
 from app_presets import *
 from app_report import *
 from app_gpu import *
+from app_codegen import *
 from version import MOJO_BUILT_WITH
 from mojover import mojo_mismatch, mojo_summary
 
@@ -213,6 +214,11 @@ __extension App:
             self.term.flush()
             if not self.mojo_checked:
                 self.mojo_version_check()       # (after the first frame: start-up stays quick)
+            if not self.lsp_auto_checked:
+                self.lsp_auto_checked = True
+                var ai0 = self.active_editor()
+                if self.lsp_auto_start and ai0 >= 0 and not self.wins[ai0].buf.large and self.log_path.byte_length() > 0 and not self.trust_held and self.trust_ok() and is_mojo_file(self.wins[ai0].path) and not self.lsp.active():
+                    self.lsp_track(ai0, now_ns())
             if self.fault.byte_length() > 0:
                 self.inject_fault()
             # sleep until input, compiler output or the next timer
@@ -220,6 +226,8 @@ __extension App:
             fds.append(0)
             if self.job.active:
                 fds.append(self.job.fd)
+            if self.aux_job.active:
+                fds.append(self.aux_job.fd)
             if self.sig.active():
                 fds.append(self.sig.fd)
             if self.watch.active():
@@ -287,17 +295,27 @@ __extension App:
             self.swap_tick(now_ns())
             self.fsearch_tick(now_ns())
             try:
-                self.watch_tick(now_ns(), self.watch.drain())
+                var woke = self.watch.drain()
+                if woke:
+                    self.git_checked_ns = 0
+                    self.git_tick(now_ns())
+                self.watch_tick(now_ns(), woke)
             except err:
                 self.log_error(String(err))
             try:
                 self.poll_job()
+                self.poll_aux_job()
             except err:
                 self.log_error(String(err))
                 self.info("Error", String(err))
         if self.job.active:
             self.cancel_job()
             _ = external_call["pclose", Int32](self.job.fp)
+        if self.aux_job.active:
+            if self.aux_job.pid > 0:
+                _ = external_call["kill", Int32](Int32(self.aux_job.pid), Int32(15))
+            _ = external_call["pclose", Int32](self.aux_job.fp)
+        self.gpu_mon_stop()
         self.dbg.finish()           # a program being debugged does not outlive the IDE
         _ = self.git_proc.stop()
         self.agent.stop()           # nor the coding agent

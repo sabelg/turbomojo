@@ -206,6 +206,10 @@ struct Settings(Copyable, Movable):
     var large_file_mb: Int
     var key_commands: List[String]       # command names with custom bindings
     var key_names: List[List[String]]    # their key names, as written in the file
+    var line_blame: Bool
+    var format_on_save: Bool
+    var pixi_env: String
+    var lsp_auto_start: Bool
     var warnings: List[String]
 
     def __init__(out self):
@@ -268,6 +272,10 @@ struct Settings(Copyable, Movable):
         self.large_file_mb = 50
         self.key_commands = List[String]()
         self.key_names = List[List[String]]()
+        self.line_blame = False
+        self.format_on_save = False
+        self.pixi_env = "default"
+        self.lsp_auto_start = True
         self.warnings = List[String]()
 
     def take_bool(mut self, doc: TomlDoc, key: String, current: Bool) -> Bool:
@@ -333,6 +341,15 @@ struct Settings(Copyable, Movable):
         self.relative_numbers = self.take_bool(doc, "editor.relative_numbers", self.relative_numbers)
         self.persistent_undo = self.take_bool(doc, "editor.persistent_undo", self.persistent_undo)
         self.trim_trailing = self.take_bool(doc, "editor.trim_trailing_whitespace", self.trim_trailing)
+        self.format_on_save = self.take_bool(doc, "editor.format_on_save", self.format_on_save)
+        self.line_blame = self.take_bool(doc, "ui.line_blame", self.line_blame)
+        self.lsp_auto_start = self.take_bool(doc, "tools.lsp_auto_start", self.lsp_auto_start)
+        var pei = doc.find("tools.pixi_env")
+        if pei >= 0:
+            if doc.vals[pei].kind != T_STR or doc.vals[pei].s.byte_length() == 0:
+                self.warnings.append("tools.pixi_env must be a non-empty environment name")
+            else:
+                self.pixi_env = doc.vals[pei].s
         var ri = doc.find("editor.rulers")
         if ri >= 0:
             var cols = List[Int]()
@@ -507,7 +524,7 @@ struct Settings(Copyable, Movable):
                 self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_blame", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.format_on_save", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.lsp_auto_start", "tools.pixi_env", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):

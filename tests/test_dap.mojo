@@ -71,7 +71,10 @@ def run_until(mut s: DebugSession, last: Int, timeout_ms: Int = 5000) -> String:
 
 
 def alive(pid: Int) -> Bool:
-    return Int(external_call["kill", Int32](Int32(pid), Int32(0))) == 0
+    if Int(external_call["kill", Int32](Int32(pid), Int32(0))) != 0:
+        return False
+    var st = read_text("/proc/" + String(pid) + "/status")
+    return st.find("State:\tZ") < 0
 
 
 def gone_soon(pid: Int) -> Bool:

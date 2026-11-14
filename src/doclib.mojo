@@ -918,37 +918,73 @@ struct DocLibrary(Copyable, Movable):
     def add_folder(mut self, dir: String, depth: Int, sources: Bool):
         """Every page of a folder (and its folders), ordered by the position their
         headers give, then by name. With `sources`, source files are listed too."""
-        var files = List[String]()
-        var order = List[Int]()
-        var dirs = List[String]()
-        for n in list_dir(dir):
-            if n == "../" or n.startswith(".") or n.startswith("_"):
+        var st_op = List[Int]()
+        var st_dir = List[String]()
+        var st_name = List[String]()
+        var st_depth = List[Int]()
+        var st_before = List[Int]()
+        st_op.append(0)
+        st_dir.append(dir)
+        st_name.append("")
+        st_depth.append(depth)
+        st_before.append(0)
+        while len(st_op) > 0:
+            var op = st_op.pop()
+            var cur_dir = st_dir.pop()
+            var cur_name = st_name.pop()
+            var cur_depth = st_depth.pop()
+            var cur_before = st_before.pop()
+            if op == 1:
+                if len(self.pages) == cur_before + 1:
+                    _ = self.pages.pop()
                 continue
-            if n.endswith("/"):
-                var d = String(n[byte=0:n.byte_length() - 1])
-                if d != "images" and d != "image" and d != "static" and d != "gifs" and d != "fonts" and d != "node_modules" and d != "scripts":
-                    dirs.append(d)
-            elif n.endswith(".md") or n.endswith(".mdx") or (sources and (n.endswith(".mojo") or n.endswith(".🔥") or n.endswith(".py"))):
-                var p = join_path(dir, n)
-                var pos = 9999
-                if n.endswith(".md") or n.endswith(".mdx"):
-                    pos = front_matter(file_text(p))[1]
-                    if n.startswith("index.") or n.startswith("README.") or n.startswith("readme."):
-                        pos = -1
-                # insertion sort by (position, name order as listed)
-                var at = len(files)
-                while at > 0 and order[at - 1] > pos:
-                    at -= 1
-                files.insert(at, p)
-                order.insert(at, pos)
-        for p in files:
-            self.add_page(p, depth)
-        for d in dirs:
-            var before = len(self.pages)
-            self.pages.append(DocPage(nice_name(d), "", depth, DK_HEADING))
-            self.add_folder(join_path(dir, d), depth + 1, sources)
-            if len(self.pages) == before + 1:
-                _ = self.pages.pop()        # nothing in it
+            if op == 2:
+                var before = len(self.pages)
+                self.pages.append(DocPage(nice_name(cur_name), "", cur_depth, DK_HEADING))
+                st_op.append(1)
+                st_dir.append("")
+                st_name.append("")
+                st_depth.append(0)
+                st_before.append(before)
+                if cur_depth < 32:
+                    st_op.append(0)
+                    st_dir.append(cur_dir)
+                    st_name.append("")
+                    st_depth.append(cur_depth + 1)
+                    st_before.append(0)
+                continue
+            var files = List[String]()
+            var order = List[Int]()
+            var dirs = List[String]()
+            for n in list_dir(cur_dir):
+                if n == "../" or n.startswith(".") or n.startswith("_"):
+                    continue
+                if n.endswith("/"):
+                    var d = String(n[byte=0:n.byte_length() - 1])
+                    if d != "images" and d != "image" and d != "static" and d != "gifs" and d != "fonts" and d != "node_modules" and d != "scripts":
+                        dirs.append(d)
+                elif n.endswith(".md") or n.endswith(".mdx") or (sources and (n.endswith(".mojo") or n.endswith(".🔥") or n.endswith(".py"))):
+                    var p = join_path(cur_dir, n)
+                    var pos = 9999
+                    if n.endswith(".md") or n.endswith(".mdx"):
+                        pos = front_matter(file_text(p))[1]
+                        if n.startswith("index.") or n.startswith("README.") or n.startswith("readme."):
+                            pos = -1
+                    var at = len(files)
+                    while at > 0 and order[at - 1] > pos:
+                        at -= 1
+                    files.insert(at, p)
+                    order.insert(at, pos)
+            for p in files:
+                self.add_page(p, cur_depth)
+            var k = len(dirs) - 1
+            while k >= 0:
+                st_op.append(2)
+                st_dir.append(join_path(cur_dir, dirs[k]))
+                st_name.append(dirs[k])
+                st_depth.append(cur_depth)
+                st_before.append(0)
+                k -= 1
 
     def add_workshop(mut self, title: String, dir: String):
         """A workshop as a course: what it is about, then every session with its agenda
@@ -1039,16 +1075,15 @@ struct DocLibrary(Copyable, Movable):
         """A book from one sidebar of a docusaurus `sidebars.json`."""
         if not path_exists(sidebars):
             return
-        try:
-            var doc = json_parse(file_text(sidebars))
-            var items = doc.get(0, key)
-            if items < 0:
-                return
-            self.book(title)
-            self.add_sidebar_items(doc, items, site, 1)
-            self.drop_empty_book()
-        except e:
-            self.drop_empty_book()
+        var doc = json_parse(file_text(sidebars))
+        if not doc.ok:
+            return
+        var items = doc.get(0, key)
+        if items < 0:
+            return
+        self.book(title)
+        self.add_sidebar_items(doc, items, site, 1)
+        self.drop_empty_book()
 
     # ----------------------------------------------------------- mdBook
     def add_summary(mut self, title: String, summary: String):
@@ -1158,7 +1193,7 @@ struct DocLibrary(Copyable, Movable):
                 var parts = l.split("\t")
                 if len(parts) != 3:
                     continue
-                var depth = 1
+                var depth: Int
                 try:
                     depth = atol(String(parts[0]))
                 except:
@@ -1200,7 +1235,7 @@ struct DocLibrary(Copyable, Movable):
                 var parts = l.split("\t")
                 if len(parts) != 3:
                     continue
-                var depth = 1
+                var depth: Int
                 try:
                     depth = atol(String(parts[0]))
                 except:

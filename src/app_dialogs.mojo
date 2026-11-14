@@ -194,7 +194,7 @@ __extension App:
         var name = self.dlg.field_text(0)
         var dir = self.dlg.dir
         var sel = self.dlg.selected_item()
-        var target = String("")
+        var target: String
         if name.byte_length() > 0 and path_exists(join_path(dir, name)):
             target = join_path(dir, name)
         elif sel >= 0:
@@ -261,10 +261,18 @@ __extension App:
             if name.byte_length() == 0 or i < 0 or i >= len(self.wins):
                 return
             var p = abs_path(self.cwd, name)
+            var cg = self.wins[i].clone_group
             self.wins[i].path = p
             self.wins[i].title = basename(p)
             self.apply_editorconfig(i)      # the new name may fall under other rules
             self.note_disk_state(i)         # Save As replaces whatever has that name
+            if cg > 0:
+                for j in range(len(self.wins)):
+                    if j != i and self.wins[j].kind == WK_EDITOR and self.wins[j].clone_group == cg:
+                        self.wins[j].path = p
+                        self.wins[j].title = basename(p)
+                        self.apply_editorconfig(j)
+                        self.note_disk_state(j)
             var next = self.dlg.next
             if self.save_window(i, NEXT_NONE):
                 if next == NEXT_CLOSE:
@@ -276,6 +284,10 @@ __extension App:
             var i = self.dlg.payload
             var next = self.dlg.next
             if b == 1:
+                if next == NEXT_QUIT:
+                    for j in range(len(self.wins)):
+                        if self.same_shared_buffer(i, j):
+                            self.wins[j].buf.modified = False
                 self.remove_window(i)
                 if next == NEXT_QUIT:
                     self.quit()
@@ -286,6 +298,8 @@ __extension App:
                         self.quit()
         elif kind == D_FINDFILES and b == 0:
             self.find_text = self.dlg.fields[0].text.copy()
+            if len(self.dlg.fields) > 1:
+                self.find_filter = String(self.dlg.field_text(1).strip())
             self.find_case = self.dlg.check_vals[0]
             self.find_word = self.dlg.check_vals[1]
             self.find_regex = self.dlg.check_vals[2]
@@ -295,7 +309,24 @@ __extension App:
             if not s.ok:
                 self.info("Find in Files", "Pattern error: " + s.error)
                 return
-            self.start_file_search(s)
+            var fg = String(self.find_filter)
+            self.start_file_search(s, fg)
+        elif kind == D_REPLACEFILES and b == 0:
+            self.find_text = self.dlg.fields[0].text.copy()
+            self.replace_text = self.dlg.fields[1].text.copy()
+            if len(self.dlg.fields) > 2:
+                self.find_filter = String(self.dlg.field_text(2).strip())
+            self.find_case = self.dlg.check_vals[0]
+            self.find_word = self.dlg.check_vals[1]
+            self.find_regex = self.dlg.check_vals[2]
+            var s = self.current_search()
+            if len(s.pat) == 0:
+                return
+            if not s.ok:
+                self.info("Replace in Files", "Pattern error: " + s.error)
+                return
+            var fg = String(self.find_filter)
+            self.replace_in_files(s, self.replace_text.copy(), fg)
         elif kind == D_GOTO and b == 0:
             var ai = self.active_editor()
             var t = self.dlg.field_text(0)
@@ -377,13 +408,17 @@ __extension App:
         elif kind == D_PKG:
             self.pkg_button(b)
         elif kind == D_NEW_PROJECT and b == 0:
-            _ = self.new_project_create(self.dlg.field_text(0))
+            var tsel = self.dlg.selected_item()
+            var tmpl = self.dlg.item_data[tsel] if (tsel >= 0 and tsel < len(self.dlg.item_data)) else 0
+            var fld = self.dlg.field_text(0)
+            _ = self.new_project_create(fld, tmpl)
         elif kind == D_EX_FILTER and b == 0:
             self.explorer_filter(String(self.dlg.field_text(0).strip()))
         elif kind == D_PANEL_FILTER and b == 0:
             self.panel_filter_set(String(self.dlg.field_text(0).strip()))
         elif kind == D_GIT_COMMIT and b == 0:
-            self.git_commit(self.dlg.field_text(0), self.dlg.field_text(1), self.dlg.check_vals[0], self.dlg.check_vals[1])
+            var add_untracked = self.dlg.check_vals[2] if len(self.dlg.check_vals) > 2 else False
+            self.git_commit(self.dlg.field_text(0), self.dlg.field_text(1), self.dlg.check_vals[0], self.dlg.check_vals[1], add_untracked)
         elif kind == D_GIT_BRANCH:
             var sel = self.dlg.selected_item()
             self.git_branch_button(b, self.dlg.item_data[sel] if sel >= 0 else -1, self.dlg.field_text(0))
@@ -458,6 +493,11 @@ __extension App:
             var s = self.dlg.selected_item()
             if s >= 0:
                 self.agent_file_choose(self.dlg.item_data[s])
+        elif kind == D_PIXI_ENV and b == 0:
+            var s = self.dlg.selected_item()
+            if s >= 0 and s < len(self.dlg.keys):
+                var env_choice = String(self.dlg.keys[s])
+                self.pixi_env_choose(env_choice)
 
     # ------------------------------------------------------------ find / replace
     def current_search(self) -> Search:
@@ -519,11 +559,37 @@ __extension App:
             var sel = self.wins[ai].selected_text()
             if len(sel) > 0 and not (10 in sel):
                 seed = to_str(sel)
-        var d = Dialog(D_FINDFILES, "Find in Files", 64, 12)
+        var d = Dialog(D_FINDFILES, "Find in Files", 64, 14)
         d.lines.append("Folder: " + self.cwd)
         d.fields.append(Field("~T~ext to find", seed))
         d.fields[0].fresh = True
+        d.fields.append(Field("Fi~l~es (glob)", self.find_filter))
         d.buttons.append("~S~earch")
+        d.buttons.append("~C~ancel")
+        d.checks.append("Case sens~i~tive")
+        d.check_vals.append(self.find_case)
+        d.checks.append("~W~hole words")
+        d.check_vals.append(self.find_word)
+        d.checks.append("Regular e~x~pression")
+        d.check_vals.append(self.find_regex)
+        d.check_cols = 2
+        self.show(d^)
+
+    def open_replace_files(mut self):
+        var seed = to_str(self.find_text)
+        var ai = self.active_editor()
+        if ai >= 0:
+            var sel = self.wins[ai].selected_text()
+            if len(sel) > 0 and not (10 in sel):
+                seed = to_str(sel)
+        var d = Dialog(D_REPLACEFILES, "Replace in Files", 64, 16)
+        d.lines.append("Folder: " + self.cwd)
+        d.fields.append(Field("~T~ext to find", seed))
+        d.fields[0].fresh = True
+        d.fields.append(Field("~N~ew text", to_str(self.replace_text)))
+        d.fields[1].fresh = True
+        d.fields.append(Field("Fi~l~es (glob)", self.find_filter))
+        d.buttons.append("~R~eplace...")
         d.buttons.append("~C~ancel")
         d.checks.append("Case sens~i~tive")
         d.check_vals.append(self.find_case)
@@ -713,7 +779,7 @@ __extension App:
         if k == KEY_ESC:
             self.dismiss_dialog()
             return
-        if k & MOD_ALT != 0 and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE or self.dlg.kind == D_FINDFILES):
+        if k & MOD_ALT != 0 and (self.dlg.kind == D_FIND or self.dlg.kind == D_REPLACE or self.dlg.kind == D_FINDFILES or self.dlg.kind == D_REPLACEFILES):
             # Alt+letter reaches every control, also while typing in a field
             var hk = hot_key(k)
             for i in range(len(self.dlg.fields)):

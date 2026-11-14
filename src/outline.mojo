@@ -104,6 +104,9 @@ def scan_outline(buf: TextBuffer) -> List[OutlineItem]:
         elif text.startswith("struct "):
             kind = SK_STRUCT
             skip = 7
+        elif text.startswith("__extension "):
+            kind = SK_STRUCT
+            skip = 12
         elif text.startswith("trait "):
             kind = SK_INTERFACE
             skip = 6

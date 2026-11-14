@@ -22,6 +22,9 @@ def test_secret_names_and_values() raises:
     assert_true(secret_value("\"sk-abcdefghijklmnop\""))
     assert_true(secret_value("\"ghp_0123456789abcdefghijklmn\""))
     assert_true(secret_value("\"a8F3kq9Z2mX7pL4vB6nR1tY5\""))           # long and random
+    assert_true(secret_value("\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl\""))  # JWT
+    assert_true(secret_value("\"https://user:ghp_0123456789abcdef@github.com/org/repo\""))          # URL with creds
+    assert_true(secret_value("\"my-agent --api-key sk-abcdefghijklmnop\""))                         # inline CLI flag
     assert_false(secret_value("\"/home/someone/.pixi/envs/default/bin/mojo\""))  # a path
     assert_false(secret_value("\"midnight\""))
     assert_false(secret_value("\"claude-agent-acp --verbose and more words\""))

@@ -90,7 +90,7 @@ def kitty_transmit(id: Int, png: List[UInt8], cols: Int, rows: Int, tmux: Bool) 
     while first or at < n:
         var end = min(n, at + GFX_CHUNK)
         var more = 1 if end < n else 0
-        var head = String("")
+        var head: String
         if first:
             head = "a=T,U=1,f=100,t=d,i=" + String(id) + ",c=" + String(cols) + ",r=" + String(rows) + ",q=2,m=" + String(more)
         else:

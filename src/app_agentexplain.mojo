@@ -74,7 +74,7 @@ __extension App:
 
     def agent_explain_error(mut self) raises:
         """The problem on the Problems page's row, or on the editor's line."""
-        var message = String("")
+        var message: String
         var path = String("")
         var line = 0
         var row = self.explain_problems_row()
@@ -122,8 +122,8 @@ __extension App:
         if ai < 0:
             self.say("Put the cursor in a file first")
             return
-        var first = self.wins[ai].cr
-        var last = self.wins[ai].cr
+        var first: Int
+        var last: Int
         if self.wins[ai].has_sel():
             var s = self.wins[ai].sel_range()
             first = s.r1

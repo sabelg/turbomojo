@@ -12,6 +12,7 @@ comptime LINK_MAX = 4096  # links interned before the pool starts over
 
 
 comptime BOLD_BIT = 1 << 30        # in a cell's underline word: the character is bold
+comptime UL_DEF_BIT = 1 << 29      # underline uses default foreground colour (no SGR 58)
 comptime UL_STRAIGHT = 1           # underline styles (SGR 4:n)
 comptime UL_CURLY = 3
 comptime UL_DOTTED = 4
@@ -328,7 +329,14 @@ struct Screen(Movable):
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
             return
         var k = self.head_of(y * self.w + x)
-        self.ul[k] = (self.ul[k] & BOLD_BIT) | ((kind & 7) << 24) | (rgb & 0xFFFFFF)
+        var col = rgb
+        var def_bit = 0
+        if rgb == COLOR_DEFAULT:
+            col = 0
+            def_bit = UL_DEF_BIT
+        elif rgb >= ANSI_BASE and rgb < ANSI_BASE + 256:
+            col = x256_rgb(rgb - ANSI_BASE)
+        self.ul[k] = (self.ul[k] & BOLD_BIT) | def_bit | ((kind & 7) << 24) | (col & 0xFFFFFF)
 
     def ul_at(self, x: Int, y: Int) -> Int:
         """0 = not underlined, else UL_* (1 straight, 3 curly, 4 dotted, 5 dashed)."""
@@ -597,13 +605,22 @@ struct Screen(Movable):
                     elif self.styled_ul:
                         append_str(out, "\x1b[4:")
                         append_int(out, (u >> 24) & 7)
-                        append_str(out, "m\x1b[58:2::")
-                        append_int(out, (u >> 16) & 255)
-                        append_str(out, ":")
-                        append_int(out, (u >> 8) & 255)
-                        append_str(out, ":")
-                        append_int(out, u & 255)
-                        append_str(out, "m")
+                        if (u & UL_DEF_BIT) != 0:
+                            append_str(out, "m\x1b[59m")
+                        elif self.color_mode == COLOR_TRUE:
+                            append_str(out, "m\x1b[58:2::")
+                            append_int(out, (u >> 16) & 255)
+                            append_str(out, ":")
+                            append_int(out, (u >> 8) & 255)
+                            append_str(out, ":")
+                            append_int(out, u & 255)
+                            append_str(out, "m")
+                        elif self.color_mode == COLOR_256:
+                            append_str(out, "m\x1b[58:5:")
+                            append_int(out, rgb_to_256(u & 0xFFFFFF))
+                            append_str(out, "m")
+                        else:
+                            append_str(out, "m")
                     else:
                         append_str(out, "\x1b[4m")
                     lastul = u

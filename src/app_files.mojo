@@ -96,7 +96,11 @@ __extension App:
             self.say("New file: " + p)
         self.apply_editorconfig(i)
         self.note_disk_state(i)
+        self.wins[i].sync_ver = self.wins[i].buf.version
+        self.tests_sync_lens()
         self.plugins_event("open", p)
+        if self.lsp_auto_start and self.lsp_auto_checked and not self.wins[i].buf.large and self.log_path.byte_length() > 0 and not self.trust_held and self.trust_ok() and is_mojo_file(p) and not self.lsp.active():
+            self.lsp_track(i, now_ns())
 
     def apply_buffer_settings(mut self, i: Int, ec: EcProps):
         """Give a buffer its indentation and line-ending rules: user defaults first, then
@@ -148,11 +152,18 @@ __extension App:
             self.symidx.replace_file(self.wins[i].path, scan_outline(self.wins[i].buf))
         self.note_disk_state(i)
         self.drop_swap(i)
+        self.wins[i].sync_ver = self.wins[i].buf.version
+        self.sync_shared_buffers(i)
         self.git_saved()
+        self.tests_sync_lens()
         self.say("Saved " + self.wins[i].path + note)
-        var saved = self.wins[i].path
+        var saved = String(self.wins[i].path)
         self.plugins_event("save", saved)
         self.export_ide_state()
+        if self.format_on_save and next == NEXT_NONE and is_mojo_file(saved) and not self.wins[i].buf.large and not self.trust_held and self.trust_ok() and not self.aux_job.active:
+            var inner = "cd " + shell_quote(dirname(saved)) + " && exec " + self.mojo_for(saved) + " format -q " + shell_quote(saved)
+            var cmd = self.with_env(saved, inner) + " 2>&1"
+            _ = self.start_aux_job(JOB_FORMAT, cmd, saved, "")
         return True
 
     # ------------------------------------------------- history between sessions
@@ -221,17 +232,168 @@ __extension App:
         var d = shell_quote(self.history_dir)
         _ = run_system("cd " + d + " && ls -1t | tail -n +501 | while IFS= read -r f; do rm -f -- \"$f\"; done")
 
+    # ------------------------------------------------- shared split views
+    def same_shared_buffer(self, i: Int, j: Int) -> Bool:
+        if i == j or i < 0 or j < 0 or i >= len(self.wins) or j >= len(self.wins):
+            return False
+        if self.wins[i].kind != WK_EDITOR or self.wins[j].kind != WK_EDITOR:
+            return False
+        if self.wins[i].path.byte_length() > 0 and self.wins[i].path == self.wins[j].path:
+            return True
+        return self.wins[i].clone_group > 0 and self.wins[i].clone_group == self.wins[j].clone_group
+
+    def has_shared_sibling(self, i: Int) -> Bool:
+        for j in range(len(self.wins)):
+            if self.same_shared_buffer(i, j):
+                return True
+        return False
+
+    def sync_shared_buffers(mut self, preferred: Int = -1):
+        """Propagate edits, undo/redo stacks, marks and disk state across split views
+        editing the same file or untitled clone group while preserving each view's own
+        cursor, scroll offset and code folds."""
+        var done = List[Int]()
+        var n = len(self.wins)
+        var pass_idx = -1
+        while pass_idx < n:
+            var src = preferred if pass_idx < 0 else pass_idx
+            pass_idx += 1
+            if src < 0 or src >= n or self.wins[src].kind != WK_EDITOR or (src in done):
+                continue
+            if preferred != src and self.wins[src].buf.version == self.wins[src].sync_ver:
+                continue
+            var has_sib = False
+            for j in range(n):
+                if self.same_shared_buffer(src, j):
+                    has_sib = True
+                    break
+            self.wins[src].sync_ver = self.wins[src].buf.version
+            done.append(src)
+            if not has_sib:
+                continue
+            for dst in range(n):
+                if not self.same_shared_buffer(src, dst):
+                    continue
+                var d_cr = self.wins[dst].cr
+                var d_cc = self.wins[dst].cc
+                var d_want = self.wins[dst].want
+                var d_top = self.wins[dst].top
+                var d_top_seg = self.wins[dst].top_seg
+                var d_left = self.wins[dst].left
+                var d_folds = self.wins[dst].buf.folds.copy()
+                var cb = self.wins[src].buf.copy()
+                self.wins[dst].buf = cb^
+                self.wins[dst].buf.folds.clear()
+                self.wins[dst].buf.fold_ends.clear()
+                self.wins[dst].buf.fold_version = -1
+                self.wins[dst].cr = d_cr
+                self.wins[dst].cc = d_cc
+                self.wins[dst].clamp()
+                self.wins[dst].want = d_want
+                self.wins[dst].top = max(0, min(d_top, self.wins[dst].buf.count() - 1))
+                self.wins[dst].top_seg = d_top_seg
+                self.wins[dst].left = d_left
+                if len(d_folds) > 0:
+                    self.restore_folds(dst, d_folds)
+                self.wins[dst].gseq = max(self.wins[dst].gseq, self.wins[src].gseq)
+                self.wins[dst].disk_hash = self.wins[src].disk_hash
+                self.wins[dst].disk_size = self.wins[src].disk_size
+                self.wins[dst].disk_sig = self.wins[src].disk_sig.copy()
+                self.wins[dst].gut = self.wins[dst].gutter_for(self.line_numbers)
+                self.wins[dst].sync_ver = self.wins[dst].buf.version
+                done.append(dst)
+
+    def clone_editor_view(mut self, right: Bool = True):
+        """Open a second synchronized view of the active editor in a split pane."""
+        var ti = self.top_editor()
+        if ti < 0:
+            self.say("Open a file first")
+            return
+        if self.wins[ti].clone_group == 0:
+            self.wins[ti].clone_group = self.next_clone_group
+            self.next_clone_group += 1
+        var cg = self.wins[ti].clone_group
+        var title = String(self.wins[ti].title)
+        var path = String(self.wins[ti].path)
+        var cr = self.wins[ti].cr
+        var cc = self.wins[ti].cc
+        var want = self.wins[ti].want
+        var top = self.wins[ti].top
+        var top_seg = self.wins[ti].top_seg
+        var left = self.wins[ti].left
+        var cb = self.wins[ti].buf.copy()
+        var gseq = self.wins[ti].gseq
+        var dhash = self.wins[ti].disk_hash
+        var dsize = self.wins[ti].disk_size
+        var dsig = self.wins[ti].disk_sig.copy()
+        var lsent = self.wins[ti].lsp_sent_version
+        var lseen = self.wins[ti].lsp_seen_version
+        var sver = self.wins[ti].sem_version
+        self.wins[ti].sync_ver = self.wins[ti].buf.version
+        var ci = self.new_editor(title, path)
+        self.wins[ci].clone_group = cg
+        self.wins[ci].buf = cb^
+        self.wins[ci].cr = cr
+        self.wins[ci].cc = cc
+        self.wins[ci].want = want
+        self.wins[ci].top = top
+        self.wins[ci].top_seg = top_seg
+        self.wins[ci].left = left
+        self.wins[ci].gseq = gseq
+        self.wins[ci].disk_hash = dhash
+        self.wins[ci].disk_size = dsize
+        self.wins[ci].disk_sig = dsig^
+        self.wins[ci].lsp_sent_version = lsent
+        self.wins[ci].lsp_seen_version = lseen
+        self.wins[ci].sem_version = sver
+        self.wins[ci].gut = self.wins[ci].gutter_for(self.line_numbers)
+        self.wins[ci].sync_ver = self.wins[ci].buf.version
+        if self.tiled:
+            self.layout_sync()
+            var why = self.lay.split(right)
+            if why.byte_length() > 0:
+                self.say(why)
+            else:
+                self.layout_focus_shown()
+                self.say("Split view: " + (basename(path) if path.byte_length() > 0 else title))
+        else:
+            var rx = self.wins[ti].x
+            var ry = self.wins[ti].y
+            var rw = self.wins[ti].w
+            var rh = self.wins[ti].h
+            self.wins[ti].zoomed = False
+            self.wins[ti].half = False
+            self.wins[ci].zoomed = False
+            self.wins[ci].half = False
+            if right and rw >= 32:
+                var hw = rw // 2
+                self.wins[ti].w = rw - hw
+                self.wins[ci].x = rx + rw - hw
+                self.wins[ci].y = ry
+                self.wins[ci].w = hw
+                self.wins[ci].h = rh
+            elif not right and rh >= 8:
+                var hh = rh // 2
+                self.wins[ti].h = rh - hh
+                self.wins[ci].x = rx
+                self.wins[ci].y = ry + rh - hh
+                self.wins[ci].w = rw
+                self.wins[ci].h = hh
+            self.fit_windows()
+            self.say("Split view: " + (basename(path) if path.byte_length() > 0 else title))
+
     def remove_window(mut self, i: Int):
         if self.wins[i].kind == WK_MESSAGE:
             self.panel_keep()       # the panel's page is there again when it is reopened
         self.store_history(i)   # remembers the cursor position (if the file is unchanged)
-        self.drop_swap(i)       # closing is a decision: nothing left to recover
+        if not self.has_shared_sibling(i):
+            self.drop_swap(i)   # closing the last view is a decision: nothing left to recover
         _ = self.wins.pop(i)
 
     def close_window(mut self, i: Int, next: Int):
         if i < 0:
             return
-        if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified:
+        if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified and (next == NEXT_QUIT or not self.has_shared_sibling(i)):
             self.focus(i)
             var d = Dialog(D_CONFIRM_CLOSE if next != NEXT_QUIT else D_CONFIRM_QUIT, "Information", 50, 9)
             d.lines.append(self.wins[self.top()].title + " has been modified.")

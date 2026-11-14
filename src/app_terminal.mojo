@@ -113,8 +113,19 @@ __extension App:
         var i = self.term_open_window(which)
         var cols = max(10, self.wins[i].w - 2)
         var rows = max(2, self.wins[i].h - 2)
+        var env_list = List[String]()
+        var pdir = self.pixi_locate()
+        if pdir.byte_length() > 0:
+            var penv = self.active_pixi_env()
+            var prefix = join_path(pdir, ".pixi/envs/" + penv)
+            var pbin = join_path(prefix, "bin")
+            if path_exists(pbin):
+                var cur_path = env_or("PATH", "/usr/bin:/bin")
+                env_list.append("PATH=" + pbin + ":" + cur_path)
+                env_list.append("CONDA_PREFIX=" + prefix)
+                env_list.append("PIXI_ENVIRONMENT_NAME=" + penv)
         var s = TermSession()
-        var ok = s.vt.open(cols, rows) and s.pty.start(argv, cwd, List[String](), rows, cols)
+        var ok = s.vt.open(cols, rows) and s.pty.start(argv, cwd, env_list, rows, cols)
         s.started = ok
         s.title = title
         s.pty_argv = argv.copy()
@@ -445,7 +456,7 @@ __extension App:
                     if j != hi:
                         text.append(10)
             self.clipboard = text.copy()
-            self.osc52(text^)
+            self.osc52(text)
             self.say("Copied from the terminal")
 
     def run_in_window(mut self, label: String, core: String):
@@ -469,7 +480,10 @@ __extension App:
         argv.append("-c")
         # LLDB's status line (it runs the REPL) redraws the last row with a scroll region
         # and mixes into the output: it is switched off
-        argv.append("exec " + self.tool(self.compiler_cmd()) + " repl" + self.include_flags() + " -O 'settings set show-statusline false'")
+        var ed = self.active_editor()
+        var cur_path = String(self.wins[ed].path) if ed >= 0 and self.wins[ed].path.byte_length() > 0 else join_path(self.cwd, "main.mojo")
+        var inner = "exec " + self.mojo_for(cur_path) + " repl" + self.include_flags() + " -O 'settings set show-statusline false'"
+        argv.append(self.with_env(cur_path, inner))
         return argv^
 
     def repl_open(mut self):

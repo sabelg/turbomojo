@@ -189,8 +189,8 @@ __extension Window:
                 smain = k
             sorted.append(cs[order[k]].copy())
         var edits = op <= OP_INSERT or op == OP_DELSEL
-        var g = 0
         if edits:
+            var g: Int
             self.set_main(sorted[len(sorted) - 1])
             if op == OP_TYPE:
                 g = self.group_for(ACT_TYPE)

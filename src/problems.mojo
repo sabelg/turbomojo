@@ -62,9 +62,9 @@ def problem_row(p: Problem) -> String:
 
 def parse_compiler_output(output: String, base: String) -> List[Problem]:
     """The `path:line:col: error|warning|note: message` lines of a compiler's output
-    (relative paths are taken from `base`). The source line and caret that follow are
-    not part of a problem."""
+    (relative paths are taken from `base`). Fix-it lines right below a caret are attached."""
     var out = List[Problem]()
+    var saw_caret = False
     for raw in output.split("\n"):
         var l = String(String(raw).rstrip("\r"))
         var sev = 0
@@ -75,14 +75,24 @@ def parse_compiler_output(output: String, base: String) -> List[Problem]:
                 at = k
                 sev = pair[1]
         if at < 0:
+            var trimmed = String(l.strip())
+            if len(out) > 0 and trimmed.startswith("^"):
+                saw_caret = True
+            elif saw_caret and len(out) > 0:
+                saw_caret = False
+                if l.startswith(" ") and trimmed.byte_length() > 0:
+                    out[len(out) - 1].more.append("fix-it: " + trimmed)
+            else:
+                saw_caret = False
             continue
+        saw_caret = False
         var loc = String(l[byte=0:at])
         var parts = loc.split(":")
         var n = len(parts)
         if n < 3:
             continue
-        var line = 0
-        var col = 0
+        var line: Int
+        var col: Int
         try:
             line = atol(String(parts[n - 2]))
             col = atol(String(parts[n - 1]))
@@ -167,20 +177,32 @@ struct ProblemView(Movable):
 
 def order_problems(probs: List[Problem], current: String) -> List[Int]:
     """The current file's problems first, then each file's in the order the files first
-    appear; within a file by line and column. Repeats (the same place, kind and
-    message from two sources) are left out."""
+    appear; within a file by line and column. Build `: note:` entries stay attached right
+    after the build error/warning they explain. Repeats are left out."""
+    var parent_of = List[Int](length=len(probs), fill=-1)
+    for k in range(len(probs)):
+        if probs[k].source == PS_BUILD and probs[k].severity == SEV_INFO:
+            var j = k - 1
+            while j >= 0 and probs[j].source == PS_BUILD:
+                if probs[j].severity != SEV_INFO:
+                    parent_of[k] = j
+                    break
+                j -= 1
     var files = List[String]()
     if current.byte_length() > 0:
         files.append(current)
-    for p in probs:
-        if p.path not in files:
-            files.append(p.path)
+    for k in range(len(probs)):
+        if parent_of[k] < 0 and probs[k].path not in files:
+            files.append(probs[k].path)
+    for k in range(len(probs)):
+        if probs[k].path not in files:
+            files.append(probs[k].path)
     var out = List[Int]()
     var seen = Dict[String, Bool]()
     for f in files:
         var idx = List[Int]()
         for k in range(len(probs)):
-            if probs[k].path == f:
+            if parent_of[k] < 0 and probs[k].path == f:
                 idx.append(k)
         # insertion sort by (line, col): stable, the lists are short
         for a in range(1, len(idx)):
@@ -196,6 +218,12 @@ def order_problems(probs: List[Problem], current: String) -> List[Int]:
                 continue
             seen[key] = True
             out.append(k)
+            for c in range(len(probs)):
+                if parent_of[c] == k:
+                    var ckey = probs[c].path + ":" + String(probs[c].line) + ":" + String(probs[c].col) + ":" + String(probs[c].severity) + ":" + probs[c].message
+                    if ckey not in seen:
+                        seen[ckey] = True
+                        out.append(c)
     return out^
 
 

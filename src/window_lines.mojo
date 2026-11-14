@@ -185,9 +185,9 @@ __extension Window:
         """Make the selection (or, without one, the word at the cursor) upper or lower
         case. The selection is kept. False if there is nothing to change."""
         var r1 = self.cr
-        var c1 = self.cc
+        var c1: Int
         var r2 = self.cr
-        var c2 = self.cc
+        var c2: Int
         var had_sel = self.has_sel()
         if had_sel:
             var q = self.sel_range()

@@ -115,6 +115,11 @@ __extension App:
                     self.wins[t].ac = self.wins[t].cc
                 self.wins[t].cr = p.r
                 self.wins[t].cc = p.c
+                if self.keymap == 3 and (p.r != self.wins[t].ar or p.c != self.wins[t].ac):
+                    self.vim.mode = 2
+                    self.vim.ar = self.wins[t].ar
+                    self.vim.ac = self.wins[t].ac
+                    self.wins[t].vsel = 1
                 self.wins[t].sync_want()
                 self.wins[t].follow = True
             elif self.drag == 4:
@@ -289,6 +294,10 @@ __extension App:
             return
         self.wins[t].collapse()
         self.wins[t].begin_move(False)
+        if self.keymap == 3 and (self.vim.mode == 2 or self.vim.mode == 3 or self.vim.mode == 4):
+            self.vim.mode = 0
+            self.wins[t].vsel = 0
+            self.wins[t].sel = False
         self.wins[t].cr = p.r
         self.wins[t].cc = p.c
         self.wins[t].sync_want()

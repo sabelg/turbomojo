@@ -101,12 +101,14 @@ struct Pty(Copyable, Movable):
         var pid = Int(external_call["fork", Int32]())
         if pid == 0:
             # the child: no Mojo allocations from here on, only C calls, then exec
-            _ = external_call["setsid", Int32]()
+            if Int(external_call["setsid", Int32]()) < 0:
+                external_call["_exit", NoneType](Int32(127))
             var s = Int(external_call["openat", Int32](Int32(-100), slave.as_c_string_span(), Int32(O_RDWR), Int32(0)))
-            if s >= 0:
-                _ = external_call["dup2", Int32](Int32(s), Int32(0))
-                _ = external_call["dup2", Int32](Int32(s), Int32(1))
-                _ = external_call["dup2", Int32](Int32(s), Int32(2))
+            if s < 0:
+                external_call["_exit", NoneType](Int32(127))
+            _ = external_call["dup2", Int32](Int32(s), Int32(0))
+            _ = external_call["dup2", Int32](Int32(s), Int32(1))
+            _ = external_call["dup2", Int32](Int32(s), Int32(2))
             close_from(3)
             _ = external_call["sigaction", Int32](Int32(SIGPIPE), dfl.unsafe_ptr(), old.unsafe_ptr())
             for i in range(len(envs)):
@@ -128,7 +130,7 @@ struct Pty(Copyable, Movable):
             _ = external_call["close", Int32](Int32(m))
             self.master = -1
             return False
-        var fl = external_call["fcntl", Int32](Int32(m), Int32(3), Int32(0))
+        _ = external_call["fcntl", Int32](Int32(m), Int32(3), Int32(0))
         make_nonblocking(m)
         self.pid = pid
         self.running = True

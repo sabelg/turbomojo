@@ -14,6 +14,7 @@ comptime VM_NORMAL = 0
 comptime VM_INSERT = 1
 comptime VM_VISUAL = 2      # characters, the one under the cursor included
 comptime VM_VLINE = 3       # whole lines
+comptime VM_BLOCK = 4       # rectangular column block (Ctrl-V)
 
 comptime KEYMAP_VIM = 3     # ui.keymap's number for "vim" (commands.keymap_name)
 
@@ -26,6 +27,8 @@ def vim_mode_name(mode: Int) -> String:
         return "VISUAL"
     if mode == VM_VLINE:
         return "V-LINE"
+    if mode == VM_BLOCK:
+        return "V-BLOCK"
     return "NORMAL"
 
 
@@ -36,9 +39,10 @@ struct VimState(Copyable, Movable):
     var ac: Int
     var reg: List[Int]      # the unnamed register: what was deleted or yanked last
     var reg_lines: Bool     # ...whole lines (they are put on lines of their own)
-    var op: Int             # an operator waiting for its motion (d c y > <; 0: none)
+    var op: Int             # an operator waiting for its motion (d c y > < gc; 0: none)
     var op_n: Int           # ...and the count typed before it (0: none)
-    var pend: Int           # a key waiting for one more: g, f t F T, r, or i / a after an operator
+    var pend: Int           # a key waiting for one more: g, f t F T, r, ", m, ', `, q, @, [, ], z, ^W, cs
+    var cs_old: Int         # old delimiter for cs<old><new>
     var f_kind: Int         # the last f t F T, for ; and , (0: none yet)
     var f_ch: Int
     var cur: List[Int]      # the keys of the command being typed (for .)
@@ -46,11 +50,29 @@ struct VimState(Copyable, Movable):
     var changed: Bool       # the command being typed changes the text
     var replaying: Bool     # . is typing
     var ins_group: Int      # the undo group an Insert started by a command joins (0: none)
+    var ins_count: Int      # [count]i/a/I/A repeats typed text on Esc
+    var ins_r: Int
+    var ins_c: Int
+    var gv_mode: Int        # last Visual selection for gv (0: none)
+    var gv_ar: Int
+    var gv_ac: Int
+    var gv_cr: Int
+    var gv_cc: Int
+    var mark_paths: List[String]    # marks a..z
+    var mark_rows: List[Int]
+    var mark_cols: List[Int]
+    var rec_reg: Int        # macro register being recorded (0: none, 'a'..'z' or 'A'..'Z')
+    var rec_keys: List[Int]
+    var macros: List[List[Int]]     # recorded key codes for @a..@z
+    var last_macro: Int     # last @x register replayed, for @@
+    var macro_depth: Int    # nested @x replay depth guard
     var cl_on: Bool         # the command line (/ ? :) is being typed on the status row
     var cl_kind: Int        # ...its first character: / ? or :
     var cl_text: List[Int]
     var cl_v1: Int          # the Visual selection's rows when : was typed there (-1: none)
     var cl_v2: Int
+    var cl_orig_r: Int      # cursor before / or ? incremental preview
+    var cl_orig_c: Int
     var s_pat: List[Int]    # the last search, in vim's syntax (n N repeat it; :s uses it)
     var s_fwd: Bool         # ...forwards (/ *) or backwards (? #)
     var regname: Int        # the register "x names for the command being typed (0: the unnamed one)
@@ -71,6 +93,7 @@ struct VimState(Copyable, Movable):
         self.op = 0
         self.op_n = 0
         self.pend = 0
+        self.cs_old = 0
         self.f_kind = 0
         self.f_ch = 0
         self.cur = List[Int]()
@@ -78,11 +101,29 @@ struct VimState(Copyable, Movable):
         self.changed = False
         self.replaying = False
         self.ins_group = 0
+        self.ins_count = 1
+        self.ins_r = 0
+        self.ins_c = 0
+        self.gv_mode = 0
+        self.gv_ar = 0
+        self.gv_ac = 0
+        self.gv_cr = 0
+        self.gv_cc = 0
+        self.mark_paths = List[String]()
+        self.mark_rows = List[Int]()
+        self.mark_cols = List[Int]()
+        self.rec_reg = 0
+        self.rec_keys = List[Int]()
+        self.macros = List[List[Int]]()
+        self.last_macro = 0
+        self.macro_depth = 0
         self.cl_on = False
         self.cl_kind = 0
         self.cl_text = List[Int]()
         self.cl_v1 = -1
         self.cl_v2 = -1
+        self.cl_orig_r = 0
+        self.cl_orig_c = 0
         self.s_pat = List[Int]()
         self.s_fwd = True
         self.regname = 0
@@ -92,6 +133,10 @@ struct VimState(Copyable, Movable):
         for _ in range(26):
             self.regs.append(List[Int]())
             self.regs_lines.append(False)
+            self.mark_paths.append("")
+            self.mark_rows.append(-1)
+            self.mark_cols.append(0)
+            self.macros.append(List[Int]())
         self.reg0 = List[Int]()
         self.reg0_lines = False
         self.clip_sent = 0
@@ -119,16 +164,28 @@ def vim_keys_markdown() -> String:
     """The vim keymap's section of docs/KEYMAP.md."""
     var out = String("\n## Vim (Options > Keys: Vim)\n\nIn Normal and Visual mode vim has the plain keys; Ctrl and Alt keys, the F-keys and\nthe menus are TurboMojo's (the Modern keys) in every mode. In Insert mode only Esc is\nvim's. A number before a command repeats it (3j, 2dd, 3.).\n\n| Key | Mode | What it does |\n|---|---|---|\n")
     var rows = [
-        ["Esc", "Insert, Visual", "Back to Normal mode (also cancels a half-typed command)"],
+        ["Esc Ctrl-[ Ctrl-C", "Insert, Visual", "Back to Normal mode (also cancels a half-typed command)"],
         ["i a", "Normal", "Insert before / after the cursor"],
         ["I A", "Normal", "Insert at the line's first character / its end"],
         ["o O", "Normal", "Open a line below / above and insert"],
         ["h j k l", "Normal, Visual", "Left, down, up, right (also the arrows, Backspace, Space, Enter)"],
+        ["Ctrl-D Ctrl-U", "Normal, Visual", "Half a page down / up"],
+        ["Ctrl-F Ctrl-B", "Normal, Visual", "A page down / up"],
+        ["Ctrl-O Ctrl-I", "Normal", "Back / forward in the jump list"],
+        ["Ctrl-A Ctrl-X", "Normal", "Add / subtract 1 (or the count) on the number at or after the cursor"],
+        ["Ctrl-W h/j/k/l/w/s/v/q/o", "Normal, Insert", "Move between panes, split down/right, close or zoom (Insert Ctrl-W: delete word back)"],
         ["w b e", "Normal, Visual", "Next word, back a word, end of the word"],
         ["W B E", "Normal, Visual", "The same for words between blanks"],
         ["0 ^ $", "Normal, Visual", "The line's start, its first character, its end"],
         ["+ - Enter", "Normal, Visual", "The first character of the next / the line before"],
         ["gg G", "Normal, Visual", "The first / the last line (with a count: that line)"],
+        ["gd gr K", "Normal", "Go to definition, find references, describe symbol (hover)"],
+        ["[d ]d [c ]c", "Normal", "Previous / next diagnostic or git change"],
+        ["za zM zR zz zt zb", "Normal", "Toggle fold, fold all, expand all, centre / top / bottom scroll"],
+        ["ma 'a `a", "Normal, Visual", "Set mark a..z, jump to its line or exact column"],
+        ["qa q @a @@", "Normal", "Record macro into a..z, stop recording, play @a or last macro"],
+        ["gcc gc", "Normal, Visual", "Toggle line comment on the line, motion, or selection"],
+        ["ds cs S", "Normal, Visual", "Delete, change, or add surrounding quotes/brackets (ds\", cs\"', Visual S))"],
         ["f t F T", "Normal, Visual", "To / just before the next character typed (F T: to the left)"],
         ["; ,", "Normal, Visual", "The last f t F T again / the other way"],
         ["%", "Normal, Visual", "The matching bracket"],
@@ -139,8 +196,8 @@ def vim_keys_markdown() -> String:
         [":", "Normal, Visual", "A command line (in Visual mode for the selection's lines): see below"],
         ["d c y", "Normal", "Delete / change / copy (yank) what the motion or text object covers: dw, c$, y3j, dd, cc, yy"],
         ["> <", "Normal", "Indent / unindent the lines the motion covers: >>, <ip"],
-        ["iw aw iW aW", "after d c y", "The word (aw: with the blanks after it)"],
-        ["i\" a\" i' a'", "after d c y", "Inside the quotes (a: with them)"],
+        ["iw aw iW aW", "after d c y", "The word (aw: with the blanks after it); also in Visual mode"],
+        ["i\" a\" i' a'", "after d c y", "Inside the quotes (a: with them); also in Visual mode"],
         ["i( a( i{ a{ i[ a[ i< a<", "after d c y", "Inside the brackets (a: with them); ib iB too"],
         ["ip ap", "after d c y", "The paragraph (ap: with the empty lines after it)"],
         ["x X", "Normal", "Delete the character under / before the cursor"],
@@ -148,13 +205,13 @@ def vim_keys_markdown() -> String:
         ["s S", "Normal", "Change the character / the line"],
         ["r", "Normal", "Replace the character under the cursor with the next one typed"],
         ["J", "Normal, Visual", "Join the line and the next (the lines selected)"],
-        ["p P", "Normal", "Put what was deleted or copied after / before the cursor (whole lines: below / above)"],
+        ["p P", "Normal, Visual", "Put what was deleted or copied after / before the cursor (Visual: replace selection)"],
         ["\"x", "Normal, Visual", "The register for the next delete, copy or put: \"a to \"z (\"A to \"Z add to it), \"0 the last copy, \"+ \"* the clipboard, \"_ none"],
         [".", "Normal", "Repeat the last change"],
         ["u Ctrl-R", "Normal", "Undo / redo"],
-        ["v V", "Normal, Visual", "Visual mode: characters / whole lines (again: back to Normal)"],
+        ["v V Ctrl-V gv", "Normal, Visual", "Visual characters, whole lines, rectangular block, or reselect last Visual"],
         ["o", "Visual", "To the other end of the selection"],
-        ["d x y c > < J", "Visual", "Delete, delete, copy, change, indent, unindent, join the selection"],
+        ["d x y c > < J I A", "Visual", "Delete, copy, change, indent, unindent, join, or block-insert on the selection"],
     ]
     for r in rows:
         out += "| " + String(r[0]) + " | " + String(r[1]) + " | " + String(r[2]) + " |\n"
@@ -165,6 +222,8 @@ def vim_keys_markdown() -> String:
         [":wq :x", "Save and close (:x saves only when changed)"],
         [":wa :qa :wqa", "Save all / quit (asking about unsaved files) / both"],
         [":e FILE", "Open a file"],
+        [":sp :vsp [FILE]", "Split pane down / right (and open FILE if given)"],
+        [":bn :bp :bd", "Next / previous tab or window, or close buffer"],
         [":N", "Go to line N (also :$, :.+3)"],
         [":s/a/b/g", "Replace in this line; :%s for every line, :N,M for some, :'<,'> the selection; flags g i I; & and \\1 in the replacement"],
         [":d :y", "Delete / copy lines (with a range: :2,5d)"],

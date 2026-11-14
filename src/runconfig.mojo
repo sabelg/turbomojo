@@ -13,6 +13,7 @@ struct RunConfig(Copyable, Movable):
     var env: List[String]       # "NAME=value"
     var cwd: String             # where it runs; '' = the folder of the file
     var build: Bool             # compile first and run the result (else `mojo run`)
+    var gpu_sync: Bool          # export MODULAR_DEVICE_CONTEXT_SYNC_MODE=true for synchronous GPU checks
 
     def __init__(out self, name: String):
         self.name = name
@@ -21,6 +22,7 @@ struct RunConfig(Copyable, Movable):
         self.env = List[String]()
         self.cwd = ""
         self.build = False
+        self.gpu_sync = False
 
 
 def config_name_problem(name: String) -> String:
@@ -108,6 +110,7 @@ def load_run_configs(doc: TomlDoc) -> List[RunConfig]:
         c.args = doc.get_str(base + "args", "")
         c.cwd = doc.get_str(base + "cwd", "")
         c.build = doc.get_bool(base + "build", False)
+        c.gpu_sync = doc.get_bool(base + "gpu_sync", False)
         for e in doc.get_list(base + "env"):
             if e.find("=") > 0:
                 c.env.append(e)
@@ -167,6 +170,8 @@ def save_run_config(text: String, c: RunConfig) -> String:
         t = toml_set(t, table, "cwd", toml_quote(c.cwd))
     if c.build:
         t = toml_set(t, table, "build", toml_bool(True))
+    if c.gpu_sync:
+        t = toml_set(t, table, "gpu_sync", toml_bool(True))
     return t
 
 
@@ -188,6 +193,8 @@ def run_core_command(c: RunConfig, root: String, current: String, compiler: Stri
     if c.cwd.byte_length() > 0:
         cwd = abs_path(root, c.cwd)
     var cmd = "cd " + shell_quote(cwd) + " && "
+    if c.gpu_sync:
+        cmd += "export MODULAR_DEVICE_CONTEXT_SYNC_MODE=true && "
     for e in c.env:
         var eq = e.find("=")
         if eq > 0:

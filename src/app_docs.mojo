@@ -284,7 +284,7 @@ __extension App:
             self.doc_back = src^
             self.doc_fwd.append(here)
         var tab = entry.find("\t")
-        var scroll = 0
+        var scroll: Int
         try:
             scroll = atol(String(entry[byte=0:tab]))
         except:
@@ -899,7 +899,7 @@ __extension App:
         if len(hits) == 0:
             self.say("Not found on this page: " + pat)
             return
-        var pick = 0
+        var pick: Int
         if step > 0:
             var threshold = self.doc_scroll + (1 if advance else 0)
             pick = 0

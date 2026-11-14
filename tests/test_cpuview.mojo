@@ -50,6 +50,9 @@ def test_numbers_and_bytes() raises:
     assert_true(keep_register("x1", "0x0000aaaaaaaaa350 vars`static_string_b65d"))
     assert_true(keep_register("cpsr", "0x80001000"))
     assert_false(keep_register("w0", "0xffffde5c"), "a 32-bit view of x0")
+    assert_equal(format_simd_lanes("{0x00 0x00 0x80 0x3f 0x00 0x00 0x00 0x40}", 1), "[1.0, 2.0]")
+    assert_equal(format_simd_lanes("{0x2a 0x00 0x00 0x00 0xff 0xff 0xff 0xff}", 2), "[42, -1]")
+    assert_equal(format_simd_lanes("{0x01 0x02 0x03 0x04}", 0), "[0x04030201]")
 
 
 def test_the_window_text() raises:

@@ -1,6 +1,7 @@
 """Small helpers: UTF-8 codecs, byte buffers, processes and the filesystem."""
 import platform
 from std.ffi import external_call
+from std.os import getenv
 from std.collections import List
 
 
@@ -355,16 +356,29 @@ def str_contains(hay: String, needle: String) -> Bool:
     return hay.find(needle) >= 0
 
 
+def _is_word_sep(cp: Int) -> Bool:
+    return cp == 32 or cp == 47 or cp == 95 or cp == 45 or cp == 46 or cp == 58 or cp == 92
+
+
 def fuzzy_score(text: String, pattern: String) -> Int:
     """Return -1 when pattern is not a (case-insensitive) subsequence of text.
-    Higher score = better: contiguous substrings and early matches win."""
+    Higher score = better: exact / basename matches, contiguous substrings, and
+    word/path/camelCase boundary matches win."""
     if pattern.byte_length() == 0:
         return 1
     var t = lower_str(text)
     var p = lower_str(pattern)
+    if t == p or t.startswith(p + "  "):
+        return 2200
     var pos = t.find(p)
     if pos >= 0:
-        return 1000 - pos
+        var bonus = 0
+        if pos == 0:
+            bonus = 50
+        elif pos > 0 and _is_word_sep(Int(t.as_bytes()[pos - 1])):
+            bonus = 40
+        return 1000 - pos + bonus
+    var raw = decode(text)
     var tc = decode(t)
     var pc = decode(p)
     var j = 0
@@ -372,13 +386,20 @@ def fuzzy_score(text: String, pattern: String) -> Int:
     var last = -1
     for i in range(len(tc)):
         if j < len(pc) and tc[i] == pc[j]:
-            if last >= 0 and i - last > 1:
-                score -= i - last
+            if i == 0 or _is_word_sep(tc[i - 1]):
+                score += 20
+            elif i < len(raw) and i > 0 and raw[i] >= 65 and raw[i] <= 90 and raw[i - 1] >= 97 and raw[i - 1] <= 122:
+                score += 20
+            if last >= 0:
+                if i == last + 1:
+                    score += 10
+                else:
+                    score -= i - last
             last = i
             j += 1
     if j < len(pc):
         return -1
-    return max(score, 2)
+    return min(900, max(score, 2))
 
 
 def shell_quote(s: String) -> String:
@@ -695,5 +716,4 @@ def env_or(name: String, default: String) -> String:
     var p = external_call["getenv", Int](n.as_c_string_span())
     if p == 0:
         return default
-    var r = run_capture("printf '%s' \"$" + name + "\"")
-    return bytes_to_str(r.out)
+    return getenv(name, "")

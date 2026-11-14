@@ -109,6 +109,19 @@ comptime CM_AGENT_MODE = 239     # System > Agent mode...
 comptime CM_AGENT_THINKING = 240 # System > Agent thinking...
 comptime CM_AGENT_NEW = 241      # System > New agent session
 comptime CM_AGENT_PROBLEMS = 242 # System > Send diagnostics to agent
+comptime CM_REPLACEFILES = 243   # Search > Replace in files...
+comptime CM_GIT_STATUS = 244     # File > Git status
+comptime CM_GIT_STASH = 245      # Palette: Git stash
+comptime CM_GIT_STASH_POP = 246  # Palette: Git pop stash
+comptime CM_GIT_LINEBLAME = 247  # Options > Inline year/author blame
+comptime CM_PIXI_ENV = 248       # Options > Pixi environment...
+comptime CM_FORMAT_SAVE = 249    # Palette: Format on save
+comptime CM_TYPEDEF = 250        # Search > Go to type definition
+comptime CM_TEST_CURSOR = 251    # Run > Quick-run test at cursor
+comptime CM_CODEGEN = 252        # Compile > Inspect generated code
+comptime CM_GPU_PROFILE = 253    # Compile > Profile GPU kernels
+comptime CM_GPU_WIN = 254        # Window > GPU queue & monitor
+comptime CM_CLONE_VIEW = 255     # Window > Split joint view
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -746,11 +759,13 @@ def build_registry() -> Registry:
     r.cmd(CM_REPLACE, "search.replace", "~R~eplace...", "Search for text and replace it", [ctrl(114)])
     r.cmd(CM_AGAIN, "search.again", "~S~earch again", "Repeat the last Find or Replace", [ctrl(108)])
     r.cmd(CM_FINDFILES, "search.findInFiles", "Find in f~i~les...", "Search every file of the project folder", [fkey(3) | MOD_SHIFT])
+    r.cmd(CM_REPLACEFILES, "search.replaceInFiles", "Replace in fi~l~es...", "Search and replace across project files with diff preview and single-step Undo", [fkey(4) | MOD_SHIFT, ctrl(104) | MOD_SHIFT])
     r.cmd(CM_GOTO, "search.gotoLine", "~G~o to line number...", "Move the cursor to a line number", [ctrl(103)])
     r.cmd(CM_SYMBOL, "search.gotoSymbol", "Go to s~y~mbol...", "Jump to a def / struct / trait in this file", [ctrl(116)])
     r.cmd(CM_WSYMBOL, "search.gotoProjectSymbol", "Go to symbol in pro~j~ect...", "Jump to a def / struct / trait in any Mojo file of the project", [fkey(12) | MOD_ALT])
     r.cmd(CM_HOVER, "search.describeSymbol", "~D~escribe symbol", "Show what the language server knows about the symbol at the cursor", [alt(105)])
     r.cmd(CM_DEFINITION, "search.goToDefinition", "Go to d~e~finition", "Go to where the symbol at the cursor is defined", [fkey(12)])
+    r.cmd(CM_TYPEDEF, "search.goToTypeDefinition", "Go to type definiti~o~n", "Jump to the definition of the type of the symbol at the cursor")
     r.cmd(CM_REFERENCES, "search.findReferences", "Find referen~c~es", "List every use of the symbol at the cursor", [fkey(12) | MOD_SHIFT])
     r.cmd(CM_RENAME, "edit.renameSymbol", "Ren~a~me symbol...", "Rename the symbol at the cursor everywhere it is used", [fkey(2) | MOD_SHIFT])
     r.cmd(CM_ACTIONS, "edit.quickFix", "Quick fi~x~...", "Fixes and changes the language server offers for this place", [KEY_ENTER | MOD_ALT])
@@ -789,6 +804,7 @@ def build_registry() -> Registry:
     r.hide(CM_TEST_RUN, "tests.run", "Run tests", "Run the test file or the test marked in the test explorer")
     r.hide(CM_TEST_RUN_ALL, "tests.runAll", "Run all tests", "Run every test file of the project")
     r.hide(CM_TEST_LIST, "tests.list", "List tests", "Ask the test programs for their tests (--skip-all)")
+    r.cmd(CM_GIT_STATUS, "git.status", "Git stat~u~s", "Multi-file git status panel: stage, unstage, diff, commit, branch and stash")
     r.cmd(CM_GIT_DIFF, "git.diff", "~D~iff of this file", "This file's changes against git's index: stage, revert (and unstage, on the staged side) one change at a time")
     r.cmd(CM_GIT_STAGE, "git.stageChange", "S~t~age change", "Put the changed block at the cursor into git's index (git add, for just that block)")
     r.cmd(CM_GIT_REVERT, "git.revertChange", "~R~evert change", "Make the changed block at the cursor as it is in git's index again (Undo brings it back)")
@@ -807,7 +823,11 @@ def build_registry() -> Registry:
     r.cmd(CM_GIT_COMMIT, "git.commit", "Comm~i~t...", "Commit what is staged (or every change to tracked files) with a message")
     r.cmd(CM_GIT_BRANCH, "git.branch", "~B~ranch...", "Switch to another branch of the repository, or make a new one")
     r.cmd(CM_GIT_BLAME, "git.blame", "Blam~e~", "Who last changed each line of this file, when, and in which commit")
+    r.hide(CM_GIT_STASH, "git.stash", "Git: Stash changes", "Save uncommitted changes (including untracked files) on git's stash stack")
+    r.hide(CM_GIT_STASH_POP, "git.stashPop", "Git: Pop stash", "Apply and remove the latest git stash entry")
+    r.cmd(CM_GIT_LINEBLAME, "git.lineBlame", "Inline ~y~ear/author blame", "Show dimmed git blame author, date and summary at the end of the cursor's line")
     r.cmd(CM_TEST, "run.test", "~T~est", "Run this file's TestSuite (std.testing) with `mojo run`")
+    r.cmd(CM_TEST_CURSOR, "run.testAtCursor", "~Q~uick-run test at cursor", "Run the enclosing def test_* function at the cursor with --only")
     r.cmd(CM_USERSCREEN, "run.userScreen", "~U~ser screen", "View the program's output screen", [fkey(5) | MOD_ALT])
     r.cmd(CM_TASKS, "run.pixiTasks", "Pixi tas~k~s...", "Run a task of the project's pixi.toml", [fkey(9) | MOD_SHIFT])
     r.cmd(CM_TASK_AGAIN, "run.lastTask", "Run ~l~ast task", "Run the pixi task that was run last, again")
@@ -816,6 +836,8 @@ def build_registry() -> Registry:
     # ---- Compile
     r.cmd(CM_BUILD, "compile.build", "~B~uild", "Compile the current file to a native executable", [fkey(9), ctrl(98)])
     r.cmd(CM_FORMAT, "compile.format", "~F~ormat source", "Reformat the current file with `mojo format`", [fkey(9) | MOD_ALT])
+    r.cmd(CM_CODEGEN, "compile.inspectCodegen", "~I~nspect generated code", "Emit assembly or LLVM IR with SIMD vectorization and stack-spill badges")
+    r.cmd(CM_GPU_PROFILE, "compile.profileGpu", "Profile ~G~PU kernels", "Profile GPU kernels with nsys or rocprofv3 into the Message window")
     r.cmd(CM_NEXTERR, "compile.nextMessage", "~N~ext message", "Jump to the next compiler message", [fkey(8) | MOD_ALT])
     r.cmd(CM_PREVERR, "compile.previousMessage", "~P~revious message", "Jump to the previous compiler message", [fkey(7) | MOD_ALT])
     r.cmd(CM_CANCEL, "compile.cancel", "C~a~ncel build", "Stop the running build or format", [fkey(2) | MOD_CTRL])
@@ -856,6 +878,8 @@ def build_registry() -> Registry:
     r.cmd(CM_SCREEN_READER, "options.screenReader", "Screen-reader ~m~ode", "A plain, linear screen for screen readers: no frames or shading, the cursor on what has the focus, no animation")
     r.cmd(CM_PRESETS, "options.presets", "~P~resets...", "Turbo (the blue desktop, overlapping windows), Modern (terminal colours, panes, the explorer) or Vim (Modern with vim's keys) in one choice")
     r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark; each shows as you move through the list")
+    r.cmd(CM_PIXI_ENV, "options.pixiEnvironment", "Pi~x~i environment...", "Select which Pixi environment builds, runs, tests, formatting, terminal, debugger and LSP use")
+    r.hide(CM_FORMAT_SAVE, "options.formatOnSave", "Format on save", "Reformat Mojo files automatically with mojo format when saving")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")
@@ -869,6 +893,7 @@ def build_registry() -> Registry:
     r.cmd(CM_TILED, "window.tiledLayout", "Tiled la~y~out", "Panes with tabs that share the screen, instead of overlapping windows")
     r.cmd(CM_SPLIT_RIGHT, "window.splitRight", "Split ri~g~ht", "Move this file into a new pane to the right", [alt(92)])
     r.cmd(CM_SPLIT_DOWN, "window.splitDown", "Split ~d~own", "Move this file into a new pane below", [alt(124)])
+    r.cmd(CM_CLONE_VIEW, "window.cloneView", "Split ~j~oint view", "Open a second synchronized view of this file in a split pane")
     r.cmd(CM_NEXT_PANE, "window.nextPane", "Ne~x~t pane", "Go to the next pane", [fkey(6) | MOD_ALT])
     r.cmd(CM_NEXT_TAB, "window.nextTab", "Next ta~b~", "Show the next file of this pane", [KEY_PGDN | MOD_ALT])
     r.cmd(CM_PREV_TAB, "window.previousTab", "Previo~u~s tab", "Show the previous file of this pane", [KEY_PGUP | MOD_ALT])
@@ -878,6 +903,7 @@ def build_registry() -> Registry:
     r.cmd(CM_EXPLORER, "window.explorer", "~F~ile explorer", "Show the project's files as a tree at the left edge (again: close it)", [ctrl(101)])
     r.cmd(CM_TERMINAL, "window.terminal", "Ter~m~inal", "A shell in a window at the bottom (again: back to the editor or close it)", [fkey(11) | MOD_ALT])
     r.cmd(CM_OUTLINE, "window.outline", "~O~utline", "Show or hide the outline of the file: its functions, structs and traits", [fkey(12) | MOD_CTRL])
+    r.cmd(CM_GPU_WIN, "window.gpuMonitor", "GPU ~q~ueue & monitor", "Show or hide live GPU compute/VRAM utilization, sensors and active processes")
     r.cmd(CM_WINLIST, "window.list", "~L~ist...", "Show a list of open windows", [alt(48)])
     # ---- Help / system
     r.cmd(CM_HELP, "help.keyboard", "~K~eyboard reference", "Show the keyboard reference", [fkey(1)])
@@ -919,6 +945,7 @@ def build_registry() -> Registry:
     r.item(CM_TERMINAL)
     r.item(CM_SHELL)
     r.sep()
+    r.item(CM_GIT_STATUS)
     r.item(CM_GIT_DIFF)
     r.item(CM_GIT_STAGE)
     r.item(CM_GIT_REVERT)
@@ -975,6 +1002,7 @@ def build_registry() -> Registry:
     r.item(CM_REPLACE)
     r.item(CM_AGAIN)
     r.item(CM_FINDFILES)
+    r.item(CM_REPLACEFILES)
     r.sep()
     r.item(CM_GOTO)
     r.item(CM_SYMBOL)
@@ -983,6 +1011,7 @@ def build_registry() -> Registry:
     r.item(CM_HOVER)
     r.item(CM_SIGNATURE)
     r.item(CM_DEFINITION)
+    r.item(CM_TYPEDEF)
     r.item(CM_REFERENCES)
     r.item(CM_RENAME)
     r.item(CM_ACTIONS)
@@ -1004,6 +1033,7 @@ def build_registry() -> Registry:
     r.item(CM_WATCH_ADD)
     r.item(CM_EVALUATE)
     r.item(CM_TEST)
+    r.item(CM_TEST_CURSOR)
     r.item(CM_TESTEXP)
     r.item(CM_REPL)
     r.item(CM_USERSCREEN)
@@ -1022,6 +1052,8 @@ def build_registry() -> Registry:
     r.menu("~C~ompile")
     r.item(CM_BUILD)
     r.item(CM_FORMAT)
+    r.item(CM_CODEGEN)
+    r.item(CM_GPU_PROFILE)
     r.sep()
     r.item(CM_NEXTERR)
     r.item(CM_PREVERR)
@@ -1037,6 +1069,7 @@ def build_registry() -> Registry:
     r.item(CM_HLLINE)
     r.item(CM_CLOCK)
     r.item(CM_GPU_STATUS)
+    r.item(CM_GIT_LINEBLAME)
     r.item(CM_SHOWWS)
     r.item(CM_WRAP)
     r.item(CM_SEMANTIC)
@@ -1054,6 +1087,7 @@ def build_registry() -> Registry:
     r.item(CM_THEME_PICK)
     r.item(CM_SCREEN_READER)
     r.sep()
+    r.item(CM_PIXI_ENV)
     r.item(CM_TRUST)
 
     r.menu("~W~indow")
@@ -1072,6 +1106,7 @@ def build_registry() -> Registry:
     r.item(CM_TILED)
     r.item(CM_SPLIT_RIGHT)
     r.item(CM_SPLIT_DOWN)
+    r.item(CM_CLONE_VIEW)
     r.item(CM_NEXT_PANE)
     r.item(CM_NEXT_TAB)
     r.item(CM_PREV_TAB)
@@ -1083,6 +1118,7 @@ def build_registry() -> Registry:
     r.item(CM_OUTLINE)
     r.item(CM_DEBUGWIN)
     r.item(CM_CPUWIN)
+    r.item(CM_GPU_WIN)
     r.item(CM_WINLIST)
 
     r.menu("~H~elp")

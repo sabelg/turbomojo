@@ -244,7 +244,7 @@ struct Breakpoints(Copyable, Movable):
             var p = l.split("\t")
             if len(p) != 7:
                 continue
-            var line = 0
+            var line: Int
             try:
                 line = atol(String(p[2]))
             except:

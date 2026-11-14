@@ -281,3 +281,47 @@ def pixi_project_name(text: String) -> String:
             cur.ws()
             return cur.string()
     return ""
+
+
+def parse_pixi_environments(text: String) -> List[String]:
+    """Environment names declared in a pixi.toml or pyproject.toml, always starting with
+    `default`."""
+    var envs = List[String]()
+    envs.append("default")
+    var in_envs = False
+    for raw in text.split("\n"):
+        var cur = TomlCursor(decode(String(raw)))
+        cur.ws()
+        var ch = cur.peek()
+        if ch == 0 or ch == 35:
+            continue
+        if ch == 91:
+            cur.i += 1
+            if cur.peek() == 91:
+                in_envs = False
+                continue
+            var h = cur.key()
+            if h.startswith("tool.pixi."):
+                var rest = String(h[byte=10:])
+                h = rest
+            if h == "environments":
+                in_envs = True
+            elif h.startswith("environments."):
+                in_envs = False
+                var sub = String(h[byte=13:])
+                var dot = sub.find(".")
+                if dot > 0:
+                    var head = String(sub[byte=0:dot])
+                    sub = head
+                if sub.byte_length() > 0 and not (sub in envs):
+                    envs.append(sub)
+            else:
+                in_envs = False
+            continue
+        if not in_envs:
+            continue
+        var k = cur.key()
+        cur.ws()
+        if k.byte_length() > 0 and cur.peek() == 61 and not (k in envs):
+            envs.append(k)
+    return envs^

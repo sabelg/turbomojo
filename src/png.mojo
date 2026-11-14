@@ -88,7 +88,7 @@ def png_decode(data: List[UInt8]) -> Picture:
     _ = seen_end
     if w <= 0 or h <= 0 or w * h > PNG_MAX_PIXELS:
         return pic^
-    var channels = 0
+    var channels: Int
     if ctype == 0:
         channels = 1
     elif ctype == 2:

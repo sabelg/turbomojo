@@ -25,19 +25,33 @@ def secret_name(key: String) -> Bool:
     return k == "key" or k.endswith("_key") or k.endswith("-key") or k.endswith("apikey")
 
 
-def secret_value(v: String) -> Bool:
-    """A value that looks like a secret whatever its name: known token prefixes, or a
-    long run of letters and digits without spaces or slashes (not a path, a word or a
-    command)."""
-    var s = String(v.strip())
-    if s.startswith("\"") or s.startswith("'"):
+def token_looks_secret(tok: String) -> Bool:
+    """Does an unquoted whitespace/equals token look like a credential, JWT, or URL with credentials?"""
+    var s = String(tok.strip())
+    while s.byte_length() > 0 and (s.startswith("\"") or s.startswith("'") or s.startswith("(") or s.startswith("[")):
         var t1 = String(s[byte=1:])
         s = t1
-    if s.endswith("\"") or s.endswith("'"):
+    while s.byte_length() > 0 and (s.endswith("\"") or s.endswith("'") or s.endswith(",") or s.endswith(")") or s.endswith("]")):
         var t2 = String(s[byte=0 : s.byte_length() - 1])
         s = t2
-    for p in ["sk-", "ghp_", "gho_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "glpat-", "hf_"]:
+    if s.byte_length() < 10:
+        return False
+    for p in ["sk-", "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "xoxb-", "xoxp-", "AKIA", "ASIA", "glpat-", "hf_", "AIza"]:
         if s.startswith(String(p)) and s.byte_length() >= 12:
+            return True
+    # JWT: eyJ<base64url>.<base64url>.<base64url>
+    if s.startswith("eyJ") and s.byte_length() >= 24:
+        var parts = s.split(".")
+        if len(parts) == 3 and parts[0].byte_length() >= 6 and parts[1].byte_length() >= 6:
+            return True
+    # URL with embedded user:pass@host or ://token@host
+    var sch = s.find("://")
+    if sch > 0:
+        var rest = String(s[byte=sch + 3:])
+        var slash = rest.find("/")
+        var auth = String(rest[byte=0:slash]) if slash >= 0 else rest
+        var at = auth.find("@")
+        if at > 0:
             return True
     if s.byte_length() < 24:
         return False
@@ -52,6 +66,38 @@ def secret_value(v: String) -> Bool:
         elif (c >= 65 and c <= 90) or (c >= 97 and c <= 122):
             letters += 1
     return digits >= 4 and letters >= 4
+
+
+def secret_value(v: String) -> Bool:
+    """A value that looks like a secret whatever its name: known token prefixes, JWTs,
+    URLs with credentials, inline CLI flags (--api-key ..., Bearer ...), or a long run
+    of letters and digits without spaces or slashes (not a path, a word or a command)."""
+    var s = String(v.strip())
+    if s.startswith("\"") or s.startswith("'"):
+        var t1 = String(s[byte=1:])
+        s = t1
+    if s.endswith("\"") or s.endswith("'"):
+        var t2 = String(s[byte=0 : s.byte_length() - 1])
+        s = t2
+    if token_looks_secret(s):
+        return True
+    var low = lower_ascii(s)
+    for flag in ["--api-key", "--apikey", "--token", "--secret", "--password", "authorization:", "bearer "]:
+        if low.find(String(flag)) >= 0:
+            return True
+    for raw_part in s.split(" "):
+        var part = String(raw_part)
+        if part.byte_length() == 0:
+            continue
+        var eq = part.find("=")
+        if eq > 0:
+            var fk = String(part[byte=0:eq]).lstrip("-")
+            var fv = String(part[byte=eq + 1:])
+            if secret_name(String(fk)) or token_looks_secret(fv):
+                return True
+        if token_looks_secret(part):
+            return True
+    return False
 
 
 def redact_config(text: String) -> String:

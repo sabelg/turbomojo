@@ -58,7 +58,7 @@ __extension App:
                 if t.state != TS_FAIL:
                     continue
                 var path = f.path
-                var line = 0
+                var line: Int
                 var col = 1
                 # (see tests_go: a build cache can name another folder with this file)
                 if t.path.byte_length() > 0 and t.line > 0 and (basename(t.path) == basename(f.path) or path_exists(t.path)):

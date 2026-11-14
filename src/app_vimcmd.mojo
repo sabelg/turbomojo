@@ -10,7 +10,7 @@ from window import WK_EDITOR, Range
 from window_search import *
 from search import Search, make_search
 from dialog import NEXT_NONE, NEXT_CLOSE
-from commands import CM_SAVEALL
+from commands import CM_SAVEALL, CM_SPLIT_DOWN, CM_SPLIT_RIGHT, CM_NEXT_TAB, CM_PREV_TAB, CM_NEXTWIN, CM_PREVWIN
 from vim import *
 from vim_motion import *
 from vim_cmd import *
@@ -38,16 +38,39 @@ __extension App:
         self.vim.cl_text = List[Int]()
         self.vim.cl_v1 = -1
         self.vim.cl_v2 = -1
-        if kind == 58 and (self.vim.mode == VM_VISUAL or self.vim.mode == VM_VLINE):
+        self.vim.cl_orig_r = self.wins[t].cr
+        self.vim.cl_orig_c = self.wins[t].cc
+        if kind == 58 and (self.vim.mode == VM_VISUAL or self.vim.mode == VM_VLINE or self.vim.mode == VM_BLOCK):
             self.vim.cl_v1 = min(self.vim.ar, self.wins[t].cr)
             self.vim.cl_v2 = max(self.vim.ar, self.wins[t].cr)
             for c in decode("'<,'>"):
                 self.vim.cl_text.append(c)
 
+    def vim_incsearch_preview(mut self, t: Int):
+        """Live match highlighting while typing / or ? on the command line."""
+        if self.vim.cl_kind != 47 and self.vim.cl_kind != 63:
+            return
+        if len(self.vim.cl_text) == 0:
+            if len(self.vim.s_pat) > 0:
+                var vp0 = vim_pattern(self.vim.s_pat)
+                var s0 = make_search(vp0.pat, not vp0.icase, False, True)
+                if s0.ok:
+                    self.wins[t].set_highlight(s0)
+            else:
+                self.wins[t].clear_highlight()
+            return
+        var vp = vim_pattern(self.vim.cl_text)
+        var s = make_search(vp.pat, not vp.icase, False, True)
+        if s.ok and len(s.pat) > 0:
+            self.wins[t].set_highlight(s)
+
     def vim_cmdline_key(mut self, t: Int, k: Int) raises:
         """A key while the command line is typed."""
-        if k == KEY_ESC or k == (99 | MOD_CTRL):           # Esc, Ctrl-C: dropped
+        if k == KEY_ESC or k == (99 | MOD_CTRL) or k == (91 | MOD_CTRL):   # Esc, Ctrl-C, Ctrl-[: dropped
             self.vim.cl_on = False
+            if self.vim.cl_kind == 47 or self.vim.cl_kind == 63:
+                self.vim.cl_text.clear()
+                self.vim_incsearch_preview(t)
             self.vim_cancel()
             return
         if k == KEY_ENTER:
@@ -61,16 +84,20 @@ __extension App:
         if k == KEY_BACKSPACE:
             if len(self.vim.cl_text) == 0:
                 self.vim.cl_on = False                       # (as in vim: the line goes)
+                self.vim_incsearch_preview(t)
                 self.vim_cancel()
             else:
                 _ = self.vim.cl_text.pop()
+                self.vim_incsearch_preview(t)
             return
         if k == (117 | MOD_CTRL):                            # Ctrl-U: the line emptied
             self.vim.cl_text.clear()
+            self.vim_incsearch_preview(t)
             return
         if (k & (MOD_CTRL | MOD_ALT)) != 0 or (k & KEY_MASK) >= K_BASE:
             return                                           # (nothing else on the line)
         self.vim.cl_text.append(k & KEY_MASK)
+        self.vim_incsearch_preview(t)
 
     def vim_draw_cmdline(mut self):
         """The command line over the status row, with a bar cursor at its end."""
@@ -170,6 +197,7 @@ __extension App:
             if span.ok:
                 self.vim_apply(t, op, span)
         else:
+            self.jump_mark()
             self.wins[t].cr = r
             self.wins[t].cc = c
             self.wins[t].sync_want()
@@ -209,7 +237,7 @@ __extension App:
         """A `:` command line."""
         var last = self.wins[t].buf.count() - 1
         var x = parse_ex(line, self.wins[t].cr, last, self.vim.cl_v1, self.vim.cl_v2)
-        if self.vim.mode == VM_VISUAL or self.vim.mode == VM_VLINE:
+        if self.vim.mode == VM_VISUAL or self.vim.mode == VM_VLINE or self.vim.mode == VM_BLOCK:
             self.vim_normal(t, False)
         self.vim_cancel()
         if not x.ok:
@@ -220,6 +248,7 @@ __extension App:
         var name = x.name
         if name.byte_length() == 0:
             if x.has_range:                                  # :N - that line
+                self.jump_mark()
                 self.wins[t].cr = r2
                 self.wins[t].cc = first_nonblank(self.wins[t].buf.line(r2))
                 self.wins[t].sync_want()
@@ -244,7 +273,7 @@ __extension App:
         elif ex_is(name, "quit", 1):
             if x.bang:
                 self.remove_window(t)
-            elif self.wins[t].buf.modified:
+            elif self.wins[t].buf.modified and not self.has_shared_sibling(t):
                 self.say("E37: No write since last change (add ! to override)")
             else:
                 self.close_window(t, NEXT_CLOSE)
@@ -260,6 +289,25 @@ __extension App:
                 self.say("E32: No file name" if not x.bang else ":e! is not in TurboMojo's vim (File > Revert is not either: undo with u)")
             else:
                 self.open_path(x.arg)
+        elif name == "sp" or ex_is(name, "split", 2) or name == "vsp" or ex_is(name, "vsplit", 2):
+            var right = name == "vsp" or ex_is(name, "vsplit", 2)
+            if x.arg.byte_length() > 0:
+                self.open_path(x.arg)
+                if self.tiled:
+                    self.exec(CM_SPLIT_RIGHT if right else CM_SPLIT_DOWN)
+            else:
+                self.clone_editor_view(right)
+        elif name == "bn" or ex_is(name, "bnext", 2):
+            self.exec(CM_NEXT_TAB if self.tiled else CM_NEXTWIN)
+        elif name == "bp" or name == "bprev" or ex_is(name, "bprevious", 2):
+            self.exec(CM_PREV_TAB if self.tiled else CM_PREVWIN)
+        elif name == "bd" or ex_is(name, "bdelete", 2):
+            if x.bang:
+                self.remove_window(t)
+            elif self.wins[t].buf.modified:
+                self.say("E89: No write since last change for buffer (add ! to override)")
+            else:
+                self.close_window(t, NEXT_CLOSE)
         elif ex_is(name, "substitute", 1):
             self.vim_substitute(t, r1, r2, x.raw)
         elif ex_is(name, "nohlsearch", 3):

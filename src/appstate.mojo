@@ -27,7 +27,7 @@ from plugins import Plugin, PluginPanel, register_plugins
 from lspextra import ExtraServer, configure_servers
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, WK_GPU, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -73,7 +73,7 @@ from filestate import *
 from markdown import MdLine
 from toml import toml_set, toml_quote, toml_bool
 from setupcheck import SetupItem
-from gpuinfo import GPU_QUERY
+from gpuinfo import GPU_QUERY, GPU_TELEMETRY_QUERY
 
 comptime M_NORMAL = 0
 comptime M_MENU = 1
@@ -115,6 +115,7 @@ comptime JOB_FORMAT = 2
 comptime JOB_DOCS = 4                    # downloading the documentation
 comptime JOB_DEBUG = 5                   # building a program to debug it
 comptime JOB_TESTS = 6                   # running (or listing) tests for the test explorer
+comptime JOB_CODEGEN = 7                 # emitting assembly / LLVM IR for the codegen inspector
 comptime JOB_TASK = 3                    # a pixi task of the project
 comptime SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -197,6 +198,16 @@ struct App(Movable):
     var gpu_fd: Int
     var gpu_out: List[UInt8]
     var gpu_item: String             # "GPU GB10" once known
+    var gpu_mon_query: String        # live telemetry query for WK_GPU
+    var gpu_mon_fp: Int
+    var gpu_mon_fd: Int
+    var gpu_mon_out: List[UInt8]
+    var gpu_mon_last_ns: Int
+    var gpu_mon_hist: List[List[Int]]
+    var codegen_mode: Int            # 0 asm, 1 llvm
+    var codegen_path: String
+    var codegen_out_file: String
+    var codegen_filter: String
     var run_t0_ns: Int               # when the last Ctrl-F9 run started (0: none to report)
     var run_label: String
     var run_file: String             # the file the last Ctrl-F9 ran
@@ -269,6 +280,7 @@ struct App(Movable):
     var link_host: String      # this machine's name, for file:// links
     var plugin_asked: Int      # the plugin whose command the user ran last, and when (its panel
     var plugin_asked_ns: Int   # may come to the front as the answer)
+    var plugin_focused_path: String # last editor path announced to plugins via "focus"
     var chord_box: Bool        # the box of the keys that may follow is shown
     var user_key_cmds: List[String]         # [keys] from the config files
     var user_key_names: List[List[String]]
@@ -290,6 +302,7 @@ struct App(Movable):
     var running: Bool
     var find_text: List[Int]
     var replace_text: List[Int]
+    var find_filter: String
     var find_case: Bool
     var find_word: Bool
     var find_regex: Bool
@@ -349,6 +362,16 @@ struct App(Movable):
     var gd_stamp: Int          # the state the rows were made for
     var git_tmp_n: Int         # numbers the files staged text is written to
     var git_branches: List[String]  # the branch dialog's branches
+    var git_status_paths: List[String]
+    var git_status_staged: List[Bool]
+    var git_line_blame: Bool
+    var git_inline_path: String
+    var git_inline_ver: Int
+    var git_inline_rows: List[BlameLine]
+    var git_inline_asking: Bool
+    var pixi_env: String
+    var lsp_auto_start: Bool
+    var format_on_save: Bool
     var blame_path: String     # the blame window's file
     var explain_path: String   # the editor an error explanation stands beside
     var docpane_key: String    # the file and name the docs pane was last asked about
@@ -401,6 +424,8 @@ struct App(Movable):
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
     var test_target_test: Int
+    var dbg_override_on: Bool
+    var dbg_override_args: String
     var test_list_only: Bool        # the running job only lists (--skip-all)
     var test_only_run: Bool         # ... or runs some tests (--only): the others keep their results
     var run_in_terminal: Bool  # Run uses the Run window (else the user screen, as before)
@@ -409,6 +434,7 @@ struct App(Movable):
     var cpu_scope_seq: Int
     var cpu_set_seq: Int
     var cpu_reg_seq: Int
+    var cpu_vreg_seq: Int
     var cpu_mem_seq: Int
     var cpu_addr_seq: Int      # Go to: a variable's address
     var bp_stamp: Int          # changes with every change of the list
@@ -441,6 +467,7 @@ struct App(Movable):
     var comp_detail: List[String]
     var comp_doc: List[String]
     var comp_raw: List[String]       # the server's item, for asking for its details
+    var comp_srv_idx: List[Int]      # index in comp_srv (-1 for text/keyword completions)
     var comp_srv: List[CompletionItem]   # the server's answer for the word being typed
     var comp_srv_have: Bool
     var comp_srv_incomplete: Bool
@@ -472,6 +499,7 @@ struct App(Movable):
     var def_req_col: Int
     var def_retries: Int
     var def_retry_due: Int
+    var def_is_type: Bool
     var ref_req_id: Int
     var ref_req_path: String
     var ref_req_row: Int
@@ -608,6 +636,7 @@ struct App(Movable):
     var doc_find_back: Bool          # the finder was opened from the reader: closing it returns there
     var doc_mark: String             # what to highlight in the page (the word looked for)
     var sigtip: SigInfo                # the parameter tip shown above the cursor
+    var sig_raw: String                # raw signatureHelp result JSON for overload cycling
     var sig_on: Bool
     var sig_asked: Bool              # asked for by command: say so if there is nothing
     var sig_req_id: Int
@@ -623,6 +652,7 @@ struct App(Movable):
     var st_cmd: List[Int]
     var last_click_item: Int
     var job: Job
+    var aux_job: Job
     var sig: SignalFd
     var recovered: Int
     var recovery_dir: String   # where swap files live
@@ -634,6 +664,9 @@ struct App(Movable):
     var tool_env: String       # environment prefix for Mojo tools ('' if none needed)
     var tool_env_known: Bool
     var lsp: LspClient
+    var lsp_pool: List[LspClient]
+    var lsp_pool_keys: List[String]
+    var lsp_auto_checked: Bool
     var fsearch: FileSearch    # Find in files, advanced a little on every loop pass
     var fsearch_shown: Int     # how many hits the Message window shows
     var fsearch_draw_ns: Int   # when it was last refreshed
@@ -678,6 +711,7 @@ struct App(Movable):
     var word_hl: Bool                # editor.highlight_word
     var trim_trailing: Bool
     var rulers: List[Int]
+    var next_clone_group: Int
 
     def __init__(out self):
         self.term = Terminal()
@@ -708,6 +742,16 @@ struct App(Movable):
         self.gpu_fd = -1
         self.gpu_out = List[UInt8]()
         self.gpu_item = ""
+        self.gpu_mon_query = GPU_TELEMETRY_QUERY
+        self.gpu_mon_fp = 0
+        self.gpu_mon_fd = -1
+        self.gpu_mon_out = List[UInt8]()
+        self.gpu_mon_last_ns = 0
+        self.gpu_mon_hist = List[List[Int]]()
+        self.codegen_mode = 0
+        self.codegen_path = ""
+        self.codegen_out_file = ""
+        self.codegen_filter = ""
         self.run_t0_ns = 0
         self.run_label = ""
         self.run_file = ""
@@ -758,6 +802,7 @@ struct App(Movable):
         self.chord_since = 0
         self.typed_ns = 0
         self.plugin_asked = -1
+        self.plugin_focused_path = ""
         self.link_format = "file://{host}{path}"
         self.link_host = ""
         self.plugin_asked_ns = 0
@@ -798,6 +843,7 @@ struct App(Movable):
         self.running = True
         self.find_text = List[Int]()
         self.replace_text = List[Int]()
+        self.find_filter = ""
         self.find_case = False
         self.find_word = False
         self.find_regex = False
@@ -817,6 +863,8 @@ struct App(Movable):
         self.bps = Breakpoints()
         self.dbg_temp_path = ""
         self.dbg_temp_line = 0
+        self.dbg_override_on = False
+        self.dbg_override_args = ""
         self.dview = DebugView()
         self.dv_scope_seq = -1
         self.dv_var_seqs = List[Int]()
@@ -856,6 +904,16 @@ struct App(Movable):
         self.gd_stamp = -1
         self.git_tmp_n = 0
         self.git_branches = List[String]()
+        self.git_status_paths = List[String]()
+        self.git_status_staged = List[Bool]()
+        self.git_line_blame = False
+        self.git_inline_path = ""
+        self.git_inline_ver = -1
+        self.git_inline_rows = List[BlameLine]()
+        self.git_inline_asking = False
+        self.pixi_env = "default"
+        self.lsp_auto_start = False
+        self.format_on_save = False
         self.blame_path = ""
         self.explain_path = ""
         self.docpane_key = ""
@@ -916,6 +974,7 @@ struct App(Movable):
         self.cpu_scope_seq = -1
         self.cpu_set_seq = -1
         self.cpu_reg_seq = -1
+        self.cpu_vreg_seq = -1
         self.cpu_mem_seq = -1
         self.cpu_addr_seq = -1
         self.bp_stamp = 0
@@ -942,6 +1001,7 @@ struct App(Movable):
         self.comp_detail = List[String]()
         self.comp_doc = List[String]()
         self.comp_raw = List[String]()
+        self.comp_srv_idx = List[Int]()
         self.comp_srv = List[CompletionItem]()
         self.comp_srv_have = False
         self.comp_srv_incomplete = False
@@ -973,6 +1033,7 @@ struct App(Movable):
         self.def_req_col = -1
         self.def_retries = 0
         self.def_retry_due = 0
+        self.def_is_type = False
         self.ref_req_id = -1
         self.ref_req_path = ""
         self.ref_req_row = -1
@@ -1121,6 +1182,7 @@ struct App(Movable):
         self.doc_find_back = False
         self.doc_mark = ""
         self.sigtip = SigInfo()
+        self.sig_raw = ""
         self.sig_on = False
         self.sig_asked = False
         self.sig_req_id = -1
@@ -1136,6 +1198,7 @@ struct App(Movable):
         self.st_cmd = List[Int]()
         self.last_click_item = -1
         self.job = Job()
+        self.aux_job = Job()
         self.sig = SignalFd()
         self.recovered = 0
         self.recovery_dir = state_dir() + "/swap"
@@ -1147,6 +1210,9 @@ struct App(Movable):
         self.tool_env = ""
         self.tool_env_known = False
         self.lsp = LspClient()
+        self.lsp_pool = List[LspClient]()
+        self.lsp_pool_keys = List[String]()
+        self.lsp_auto_checked = False
         self.fsearch = FileSearch()
         self.fsearch_shown = -1
         self.fsearch_draw_ns = 0
@@ -1191,6 +1257,7 @@ struct App(Movable):
         self.word_hl = True
         self.trim_trailing = False
         self.rulers = List[Int]()
+        self.next_clone_group = 1
 
     # =================================================================== utils
     def desk_h(self) -> Int:
@@ -1338,7 +1405,10 @@ struct App(Movable):
         if self.act_retry_due > 0:
             t = min(t, max(1, (self.act_retry_due - now) // 1000000 + 1))
         if self.git.root.byte_length() > 0:
-            t = min(t, 2000)        # look at git's index now and then (see git_tick)
+            if self.git_status_due or len(self.git_q_req) > 0:
+                t = min(t, 20)
+            elif not (self.watch.active() and (join_path(self.git.root, ".git") in self.watch.dirs)):
+                t = min(t, 2000)        # look at git's index now and then when not watched by inotify
         if self.scopes_stale:
             t = min(t, 500)
         if self.chord != 0 and not self.chord_box and self.key_hints:
@@ -1364,6 +1434,10 @@ struct App(Movable):
             t = min(t, 100)             # code waits for the REPL to be ready
         if self.watch_enabled and not self.watch.active():
             t = min(t, max(1, (self.watch_due - now) // 1000000 + 1))
+        for wi in range(len(self.wins)):
+            if self.wins[wi].kind == WK_GPU:
+                t = min(t, 1500)
+                break
         if self.show_clock:
             t = min(t, secs_to_minute * 1000 + 50)
         return max(1, t)
@@ -1431,6 +1505,10 @@ struct App(Movable):
             self.wins[i].word_hl = self.word_hl
         self.persistent_undo = s.persistent_undo
         self.trim_trailing = s.trim_trailing
+        self.format_on_save = s.format_on_save
+        self.git_line_blame = s.line_blame
+        self.pixi_env = s.pixi_env
+        self.lsp_auto_start = s.lsp_auto_start
         self.rulers = s.rulers.copy()
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].wrap != self.soft_wrap:
@@ -1520,13 +1598,35 @@ struct App(Movable):
         var settings = load_settings(read_text(self.config_path), read_text(project))
         self.trust_held = False
         if project.byte_length() > 0 and self.trust_enforced and not self.trust.is_trusted(self.project_dir):
-            # a project file may name the programs to run as compiler and language
-            # server: from a folder that is not trusted those two are not taken
+            # a project file may name programs to run (compiler, language servers, debug
+            # adapter, agent, plugins): from a folder that is not trusted those are held
             var own = load_settings(read_text(self.config_path), "")
-            if settings.compiler != own.compiler or settings.lsp_server != own.lsp_server:
+            var lsp_diff = len(settings.lsp_names) != len(own.lsp_names)
+            if not lsp_diff:
+                for li in range(len(settings.lsp_names)):
+                    if settings.lsp_names[li] != own.lsp_names[li] or settings.lsp_cmds[li] != own.lsp_cmds[li]:
+                        lsp_diff = True
+            if (
+                settings.compiler != own.compiler
+                or settings.lsp_server != own.lsp_server
+                or settings.debug_adapter != own.debug_adapter
+                or settings.agent != own.agent
+                or settings.plugins != own.plugins
+                or lsp_diff
+            ):
                 settings.compiler = own.compiler
                 settings.lsp_server = own.lsp_server
-                settings.warnings.append("this folder is not trusted: its compiler and language server commands are not used (Options > Folder trust)")
+                settings.debug_adapter = own.debug_adapter
+                settings.agent = own.agent
+                settings.plugins = own.plugins
+                settings.lsp_names = own.lsp_names.copy()
+                settings.lsp_cmds = own.lsp_cmds.copy()
+                var exts_copy = List[List[String]]()
+                for ex in own.lsp_exts:
+                    exts_copy.append(ex.copy())
+                settings.lsp_exts = exts_copy^
+                settings.lsp_langs = own.lsp_langs.copy()
+                settings.warnings.append("this folder is not trusted: its tool, agent and language server commands are not used (Options > Folder trust)")
                 self.trust_held = True
         self.apply_settings(settings)
 

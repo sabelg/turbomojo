@@ -33,12 +33,13 @@ if $S shot | grep -q "hello.mojo"; then fail "did not exit"; fi
 grep -q "# smoke" examples/hello.mojo && fail "file was modified on disk"
 # ---- crash safety: inject failures and check the terminal comes back and a log exists
 T="tmux -L turbomojo-test"
+ENV_PATH="$PWD/.pixi/envs/default/bin:$PATH"
 ST="${TMPDIR:-/tmp}/turbomojo-smoke-state-$$"
 crash_run() {   # $1 = fault kind
   $T kill-server 2>/dev/null && sleep 0.5 || true
   rm -rf "$ST"
   $T new-session -d -s ide -x 100 -y 30 \
-    "XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config TURBOMOJO_FAULT=$1 pixi run ./build/tmide examples/hello.mojo; echo EXIT=\$?; stty -a | grep -q ' icanon' && echo TTY-COOKED; sleep 60"
+    "PATH=\"$ENV_PATH\" MODULAR_HOME=\"$PWD/.pixi/envs/default/share/max\" XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config TURBOMOJO_FAULT=$1 ./build/tmide examples/hello.mojo; echo EXIT=\$?; stty -a | grep -q ' icanon' && echo TTY-COOKED; sleep 60"
   sleep 3
 }
 crash_run index
@@ -61,7 +62,7 @@ rm -rf "$ST"
 swap_start() {
   $T kill-server 2>/dev/null && sleep 0.5 || true
   $T new-session -d -s ide -x 100 -y 30 \
-    "XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config pixi run ./build/tmide examples/hello.mojo; sleep 60"
+    "PATH=\"$ENV_PATH\" MODULAR_HOME=\"$PWD/.pixi/envs/default/share/max\" XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config ./build/tmide examples/hello.mojo; sleep 60"
   sleep 2.5
 }
 swap_start
@@ -92,7 +93,7 @@ printf 'first\nsecond\n' > "$HF"
 hist_start() {
   $T kill-server 2>/dev/null && sleep 0.5 || true
   $T new-session -d -s ide -x 100 -y 30 \
-    "XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config pixi run ./build/tmide $HF; sleep 60"
+    "PATH=\"$ENV_PATH\" MODULAR_HOME=\"$PWD/.pixi/envs/default/share/max\" XDG_STATE_HOME=$ST XDG_CONFIG_HOME=$ST/no-config ./build/tmide $HF; sleep 60"
   sleep 2.5
 }
 hist_start

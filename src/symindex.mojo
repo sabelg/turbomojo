@@ -127,7 +127,6 @@ struct SymbolIndex(Movable):
         self.syms = kept^
 
     def summary(self) -> String:
-        var files = List[String]()
         var last = String("")
         var n_files = 0
         for s in self.syms:

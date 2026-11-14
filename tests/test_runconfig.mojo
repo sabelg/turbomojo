@@ -111,6 +111,11 @@ def test_the_command_a_configuration_makes() raises:
     c.file = "/elsewhere/p.mojo"
     c.cwd = "/tmp/x"
     assert_equal(run_core_command(c, "/proj", "/proj/a.mojo", "mojo", ""), "cd '/tmp/x' && mojo run '/elsewhere/p.mojo'")
+    c.gpu_sync = True
+    assert_true(run_core_command(c, "/proj", "/proj/a.mojo", "mojo", "").find("MODULAR_DEVICE_CONTEXT_SYNC_MODE=true") >= 0)
+    var saved_sync = save_run_config("", c)
+    var parsed_sync = load_run_configs(toml_parse(saved_sync))
+    assert_true(len(parsed_sync) == 1 and parsed_sync[0].gpu_sync)
 
 
 def test_the_command_really_runs_with_environment_folder_and_arguments() raises:

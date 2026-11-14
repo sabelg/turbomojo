@@ -344,7 +344,7 @@ __extension App:
             var line = self.wins[ai].buf.line(r)
             var rest = slice_str(line, ind, len(line))
             var kw = String("")
-            for k in ["def ", "fn ", "struct ", "trait ", "comptime "]:
+            for k in ["def ", "fn ", "struct ", "__extension ", "trait ", "comptime "]:
                 if rest.startswith(k):
                     kw = String(k)
             if kw.byte_length() == 0:
@@ -361,7 +361,7 @@ __extension App:
             var pad = String("")
             for _ in range(self.wins[ai].vcol(r, ind) // max(1, self.wins[ai].buf.indent_size)):
                 pad += "  "
-            var tag = String("ƒ ") if kw == "def " or kw == "fn " else (String("◆ ") if kw == "struct " else (String("◇ ") if kw == "trait " else String("= ")))
+            var tag = String("ƒ ") if kw == "def " or kw == "fn " else (String("◆ ") if kw == "struct " or kw == "__extension " else (String("◇ ") if kw == "trait " else String("= ")))
             items.append(pad_right(pad + tag + name, 44) + ":" + String(r + 1))
             data.append(r)
         if len(items) == 0:
@@ -448,17 +448,11 @@ __extension App:
                     var j = i
                     while j < n and is_ident(line[j]):
                         j += 1
-                    if j - i > np and j - i >= 2:
-                        var ok = True
-                        for k in range(np):
-                            if line[i + k] != pc[k]:
-                                ok = False
-                                break
-                        if ok and not (r == self.wins[ai].cr and j == self.wins[ai].cc):
-                            var w = slice_str(line, i, j)
-                            if w not in seen:
-                                seen[w] = 1
-                                out.append(w)
+                    if j - i > np and j - i >= 2 and not (r == self.wins[ai].cr and j == self.wins[ai].cc):
+                        var w = slice_str(line, i, j)
+                        if w.startswith(prefix) and w not in seen:
+                            seen[w] = 1
+                            out.append(w)
                     i = j
                 else:
                     i += 1
@@ -472,28 +466,48 @@ __extension App:
         return out^
 
     def comp_rebuild(mut self, prefix: String, words: List[String]):
-        """Fill the popup's lists: the server's items that fit what is typed, in the
-        server's order, then words from the text that the server did not offer."""
+        """Fill the popup's lists: the server's items that fit what is typed (exact prefix
+        first, falling back to case-insensitive prefix or fuzzy subsequence when no exact
+        prefix fits), followed by words from the text that the server did not offer."""
         self.comp_items.clear()
         self.comp_insert.clear()
         self.comp_kind.clear()
         self.comp_detail.clear()
         self.comp_doc.clear()
         self.comp_raw.clear()
+        self.comp_srv_idx.clear()
         var seen = Dict[String, Int]()
         if self.comp_srv_have:
-            for k in range(len(self.comp_srv)):
-                if prefix.byte_length() > 0 and not self.comp_srv[k].filter.startswith(prefix):
-                    continue
-                if self.comp_srv[k].label in seen:
-                    continue
-                seen[self.comp_srv[k].label] = 1
-                self.comp_items.append(self.comp_srv[k].label)
-                self.comp_insert.append(self.comp_srv[k].insert)
-                self.comp_kind.append(self.comp_srv[k].kind)
-                self.comp_detail.append(self.comp_srv[k].detail)
-                self.comp_doc.append(self.comp_srv[k].doc)
-                self.comp_raw.append(self.comp_srv[k].raw)
+            var plow = lower_str(prefix)
+            var np = cp_len(prefix)
+            for tier in range(3):
+                if tier > 0 and (prefix.byte_length() == 0 or len(self.comp_items) > 0):
+                    break
+                if np < 2 and tier == 2:
+                    break
+                for k in range(len(self.comp_srv)):
+                    if self.comp_srv[k].label in seen:
+                        continue
+                    var flt = self.comp_srv[k].filter
+                    var match_ok: Bool
+                    if prefix.byte_length() == 0:
+                        match_ok = True
+                    elif tier == 0:
+                        match_ok = flt.startswith(prefix)
+                    elif tier == 1:
+                        match_ok = not flt.startswith(prefix) and lower_str(flt).startswith(plow)
+                    else:
+                        match_ok = fuzzy_score(flt, prefix) >= 0
+                    if not match_ok:
+                        continue
+                    seen[self.comp_srv[k].label] = 1
+                    self.comp_items.append(self.comp_srv[k].label)
+                    self.comp_insert.append(self.comp_srv[k].insert)
+                    self.comp_kind.append(self.comp_srv[k].kind)
+                    self.comp_detail.append(self.comp_srv[k].detail)
+                    self.comp_doc.append(self.comp_srv[k].doc)
+                    self.comp_raw.append(self.comp_srv[k].raw)
+                    self.comp_srv_idx.append(k)
         for w in words:
             if w in seen:
                 continue
@@ -504,6 +518,7 @@ __extension App:
             self.comp_detail.append("")
             self.comp_doc.append("")
             self.comp_raw.append("")
+            self.comp_srv_idx.append(-1)
 
     def lsp_request_completion(mut self, ai: Int, start: Int, trigger: String) -> Bool:
         """Ask the language server what could come at the cursor. The answer arrives
@@ -514,6 +529,7 @@ __extension App:
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
             return False
+        self.lsp.cancel_request(self.comp_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)          # the server must see what was just typed
         var id = self.lsp.request_completion(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, now)
@@ -655,6 +671,7 @@ __extension App:
             return
         if self.comp_resolve_label == self.comp_items[k]:
             return                          # already asked for this one
+        self.lsp.cancel_request(self.comp_resolve_id)
         var id = self.lsp.request_resolve(self.comp_raw[k], now_ns())
         if id >= 0:
             self.comp_resolve_id = id
@@ -675,29 +692,114 @@ __extension App:
                 if it.detail.byte_length() > 0:
                     self.comp_srv[k].detail = it.detail
                 self.comp_srv[k].doc = it.doc
+                if len(it.extra_edits) > 0 and len(self.comp_srv[k].extra_edits) == 0:
+                    self.comp_srv[k].extra_edits = it.extra_edits.copy()
 
     def comp_accept(mut self, ai: Int):
-        """Put the selected item into the text in place of what was typed of it."""
+        """Put the selected item into the text in place of what was typed of it, applying
+        any LSP textEdit, additionalTextEdits (auto-imports), and snippet tabstop cursor."""
         var k = self.comp_sel
-        var text = decode(self.comp_insert[k])
-        var typed = self.wins[ai].buf.get_text(self.wins[ai].cr, self.comp_start, self.wins[ai].cr, self.wins[ai].cc)
-        var extends = len(text) >= len(typed)
-        if extends:
-            for q in range(len(typed)):
-                if text[q] != typed[q]:
-                    extends = False
-                    break
-        if extends:
-            # the usual case: only the missing part is typed for the user
-            var rest = List[Int]()
-            for q in range(len(typed), len(text)):
-                rest.append(text[q])
-            self.wins[ai].insert_text(rest, ACT_TYPE)
-        else:
-            self.wins[ai].sel = True
-            self.wins[ai].ar = self.wins[ai].cr
-            self.wins[ai].ac = self.comp_start
-            self.wins[ai].insert_text(text, ACT_OTHER)
+        var sidx = self.comp_srv_idx[k] if k < len(self.comp_srv_idx) else -1
+        var raw_ins = String(self.comp_insert[k])
+        var is_snip = sidx >= 0 and (self.comp_srv[sidx].insert_format == 2 or self.comp_srv[sidx].kind == 15)
+        var tab_off = -1
+        if is_snip:
+            var exp = expand_lsp_snippet(raw_ins)
+            raw_ins = exp[0]
+            tab_off = exp[1]
+        var text = decode(raw_ins)
+        var g = self.wins[ai].new_group()
+        self.wins[ai].forced_group = g
+        var base_row = self.wins[ai].cr
+        var base_col = self.comp_start
+        var used_lsp_edit = False
+        if sidx >= 0 and self.comp_srv[sidx].has_edit:
+            var ed = self.comp_srv[sidx].edit.copy()
+            if ed.r1 == ed.r2 and ed.r1 >= 0 and ed.r1 < self.wins[ai].buf.count():
+                var ln = self.wins[ai].buf.line(ed.r1)
+                var c1 = utf16_to_col(ln, ed.c1)
+                var c2 = max(c1, max(self.wins[ai].cc if ed.r1 == self.wins[ai].cr else c1, utf16_to_col(ln, ed.c2)))
+                self.wins[ai].sel = True
+                self.wins[ai].ar = ed.r1
+                self.wins[ai].ac = c1
+                self.wins[ai].cr = ed.r1
+                self.wins[ai].cc = min(len(ln), c2)
+                base_row = ed.r1
+                base_col = c1
+                self.wins[ai].insert_text(text, ACT_OTHER)
+                used_lsp_edit = True
+        if not used_lsp_edit:
+            var typed = self.wins[ai].buf.get_text(self.wins[ai].cr, self.comp_start, self.wins[ai].cr, self.wins[ai].cc)
+            var extends = len(text) >= len(typed)
+            if extends:
+                for q in range(len(typed)):
+                    if text[q] != typed[q]:
+                        extends = False
+                        break
+            if extends:
+                var rest = List[Int]()
+                for q in range(len(typed), len(text)):
+                    rest.append(text[q])
+                if self.keymap == 3 and self.vim.mode == 1 and not self.vim.replaying:
+                    for ch in rest:
+                        self.vim.cur.append(ch)
+                self.wins[ai].insert_text(rest, ACT_TYPE)
+            else:
+                if self.keymap == 3 and self.vim.mode == 1 and not self.vim.replaying:
+                    for _ in range(len(typed)):
+                        self.vim.cur.append(KEY_BACKSPACE)
+                    for ch in text:
+                        self.vim.cur.append(ch)
+                self.wins[ai].sel = True
+                self.wins[ai].ar = self.wins[ai].cr
+                self.wins[ai].ac = self.comp_start
+                self.wins[ai].insert_text(text, ACT_OTHER)
+        if tab_off >= 0:
+            # Place cursor at the $1 / $0 tabstop within the inserted snippet
+            var r = base_row
+            var c = base_col
+            for q in range(min(tab_off, len(text))):
+                if text[q] == 10:
+                    r += 1
+                    c = 0
+                else:
+                    c += 1
+            self.wins[ai].cr = min(r, self.wins[ai].buf.count() - 1)
+            self.wins[ai].cc = min(c, self.wins[ai].buf.llen(self.wins[ai].cr))
+            self.wins[ai].sync_want()
+        # Apply additionalTextEdits (e.g. auto-imports at top of file) in reverse line order
+        if sidx >= 0 and len(self.comp_srv[sidx].extra_edits) > 0:
+            var extras = self.comp_srv[sidx].extra_edits.copy()
+            for a in range(1, len(extras)):
+                var b = a
+                while b > 0 and (extras[b].r1 > extras[b - 1].r1 or (extras[b].r1 == extras[b - 1].r1 and extras[b].c1 > extras[b - 1].c1)):
+                    var tmp = extras[b].copy()
+                    extras[b] = extras[b - 1].copy()
+                    extras[b - 1] = tmp^
+                    b -= 1
+            for ae in extras:
+                var nlines = self.wins[ai].buf.count()
+                if ae.r1 >= 0 and ae.r2 >= ae.r1 and ae.r2 <= nlines:
+                    var r1 = min(ae.r1, nlines - 1)
+                    var r2 = min(ae.r2, nlines - 1)
+                    var c1 = utf16_to_col(self.wins[ai].buf.line(r1), ae.c1) if ae.r1 < nlines else self.wins[ai].buf.llen(r1)
+                    var c2 = utf16_to_col(self.wins[ai].buf.line(r2), ae.c2) if ae.r2 < nlines else self.wins[ai].buf.llen(r2)
+                    var ins_cps = List[Int]()
+                    var added_rows = 0
+                    for cp in decode(ae.text):
+                        if cp != 13:
+                            ins_cps.append(cp)
+                            if cp == 10:
+                                added_rows += 1
+                    if r1 != r2 or c1 != c2:
+                        _ = self.wins[ai].buf.delete(r1, c1, r2, c2, self.wins[ai].cr, self.wins[ai].cc, g)
+                    if len(ins_cps) > 0:
+                        _ = self.wins[ai].buf.insert(r1, c1, ins_cps, self.wins[ai].cr, self.wins[ai].cc, g)
+                    if ae.r2 <= self.wins[ai].cr:
+                        self.wins[ai].cr = max(0, self.wins[ai].cr + added_rows - (r2 - r1))
+            self.wins[ai].clamp()
+            self.wins[ai].sync_want()
+        self.wins[ai].forced_group = 0
         self.wins[ai].break_group()
         self.comp_srv_have = False
         self.mode = M_NORMAL
@@ -756,6 +858,7 @@ __extension App:
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
             return False
+        self.lsp.cancel_request(self.hover_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)
         var id = self.lsp.request_hover(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
@@ -826,6 +929,7 @@ __extension App:
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
             return False
+        self.lsp.cancel_request(self.sig_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)
         var id = self.lsp.request_signature(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, again, now)
@@ -840,19 +944,35 @@ __extension App:
         return True
 
     def sig_close(mut self):
+        self.lsp.cancel_request(self.sig_req_id)
         self.sig_on = False
         self.sig_asked = False
         self.sig_req_id = -1
         self.sig_retry_due = 0
+        self.sig_raw = ""
 
     def sig_active(self) -> Bool:
         """A tip is showing or on its way."""
         return self.sig_on or self.sig_req_id >= 0 or self.sig_retry_due > 0
 
+    def sig_cycle(mut self, delta: Int) -> Bool:
+        """Cycle between active signature overloads (Alt-Up / Alt-Down)."""
+        if not self.sig_on or self.sigtip.count <= 1 or self.sig_raw.byte_length() == 0:
+            return False
+        var next_idx = (self.sigtip.index + delta + self.sigtip.count) % self.sigtip.count
+        var doc = json_parse(self.sig_raw)
+        if not doc.ok:
+            return False
+        var info = parse_signature(doc, 0, next_idx)
+        if not info.ok:
+            return False
+        self.sigtip = info^
+        return True
+
     def maybe_trigger_signature(mut self, ch: Int):
-        """After a character was typed in the editor: "(" and "," (whatever the server
-        names) bring up the parameter tip."""
-        if self.lsp.state != LSP_READY or len(self.lsp.table.signature_triggers) == 0:
+        """After a character was typed in the editor: "(", ",", and "[" (for Mojo
+        compile-time parameters) bring up the parameter tip."""
+        if self.lsp.state != LSP_READY or not self.lsp.table.signature_help:
             return
         var ai = self.active_editor()
         if ai < 0 or self.wins[ai].has_multi():
@@ -860,11 +980,12 @@ __extension App:
         var one = List[Int]()
         one.append(ch)
         var s = to_str(one)
-        if not (s in self.lsp.table.signature_triggers):
+        var mojo_param = s == "[" and is_mojo_file(self.wins[ai].path)
+        if not (s in self.lsp.table.signature_triggers) and not mojo_param:
             return
         self.sig_retries = 0
         self.sig_asked = False
-        _ = self.sig_request(ai, s, self.sig_on)
+        _ = self.sig_request(ai, s if s in self.lsp.table.signature_triggers else String(""), self.sig_on)
 
     def sig_follow(mut self):
         """After every key and click: while a tip is showing (or on its way) and the
@@ -900,6 +1021,7 @@ __extension App:
             if asked:
                 self.say("The cursor is not inside a call")
             return
+        self.sig_raw = m.doc.dump(m.result())
         self.sigtip = info^
         self.sig_on = True
         self.sig_asked = False
@@ -934,11 +1056,11 @@ __extension App:
             self.mode = M_NORMAL
             return False
         var n = len(self.comp_items)
-        if k == KEY_UP:
+        if k == KEY_UP or k == (112 | MOD_CTRL):
             self.comp_sel = (self.comp_sel - 1 + n) % n
             self.comp_want_details()
             return True
-        if k == KEY_DOWN:
+        if k == KEY_DOWN or k == (110 | MOD_CTRL):
             self.comp_sel = (self.comp_sel + 1) % n
             self.comp_want_details()
             return True
@@ -950,9 +1072,11 @@ __extension App:
             self.comp_sel = min(n - 1, self.comp_sel + 8)
             self.comp_want_details()
             return True
-        if k == KEY_ESC:
+        if k == KEY_ESC or k == (91 | MOD_CTRL) or k == (99 | MOD_CTRL):
             self.mode = M_NORMAL
             self.comp_srv_have = False
+            if self.keymap == 3 and self.vim.mode == 1 and (k == (91 | MOD_CTRL) or k == (99 | MOD_CTRL)):
+                return False                    # let vim_key exit Insert mode too
             return True
         if k == KEY_ENTER or k == KEY_TAB:
             self.comp_accept(ai)

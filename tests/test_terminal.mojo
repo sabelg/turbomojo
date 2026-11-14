@@ -7,6 +7,7 @@ from std.time import perf_counter_ns
 from std.ffi import external_call
 from termkeys import encode_key, paste_bytes
 from termsession import *
+from vt import MODE_BRACKETED_PASTE
 from term import Event, EV_MOUSE, EV_PASTE, MB_LEFT, MB_WHEEL_UP, wait_readable, fkey, key_event, ctrl, alt, MOD_CTRL, MOD_SHIFT, MOD_ALT, KEY_ENTER, KEY_UP, KEY_LEFT, KEY_PGUP, KEY_PGDN, KEY_ESC, KEY_DELETE, KEY_TAB, KEY_BACKSPACE, KEY_F1, KEY_HOME
 from app import *
 from appstate import App, M_NORMAL
@@ -137,6 +138,8 @@ def test_a_shell_in_a_window() raises:
     wait_prompt(app, TS_SHELL)
     # paste goes to the shell
     app.handle(Event(EV_PASTE, 0, 0, 0, 0, False, False, decode("echo pasted-text\n")))
+    if app.tshell.vt.mode(MODE_BRACKETED_PASTE):
+        app.handle(key_event(KEY_ENTER))        # bash 5.1+ readline holds bracketed paste until Enter
     _ = wait_screen(app, TS_SHELL, "pasted-text\n")
     wait_prompt(app, TS_SHELL)
     # the size follows the window

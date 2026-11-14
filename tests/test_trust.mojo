@@ -150,11 +150,14 @@ def test_without_trust_nothing_is_started() raises:
 
 def test_project_tool_commands_wait_for_trust() raises:
     var d = project("tools")
-    put(d + "/proj/.turbomojo.toml", "[tools]\ncompiler = \"/somewhere/odd/mojo\"\nlsp_server = \"/somewhere/odd/server --flag\"\n\n[editor]\ntab_width = 3\n")
+    put(d + "/proj/.turbomojo.toml", "[tools]\ncompiler = \"/somewhere/odd/mojo\"\nlsp_server = \"/somewhere/odd/server --flag\"\ndebug_adapter = \"/somewhere/odd/dap\"\nagent = \"/somewhere/odd/agent\"\n\n[lsp.evil]\ncommand = \"/somewhere/odd/evil-lsp\"\nextensions = [\".py\"]\n\n[editor]\ntab_width = 3\n")
     var app = new_app(d, d + "/proj")
     app.load_config()
     assert_true(app.compiler != "/somewhere/odd/mojo", app.compiler)
     assert_true(app.lsp_server != "/somewhere/odd/server --flag", app.lsp_server)
+    assert_true(app.debug_adapter != "/somewhere/odd/dap", app.debug_adapter)
+    assert_true(app.agent_command != "/somewhere/odd/agent", app.agent_command)
+    assert_equal(len(app.lsp_extra), 0)
     assert_true(app.trust_held)
     assert_equal(app.tab_width, 3)                       # harmless settings of the project do apply
     var said = False

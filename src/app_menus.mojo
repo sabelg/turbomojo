@@ -43,6 +43,8 @@ from app_debug import *
 from app_terminal import *
 from app_tests import *
 from app_jobs import *
+from app_gpu import *
+from app_codegen import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
@@ -137,7 +139,7 @@ __extension App:
         if cmd == CM_RESET:
             return not self.dbg.active()
         if cmd == CM_CANCEL:
-            return not self.job.active and not self.fsearch.active and not self.dbg.active()
+            return not self.job.active and not self.aux_job.active and not self.fsearch.active and not self.dbg.active()
         if cmd == CM_NEXTERR or cmd == CM_PREVERR:
             return len(self.errs) == 0
         if cmd == CM_MACRO_PLAY:
@@ -162,7 +164,7 @@ __extension App:
 
     def toggle_cmds(self) -> List[Int]:
         """The commands that switch something on or off (checked() has those on)."""
-        return [CM_LINENUM, CM_RELNUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_GPU_STATUS, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
+        return [CM_LINENUM, CM_RELNUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_GPU_STATUS, CM_GIT_LINEBLAME, CM_FORMAT_SAVE, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
 
     def checked(self) -> List[Int]:
         var out = List[Int]()
@@ -180,6 +182,10 @@ __extension App:
             out.append(CM_CLOCK)
         if self.gpu_status_on:
             out.append(CM_GPU_STATUS)
+        if self.git_line_blame:
+            out.append(CM_GIT_LINEBLAME)
+        if self.format_on_save:
+            out.append(CM_FORMAT_SAVE)
         if self.show_ws:
             out.append(CM_SHOWWS)
         if self.soft_wrap:
@@ -192,6 +198,10 @@ __extension App:
             out.append(CM_QUIET)
         if self.hints_on:
             out.append(CM_HINTS)
+        if self.gpuwin_index() >= 0:
+            out.append(CM_GPU_WIN)
+        if self.codegen_index() >= 0:
+            out.append(CM_CODEGEN)
         var ti = self.top_editor()
         if ti >= 0 and self.wins[ti].buf.use_tabs:
             out.append(CM_USETABS)

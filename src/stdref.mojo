@@ -175,15 +175,13 @@ def stdref_build(home: String) -> String:
     if run_system("rm -rf " + shell_quote(dir) + " && mkdir -p " + shell_quote(dir)) != 0:
         return "cannot write to " + dir
     var index = String("")
-    var pages = 0
-    try:
-        var doc = json_parse(bytes_to_str(read_file(source)))
-        var decl = doc.get(0, "decl")
-        if decl < 0:
-            return "std.docs.json is not what `mojo doc` writes"
-        pages = walk_package(doc, decl, doc.str(doc.get(decl, "name"), "std"), 1, dir, index)
-    except e:
-        return "std.docs.json cannot be read: " + String(e)
+    var doc = json_parse(bytes_to_str(read_file(source)))
+    if not doc.ok:
+        return "std.docs.json cannot be read: " + doc.error
+    var decl = doc.get(0, "decl")
+    if decl < 0:
+        return "std.docs.json is not what `mojo doc` writes"
+    var pages = walk_package(doc, decl, doc.str(doc.get(decl, "name"), "std"), 1, dir, index)
     if pages == 0:
         return "std.docs.json describes no modules"
     if not write_file(dir + "/index.txt", str_bytes(index)):

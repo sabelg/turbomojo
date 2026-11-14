@@ -84,6 +84,9 @@ __extension App:
         var now = Int(now_ns())
         if self.job.active:
             out.append(self.job_header() + "  (" + String((now - self.job.t0) // 1000000000) + " s)")
+        if self.aux_job.active:
+            var aux_lbl = ("Emitting codegen for " if self.aux_job.kind == JOB_CODEGEN else "Formatting ") + self.aux_job.path
+            out.append(aux_lbl + "  (" + String((now - self.aux_job.t0) // 1000000000) + " s)")
         if self.git_proc.running and self.git_req >= 5:       # commit, branches, switch, blame
             out.append("git: " + ["", "", "", "", "", "commit", "listing branches", "switching branch", "blame"][self.git_req])
         if self.lsp.active() and self.lsp.state == LSP_STARTING:

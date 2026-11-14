@@ -276,11 +276,76 @@ __extension App:
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified and self.wins[i].path.byte_length() > 0:
                 unsaved += 1
-        var cmd = "cd " + shell_quote(dir) + " && exec " + self.pixi_cmd + " run " + shell_quote(name) + " 2>&1 </dev/null"
+        var penv = self.active_pixi_env()
+        var eflag = (" -e " + shell_quote(penv)) if penv != "default" else String("")
+        var cmd = "cd " + shell_quote(dir) + " && exec " + self.pixi_cmd + " run" + eflag + " " + shell_quote(name) + " 2>&1 </dev/null"
         if self.start_job(JOB_TASK, cmd, dir, name):
             self.last_task = name
             self.task_output("Running...")
             self.say("Task " + name + " is running - Ctrl-F2 cancels it" + ((" (" + count_of(unsaved, "file") + " not saved)") if unsaved > 0 else String("")))
+
+    def pixi_env_dialog(mut self):
+        """Options > Pixi environment: pick the active Pixi environment for builds, runs,
+        tests, formatting, terminal, debugger, and LSP."""
+        var dir = self.pixi_locate()
+        var envs = List[String]()
+        if dir.byte_length() > 0:
+            var manifest = join_path(dir, "pixi.toml")
+            if path_exists(manifest):
+                envs = parse_pixi_environments(read_text(manifest))
+            else:
+                var pyproj = join_path(dir, "pyproject.toml")
+                if path_exists(pyproj):
+                    envs = parse_pixi_environments(read_text(pyproj))
+                else:
+                    envs.append("default")
+            var envs_dir = join_path(dir, ".pixi/envs")
+            if path_exists(envs_dir):
+                for entry in list_dir(envs_dir):
+                    if is_dir(join_path(envs_dir, entry)) and not (entry in envs):
+                        envs.append(entry)
+        else:
+            envs.append("default")
+        var cur = self.active_pixi_env()
+        if not (cur in envs):
+            envs.append(cur)
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        var sel = 0
+        for idx in range(len(envs)):
+            var en = envs[idx]
+            var installed = dir.byte_length() > 0 and path_exists(join_path(dir, ".pixi/envs/" + en))
+            var badge = " (installed)" if installed else String("")
+            var active_tag = "  [active]" if en == cur else String("")
+            items.append(pad_right(en, 18) + badge + active_tag)
+            keys.append(en)
+            data.append(idx)
+            if en == cur:
+                sel = idx
+        var d = Dialog(D_PIXI_ENV, "Pixi Environment", min(64, self.scr.w - 4), min(18, max(10, len(items) + 7)))
+        if dir.byte_length() > 0:
+            d.lines.append("Project: " + dir)
+        else:
+            d.lines.append("No pixi.toml found here - setting saved for Pixi projects.")
+        d.has_list = True
+        d.keys = keys^
+        d.set_items(items^, data^)
+        d.list_sel = sel
+        d.buttons.append("~O~K")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def pixi_env_choose(mut self, env_name: String):
+        var clean = env_name if env_name.byte_length() > 0 else String("default")
+        self.pixi_env = clean
+        self.persist_option("tools", "pixi_env", toml_quote(clean))
+        if self.lsp.active():
+            var ai = self.active_editor()
+            self.lsp_front = ""
+            if ai >= 0 and self.lsp_wants(ai):
+                _ = self.lsp_follow_project(now_ns())
+        self.say("Pixi environment: " + clean)
 
     def task_output(mut self, footer: String):
         """The running (or finished) task's output on the Message page."""
@@ -468,11 +533,9 @@ __extension App:
         var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
         var res = run_capture("cd " + shell_quote(dirname(path)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(path) + " 2>/dev/null")
         if res.status == 0 and len(res.out) > 0:
-            try:
-                var doc = json_parse(bytes_to_str(res.out))
+            var doc = json_parse(bytes_to_str(res.out))
+            if doc.ok:
                 entries = parse_mojo_doc(doc)
-            except e:
-                entries = List[DocEntry]()
         self.doc_files.append(path)
         self.doc_sizes.append(sig.size)
         self.doc_times.append(stamp)
@@ -576,6 +639,8 @@ __extension App:
                 what += " " + c.args
             if c.build:
                 what += "   [build first]"
+            if c.gpu_sync:
+                what += "   [gpu sync]"
             items.append(("• " if c.name == self.run_active else "  ") + pad_right(c.name, 16) + " " + what)
             data.append(k)
             if c.name == self.run_active:
@@ -640,7 +705,7 @@ __extension App:
                 c.file = slice_str(decode(self.wins[te].path), cp_len(root) + 1, cp_len(self.wins[te].path))
                 c.name = stem(c.file)
         self.run_edit_old = name
-        var d = Dialog(D_RUNCFG, "Run Configuration", min(72, self.scr.w - 4), 20)
+        var d = Dialog(D_RUNCFG, "Run Configuration", min(72, self.scr.w - 4), 21)
         d.lines.append("Paths count from the project folder.")
         d.fields.append(Field("~N~ame", c.name))
         d.fields.append(Field("~F~ile (empty: the one in front)", c.file))
@@ -649,6 +714,8 @@ __extension App:
         d.fields.append(Field("~W~orking folder (empty: the file's)", c.cwd))
         d.checks.append("~B~uild first, then run the program")
         d.check_vals.append(c.build)
+        d.checks.append("~G~PU sync check (MODULAR_DEVICE_CONTEXT_SYNC_MODE=true)")
+        d.check_vals.append(c.gpu_sync)
         d.buttons.append("~O~K")
         d.buttons.append("~C~ancel")
         self.show(d^)
@@ -660,6 +727,7 @@ __extension App:
         c.args = String(self.dlg.field_text(2).strip())
         c.cwd = String(self.dlg.field_text(4).strip())
         c.build = self.dlg.check_vals[0]
+        c.gpu_sync = self.dlg.check_vals[1] if len(self.dlg.check_vals) > 1 else False
         var why = config_name_problem(c.name)
         var env = parse_env(self.dlg.field_text(3))
         if why.byte_length() == 0:

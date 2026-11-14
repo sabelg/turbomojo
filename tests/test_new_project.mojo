@@ -5,7 +5,10 @@ running `pixi install` (a stand-in pixi here), and the first run's welcome offer
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
 from std.ffi import external_call
-from newproject import np_name_problem, np_platform, np_mojo_spec, np_pixi_toml, np_files
+from newproject import (
+    np_name_problem, np_platform, np_mojo_spec, np_pixi_toml, np_files,
+    NP_TMPL_PKG, NP_TMPL_GPU, NP_TMPL_PYEXT, np_pkg_ident,
+)
 from project import parse_pixi_tasks, pixi_project_name
 from term import key_event, wait_readable, KEY_ENTER, KEY_ESC
 from app import *
@@ -91,6 +94,14 @@ def test_names_platforms_and_the_mojo_asked_for() raises:
     assert_true(files[3].find("def main():") >= 0 and files[3].find("def greeting(") >= 0)
     assert_true(files[5].find("from hello import greeting") >= 0 and files[5].find("TestSuite") >= 0)
     assert_true(files[7].find(".pixi/") >= 0)
+    assert_equal(np_pkg_ident("hello-mojo"), "hello_mojo")
+    assert_equal(np_pkg_ident("2fast"), "m_2fast")
+    var pkg_f = np_files("my-lib", "linux-64", ">=1.2,<1.3", NP_TMPL_PKG)
+    assert_equal(pkg_f[2], "src/my_lib/__init__.mojo")
+    var gpu_f = np_files("kern", "linux-64", ">=1.2,<1.3", NP_TMPL_GPU)
+    assert_true(gpu_f[1].find("max = \"*\"") >= 0 and gpu_f[3].find("TileTensor") >= 0)
+    var py_f = np_files("fast-ext", "linux-64", ">=1.2,<1.3", NP_TMPL_PYEXT)
+    assert_true(py_f[3].find("PythonModuleBuilder") >= 0 and py_f[3].find("PyInit_fast_ext") >= 0)
 
 
 def test_a_project_is_made_opened_and_installed() raises:

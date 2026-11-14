@@ -15,6 +15,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_agent.mojo` | The agent panel: a coding agent (ACP, src/acp.mojo) in a window at the right edge. |
 | `src/app_agentexplain.mojo` | Help > Ask agent about this error / this code: the agent panel gets a grounded prompt (src/agentexplain.mojo) - the code with line numbers, the message, TurboMojo's explanation of it, and the downloaded documentation of the names involved - and is asked to answer from it and name the pages. |
 | `src/app_agentsvc.mojo` | The editor's services to a coding agent (ACP): reading files through the editor, proposed writes to accept or reject, and terminals for its commands. |
+| `src/app_codegen.mojo` | Codegen & kernel inspector (`Compile > Inspect generated code`, WK_CODEGEN) and GPU kernel profiler (`Compile > Profile GPU kernels`): emits assembly or LLVM IR asynchronously via `aux_job` (`mojo build --emit=asm\|llvm`) and wraps `nsys` / `rocprofv3` profiling. |
 | `src/app_debug.mojo` | Debugging: building a program with debug information, running it under Mojo's debug adapter and showing what happens (see dap.mojo). |
 | `src/app_dialogs.mojo` | Dialog flow: opening dialogs and acting on their buttons and keys. |
 | `src/app_docpane.mojo` | Help > Docs pane: the documentation of the name at the cursor in a window at the right edge, beside the code, kept up to date as the cursor moves - looked up when the cursor has rested on a name for a moment, never while typing. |
@@ -28,7 +29,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_git.mojo` | Git in the editor: changed-line markers in the gutter and `git status` colours in the file explorer. |
 | `src/app_gitcmd.mojo` | git commands with dialogs and views: File > Commit, Branch, Blame. |
 | `src/app_gitdiff.mojo` | The diff view and the change (hunk) commands: File > Diff of this file, Stage change, Revert change, Next / Previous change. |
-| `src/app_gpu.mojo` | The GPU on the status line (P11-10a): with `ui.gpu_status` on (Options > GPU in the status line), GPU_QUERY runs once in the background through a non-blocking pipe - the main loop waits on it with the other descriptors - and its answer becomes a status item such as "GPU GB10". |
+| `src/app_gpu.mojo` | The GPU on the status line (P11-10a) and the live GPU telemetry monitor (`Window > GPU queue & monitor`, WK_GPU). |
 | `src/app_input.mojo` | Keyboard and paste input routing. |
 | `src/app_jobs.mojo` | Compiler integration: background build/format jobs, messages, run. |
 | `src/app_keybox.mojo` | After a prefix key (WordStar's Ctrl-K and Ctrl-Q, Emacs's C-x, any two-key binding): if the second key does not come within a moment, a box above the status line lists the keys that may follow, with their commands. |
@@ -62,6 +63,7 @@ struct of `appstate.mojo`, one area each.
 | `src/breakpoints.mojo` | Breakpoints: where the debugger is to stop. |
 | `src/buffer.mojo` | Text buffer: a rope of UTF-8 text addressed by (row, column in codepoints), with grouped undo/redo and the per-file settings (line endings, indentation, final newline). |
 | `src/caps.mojo` | Terminal capabilities: what the terminal says it supports, and colour-depth handling. |
+| `src/codegen.mojo` | Mojo codegen & kernel inspector (`Compile > Inspect generated code`, WK_CODEGEN): parses `mojo build --emit=asm` and `--emit=llvm` output, strips noisy assembler metadata directives while keeping function labels and instructions, badges SIMD vector operations (`[SIMD]`) and register stack spills (`[SPILL]`), and summarizes vectorization density. |
 | `src/codequery.mojo` | What a search for help looks like, so one box can take code as well as words: a name (`append`), a dotted path (`List.append`, `std.collections.list`), or a pasted error line (`x.mojo:3:5: error: use of unknown declaration 'y'`), besides the finder's own syntax (words, "a phrase", @api, #heading, `code, in:book). |
 | `src/commands.mojo` | Command registry: the single table of commands, their titles, hints and default keys. |
 | `src/config.mojo` | User and project settings. |

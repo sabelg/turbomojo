@@ -31,8 +31,17 @@ NAME="turbomojo-$VERSION-linux-$ARCH"
 mkdir -p "$OUT"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/turbomojo-bundle.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/$NAME/bin" "$WORK/$NAME/lib"
+mkdir -p "$WORK/$NAME/bin" "$WORK/$NAME/lib" "$WORK/$NAME/share/turbomojo/docs" "$WORK/$NAME/share/turbomojo/completions"
 cp "$TMIDE" "$WORK/$NAME/bin/tmide"
+if [ -f scripts/mcp_server.py ]; then
+    cp scripts/mcp_server.py "$WORK/$NAME/bin/tmide-mcp"
+    chmod +x "$WORK/$NAME/bin/tmide-mcp"
+fi
+cp docs/*.md "$WORK/$NAME/share/turbomojo/docs/" 2>/dev/null || true
+cp README.md "$WORK/$NAME/share/turbomojo/" 2>/dev/null || true
+"$TMIDE" --completions bash > "$WORK/$NAME/share/turbomojo/completions/tmide.bash" 2>/dev/null || true
+"$TMIDE" --completions zsh > "$WORK/$NAME/share/turbomojo/completions/_tmide" 2>/dev/null || true
+"$TMIDE" --completions fish > "$WORK/$NAME/share/turbomojo/completions/tmide.fish" 2>/dev/null || true
 
 # the libraries: what the loader finds for tmide outside the system's folders
 ldd "$TMIDE" | awk '/=> \// {print $3}' | while read -r lib; do

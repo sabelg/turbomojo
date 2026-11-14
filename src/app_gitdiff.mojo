@@ -64,7 +64,7 @@ __extension App:
         elif self.git_where(p)[0].byte_length() == 0:
             self.say("git is not used for this file (not in a repository, or the folder is not trusted)")
         elif self.wins[ei].buf.git_state == GB_NONE:
-            self.say("git does not have this file yet (it is untracked)")
+            self.say("git does not have this file yet (it is untracked — use Stage change to add it)")
         else:
             self.say("Still asking git about this file")
         return False
@@ -281,6 +281,12 @@ __extension App:
     def git_change_command(mut self, cmd: Int):
         """Stage change / Revert change from the editor: the block at the cursor."""
         var ei = self.git_editor_target()
+        if ei >= 0 and cmd == CM_GIT_STAGE and self.wins[ei].buf.git_state == GB_NONE:
+            var p = self.wins[ei].path
+            if p.byte_length() > 0 and self.git_where(p)[0].byte_length() > 0:
+                self.git_write_index(p, self.git_buffer_side(ei).text(), False)
+                self.say("Staged new file " + basename(p))
+                return
         if not self.git_known(ei):
             return
         var t = self.top()

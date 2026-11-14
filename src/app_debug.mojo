@@ -69,7 +69,23 @@ __extension App:
         var a = String(self.debug_adapter.strip())
         if a.find(" ") >= 0:
             return a
-        var path = a if a.find("/") >= 0 else which(a)
+        var path = String("")
+        if a.find("/") >= 0:
+            path = a
+        else:
+            var ed = self.active_editor()
+            var ref_path = String(self.wins[ed].path) if ed >= 0 and self.wins[ed].path.byte_length() > 0 else join_path(self.cwd, "main.mojo")
+            var pdir = find_up(dirname(ref_path), "pixi.toml")
+            if pdir.byte_length() > 0:
+                var env_bin = join_path(pdir, ".pixi/envs/" + self.active_pixi_env() + "/bin/" + a)
+                if path_exists(env_bin):
+                    path = env_bin
+                else:
+                    var def_bin = join_path(pdir, ".pixi/envs/default/bin/" + a)
+                    if path_exists(def_bin):
+                        path = def_bin
+            if path.byte_length() == 0:
+                path = which(a)
         if path.byte_length() == 0 or not path_exists(path):
             return ""
         return adapter_command(path)
@@ -105,17 +121,50 @@ __extension App:
         if self.debug_adapter_command().byte_length() == 0:
             self.info("Debug", "The debug adapter was not found: " + self.debug_adapter + " (it comes with Mojo; tools.debug_adapter names it)")
             return
-        var path = self.wins[i].path
+        var path = String(self.wins[i].path)
+        self.run_configs_load()
+        for c in self.run_cfgs:
+            if c.name == self.run_active and c.file.byte_length() > 0 and self.dbg_temp_path.byte_length() == 0:
+                var cand = c.file if c.file.startswith("/") else join_path(self.symidx_root(), c.file)
+                if path_exists(cand):
+                    path = cand
         var dir = dirname(path)
         var exe = join_path(dir, "build/" + stem(path) + ".debug")
-        var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.compiler_cmd() + " build -g -O0" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
+        var inner = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build -g -O0" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe)
+        var cmd = self.with_env(path, inner) + " 2>&1"
         if self.start_job(JOB_DEBUG, cmd, path, exe):
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages(self.job_heading(), List[UInt8](), "Compiling...")
             self.say("Building " + basename(path) + " for debugging - keep editing, " + self.reg.key_label(CM_CANCEL) + " cancels")
 
+    def debug_test(mut self, path: String, test_name: String) raises:
+        """Build a TestSuite file with `-g -O0` and launch it under `mojo-lldb-dap`."""
+        if self.dbg.active():
+            self.say("A program is already being debugged - " + self.reg.key_label(CM_CANCEL) + " ends it")
+            return
+        if self.job_busy():
+            return
+        if self.debug_adapter_command().byte_length() == 0:
+            self.info("Debug", "The debug adapter was not found: " + self.debug_adapter + " (it comes with Mojo; tools.debug_adapter names it)")
+            return
+        self.dbg_override_on = True
+        self.dbg_override_args = ("--only " + shell_quote(test_name)) if test_name.byte_length() > 0 else String("")
+        var dir = dirname(path)
+        var exe = join_path(dir, "build/" + stem(path) + ".debug")
+        var inner = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build -g -O0" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe)
+        var cmd = self.with_env(path, inner) + " 2>&1"
+        if self.start_job(JOB_DEBUG, cmd, path, exe):
+            self.panel_write(PG_MESSAGE)
+            _ = self.fill_messages(self.job_heading(), List[UInt8](), "Compiling test for debugging...")
+            self.say("Building " + basename(path) + (" (" + test_name + ")" if test_name.byte_length() > 0 else String("")) + " for debugging")
+        else:
+            self.dbg_override_on = False
+            self.dbg_override_args = ""
+
     def finish_debug_build(mut self, status: Int, secs: Float64) raises:
         if status != 0 or self.job.cancelled:
+            self.dbg_override_on = False
+            self.dbg_override_args = ""
             self.finish_build(status, secs)         # the messages, as for any build
             return
         self.panel_write(PG_MESSAGE)
@@ -129,6 +178,23 @@ __extension App:
         self.dbg_source = source
         var cmd = self.debug_adapter_command()
         var args = split_arguments(self.run_args)
+        var launch_cwd = dirname(source)
+        var launch_env = List[String]()
+        if self.dbg_override_on:
+            args = split_arguments(self.dbg_override_args)
+            self.dbg_override_on = False
+            self.dbg_override_args = ""
+        else:
+            self.run_configs_load()
+            for c in self.run_cfgs:
+                if c.name == self.run_active:
+                    if c.args.byte_length() > 0 or self.run_args.byte_length() == 0:
+                        args = split_arguments(c.args)
+                    if c.cwd.byte_length() > 0:
+                        launch_cwd = c.cwd if c.cwd.startswith("/") else join_path(self.symidx_root(), c.cwd)
+                    launch_env = c.env.copy()
+                    if c.gpu_sync:
+                        launch_env.append("MODULAR_DEVICE_CONTEXT_SYNC_MODE=true")
         # the breakpoints go to the adapter while it is being configured
         self.bp_sync()
         self.dbg.clear_config()
@@ -140,7 +206,7 @@ __extension App:
             self.dbg.set_config(f, "setBreakpoints", self.bps.source_request(f, extra))
         if len(self.bps.sent_functions()) > 0:
             self.dbg.set_config("", "setFunctionBreakpoints", self.bps.function_request())
-        if not self.dbg.begin(cmd, exe, dirname(source), args, log):
+        if not self.dbg.begin(cmd, exe, launch_cwd, args, log, launch_env):
             var why = self.dbg.error
             self.notify_as("debug", NL_ERROR, "The debugger did not start", why, True)
             self.say("The debugger did not start: " + why)
@@ -234,6 +300,68 @@ __extension App:
     def debug_mark_clear(mut self):
         for i in range(len(self.wins)):
             self.wins[i].buf.exec_row = -1
+            self.wins[i].dbg_inline_rows.clear()
+            self.wins[i].dbg_inline_vals.clear()
+
+    def debug_sync_inline_locals(mut self):
+        """Render top-level debugger locals inline at the end of lines in the stopped function."""
+        if not self.dbg.active() or self.dbg.state != DS_STOPPED or self.dbg.stop_file.byte_length() == 0 or self.dbg.stop_line <= 0:
+            return
+        var stop_r = self.dbg.stop_line - 1
+        for wi in range(len(self.wins)):
+            if self.wins[wi].kind != WK_EDITOR or self.wins[wi].path != self.dbg.stop_file:
+                continue
+            self.wins[wi].dbg_inline_rows.clear()
+            self.wins[wi].dbg_inline_vals.clear()
+            var nlines = self.wins[wi].buf.count()
+            if stop_r < 0 or stop_r >= nlines:
+                continue
+            var fn_start = max(0, stop_r - 80)
+            var r = stop_r
+            while r >= fn_start:
+                var ind = self.wins[wi].indent_of(r)
+                var rest = slice_str(self.wins[wi].buf.line(r), ind, self.wins[wi].buf.llen(r))
+                if rest.startswith("def ") or rest.startswith("fn "):
+                    fn_start = r
+                    break
+                r -= 1
+            for ni in range(len(self.dview.nodes)):
+                var nd = self.dview.nodes[ni].copy()
+                if nd.depth != 0 or nd.name.byte_length() == 0 or nd.name == "self" or nd.value.byte_length() == 0:
+                    continue
+                var n_cps = decode(nd.name)
+                var hit_row = -1
+                var scan_r = stop_r
+                while scan_r >= fn_start:
+                    var ln = self.wins[wi].buf.line(scan_r)
+                    var pos = find_cps(ln, n_cps, 0)
+                    while pos >= 0:
+                        var left_ok = pos == 0 or not is_ident(ln[pos - 1])
+                        var right_ok = pos + len(n_cps) >= len(ln) or not is_ident(ln[pos + len(n_cps)])
+                        if left_ok and right_ok:
+                            hit_row = scan_r
+                            break
+                        pos = find_cps(ln, n_cps, pos + 1)
+                    if hit_row >= 0:
+                        break
+                    scan_r -= 1
+                if hit_row < 0:
+                    continue
+                var val_str = nice_value(nd.value)
+                if cp_len(val_str) > 36:
+                    val_str = slice_str(decode(val_str), 0, 35) + "…"
+                var entry = nd.name + " = " + val_str
+                var existing = -1
+                for k in range(len(self.wins[wi].dbg_inline_rows)):
+                    if self.wins[wi].dbg_inline_rows[k] == hit_row:
+                        existing = k
+                        break
+                if existing >= 0:
+                    if cp_len(self.wins[wi].dbg_inline_vals[existing]) < 64:
+                        self.wins[wi].dbg_inline_vals[existing] = self.wins[wi].dbg_inline_vals[existing] + ", " + entry
+                else:
+                    self.wins[wi].dbg_inline_rows.append(hit_row)
+                    self.wins[wi].dbg_inline_vals.append("  // " + entry)
 
     def debug_step(mut self, kind: String) raises:
         """F7 / F8 / Shift-F8 while a program is stopped."""
@@ -760,6 +888,8 @@ __extension App:
                 for v in m.doc.children(m.doc.get(b, "variables")):
                     kids.append(VarNode(m.doc.str(m.doc.get(v, "name"), "?"), m.doc.str(m.doc.get(v, "type"), ""), m.doc.str(m.doc.get(v, "value"), ""), m.doc.int(m.doc.get(v, "variablesReference"), 0), m.doc.str(m.doc.get(v, "memoryReference"), ""), m.doc.str(m.doc.get(v, "evaluateName"), ""), 0, ""))
                 self.dview.put_children(path, kids^)
+                if path.byte_length() == 0:
+                    self.debug_sync_inline_locals()
                 # nodes that were open at the last stop open again
                 for w in self.dview.wanted():
                     self.dview.nodes[w].open = True     # (asked for once)
@@ -1049,6 +1179,7 @@ __extension App:
         self.cpu_scope_seq = -1
         self.cpu_set_seq = -1
         self.cpu_reg_seq = -1
+        self.cpu_vreg_seq = -1
         self.cpu_mem_seq = -1
         self.cpuwin_show()
 
@@ -1089,13 +1220,18 @@ __extension App:
         elif m.request_seq == self.cpu_set_seq:
             self.cpu_set_seq = -1
             var sets = m.doc.children(m.doc.get(b, "variables"))
+            var gen_found = False
+            var vec_found = False
             for s in sets:
-                # the general purpose set (the first one, by any name)
                 var name = m.doc.str(m.doc.get(s, "name"), "")
-                if name.find("General") >= 0 or s == sets[0]:
-                    self.cpu_reg_seq = self.dbg.ask("variables", "{\"variablesReference\":" + String(m.doc.int(m.doc.get(s, "variablesReference"), 0)) + "}")
+                var vref = m.doc.int(m.doc.get(s, "variablesReference"), 0)
+                if not gen_found and (name.find("General") >= 0 or s == sets[0]):
+                    self.cpu_reg_seq = self.dbg.ask("variables", "{\"variablesReference\":" + String(vref) + "}")
                     if name.find("General") >= 0:
-                        break
+                        gen_found = True
+                if not vec_found and name.find("General") < 0 and (name.find("Vector") >= 0 or name.find("SIMD") >= 0 or name.find("Floating") >= 0):
+                    self.cpu_vreg_seq = self.dbg.ask("variables", "{\"variablesReference\":" + String(vref) + "}")
+                    vec_found = True
         elif m.request_seq == self.cpu_reg_seq:
             self.cpu_reg_seq = -1
             var names = List[String]()
@@ -1104,6 +1240,8 @@ __extension App:
                 names.append(m.doc.str(m.doc.get(v, "name"), ""))
                 values.append(m.doc.str(m.doc.get(v, "value"), ""))
             self.cpu.set_regs(names, values)
+            if self.cpu_vreg_seq < 0 and len(self.cpu.vregs) == 0:
+                self.cpu.set_vregs(names, values)
             if self.cpu.mem_address < 0:
                 # memory starts where the stack is
                 var sp = self.cpu.register("sp")
@@ -1112,6 +1250,14 @@ __extension App:
                 if sp >= 0:
                     self.cpu.mem_address = sp
                     self.cpu_read_memory()
+        elif m.request_seq == self.cpu_vreg_seq:
+            self.cpu_vreg_seq = -1
+            var vnames = List[String]()
+            var vvalues = List[String]()
+            for v in m.doc.children(m.doc.get(b, "variables")):
+                vnames.append(m.doc.str(m.doc.get(v, "name"), ""))
+                vvalues.append(m.doc.str(m.doc.get(v, "value"), ""))
+            self.cpu.set_vregs(vnames, vvalues)
         elif m.request_seq == self.cpu_mem_seq:
             self.cpu_mem_seq = -1
             self.cpu.mem = base64_decode(m.doc.str(m.doc.get(b, "data"), ""))
@@ -1135,7 +1281,12 @@ __extension App:
         return True
 
     def cpuwin_key(mut self, k: Int):
-        """G: memory at an address or a variable; + / -: the next / previous 128 bytes."""
+        """G: memory at an address or a variable; + / -: next / previous 128 bytes; V: SIMD lanes."""
+        if k == 118 or k == 86:
+            var m = self.cpu.cycle_simd_mode()
+            self.cpuwin_show()
+            self.say("SIMD lanes: " + m)
+            return
         if k == 43 or k == 45:
             if self.cpu.mem_address < 0:
                 return

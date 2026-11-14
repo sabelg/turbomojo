@@ -9,9 +9,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 T="tmux -L turbomojo-test"
+ENV_PATH="$PWD/.pixi/envs/default/bin:$PATH"
 case "${1:-}" in
   start) shift; $T kill-server 2>/dev/null && sleep 0.5 || true
-         $T new-session -d -s ide -x "${COLS:-100}" -y "${ROWS:-30}" "XDG_STATE_HOME=$PWD/build/state XDG_CONFIG_HOME=${TM_CONFIG_HOME:-$PWD/build/config-none} pixi run ./build/tmide $*; sleep 60"
+         $T new-session -d -s ide -x "${COLS:-100}" -y "${ROWS:-30}" "PATH=\"$ENV_PATH\" MODULAR_HOME=\"$PWD/.pixi/envs/default/share/max\" XDG_STATE_HOME=$PWD/build/state XDG_CONFIG_HOME=${TM_CONFIG_HOME:-$PWD/build/config-none} ./build/tmide $*; sleep 60"
          sleep 2 ;;
   keys)  shift; $T send-keys -t ide "$@"; sleep "${WAIT:-0.6}" ;;
   shot)  $T capture-pane -t ide -p ;;

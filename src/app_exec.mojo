@@ -54,6 +54,7 @@ from app_setup import *
 from app_presets import *
 from app_report import *
 from app_gpu import *
+from app_codegen import *
 from app_plugins import *
 from plugins import CM_PLUGIN0
 from tips import TK_FIND
@@ -67,7 +68,7 @@ from app_vim import *
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
@@ -210,6 +211,7 @@ __extension App:
         if trust_needed(cmd) and not self.trust_gate(cmd):
             return                      # the question is on screen; the command runs after a yes
         self.exec_command(cmd)
+        self.sync_shared_buffers()
         # Options are remembered across sessions
         if cmd == CM_LINENUM:
             self.persist_option("ui", "line_numbers", toml_bool(self.line_numbers))
@@ -221,6 +223,10 @@ __extension App:
             self.persist_option("ui", "clock", toml_bool(self.show_clock))
         elif cmd == CM_GPU_STATUS:
             self.persist_option("ui", "gpu_status", toml_bool(self.gpu_status_on))
+        elif cmd == CM_GIT_LINEBLAME:
+            self.persist_option("ui", "line_blame", toml_bool(self.git_line_blame))
+        elif cmd == CM_FORMAT_SAVE:
+            self.persist_option("editor", "format_on_save", toml_bool(self.format_on_save))
         elif cmd == CM_SHOWWS:
             self.persist_option("ui", "show_whitespace", toml_bool(self.show_ws))
         elif cmd == CM_WRAP:
@@ -348,6 +354,8 @@ __extension App:
             self.sig_command()
         elif cmd == CM_DEFINITION:
             self.definition_command()
+        elif cmd == CM_TYPEDEF:
+            self.type_definition_command()
         elif cmd == CM_REFERENCES:
             self.references_command()
         elif cmd == CM_ACTIONS:
@@ -427,6 +435,8 @@ __extension App:
             self.ex_check()
         elif cmd == CM_FINDFILES:
             self.open_find_files()
+        elif cmd == CM_REPLACEFILES:
+            self.open_replace_files()
         elif cmd == CM_AGAIN:
             self.find_again()
         elif cmd == CM_GOTO:
@@ -458,6 +468,8 @@ __extension App:
             self.run_program(False)
         elif cmd == CM_TEST:
             self.run_program(True)
+        elif cmd == CM_TEST_CURSOR:
+            self.test_at_cursor()
         elif cmd == CM_DEBUG:
             self.debug_command()
         elif cmd == CM_STEP_INTO:
@@ -481,6 +493,12 @@ __extension App:
             self.eval_dialog("", List[String]())
         elif cmd == CM_GIT_DIFF:
             self.git_diff_open(False)
+        elif cmd == CM_GIT_STATUS:
+            self.git_status_open()
+        elif cmd == CM_GIT_STASH:
+            self.git_stash(False)
+        elif cmd == CM_GIT_STASH_POP:
+            self.git_stash(True)
         elif cmd == CM_GIT_STAGED:
             self.git_diff_open(True)
         elif cmd == CM_GIT_STAGE or cmd == CM_GIT_REVERT:
@@ -557,6 +575,8 @@ __extension App:
             self.docs_fetch_ask()
         elif cmd == CM_TRUST:
             self.trust_dialog(0)
+        elif cmd == CM_PIXI_ENV:
+            self.pixi_env_dialog()
         elif cmd == CM_RUNCONFIGS:
             self.run_configs_dialog()
         elif cmd == CM_TASKS:
@@ -584,6 +604,12 @@ __extension App:
             self.build()
         elif cmd == CM_FORMAT:
             self.format_file()
+        elif cmd == CM_CODEGEN:
+            self.codegen_open()
+        elif cmd == CM_GPU_PROFILE:
+            self.gpu_profile_command()
+        elif cmd == CM_GPU_WIN:
+            self.gpuwin_toggle()
         elif cmd == CM_NEXTERR:
             self.goto_error(1)
         elif cmd == CM_PREVERR:
@@ -604,6 +630,18 @@ __extension App:
             self.gpu_status_on = not self.gpu_status_on
             self.gpu_asked = False if not self.gpu_status_on else self.gpu_asked
             self.gpu_start()
+        elif cmd == CM_GIT_LINEBLAME:
+            self.git_line_blame = not self.git_line_blame
+            if not self.git_line_blame:
+                self.git_inline_path = ""
+                self.git_inline_ver = -1
+                self.git_inline_rows.clear()
+            else:
+                self.git_tick(now_ns())
+            self.say("Inline line blame " + ("on" if self.git_line_blame else "off"))
+        elif cmd == CM_FORMAT_SAVE:
+            self.format_on_save = not self.format_on_save
+            self.say("Format on save " + ("on" if self.format_on_save else "off"))
         elif cmd == CM_SHOWWS:
             self.show_ws = not self.show_ws
         elif cmd == CM_SEMANTIC:
@@ -677,6 +715,8 @@ __extension App:
                 self.arrange(cmd == CM_TILE)
         elif cmd >= CM_TILED and cmd <= CM_PANE_SHRINK:
             self.layout_command(cmd)
+        elif cmd == CM_CLONE_VIEW:
+            self.clone_editor_view(True)
         elif cmd == CM_NEXTWIN or cmd == CM_PREVWIN:
             self.next_window(cmd == CM_NEXTWIN)
         elif cmd == CM_MESSAGE or cmd == CM_SEARCHRES or cmd == CM_PROBLEMS:

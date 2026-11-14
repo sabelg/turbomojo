@@ -63,6 +63,8 @@ comptime D_AGENT_FILE = 54      # @file completion in the agent prompt
 comptime D_DOC_PAGEFIND = 55    # Ctrl-F in the documentation reader: find on this page
 comptime D_DOC_HEADINGS = 56    # g / @ in the documentation reader: headings on this page
 comptime D_PUZZLE_ENV = 57      # install the GPU puzzles' pixi environment before checking
+comptime D_REPLACEFILES = 58    # Search > Replace in files...
+comptime D_PIXI_ENV = 59        # Options > Pixi environment...
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

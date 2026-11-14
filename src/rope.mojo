@@ -413,8 +413,33 @@ struct Rope(Copyable, Movable):
         """Codepoint at character offset i (-1 if out of range)."""
         if i < 0 or i >= self.len_chars():
             return -1
-        var cps = self.slice(i, i + 1)
-        return cps[0] if len(cps) > 0 else -1
+        var node = self.root
+        var rem = i
+        while not self.leaf[node]:
+            var next = -1
+            for k in self.kids[node]:
+                var c = self.s_chars[k]
+                if rem < c:
+                    next = k
+                    break
+                rem -= c
+            if next < 0:
+                return -1
+            node = next
+        var bp = self.byte_pos(node, rem)
+        var n = len(self.data[node])
+        if bp >= n:
+            return -1
+        var b0 = Int(self.data[node][bp])
+        if b0 < 0x80:
+            return b0
+        if (b0 & 0xE0) == 0xC0 and bp + 1 < n:
+            return ((b0 & 0x1F) << 6) | (Int(self.data[node][bp + 1]) & 0x3F)
+        if (b0 & 0xF0) == 0xE0 and bp + 2 < n:
+            return ((b0 & 0x0F) << 12) | ((Int(self.data[node][bp + 1]) & 0x3F) << 6) | (Int(self.data[node][bp + 2]) & 0x3F)
+        if (b0 & 0xF8) == 0xF0 and bp + 3 < n:
+            return ((b0 & 0x07) << 18) | ((Int(self.data[node][bp + 1]) & 0x3F) << 12) | ((Int(self.data[node][bp + 2]) & 0x3F) << 6) | (Int(self.data[node][bp + 3]) & 0x3F)
+        return 0xFFFD
 
     # ------------------------------------------------------------------ lines
     def line_start(self, row: Int) -> Int:

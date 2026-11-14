@@ -6,7 +6,7 @@ from app import *
 from appstate import App, M_NORMAL
 from window import WK_EDITOR, WK_MESSAGE
 from commands import (
-    CM_TILED, CM_SPLIT_RIGHT, CM_SPLIT_DOWN, CM_NEXT_PANE, CM_NEXT_TAB, CM_PREV_TAB, CM_MOVE_TAB,
+    CM_TILED, CM_SPLIT_RIGHT, CM_SPLIT_DOWN, CM_CLONE_VIEW, CM_CLOSE, CM_NEXT_PANE, CM_NEXT_TAB, CM_PREV_TAB, CM_MOVE_TAB,
     CM_PANE_GROW, CM_PANE_SHRINK, CM_TILE, CM_ZOOM, CM_MESSAGE, CM_OUTLINE, CM_NEXTWIN, CM_NEW, build_registry,
 )
 from config import load_settings
@@ -290,6 +290,36 @@ def test_switching_layouts_and_the_setting() raises:
     empty.exec(CM_NEW)
     empty.layout_sync()
     assert_equal(place(empty, front(empty)), "0,1 80x22")
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_shared_split_view_syncs_edits_and_keeps_independent_cursors() raises:
+    var dir = scratch("t8")
+    var app = tiled_app(dir, 1)
+    app.wins[app.top_editor()].buf.load(decode("line 0\nline 1\nline 2\nline 3\n"))
+    app.wins[app.top_editor()].buf.modified = False
+    app.wins[app.top_editor()].sync_ver = app.wins[app.top_editor()].buf.version
+    app.wins[app.top_editor()].goto(3, 2)
+    app.exec(CM_CLONE_VIEW)
+    assert_equal(len(app.lay.groups()), 2)
+    var right_idx = app.top_editor()
+    app.wins[right_idx].goto(0, 0)
+    # Insert text in the right view: the left view's buffer updates while keeping its cursor row shifted cleanly
+    app.handle(key_event(88))                            # 'X' at (0, 0)
+    var views = List[Int]()
+    for i in range(len(app.wins)):
+        if app.wins[i].kind == WK_EDITOR and app.wins[i].title == "a.mojo":
+            views.append(i)
+    assert_equal(len(views), 2)
+    assert_equal(to_str(app.wins[views[0]].buf.line(0)), "Xline 0")
+    assert_equal(to_str(app.wins[views[1]].buf.line(0)), "Xline 0")
+    assert_true(app.wins[views[0]].cr != app.wins[views[1]].cr, "independent cursor rows")
+    # Closing one view while modified does not open Save? because the sibling view still holds the buffer
+    app.exec(CM_CLOSE)
+    app.layout_sync()
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(len(app.lay.groups()), 1)
+    assert_equal(to_str(app.wins[app.top_editor()].buf.line(0)), "Xline 0")
     _ = run_system("rm -rf '" + dir + "'")
 
 

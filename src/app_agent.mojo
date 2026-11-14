@@ -262,7 +262,7 @@ __extension App:
         if len(self.agent_perms) == 0:
             return
         var e = self.agent_perms.pop(0)
-        var opt = String("")
+        var opt: String
         if how == 0:
             opt = option_of(e.option_kinds, e.option_ids, "reject_once")
             if opt.byte_length() == 0:

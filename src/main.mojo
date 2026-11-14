@@ -36,6 +36,8 @@ FOLDER opens the Open dialog there.
                   (also when TERM=dumb; for screen readers and Emacs shells)
   --warm-docs [FOLDER]
                   pre-build the standard library Markdown pages and search cache
+  --completions bash|zsh|fish
+                  print shell completion script for tmide
 
 Configuration: ~/.config/turbomojo/config.toml (Options writes there).
 Documentation: Help (Alt-H) inside TurboMojo."""
@@ -105,6 +107,49 @@ def screenshot(mut app: App, args: List[String]) raises -> Int:
     return 0
 
 
+def shell_completions(sh: String) -> String:
+    if sh == "bash":
+        return (
+            "_tmide() {\n"
+            "  local cur=\"${COMP_WORDS[COMP_CWORD]}\"\n"
+            "  if [[ \"$cur\" == -* ]]; then\n"
+            "    COMPREPLY=( $(compgen -W \"-h --help -V --version --keys --strings --caps --lines --screenshot --warm-docs --completions\" -- \"$cur\") )\n"
+            "  else\n"
+            "    COMPREPLY=( $(compgen -f -- \"$cur\") )\n"
+            "  fi\n"
+            "}\n"
+            "complete -F _tmide tmide\n"
+        )
+    if sh == "zsh":
+        return (
+            "#compdef tmide\n"
+            "_arguments \\\n"
+            "  '(-h --help)'{-h,--help}'[Show help]' \\\n"
+            "  '(-V --version)'{-V,--version}'[Show version]' \\\n"
+            "  '--keys[Print keymap reference]' \\\n"
+            "  '--strings[Print translatable UI strings]' \\\n"
+            "  '--caps[Probe terminal capabilities]' \\\n"
+            "  '--lines[Line-oriented screen-reader mode]' \\\n"
+            "  '--screenshot[Render SVG screenshot]:output file:_files' \\\n"
+            "  '--warm-docs[Pre-build documentation index]:docs folder:_files -/' \\\n"
+            "  '--completions[Print shell completions]:shell:(bash zsh fish)' \\\n"
+            "  '*:file:_files'\n"
+        )
+    if sh == "fish":
+        return (
+            "complete -c tmide -s h -l help -d 'Show help'\n"
+            "complete -c tmide -s V -l version -d 'Show version'\n"
+            "complete -c tmide -l keys -d 'Print keymap reference'\n"
+            "complete -c tmide -l strings -d 'Print translatable UI strings'\n"
+            "complete -c tmide -l caps -d 'Probe terminal capabilities'\n"
+            "complete -c tmide -l lines -d 'Line-oriented screen-reader mode'\n"
+            "complete -c tmide -l screenshot -r -d 'Render SVG screenshot'\n"
+            "complete -c tmide -l warm-docs -d 'Pre-build documentation index'\n"
+            "complete -c tmide -l completions -xa 'bash zsh fish' -d 'Print shell completions'\n"
+        )
+    return ""
+
+
 def main() raises:
     var pre = argv()
     if len(pre) == 2 and (String(pre[1]) == "--version" or String(pre[1]) == "-V"):
@@ -119,6 +164,13 @@ def main() raises:
     if len(pre) == 2 and String(pre[1]) == "--strings":
         # the UI's English words as a strings file to translate (see src/strings.mojo)
         print(strings_template(build_registry()), end="")
+        return
+    if len(pre) == 3 and String(pre[1]) == "--completions":
+        var comp = shell_completions(String(pre[2]))
+        if comp.byte_length() == 0:
+            print("usage: tmide --completions bash|zsh|fish")
+            external_call["exit", NoneType](Int32(2))
+        print(comp, end="")
         return
     var app = App()
     app.strings_dir = config_home() + "/strings"

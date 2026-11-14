@@ -9,7 +9,10 @@ from util import *
 from dialog import *
 from project import find_up
 from version import MOJO_BUILT_WITH
-from newproject import np_name_problem, np_platform, np_mojo_spec, np_files
+from newproject import (
+    np_name_problem, np_platform, np_mojo_spec, np_files, np_template_names,
+    NP_TMPL_EXEC,
+)
 from app_jobs import *
 from app_files import *
 from app_notify import *
@@ -48,17 +51,24 @@ __extension App:
         return d
 
     def new_project_dialog(mut self, welcome: Bool = False):
-        var d = Dialog(D_NEW_PROJECT, "Welcome - New Mojo Project" if welcome else "New Project", min(70, self.scr.w - 4), 11)
+        var d = Dialog(D_NEW_PROJECT, "Welcome - New Mojo Project" if welcome else "New Project", min(72, self.scr.w - 4), 16)
         if welcome:
             d.lines.append("There is no Mojo project in this folder. Make one?")
-        d.lines.append("Writes a pixi.toml with Mojo, hello.mojo and a test.")
-        d.lines.append("Then `pixi install` gets Mojo. The folder names the project.")
+        d.lines.append("Choose a template and folder; `pixi install` fetches its dependencies.")
         d.fields.append(Field("~F~older", self.np_default_folder()))
+        var tmpls = np_template_names()
+        var tdata = List[Int]()
+        for k in range(len(tmpls)):
+            tdata.append(k)
+        d.has_list = True
+        d.list_filter = False
+        d.set_items(tmpls^, tdata^)
+        d.list_sel = 0
         d.buttons.append("~C~reate")
         d.buttons.append("Cancel")
         self.show(d^)
 
-    def new_project_create(mut self, folder: String) raises -> Bool:
+    def new_project_create(mut self, folder: String, template: Int = NP_TMPL_EXEC) raises -> Bool:
         """Write the project in `folder` (relative to where the IDE works) and open it;
         False (and why, in a message box) when it cannot be made there."""
         var f = String(folder.strip())
@@ -88,10 +98,14 @@ __extension App:
             self.info("New Project", "Could not make the folder " + dir)
             return False
         var machine = String(bytes_to_str(run_capture("uname -sm 2>/dev/null").out).strip())
-        var files = np_files(name, np_platform(machine), np_mojo_spec(MOJO_BUILT_WITH))
+        var files = np_files(name, np_platform(machine), np_mojo_spec(MOJO_BUILT_WITH), template)
         for k in range(0, len(files), 2):
-            if not write_file(join_path(dir, files[k]), str_bytes(files[k + 1])):
-                self.info("New Project", "Could not write " + join_path(dir, files[k]))
+            var dst = join_path(dir, files[k])
+            var parent = dirname(dst)
+            if parent != dir and not is_dir(parent):
+                _ = run_system("mkdir -p " + shell_quote(parent))
+            if not write_file(dst, str_bytes(files[k + 1])):
+                self.info("New Project", "Could not write " + dst)
                 return False
         # the IDE now works in the project: its tasks, explorer and language server
         var cz = dir.copy()
@@ -105,8 +119,10 @@ __extension App:
             self.ex.set_root(self.symidx_root())
             self.explorer_show()
         # (an untouched NONAME window in front gives its place to the first: open_path)
-        self.open_path(join_path(dir, "test_hello.mojo"))
-        self.open_path(join_path(dir, "hello.mojo"))
+        if len(files) >= 6:
+            self.open_path(join_path(dir, files[4]))
+        if len(files) >= 4:
+            self.open_path(join_path(dir, files[2]))
         self.np_install(dir)
         return True
 

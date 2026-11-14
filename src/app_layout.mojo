@@ -13,7 +13,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, WK_AGENT, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -102,16 +102,15 @@ __extension App:
             if xi0 >= 0:
                 y0 = self.wins[xi0].y + self.wins[xi0].h
             var bottom = 1 + h
-            for k in [self.outline_index(), self.docpane_index()]:
-                if k >= 0:
+            for k in range(len(self.wins)):
+                var wk = self.wins[k].kind
+                if (wk == WK_OUTLINE or wk == WK_DOCPANE or wk == WK_AGENT or wk == WK_PANEL) and self.wins[k].stacked:
                     bottom = min(bottom, self.wins[k].y)
-            h = bottom - y0
-        var oi = self.outline_index()
-        if oi >= 0 and self.wins[oi].x >= 20 and not self.wins[oi].stacked:
-            w = self.wins[oi].x
-        var dpi = self.docpane_index()
-        if dpi >= 0 and self.wins[dpi].x >= 20 and self.wins[dpi].x < w and not self.wins[dpi].stacked:
-            w = self.wins[dpi].x
+            h = max(4, bottom - y0)
+        for k in range(len(self.wins)):
+            var wk = self.wins[k].kind
+            if (wk == WK_OUTLINE or wk == WK_DOCPANE or wk == WK_AGENT or wk == WK_PANEL or wk == WK_GIT or wk == WK_GPU or wk == WK_CODEGEN) and self.wins[k].x >= 20 and self.wins[k].x < w and not self.wins[k].stacked:
+                w = self.wins[k].x
         var x0 = 0
         var xi = self.explorer_index()
         if xi >= 0 and w - self.wins[xi].w >= 20 and not self.wins[xi].stacked:

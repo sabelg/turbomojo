@@ -1039,7 +1039,7 @@ def test_without_a_server_word_completion_is_unchanged() raises:
     app.wins[i].goto(1, 2)
     app.exec(CM_COMPLETE)
     assert_equal(app.mode, M_COMPLETE)
-    assert_equal(labels(app), "alphabet alpine alias alignof all ")     # then keywords and builtins
+    assert_equal(labels(app), "alphabet alpine alias alignof all alloc ")     # then keywords and builtins
     assert_equal(app.comp_kind[0], -1)
     app.handle(key_event(KEY_ENTER))
     assert_equal(to_str(app.wins[i].buf.line(1)), "alphabet")

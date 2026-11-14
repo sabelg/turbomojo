@@ -1,20 +1,20 @@
   ≡  File  Edit  Text  Search  Run  Compile  Options  Window
-                              ┌──────────────────────────┐
-                              │√Line numbers             │
-                              │ Relative numbers         │
-                              │ Auto indent              │
-                              │ Highlight line           │
-                              │ Clock                    │
-                              │ GPU in the status line   │
-                              │ Show whitespace          │
-                              │ Soft wrap          Alt-Z │
-                              │ Semantic colours         │
-                              │ Quiet code colours       │
-                              │ Inlay hints              │
-                              │ Indent with tabs         │
-                              │ CRLF line endings        │
-                              ├──────────────────────────┤
-                              │ Keys: Modern             │
-                              │ Keys: Turbo / WordStar   │
-                              └────────────────────────▼─┘
+                            ┌────────────────────────────┐
+                            │√Line numbers               │
+                            │ Relative numbers           │
+                            │ Auto indent                │
+                            │ Highlight line             │
+                            │ Clock                      │
+                            │ GPU in the status line     │
+                            │ Inline year/author blame   │
+                            │ Show whitespace            │
+                            │ Soft wrap            Alt-Z │
+                            │ Semantic colours           │
+                            │ Quiet code colours         │
+                            │ Inlay hints                │
+                            │ Indent with tabs           │
+                            │ CRLF line endings          │
+                            ├────────────────────────────┤
+                            │ Keys: Modern               │
+                            └──────────────────────────▼─┘
 

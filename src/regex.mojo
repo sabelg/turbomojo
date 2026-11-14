@@ -145,7 +145,7 @@ def complement(r: List[Int]) -> List[Int]:
 
 def shorthand(c: Int) -> List[Int]:
     """Ranges for \\d \\w \\s (lower case letter) or their complements (upper case)."""
-    var r = List[Int]()
+    var r: List[Int]
     var k = c | 32
     if k == 100:        # d
         r = [48, 57]

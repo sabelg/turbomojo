@@ -53,6 +53,7 @@ __extension App:
         self.wins[i].sync_want()
         self.wins[i].buf.modified = False
         self.note_disk_state(i)
+        self.sync_shared_buffers(i)
 
     def ask_changed(mut self, i: Int):
         var d = Dialog(D_CHANGED, "File changed on disk", 60, 10)

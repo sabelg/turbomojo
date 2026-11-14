@@ -87,6 +87,12 @@ __extension App:
             if self.panel_window(pi) < 0:
                 self.panel_remove(pi, True)
             pi -= 1
+        var te = self.top_editor()
+        var cur_path = self.wins[te].path if te >= 0 else String("")
+        if cur_path != self.plugin_focused_path:
+            self.plugin_focused_path = cur_path
+            if cur_path.byte_length() > 0:
+                self.plugins_event("focus", cur_path)
         for k in range(len(self.plugins)):
             if self.plugins[k].state == PL_STOPPED:
                 continue
@@ -158,7 +164,8 @@ __extension App:
                 self.plugins[k].conn.respond(m.id_json, "null")
         elif m.method == "status/set":
             var t = d.str(d.get(p, "text"), "")
-            self.plugins[k].status = String(t[byte=0:min(t.byte_length(), 40)]) if t.byte_length() > 40 else t
+            var cps = decode(t)
+            self.plugins[k].status = slice_str(cps, 0, 40) if len(cps) > 40 else t
             if answer:
                 self.plugins[k].conn.respond(m.id_json, "null")
         elif m.method == "editor/get":

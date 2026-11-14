@@ -106,7 +106,7 @@ __extension App:
                 self.wins[i].w = x - self.wins[i].x
         self.wins.append(win^)
         self.tests_scan()
-        self.say("Tests: Enter goes to a test or its failure, R runs, A runs all, L asks the programs for their tests")
+        self.say("Tests: Enter goes to a test, R runs, D debugs, A runs all, L lists tests")
 
     def tests_scan(mut self):
         """Find the project's test files (programs that run a TestSuite) and their
@@ -140,7 +140,81 @@ __extension App:
         self.test_files = found^
         self.tests_show()
 
+    def tests_sync_lens(mut self):
+        """Populate inline gutter test markers (`▷`/`✓`/`✗`) on open TestSuite buffers."""
+        for wi in range(len(self.wins)):
+            if self.wins[wi].kind != WK_EDITOR:
+                continue
+            self.wins[wi].test_lens_rows.clear()
+            self.wins[wi].test_lens_states.clear()
+            if self.wins[wi].path.byte_length() == 0 or self.wins[wi].buf.large or not is_mojo_file(self.wins[wi].path):
+                continue
+            var src = bytes_to_str(self.wins[wi].buf.text_bytes())
+            if not is_test_source(src):
+                continue
+            var fi = -1
+            for k in range(len(self.test_files)):
+                if self.test_files[k].path == self.wins[wi].path:
+                    fi = k
+                    break
+            for tname in test_names(src):
+                var dline = def_line(src, tname)
+                if dline <= 0:
+                    continue
+                var st = 1
+                if fi >= 0:
+                    var tk = self.test_files[fi].find(tname)
+                    if tk >= 0:
+                        if self.test_files[fi].tests[tk].state == TS_PASS:
+                            st = 2
+                        elif self.test_files[fi].tests[tk].state == TS_FAIL:
+                            st = 3
+                self.wins[wi].test_lens_rows.append(dline - 1)
+                self.wins[wi].test_lens_states.append(st)
+
+    def test_at_cursor(mut self) raises:
+        """Run > Quick-run test at cursor: find enclosing `def test_*` and run `--only <name>`."""
+        var ai = self.active_editor()
+        if ai < 0 or self.wins[ai].path.byte_length() == 0:
+            self.say("Open and save a test file first")
+            return
+        if not self.ensure_saved(ai):
+            return
+        var path = String(self.wins[ai].path)
+        var src = bytes_to_str(self.wins[ai].buf.text_bytes())
+        if not is_test_source(src):
+            self.exec(CM_TEST)
+            return
+        var best_name = String("")
+        var best_row = -1
+        for tname in test_names(src):
+            var dl = def_line(src, tname) - 1
+            if dl >= 0 and dl <= self.wins[ai].cr and dl >= best_row:
+                best_row = dl
+                best_name = tname
+        var fi = -1
+        for k in range(len(self.test_files)):
+            if self.test_files[k].path == path:
+                fi = k
+                break
+        if fi < 0:
+            self.tests_scan()
+            for k in range(len(self.test_files)):
+                if self.test_files[k].path == path:
+                    fi = k
+                    break
+        if fi < 0:
+            self.exec(CM_TEST)
+            return
+        var files = List[Int]()
+        files.append(fi)
+        var only = List[String]()
+        if best_name.byte_length() > 0:
+            only.append(best_name)
+        self.tests_start(files, only, False)
+
     def tests_show(mut self):
+        self.tests_sync_lens()
         var ti = self.tests_index()
         if ti < 0:
             return
@@ -221,6 +295,14 @@ __extension App:
             self.test_target_test = tk
             self.exec(CM_TEST_RUN)
             return True
+        if k == 100 or k == 68:             # D: debug this test or file
+            if fi >= 0 and fi < len(self.test_files):
+                var tpath = String(self.test_files[fi].path)
+                var tname = String(self.test_files[fi].tests[tk].name) if tk >= 0 and tk < len(self.test_files[fi].tests) else String("")
+                if not self.trust_gate(CM_DEBUG):
+                    return True
+                self.debug_test(tpath, tname)
+            return True
         if k == 97 or k == 65:              # A
             self.exec(CM_TEST_RUN_ALL)
             return True
@@ -270,15 +352,16 @@ __extension App:
         """One shell command for several files, each marked "### <path>" in the output."""
         var cmd = String("")
         for fi in files:
-            var p = self.test_files[fi].path
-            cmd += "echo " + shell_quote("### " + p) + "; (cd " + shell_quote(dirname(p)) + " && exec " + self.compiler_cmd() + " run" + self.include_flags() + " " + shell_quote(p)
+            var p = String(self.test_files[fi].path)
+            var flags = String("")
             if list_only:
-                cmd += " --skip-all"
+                flags = " --skip-all"
             elif len(only) > 0:
-                cmd += " --only"
+                flags = " --only"
                 for n in only:
-                    cmd += " " + shell_quote(n)
-            cmd += ") 2>&1; "
+                    flags += " " + shell_quote(n)
+            var inner = "cd " + shell_quote(dirname(p)) + " && exec " + self.mojo_for(p) + " run" + self.include_flags() + " " + shell_quote(p) + flags
+            cmd += "echo " + shell_quote("### " + p) + "; (" + self.with_env(p, inner) + ") 2>&1; "
         return cmd + "echo '### end'"
 
     def tests_start(mut self, files: List[Int], only: List[String], list_only: Bool) raises:

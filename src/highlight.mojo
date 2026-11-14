@@ -1,5 +1,5 @@
 """Mojo syntax highlighter (line-based with triple-quoted string state)."""
-from std.collections import List
+from std.collections import List, Dict
 from util import is_digit, is_alpha, is_ident, slice_str
 
 comptime C_TEXT = 0
@@ -34,6 +34,9 @@ def line_state(b: List[UInt8], start: Int, end: Int, state: Int) -> Int:
         var found = -1
         var j = start
         while j + 2 < end:
+            if Int(b[j]) == 92:
+                j += 2
+                continue
             if Int(b[j]) == q and Int(b[j + 1]) == q and Int(b[j + 2]) == q:
                 found = j
                 break
@@ -41,7 +44,6 @@ def line_state(b: List[UInt8], start: Int, end: Int, state: Int) -> Int:
         if found < 0:
             return st
         i = found + 3
-        st = 0
     while i < end:
         var c = Int(b[i])
         if c == 35:
@@ -51,6 +53,9 @@ def line_state(b: List[UInt8], start: Int, end: Int, state: Int) -> Int:
                 var j = i + 3
                 var found = -1
                 while j + 2 < end:
+                    if Int(b[j]) == 92:
+                        j += 2
+                        continue
                     if Int(b[j]) == c and Int(b[j + 1]) == c and Int(b[j + 2]) == c:
                         found = j
                         break
@@ -101,6 +106,7 @@ struct Highlighter(Movable):
     var kws: List[String]
     var types: List[String]
     var builtins: List[String]
+    var class_map: Dict[String, Int]
 
     def __init__(out self):
         self.kws = words(
@@ -116,12 +122,21 @@ struct Highlighter(Movable):
             " Copyable Movable ImplicitlyCopyable Writable Stringable Representable Hashable EqualityComparable"
             " Comparable Sized Boolable Intable Absable AnyType NoneType Self Codepoint InlineArray"
             " LayoutTensor Layout IndexList Writer Origin MutOrigin ImmutOrigin Iterator ArcPointer OwnedPointer"
+            " TileTensor DeviceContext Allocation OptionalPointer Equatable TrivialRegisterPassable RegisterPassable"
         )
         self.builtins = words(
             "print len range min max abs round String Int str ord chr isinstance input open rebind"
             " constrained debug_assert external_call parallelize vectorize sizeof alignof bitcast"
-            " atol atof hash iter next enumerate zip reversed sorted sum any all"
+            " atol atof hash iter next enumerate zip reversed sorted sum any all dealloc alloc"
         )
+        self.class_map = Dict[String, Int]()
+        for w in self.builtins:
+            self.class_map[w] = C_BUILTIN
+        for w in self.types:
+            self.class_map[w] = C_TYPE
+        for w in self.kws:
+            self.class_map[w] = C_KW
+        self.class_map["self"] = C_SELF
 
     def has(self, lst: List[String], w: String) -> Bool:
         for x in lst:
@@ -130,15 +145,7 @@ struct Highlighter(Movable):
         return False
 
     def classify(self, w: String) -> Int:
-        if w == "self":
-            return C_SELF
-        if self.has(self.kws, w):
-            return C_KW
-        if self.has(self.types, w):
-            return C_TYPE
-        if self.has(self.builtins, w):
-            return C_BUILTIN
-        return C_TEXT
+        return self.class_map.get(w, C_TEXT)
 
     def line(self, cps: List[Int], state: Int, mut cls: List[Int]) -> Int:
         """Fill `cls` with a class per codepoint; returns the state for the next line.
@@ -154,6 +161,9 @@ struct Highlighter(Movable):
             var j = 0
             var found = -1
             while j + 2 < n + 0:
+                if cps[j] == 92:
+                    j += 2
+                    continue
                 if cps[j] == q and cps[j + 1] == q and cps[j + 2] == q:
                     found = j
                     break
@@ -178,6 +188,9 @@ struct Highlighter(Movable):
                     var j = i + 3
                     var found = -1
                     while j + 2 < n:
+                        if cps[j] == 92:
+                            j += 2
+                            continue
                         if cps[j] == c and cps[j + 1] == c and cps[j + 2] == c:
                             found = j
                             break

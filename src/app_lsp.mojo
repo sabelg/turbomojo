@@ -42,6 +42,15 @@ def semantic_class(name: String) -> Int:
     return -1
 
 __extension App:
+    def lsp_env_key(self, path: String) -> String:
+        var m = self.lsp_manifest(path)
+        if m.byte_length() == 0:
+            return ""
+        var env = self.active_pixi_env()
+        if env.byte_length() == 0 or env == "default":
+            return m
+        return m + "|" + env
+
     def lsp_server_command(mut self, path: String) -> String:
         """Command line of the language server, with include paths so that modules
         resolve: the file's folder, the working directory, and the project's own
@@ -50,7 +59,7 @@ __extension App:
         var args = " -I " + shell_quote(dirname(path)) + " -I " + shell_quote(self.cwd) + self.include_flags()
         var manifest = self.lsp_manifest(path)
         if manifest.byte_length() > 0:
-            return in_env("exec " + exe + args, self.pixi_cmd, manifest)      # sees what the project installed (P11-14)
+            return in_env("exec " + exe + args, self.pixi_cmd, manifest, self.active_pixi_env())      # sees what the project installed (P11-14)
         return self.tool(exe) + args
 
     def lsp_command(mut self):
@@ -92,7 +101,7 @@ __extension App:
             if not self.lsp.start(self.lsp_server_command(path), self.cwd, log, own_pid(), now):
                 self.say("Could not start the language server")
                 return
-            self.lsp_env = self.lsp_manifest(path)     # the environment it runs in (P11-16)
+            self.lsp_env = self.lsp_env_key(path)     # the environment it runs in (P11-16)
         self.lsp_path = path
         self.lsp_front = path
         self.lsp_uri = path_to_uri(path)
@@ -118,9 +127,16 @@ __extension App:
         var uri = path_to_uri(self.wins[i].path)
         if self.lsp.did_open(uri, bytes_to_str(self.wins[i].buf.lsp_bytes())):
             self.wins[i].buf.start_tracking()
-            self.wins[i].lsp_sent_version = self.wins[i].buf.version
-            self.wins[i].lsp_seen_version = self.wins[i].buf.version
+            var v = self.wins[i].buf.version
+            self.wins[i].lsp_sent_version = v
+            self.wins[i].lsp_seen_version = v
             self.wins[i].lsp_due = 0
+            for j in range(len(self.wins)):
+                if self.same_shared_buffer(i, j):
+                    self.wins[j].buf.start_tracking()
+                    self.wins[j].lsp_sent_version = v
+                    self.wins[j].lsp_seen_version = v
+                    self.wins[j].lsp_due = 0
 
     def lsp_send_changes(mut self, i: Int, now: Int, always: Bool):
         """didChange for window i with what changed since the server was last told: the
@@ -141,6 +157,13 @@ __extension App:
             self.wins[i].buf.start_tracking()
         self.wins[i].lsp_sent_version = v
         self.wins[i].lsp_seen_version = v
+        for j in range(len(self.wins)):
+            if self.same_shared_buffer(i, j):
+                _ = self.wins[j].buf.take_changes()
+                self.wins[j].buf.start_tracking()
+                self.wins[j].lsp_sent_version = v
+                self.wins[j].lsp_seen_version = v
+                self.wins[j].lsp_due = 0
         if self.wins[i].path == self.lsp_path:
             self.lsp_sent_ns = now
 
@@ -168,9 +191,13 @@ __extension App:
             if hints:
                 self.wins[i].buf.hints.clear()
                 self.wins[i].hint_version = -1
+                self.wins[i].hint_top = -1
+                self.wins[i].hint_end = -1
         if colours:
+            self.lsp.cancel_request(self.sem_req_id)
             self.sem_req_id = -1
         if hints:
+            self.lsp.cancel_request(self.hint_req_id)
             self.hint_req_id = -1
 
     def decor_tick(mut self, now: Int):
@@ -202,15 +229,23 @@ __extension App:
                     self.sem_req_ns = now
                     self.wins[i].sem_version = v
                     want_sem = False
-            if want_hint and self.wins[i].hint_version != v:
-                var id = self.lsp.request_inlay(uri, self.wins[i].buf.count(), now)
-                if id >= 0:
-                    self.hint_req_id = id
-                    self.hint_req_path = self.wins[i].path
-                    self.hint_req_version = v
-                    self.hint_req_ns = now
-                    self.wins[i].hint_version = v
-                    want_hint = False
+            if want_hint:
+                var vtop = self.wins[i].top
+                var vend = min(self.wins[i].buf.count(), vtop + self.wins[i].rows())
+                var out_of_range = self.wins[i].hint_top < 0 or vtop < self.wins[i].hint_top or vend > self.wins[i].hint_end
+                if self.wins[i].hint_version != v or out_of_range:
+                    var h0 = max(0, vtop - 25)
+                    var h1 = min(self.wins[i].buf.count(), vend + 50)
+                    var id = self.lsp.request_inlay(uri, h1, now, h0)
+                    if id >= 0:
+                        self.hint_req_id = id
+                        self.hint_req_path = self.wins[i].path
+                        self.hint_req_version = v
+                        self.hint_req_ns = now
+                        self.wins[i].hint_version = v
+                        self.wins[i].hint_top = h0
+                        self.wins[i].hint_end = h1
+                        want_hint = False
 
     def semantic_arrived(mut self, m: RpcMessage, now: Int):
         self.sem_req_id = -1
@@ -255,7 +290,11 @@ __extension App:
             sem.append(a)
             sem.append(b)
             sem.append(classes[kind])
-        self.wins[i].buf.sem = sem^
+        self.wins[i].buf.sem = sem.copy()
+        for j in range(len(self.wins)):
+            if self.same_shared_buffer(i, j):
+                self.wins[j].buf.sem = sem.copy()
+                self.wins[j].sem_version = self.wins[i].buf.version
 
     def hints_arrived(mut self, m: RpcMessage, now: Int):
         self.hint_req_id = -1
@@ -309,6 +348,10 @@ __extension App:
 
     def lsp_stop(mut self):
         self.lsp.stop()
+        for pi in range(len(self.lsp_pool)):
+            self.lsp_pool[pi].stop()
+        self.lsp_pool.clear()
+        self.lsp_pool_keys.clear()
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR:
                 self.wins[i].buf.stop_tracking()
@@ -341,21 +384,75 @@ __extension App:
 
     def lsp_follow_project(mut self, now: Int) -> Bool:
         """The file in front belongs to another pixi environment than the server's (or
-        to none, or the server's to none): start the server again for it, so that it
-        sees that project's packages (P11-16). Looked at only when the file in front
-        changes. True when it was started again."""
+        to none, or the server's to none): swap via the 2-slot warm LSP pool so switching
+        between roots does not pay cold startup cost every time."""
         var ai = self.active_editor()
         if ai < 0 or self.wins[ai].path == self.lsp_front:
             return False
         self.lsp_front = self.wins[ai].path
         if not self.lsp_wants(ai) or not self.lsp.active():
             return False
-        if self.lsp_manifest(self.lsp_front) == self.lsp_env:
+        var target_key = self.lsp_env_key(self.lsp_front)
+        if target_key == self.lsp_env:
             return False
-        self.lsp_stop()
+        # Detach open window tracking from outgoing server before parking it in lsp_pool
+        for wi in range(len(self.wins)):
+            if self.wins[wi].kind == WK_EDITOR:
+                self.wins[wi].buf.stop_tracking()
+                self.wins[wi].buf.marks.clear()
+                self.wins[wi].lsp_due = 0
+        self.decor_reset(True, True)
+        var prev_starts = self.lsp.starts
+        if self.lsp.active() and self.lsp.conn.proc.running:
+            var old_key = String(self.lsp_env)
+            var parked = LspClient()
+            swap(parked, self.lsp)
+            # Replace any stale entry with the same key or cap pool at 2 warm servers
+            var pk = 0
+            while pk < len(self.lsp_pool_keys):
+                if self.lsp_pool_keys[pk] == old_key or not self.lsp_pool[pk].conn.proc.running:
+                    self.lsp_pool[pk].stop()
+                    _ = self.lsp_pool.pop(pk)
+                    _ = self.lsp_pool_keys.pop(pk)
+                else:
+                    pk += 1
+            while len(self.lsp_pool) >= 2:
+                self.lsp_pool[0].stop()
+                _ = self.lsp_pool.pop(0)
+                _ = self.lsp_pool_keys.pop(0)
+            self.lsp_pool.append(parked^)
+            self.lsp_pool_keys.append(old_key)
+        else:
+            self.lsp.stop()
+            self.lsp = LspClient()
+        self.lsp.starts = prev_starts
+        self.lsp_restart_due = 0
+        self.lsp_restart_path = ""
+        self.lsp_path = ""
+        self.lsp_uri = ""
+        self.lsp_change_due = 0
+        self.lsp_sent_ns = 0
+        var env_name = self.active_pixi_env()
+        var env_tag = " [" + env_name + "]" if env_name.byte_length() > 0 and env_name != "default" else String("")
+        # Check if we already have a warm server for target_key
+        var hit = -1
+        for pk in range(len(self.lsp_pool_keys)):
+            if self.lsp_pool_keys[pk] == target_key and self.lsp_pool[pk].active() and self.lsp_pool[pk].conn.proc.running:
+                hit = pk
+                break
+        if hit >= 0:
+            self.lsp = self.lsp_pool.pop(hit)
+            _ = self.lsp_pool_keys.pop(hit)
+            if prev_starts > self.lsp.starts:
+                self.lsp.starts = prev_starts
+            self.lsp_env = target_key
+            self.lsp_track(ai, now)
+            var mf = self.lsp_manifest(self.lsp_front)
+            self.say("Language server: switched to warm server for " + (basename(dirname(mf)) + "'s environment" + env_tag if mf.byte_length() > 0 else String("this file")))
+            return True
         self.lsp_track(ai, now)
-        var m = self.lsp_env
-        self.say("Language server: started again for " + (basename(dirname(m)) + "'s environment" if m.byte_length() > 0 else String("this file (no pixi environment)")))
+        var mf = self.lsp_manifest(self.lsp_front)
+        self.say("Language server: started again for " + (basename(dirname(mf)) + "'s environment" + env_tag if mf.byte_length() > 0 else String("this file (no pixi environment)")))
         return True
 
     def lsp_tick(mut self, now: Int):
@@ -422,7 +519,8 @@ __extension App:
         if self.def_retry_due > 0 and now >= self.def_retry_due:
             self.def_retry_due = 0
             var di = self.active_editor()
-            if not self.definition_still_wanted() or not self.definition_request(di):
+            var def_ok = self.typedef_request(di) if self.def_is_type else self.definition_request(di)
+            if not self.definition_still_wanted() or not def_ok:
                 self.def_req_id = -1
         if self.ref_retry_due > 0 and now >= self.ref_retry_due:
             self.ref_retry_due = 0

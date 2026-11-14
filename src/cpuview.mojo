@@ -87,6 +87,136 @@ def keep_register(name: String, value: String) -> Bool:
     return v.startswith("0x") and v.byte_length() == 18
 
 
+def is_vector_register(name: String, value: String) -> Bool:
+    """SIMD / vector registers on x86-64 (xmm/ymm/zmm) and AArch64 (v0..v31, q0..q31, z0..z31)."""
+    var low = name.lower()
+    if low.startswith("xmm") or low.startswith("ymm") or low.startswith("zmm"):
+        return value.byte_length() > 0
+    if (low.startswith("v") or low.startswith("q") or low.startswith("z")) and low.byte_length() >= 2 and low.byte_length() <= 3:
+        var rest = String(low[byte=1:])
+        var all_digits = True
+        for b in rest.as_bytes():
+            if Int(b) < 48 or Int(b) > 57:
+                all_digits = False
+        if all_digits:
+            return value.find("{") >= 0 or (value.startswith("0x") and value.byte_length() >= 34)
+    return False
+
+
+def hex_nibble(c: Int) -> Int:
+    if c >= 48 and c <= 57:
+        return c - 48
+    if c >= 97 and c <= 102:
+        return c - 87
+    if c >= 65 and c <= 70:
+        return c - 55
+    return -1
+
+
+def parse_vector_bytes(value: String) -> List[UInt8]:
+    """Extract little-endian lane bytes from LLDB vector representations:
+    either `{0x00 0x00 0x80 0x3f ...}` or a wide `0x...` hex literal."""
+    var out = List[UInt8]()
+    var brace = value.find("{")
+    if brace >= 0:
+        var close = value.find("}", brace)
+        var body = String(value[byte=brace + 1 : close]) if close > brace else String(value[byte=brace + 1 :])
+        for tok_s in body.replace(",", " ").split(" "):
+            var tok = String(String(tok_s).strip())
+            if tok.startswith("0x") or tok.startswith("0X"):
+                var bs = tok.as_bytes()
+                if len(bs) == 4:
+                    var hi = hex_nibble(Int(bs[2]))
+                    var lo = hex_nibble(Int(bs[3]))
+                    if hi >= 0 and lo >= 0:
+                        out.append(UInt8((hi << 4) | lo))
+        return out^
+    var head = String(value.split(" ")[0].strip())
+    if (head.startswith("0x") or head.startswith("0X")) and head.byte_length() >= 10:
+        var hex_part = String(head[byte=2:])
+        if hex_part.byte_length() % 2 == 1:
+            hex_part = "0" + hex_part
+        # Big-endian hex number -> little-endian lane bytes (reverse byte order)
+        var hb = hex_part.as_bytes()
+        var k = len(hb) - 2
+        while k >= 0:
+            var hi = hex_nibble(Int(hb[k]))
+            var lo = hex_nibble(Int(hb[k + 1]))
+            if hi >= 0 and lo >= 0:
+                out.append(UInt8((hi << 4) | lo))
+            k -= 2
+    return out^
+
+
+def u32_to_i32_str(u: Int) -> String:
+    var v = u & 0xFFFFFFFF
+    if v >= 0x80000000:
+        return String(v - 0x100000000)
+    return String(v)
+
+
+def u32_to_f32_str(u: Int) -> String:
+    var v = u & 0xFFFFFFFF
+    var sign = "-" if ((v >> 31) & 1) != 0 else ""
+    var exp = (v >> 23) & 0xFF
+    var frac = v & 0x7FFFFF
+    if exp == 0xFF:
+        return (sign + "inf") if frac == 0 else "nan"
+    if exp == 0 and frac == 0:
+        return sign + "0.0"
+    var mant = Float64(frac) / Float64(1 << 23)
+    var p = exp - 127
+    if exp == 0:
+        p = -126
+    else:
+        mant += 1.0
+    var scale = Float64(1.0)
+    if p >= 0:
+        for _ in range(p):
+            scale *= 2.0
+    else:
+        for _ in range(-p):
+            scale *= 0.5
+    var val = mant * scale
+    if sign == "-":
+        val = -val
+    var s = String(val)
+    if s.byte_length() > 10 and s.find("e") < 0 and s.find("E") < 0:
+        var dot = s.find(".")
+        if dot >= 0 and dot + 5 < s.byte_length():
+            var trunc = String(s[byte=0 : dot + 5])
+            s = trunc
+    return s
+
+
+def format_simd_lanes(value: String, simd_mode: Int) -> String:
+    """Format a vector register as 32-bit lanes (`hex`, `f32`, or `i32`)."""
+    var bs = parse_vector_bytes(value)
+    if len(bs) < 4:
+        return value
+    var lanes = List[String]()
+    var n_lanes = min(len(bs) // 4, 8)
+    var abc = "0123456789abcdef"
+    for i in range(n_lanes):
+        var b0 = Int(bs[i * 4])
+        var b1 = Int(bs[i * 4 + 1])
+        var b2 = Int(bs[i * 4 + 2])
+        var b3 = Int(bs[i * 4 + 3])
+        var u = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+        if simd_mode == 1:
+            lanes.append(u32_to_f32_str(u))
+        elif simd_mode == 2:
+            lanes.append(u32_to_i32_str(u))
+        else:
+            var hx = String("0x")
+            for shift in [28, 24, 20, 16, 12, 8, 4, 0]:
+                var nib = (u >> shift) & 15
+                hx += String(abc[byte=nib : nib + 1])
+            lanes.append(hx)
+    var tail = (" …+" + String(len(bs) // 4 - n_lanes)) if (len(bs) // 4 > n_lanes) else String("")
+    return "[" + ", ".join(lanes) + tail + "]"
+
+
 @fieldwise_init
 struct Instr(Copyable, Movable):
     var address: String
@@ -106,6 +236,8 @@ struct CpuView(Copyable, Movable):
     var ip: String
     var code: List[Instr]
     var regs: List[Reg]
+    var vregs: List[Reg]
+    var simd_mode: Int          # 0 hex32, 1 f32, 2 i32 (cycled with V)
     var mem_address: Int        # the first byte shown (-1: none chosen)
     var mem: List[UInt8]
     var mem_known: Int          # how many of those bytes could be read
@@ -115,6 +247,8 @@ struct CpuView(Copyable, Movable):
         self.ip = ""
         self.code = List[Instr]()
         self.regs = List[Reg]()
+        self.vregs = List[Reg]()
+        self.simd_mode = 1
         self.mem_address = -1
         self.mem = List[UInt8]()
         self.mem_known = 0
@@ -132,6 +266,40 @@ struct CpuView(Copyable, Movable):
                 if o.name == names[k] and o.value != values[k]:
                     changed = True
             self.regs.append(Reg(names[k], values[k], changed))
+
+    def set_vregs(mut self, names: List[String], values: List[String]):
+        """Vector / SIMD register values (xmm/ymm/zmm, v0..v31); avoids alias duplicates
+        by keeping the widest view per register number."""
+        var old = self.vregs.copy()
+        self.vregs.clear()
+        for k in range(len(names)):
+            if not is_vector_register(names[k], values[k]):
+                continue
+            var low = names[k].lower()
+            # Prefer zmm over ymm/xmm, ymm over xmm when both appear in the same set
+            if low.startswith("xmm"):
+                var idx_s = String(low[byte=3:])
+                if ("ymm" + idx_s) in names or ("zmm" + idx_s) in names:
+                    continue
+            elif low.startswith("ymm"):
+                var idx_s = String(low[byte=3:])
+                if ("zmm" + idx_s) in names:
+                    continue
+            var changed = False
+            for o in old:
+                if o.name == names[k] and o.value != values[k]:
+                    changed = True
+            self.vregs.append(Reg(names[k], values[k], changed))
+            if len(self.vregs) >= 16:
+                break
+
+    def cycle_simd_mode(mut self) -> String:
+        self.simd_mode = (self.simd_mode + 1) % 3
+        if self.simd_mode == 1:
+            return "f32"
+        if self.simd_mode == 2:
+            return "i32"
+        return "hex32"
 
     def register(self, name: String) -> Int:
         """A register's value as a number (-1 if it is not there)."""
@@ -171,6 +339,15 @@ struct CpuView(Copyable, Movable):
                 row = ""
         if row.byte_length() > 0:
             out.append(" " + String(row.rstrip()))
+        if len(self.vregs) > 0:
+            var mname = "f32" if self.simd_mode == 1 else ("i32" if self.simd_mode == 2 else "hex32")
+            out.append("")
+            out.append("Vector / SIMD Registers   (lanes as " + mname + "; V: cycle f32 / i32 / hex32)")
+            for vr in self.vregs:
+                var tag = ("*" if vr.changed else " ") + vr.name
+                while tag.byte_length() < 7:
+                    tag += " "
+                out.append(" " + tag + " " + format_simd_lanes(vr.value, self.simd_mode))
         out.append("")
         if self.mem_address < 0:
             out.append("Memory   (G: go to an address or a variable)")

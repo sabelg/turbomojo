@@ -25,6 +25,12 @@ comptime OP_C = 99
 comptime OP_Y = 121
 comptime OP_GT = 62
 comptime OP_LT = 60
+comptime OP_GC = 999
+
+comptime PEND_DS = 1001
+comptime PEND_CS1 = 1002
+comptime PEND_CS2 = 1003
+comptime PEND_VS = 1004
 
 
 def is_find(ch: Int) -> Bool:
@@ -46,9 +52,45 @@ def find_reversed(kind: Int) -> Int:
     return 116
 
 
+def surround_pair(ch: Int) -> Tuple[Int, Int]:
+    """Opening and closing delimiter for `ch` (e.g. '(' or ')' or 'b' -> (40, 41))."""
+    if ch == 40 or ch == 41 or ch == 98:
+        return (40, 41)
+    if ch == 91 or ch == 93:
+        return (91, 93)
+    if ch == 123 or ch == 125 or ch == 66:
+        return (123, 125)
+    if ch == 60 or ch == 62:
+        return (60, 62)
+    return (ch, ch)
+
+
+def surround_kind(ch: Int) -> Int:
+    """0 if not a bracket/quote surround target; 1 for quotes; else bracket opener."""
+    if ch == 34 or ch == 39 or ch == 96:
+        return 1
+    if ch == 40 or ch == 41 or ch == 98:
+        return 40
+    if ch == 91 or ch == 93:
+        return 91
+    if ch == 123 or ch == 125 or ch == 66:
+        return 123
+    if ch == 60 or ch == 62:
+        return 60
+    return 0
+
+
+def is_toplevel_decl(ln: List[Int]) -> Bool:
+    """True when `ln` begins at column 0 with def / struct / trait / __extension."""
+    var s = to_str(ln)
+    return s.startswith("def ") or s.startswith("struct ") or s.startswith("trait ") or s.startswith("__extension ")
+
+
 def insert_key_kept(k: Int) -> Bool:
     """A key typed in Insert mode that . types again: text, Enter, Backspace, Tab,
-    Delete - not Ctrl or Alt keys, the arrows or the F-keys."""
+    Delete, Ctrl-W - not other Ctrl or Alt keys, the arrows or the F-keys."""
+    if k == (119 | MOD_CTRL):
+        return True
     if (k & (MOD_CTRL | MOD_ALT)) != 0:
         return False
     if (k & KEY_MASK) < K_BASE:
@@ -74,8 +116,17 @@ __extension App:
         self.vim.op = 0
         self.vim.op_n = 0
         self.vim.pend = 0
+        self.vim.cs_old = 0
         self.vim.count = 0
         self.vim.regname = 0
+
+    def vim_save_gv(mut self, t: Int):
+        if self.vim.mode == VM_VISUAL or self.vim.mode == VM_VLINE or self.vim.mode == VM_BLOCK:
+            self.vim.gv_mode = self.vim.mode
+            self.vim.gv_ar = self.vim.ar
+            self.vim.gv_ac = self.vim.ac
+            self.vim.gv_cr = self.wins[t].cr
+            self.vim.gv_cc = self.wins[t].cc
 
     def vim_done(mut self):
         """After a key: when the command is whole (Normal mode, nothing waiting), its
@@ -92,6 +143,114 @@ __extension App:
         self.vim.cur.clear()
         self.vim.changed = False
 
+    def vim_pane_dir(mut self, dx: Int, dy: Int) raises:
+        """Focus the visible window in direction (dx, dy) from the active window."""
+        var t = self.top()
+        if t < 0:
+            return
+        var cx = self.wins[t].x + self.wins[t].w // 2
+        var cy = self.wins[t].y + self.wins[t].h // 2
+        var best = -1
+        var best_score = 1 << 30
+        for i in range(len(self.wins)):
+            if i == t or self.wins[i].hidden:
+                continue
+            var wx = self.wins[i].x + self.wins[i].w // 2
+            var wy = self.wins[i].y + self.wins[i].h // 2
+            var ox = wx - cx
+            var oy = wy - cy
+            if dx < 0 and ox >= 0:
+                continue
+            if dx > 0 and ox <= 0:
+                continue
+            if dy < 0 and oy >= 0:
+                continue
+            if dy > 0 and oy <= 0:
+                continue
+            var primary = abs(ox) if dx != 0 else abs(oy)
+            var secondary = abs(oy) if dx != 0 else abs(ox)
+            var score = primary + secondary * 3
+            if score < best_score:
+                best_score = score
+                best = i
+        if best >= 0:
+            self.focus(best)
+            if self.tiled:
+                self.layout_sync()
+        else:
+            self.exec(CM_NEXT_PANE if self.tiled else CM_NEXTWIN)
+
+    def vim_insert_ctrl_w(mut self, t: Int):
+        """Insert-mode Ctrl-W: delete word backwards on the cursor line."""
+        var r = self.wins[t].cr
+        var c = self.wins[t].cc
+        if c <= 0:
+            self.wins[t].backspace()
+            return
+        var ln = self.wins[t].buf.line(r)
+        var s = min(c, len(ln))
+        while s > 0 and is_blank(ln[s - 1]):
+            s -= 1
+        if s > 0:
+            var cl = vcls(ln[s - 1], False)
+            while s > 0 and vcls(ln[s - 1], False) == cl:
+                s -= 1
+        var g = self.wins[t].group_for(ACT_BACK)
+        _ = self.wins[t].buf.delete(r, s, r, c, r, c, g)
+        self.wins[t].cc = s
+        self.wins[t].sync_want()
+        self.wins[t].follow = True
+
+    def vim_inc_number(mut self, t: Int, delta: Int):
+        """Ctrl-A / Ctrl-X: add `delta` to the signed decimal integer at or after cursor."""
+        var r = self.wins[t].cr
+        var ln = self.wins[t].buf.line(r)
+        var n = len(ln)
+        if n == 0:
+            return
+        var c = min(self.wins[t].cc, n - 1)
+        var s = -1
+        var e = -1
+        # if cursor is on digits (or on '-' immediately before digits), expand around it
+        if ln[c] >= 48 and ln[c] <= 57:
+            s = c
+            while s > 0 and ln[s - 1] >= 48 and ln[s - 1] <= 57:
+                s -= 1
+            if s > 0 and ln[s - 1] == 45:
+                s -= 1
+            e = c + 1
+            while e < n and ln[e] >= 48 and ln[e] <= 57:
+                e += 1
+        else:
+            var i = c
+            while i < n:
+                if ln[i] >= 48 and ln[i] <= 57:
+                    s = i
+                    if s > 0 and ln[s - 1] == 45:
+                        s -= 1
+                    e = i + 1
+                    while e < n and ln[e] >= 48 and ln[e] <= 57:
+                        e += 1
+                    break
+                i += 1
+        if s < 0:
+            return
+        var neg = ln[s] == 45
+        var val = 0
+        for j in range(s + (1 if neg else 0), e):
+            val = val * 10 + (ln[j] - 48)
+        if neg:
+            val = -val
+        var next_val = val + delta
+        var rep = decode(String(next_val))
+        var g = self.wins[t].new_group()
+        _ = self.wins[t].buf.delete(r, s, r, e, r, self.wins[t].cc, g)
+        _ = self.wins[t].buf.insert(r, s, rep, r, s, g)
+        self.wins[t].cc = s + max(0, len(rep) - 1)
+        self.wins[t].sync_want()
+        self.vim.changed = True
+        self.vim_settle(t)
+
     def vim_key(mut self, k: Int) raises -> Bool:
         """A key for vim? True when vim took it."""
         if self.keymap != KEYMAP_VIM or self.mode != M_NORMAL:
@@ -99,12 +258,46 @@ __extension App:
         var t = self.top()
         if t < 0 or self.wins[t].kind != WK_EDITOR:
             return False
+        # Macro recording: stop on plain Normal-mode `q`, else capture every key
+        if self.vim.rec_reg != 0 and not self.vim.replaying and self.vim.macro_depth == 0:
+            if self.vim.mode == VM_NORMAL and not self.vim.cl_on and self.vim.op == 0 and self.vim.pend == 0 and k == 113:
+                var reg = self.vim.rec_reg
+                self.vim.rec_reg = 0
+                var idx = (reg - 97) if reg >= 97 else (reg - 65)
+                if reg >= 65 and reg <= 90:
+                    for mk in self.vim.rec_keys:
+                        self.vim.macros[idx].append(mk)
+                else:
+                    self.vim.macros[idx] = self.vim.rec_keys.copy()
+                self.vim.rec_keys.clear()
+                self.vim.count = 0
+                self.vim.cur.clear()
+                self.say("Recorded @" + chr(idx + 97))
+                return True
+            self.vim.rec_keys.append(k)
         if self.vim.mode == VM_INSERT:
-            if not self.vim.replaying and (k == KEY_ESC or insert_key_kept(k)):
-                self.vim.cur.append(k)
-            if k == KEY_ESC:
+            var ins_esc = k == KEY_ESC or k == (91 | MOD_CTRL) or k == (99 | MOD_CTRL)
+            if not self.vim.replaying and (ins_esc or insert_key_kept(k)):
+                self.vim.cur.append(KEY_ESC if ins_esc else k)
+            if ins_esc:
+                if self.wins[t].has_multi():
+                    self.wins[t].collapse()
+                elif self.vim.ins_count > 1 and self.wins[t].cr == self.vim.ins_r and self.wins[t].cc > self.vim.ins_c:
+                    var typed = self.wins[t].buf.get_text(self.vim.ins_r, self.vim.ins_c, self.wins[t].cr, self.wins[t].cc)
+                    for _ in range(self.vim.ins_count - 1):
+                        self.wins[t].insert_text(typed, ACT_OTHER)
+                self.vim.ins_count = 1
                 self.vim_normal(t, True)
                 self.vim_done()
+                return True
+            if k == (119 | MOD_CTRL):               # Insert Ctrl-W: delete word back
+                if self.wins[t].has_multi():
+                    self.wins[t].multi(OP_BACK, 0, False, False, List[Int]())
+                else:
+                    self.vim_insert_ctrl_w(t)
+                return True
+            if k == (110 | MOD_CTRL) or k == (112 | MOD_CTRL):   # Ctrl-N / Ctrl-P: complete
+                self.start_complete()
                 return True
             return False
         if self.vim.cl_on:                          # the command line takes every key
@@ -113,13 +306,91 @@ __extension App:
             self.vim_cmdline_key(t, k)
             self.vim_done()
             return True
-        if k == (114 | MOD_CTRL):                   # Ctrl-R: redo
-            var n = self.vim.take_count()
-            self.vim_cancel()
-            for _ in range(n):
-                self.wins[t].redo()
-            self.vim_settle(t)
+        if self.vim.pend == 23:                     # Ctrl-W <key>: window commands
+            self.vim.pend = 0
+            self.vim.count = 0
+            self.vim.cur.clear()
+            var wb = k & KEY_MASK
+            if wb == 119:
+                self.exec(CM_NEXT_PANE if self.tiled else CM_NEXTWIN)
+            elif wb == 104 or wb == KEY_LEFT:
+                self.vim_pane_dir(-1, 0)
+            elif wb == 108 or wb == KEY_RIGHT:
+                self.vim_pane_dir(1, 0)
+            elif wb == 107 or wb == KEY_UP:
+                self.vim_pane_dir(0, -1)
+            elif wb == 106 or wb == KEY_DOWN:
+                self.vim_pane_dir(0, 1)
+            elif wb == 115:
+                self.exec(CM_SPLIT_DOWN)
+            elif wb == 118:
+                self.exec(CM_SPLIT_RIGHT)
+            elif wb == 113 or wb == 99:
+                self.exec(CM_CLOSE)
+            elif wb == 111:
+                self.exec(CM_ZOOM)
+            else:
+                self.vim_cancel()
             return True
+        if (k & MOD_CTRL) != 0 and (k & MOD_ALT) == 0:
+            var cb = k & KEY_MASK
+            if cb == 114 and self.vim.mode == VM_NORMAL:        # Ctrl-R: redo
+                var n = self.vim.take_count()
+                self.vim_cancel()
+                for _ in range(n):
+                    self.wins[t].redo()
+                self.vim_settle(t)
+                return True
+            if cb == 91 or cb == 99:                            # Ctrl-[ / Ctrl-C: Esc
+                if self.vim.mode != VM_NORMAL:
+                    self.vim_normal(t, False)
+                    self.vim_done()
+                else:
+                    self.vim_cancel()
+                    self.vim.cur.clear()
+                return True
+            if cb == 119:                                       # Ctrl-W: window prefix
+                self.vim.pend = 23
+                return True
+            if cb == 118:                                       # Ctrl-V: Visual Block
+                if self.vim.mode == VM_BLOCK:
+                    self.vim_normal(t, False)
+                elif self.vim.mode == VM_VISUAL or self.vim.mode == VM_VLINE:
+                    self.vim.mode = VM_BLOCK
+                    self.vim_settle(t)
+                else:
+                    self.vim_visual(t, VM_BLOCK)
+                self.vim_done()
+                return True
+            if cb == 100 or cb == 117 or cb == 102 or cb == 98: # Ctrl-D/U/F/B scroll
+                var rows = self.wins[t].rows()
+                var step = max(1, rows // 2) if (cb == 100 or cb == 117) else max(1, rows - 2)
+                var dir = 1 if (cb == 100 or cb == 102) else -1
+                var n2 = self.vim.take_count()
+                var delta = dir * step * n2
+                self.wins[t].scroll(delta)
+                var sel = self.wins[t].sel
+                self.wins[t].move_vert(delta, False)
+                self.wins[t].sel = sel
+                self.vim_settle(t)
+                return True
+            if cb == 111 and self.vim.mode == VM_NORMAL:        # Ctrl-O: jump back
+                self.vim_cancel()
+                self.vim.cur.clear()
+                self.jump_back()
+                return True
+            if cb == 105 and self.vim.mode == VM_NORMAL:        # Ctrl-I: jump forward
+                self.vim_cancel()
+                self.vim.cur.clear()
+                self.jump_forward()
+                return True
+            if (cb == 97 or cb == 120) and self.vim.mode == VM_NORMAL:  # Ctrl-A / Ctrl-X
+                if not self.vim.replaying:
+                    self.vim.cur.append(k)
+                var n3 = self.vim.take_count()
+                self.vim_inc_number(t, n3 if cb == 97 else -n3)
+                self.vim_done()
+                return True
         if (k & (MOD_CTRL | MOD_ALT)) != 0:
             return False                    # TurboMojo's
         var base = k & KEY_MASK
@@ -128,6 +399,88 @@ __extension App:
         if not self.vim.replaying:
             self.vim.cur.append(k)
         var p = self.vim.pend
+        if p == 113:                        # q<reg>: start recording macro
+            self.vim.pend = 0
+            self.vim.cur.clear()
+            if (base >= 97 and base <= 122) or (base >= 65 and base <= 90):
+                self.vim.rec_reg = base
+                self.vim.rec_keys = List[Int]()
+                self.say("recording @" + chr(base))
+            else:
+                self.vim_cancel()
+                if base < K_BASE:
+                    self.say("Not a register: " + chr(base))
+            return True
+        if p == 64:                         # @<reg> / @@: replay macro
+            self.vim.pend = 0
+            var n_rep = self.vim.take_count()
+            self.vim_cancel()
+            self.vim.cur.clear()
+            var mreg = 0
+            if base == 64:
+                mreg = self.vim.last_macro
+            elif base >= 97 and base <= 122:
+                mreg = base
+            elif base >= 65 and base <= 90:
+                mreg = base + 32
+            if mreg < 97 or mreg > 122:
+                self.say("No previously used register" if base == 64 else "Not a register")
+                return True
+            if self.vim.macro_depth >= 16:
+                self.say("Macro recursion limit reached")
+                return True
+            self.vim.last_macro = mreg
+            var mkeys = self.vim.macros[mreg - 97].copy()
+            if len(mkeys) == 0:
+                return True
+            var had_g = self.wins[t].forced_group
+            if had_g == 0:
+                self.wins[t].forced_group = self.wins[t].new_group()
+            self.vim.macro_depth += 1
+            try:
+                for _ in range(n_rep):
+                    for mk in mkeys:
+                        self.handle_key(mk)
+            except err:
+                self.vim.macro_depth -= 1
+                var top_e = self.top()
+                if top_e >= 0 and top_e < len(self.wins):
+                    self.wins[top_e].forced_group = had_g
+                raise err
+            self.vim.macro_depth -= 1
+            var top_now = self.top()
+            if top_now >= 0 and top_now < len(self.wins):
+                self.wins[top_now].forced_group = had_g
+                self.wins[top_now].break_group()
+            return True
+        if p == 109:                        # m<a-z>: set mark
+            self.vim.pend = 0
+            self.vim.cur.clear()
+            if base >= 97 and base <= 122:
+                var mi = base - 97
+                self.vim.mark_paths[mi] = self.wins[t].path
+                self.vim.mark_rows[mi] = self.wins[t].cr
+                self.vim.mark_cols[mi] = self.wins[t].cc
+            else:
+                self.vim_cancel()
+                self.say("Marks are a..z")
+            return True
+        if p == PEND_DS or p == PEND_CS1 or p == PEND_CS2 or p == PEND_VS:
+            self.vim.pend = 0
+            if base >= K_BASE:
+                self.vim_cancel()
+            elif p == PEND_DS:
+                self.vim_surround_del(t, base)
+            elif p == PEND_CS1:
+                self.vim.cs_old = base
+                self.vim.pend = PEND_CS2
+                return True
+            elif p == PEND_CS2:
+                self.vim_surround_change(t, self.vim.cs_old, base)
+            elif p == PEND_VS:
+                self.vim_surround_visual(t, base)
+            self.vim_done()
+            return True
         if is_find(p) or p == 114 or p == 34:
             # f t F T r ": the next key is the character itself
             self.vim.pend = 0
@@ -141,7 +494,10 @@ __extension App:
                     self.vim_cancel()
                     self.say("Not a register: \"" + chr(base))
             elif p == 114:
-                self.vim_replace(t, base)
+                if self.vim.mode == VM_BLOCK:
+                    self.vim_block_replace(t, base)
+                else:
+                    self.vim_replace(t, base)
             else:
                 self.vim.f_kind = p
                 self.vim.f_ch = base
@@ -179,7 +535,9 @@ __extension App:
                 ch = 105                    # i
             elif k == KEY_TAB:
                 self.vim.cur.clear()
-                return True                 # (nothing in Normal mode)
+                if self.vim.mode == VM_NORMAL and self.jump_at + 1 < len(self.jumps):
+                    self.jump_forward()
+                return True
             else:
                 self.vim.cur.clear()
                 return False                # PgUp, PgDn, the F-keys...: TurboMojo's
@@ -198,17 +556,105 @@ __extension App:
         return True
 
     # ------------------------------------------------------------------ motions
-    def vim_motion_key(mut self, t: Int, ch: Int) -> Bool:
-        """The keys that move (or begin a motion: g, f t F T); False for any other."""
+    def vim_motion_key(mut self, t: Int, ch: Int) raises -> Bool:
+        """The keys that move (or begin a motion: g, f t F T, ', `); False for any other."""
+        if self.vim.pend == 39 or self.vim.pend == 96:      # 'a `a '' ``
+            var linewise = self.vim.pend == 39
+            self.vim.pend = 0
+            if ch == 39 or ch == 96:
+                if self.vim.op == 0:
+                    self.vim.count = 0
+                    self.jump_back()
+                else:
+                    self.vim_cancel()
+                return True
+            if ch < 97 or ch > 122:
+                self.vim_cancel()
+                self.say("Marks are a..z")
+                return True
+            var mi = ch - 97
+            var mr = self.vim.mark_rows[mi]
+            if mr < 0:
+                self.vim_cancel()
+                self.say("E20: Mark not set")
+                return True
+            var mpath = self.vim.mark_paths[mi]
+            var mc = self.vim.mark_cols[mi]
+            if self.vim.op != 0:
+                var op = self.vim.op
+                self.vim.op = 0
+                self.vim.count = 0
+                self.vim.op_n = 0
+                if mpath != self.wins[t].path:
+                    self.vim_cancel()
+                    self.say("Mark is in another file")
+                    return True
+                var tr = min(mr, self.wins[t].buf.count() - 1)
+                var tc = first_nonblank(self.wins[t].buf.line(tr)) if linewise else min(mc, self.wins[t].buf.llen(tr))
+                var span = motion_span(self.wins[t].buf, self.wins[t].cr, self.wins[t].cc, VimMove(True, tr, tc, VK_LINE if linewise else VK_EXCL))
+                if span.ok:
+                    self.vim_apply(t, op, span)
+                return True
+            self.vim.count = 0
+            self.jump_mark()
+            var target_t = t
+            if mpath.byte_length() > 0 and mpath != self.wins[t].path:
+                self.open_path(mpath)
+                target_t = self.top()
+                if target_t < 0 or self.wins[target_t].kind != WK_EDITOR:
+                    return True
+            var tr2 = max(0, min(mr, self.wins[target_t].buf.count() - 1))
+            self.wins[target_t].cr = tr2
+            self.wins[target_t].cc = first_nonblank(self.wins[target_t].buf.line(tr2)) if linewise else min(mc, self.wins[target_t].buf.llen(tr2))
+            self.wins[target_t].sync_want()
+            self.vim_settle(target_t)
+            return True
         if self.vim.pend == CH_G:
             self.vim.pend = 0
             if ch == CH_G:
                 self.vim_do_motion(t, CH_G, 0, False)
+            elif ch == 100 and self.vim.op == 0 and self.vim.mode == VM_NORMAL:     # gd
+                self.vim_cancel()
+                self.exec(CM_DEFINITION)
+            elif ch == 114 and self.vim.op == 0 and self.vim.mode == VM_NORMAL:     # gr
+                self.vim_cancel()
+                self.exec(CM_REFERENCES)
+            elif ch == 121 and self.vim.op == 0 and self.vim.mode == VM_NORMAL:     # gy
+                self.vim_cancel()
+                self.exec(CM_TYPEDEF)
+            elif ch == 118 and self.vim.op == 0 and self.vim.mode == VM_NORMAL:     # gv
+                self.vim.count = 0
+                if self.vim.gv_mode != 0:
+                    self.vim.mode = self.vim.gv_mode
+                    self.vim.ar = min(self.vim.gv_ar, self.wins[t].buf.count() - 1)
+                    self.vim.ac = self.vim.gv_ac
+                    self.wins[t].cr = min(self.vim.gv_cr, self.wins[t].buf.count() - 1)
+                    self.wins[t].cc = self.vim.gv_cc
+                    self.wins[t].sync_want()
+                    self.vim_settle(t)
+            elif ch == 99 and self.vim.op == 0:                                     # gc
+                if self.vim.mode == VM_NORMAL:
+                    self.vim.op = OP_GC
+                    self.vim.op_n = self.vim.count
+                    self.vim.count = 0
+                else:
+                    var sr = self.wins[t].sel_range()
+                    var r2 = sr.r2 - (1 if self.wins[t].vsel == 2 and sr.c2 == 0 and sr.r2 > sr.r1 else 0)
+                    if self.vim.mode == VM_BLOCK:
+                        sr = Range(min(self.vim.ar, self.wins[t].cr), 0, max(self.vim.ar, self.wins[t].cr), 0)
+                        r2 = sr.r2
+                    self.vim_save_gv(t)
+                    self.vim.count = 0
+                    self.vim.mode = VM_NORMAL
+                    self.wins[t].vsel = 0
+                    self.wins[t].sel = False
+                    self.wins[t].extra.clear()
+                    self.vim_apply(t, OP_GC, VimSpan(True, sr.r1, 0, r2, 0, True))
             else:
                 self.vim_cancel()
                 self.say("Not a vim command: g" + chr(ch))
             return True
-        if ch == CH_G or is_find(ch):
+        if ch == CH_G or is_find(ch) or ch == 39 or ch == 96:
             self.vim.pend = ch
             return True
         if ch == 59 or ch == 44:                    # ; ,
@@ -271,6 +717,8 @@ __extension App:
         else:
             var m2 = vim_move(self.wins[t].buf, r, c, ch, n2, counted2, arg, again, False)
             if m2.ok:
+                if ch == CH_G or ch == 71 or ch == 37 or ch == 123 or ch == 125:
+                    self.jump_mark()
                 self.wins[t].cr = m2.r
                 self.wins[t].cc = m2.c
                 if ch == 36:
@@ -288,18 +736,95 @@ __extension App:
         var last = max(0, self.wins[t].buf.llen(self.wins[t].cr) - 1)
         if self.vim.mode != VM_INSERT and self.wins[t].cc > last:
             self.wins[t].cc = last
+        self.wins[t].extra.clear()
         if self.vim.mode == VM_VISUAL or self.vim.mode == VM_VLINE:
             self.wins[t].sel = True
             self.wins[t].ar = self.vim.ar
             self.wins[t].ac = self.vim.ac
             self.wins[t].vsel = 1 if self.vim.mode == VM_VISUAL else 2
-        self.wins[t].extra.clear()
+        elif self.vim.mode == VM_BLOCK:
+            var lo = min(self.vim.ar, self.wins[t].cr)
+            var hi = max(self.vim.ar, self.wins[t].cr)
+            var c1 = min(self.vim.ac, self.wins[t].cc)
+            var c2 = max(self.vim.ac, self.wins[t].cc)
+            self.wins[t].sel = True
+            self.wins[t].vsel = 1
+            self.wins[t].ar = self.wins[t].cr
+            self.wins[t].ac = min(self.vim.ac, self.wins[t].buf.llen(self.wins[t].cr))
+            for row in range(lo, hi + 1):
+                if row == self.wins[t].cr:
+                    continue
+                var rl = self.wins[t].buf.llen(row)
+                var rs = min(c1, rl)
+                var re = min(c2 + 1, rl)
+                self.wins[t].extra.append(Cur(row, re, rs < re, row, rs, self.wins[t].want))
         self.wins[t].break_group()
         self.wins[t].follow = True
 
     # ----------------------------------------------------------------- Normal
     def vim_normal_key(mut self, t: Int, ch: Int) raises:
         var p = self.vim.pend
+        if p == 91 or p == 93:                      # [d ]d [c ]c [[ ]]
+            self.vim.pend = 0
+            var fwd = p == 93
+            var n_sq = self.vim.take_count()
+            if ch == 100:
+                for _ in range(n_sq):
+                    self.exec(CM_NEXTERR if fwd else CM_PREVERR)
+            elif ch == 99:
+                for _ in range(n_sq):
+                    self.exec(CM_GIT_NEXT if fwd else CM_GIT_PREV)
+            elif (p == 91 and ch == 91) or (p == 93 and ch == 93):
+                self.jump_mark()
+                var cur_r = self.wins[t].cr
+                var cnt = self.wins[t].buf.count()
+                for _ in range(n_sq):
+                    var step = 1 if fwd else -1
+                    var r = cur_r + step
+                    while r >= 0 and r < cnt:
+                        if is_toplevel_decl(self.wins[t].buf.line(r)):
+                            cur_r = r
+                            break
+                        r += step
+                self.wins[t].cr = cur_r
+                self.wins[t].cc = 0
+                self.wins[t].sync_want()
+                self.vim_settle(t)
+            else:
+                self.vim_cancel()
+                self.say("Not a vim command: " + chr(p) + chr(ch))
+            return
+        if p == 122:                                # za zo zc zM zR zz zt zb
+            self.vim.pend = 0
+            self.vim.count = 0
+            if ch == 97:
+                self.exec(CM_FOLD)
+            elif ch == 111:
+                _ = self.wins[t].buf.set_fold(self.wins[t].cr, False)
+                self.wins[t].follow = True
+            elif ch == 99:
+                if self.wins[t].buf.fold_index(self.wins[t].cr) < 0:
+                    _ = self.wins[t].toggle_fold(self.wins[t].cr)
+            elif ch == 77:
+                self.exec(CM_FOLDALL)
+            elif ch == 82:
+                self.exec(CM_UNFOLDALL)
+            elif ch == 122:
+                self.wins[t].top = max(0, self.wins[t].cr - self.wins[t].rows() // 2)
+                self.wins[t].top_seg = 0
+                self.wins[t].follow = False
+            elif ch == 116:
+                self.wins[t].top = self.wins[t].cr
+                self.wins[t].top_seg = 0
+                self.wins[t].follow = False
+            elif ch == 98:
+                self.wins[t].top = max(0, self.wins[t].cr - self.wins[t].rows() + 1)
+                self.wins[t].top_seg = 0
+                self.wins[t].follow = False
+            else:
+                self.vim_cancel()
+                self.say("Not a vim command: z" + chr(ch))
+            return
         if p == CH_I or p == CH_A:
             # a text object after an operator
             self.vim.pend = 0
@@ -313,11 +838,19 @@ __extension App:
             self.vim_apply(t, op, span)
             return
         if self.vim.op != 0:
+            if (self.vim.op == OP_D or self.vim.op == OP_C) and ch == 115:
+                # ds<ch> / cs<old><new>: surround delete or change
+                var sop = self.vim.op
+                self.vim.op = 0
+                self.vim.op_n = 0
+                self.vim.count = 0
+                self.vim.pend = PEND_DS if sop == OP_D else PEND_CS1
+                return
             if ch == CH_I or ch == CH_A:
                 self.vim.pend = ch
                 return
-            if ch == self.vim.op:
-                self.vim_lines_op(t, ch)            # dd cc yy >> <<
+            if ch == self.vim.op or (self.vim.op == OP_GC and ch == 99):
+                self.vim_lines_op(t, self.vim.op)   # dd cc yy >> << gcc
                 return
             if self.vim_motion_key(t, ch):
                 return
@@ -331,6 +864,17 @@ __extension App:
             self.vim_cmdline_start(t, ch)
         elif ch == 34:                              # ": a register's name follows
             self.vim.pend = 34
+        elif ch == 109:                             # m<a-z>: set mark
+            self.vim.pend = 109
+        elif ch == 113:                             # q<a-z>: record macro
+            self.vim.pend = 113
+        elif ch == 64:                              # @<a-z> / @@: replay macro
+            self.vim.pend = 64
+        elif ch == 91 or ch == 93 or ch == 122:     # [ ] z prefixes
+            self.vim.pend = ch
+        elif ch == 75:                              # K: hover documentation
+            self.vim.count = 0
+            self.exec(CM_HOVER)
         elif is_operator(ch):
             self.vim.op = ch
             self.vim.op_n = self.vim.count
@@ -388,7 +932,7 @@ __extension App:
             self.say("Not a vim command: " + chr(ch))
 
     def vim_lines_op(mut self, t: Int, op: Int):
-        """dd cc yy >> << (and Y, S): the operator on this line and the count - 1
+        """dd cc yy >> << gcc (and Y, S): the operator on this line and the count - 1
         after it."""
         var n = self.vim.total_count()
         self.vim.op = 0
@@ -399,7 +943,7 @@ __extension App:
     def vim_insert(mut self, t: Int, how: Int):
         """i a I A o O: Insert mode, where the key says. Everything typed until Esc is
         one undo step, the command's own change included."""
-        self.vim.count = 0
+        var cnt = self.vim.take_count()
         self.vim_begin_insert_group(t)
         var line = self.wins[t].buf.line(self.wins[t].cr)
         self.wins[t].sel = False
@@ -413,6 +957,7 @@ __extension App:
         elif how == 111:                                      # o
             self.wins[t].cc = len(line)
             self.wins[t].newline(self.auto_indent)
+            cnt = 1
         elif how == 79:                                       # O
             var indent = List[Int]()
             if self.auto_indent:
@@ -428,6 +973,10 @@ __extension App:
             self.wins[t].insert_text(nl, ACT_OTHER)
             self.wins[t].cr -= 1
             self.wins[t].cc = len(indent)
+            cnt = 1
+        self.vim.ins_count = cnt
+        self.vim.ins_r = self.wins[t].cr
+        self.vim.ins_c = self.wins[t].cc
         self.vim_enter_insert(t)
 
     def vim_enter_insert(mut self, t: Int):
@@ -455,11 +1004,13 @@ __extension App:
     def vim_normal(mut self, t: Int, from_insert: Bool):
         """Back to Normal mode: from Insert the cursor steps back onto the last character
         typed, as in vim; a Visual selection goes."""
+        self.vim_save_gv(t)
         self.vim.mode = VM_NORMAL
         self.vim_cancel()
         self.vim_end_insert_group()
         self.wins[t].vsel = 0
         self.wins[t].sel = False
+        self.wins[t].extra.clear()
         if from_insert and self.wins[t].cc > 0:
             self.wins[t].cc -= 1
         self.wins[t].sync_want()
@@ -517,6 +1068,22 @@ __extension App:
     def vim_apply(mut self, t: Int, op: Int, s: VimSpan):
         """Operator `op` on span `s`."""
         var n_lines = s.r2 - s.r1 + 1
+        if op == OP_GC:
+            self.wins[t].sel = True
+            self.wins[t].vsel = 2
+            self.wins[t].ar = s.r1
+            self.wins[t].ac = 0
+            self.wins[t].cr = s.r2
+            self.wins[t].cc = 0
+            self.wins[t].toggle_comment()
+            self.wins[t].sel = False
+            self.wins[t].vsel = 0
+            self.wins[t].cr = s.r1
+            self.wins[t].cc = first_nonblank(self.wins[t].buf.line(s.r1))
+            self.wins[t].sync_want()
+            self.vim.changed = True
+            self.vim_settle(t)
+            return
         if op == OP_GT or op == OP_LT:
             self.vim_indent(t, s.r1, s.r2, 1 if op == OP_GT else -1)
             self.vim.changed = True
@@ -575,6 +1142,103 @@ __extension App:
         self.wins[t].sync_want()
         self.vim_settle(t)
 
+    def vim_surround_bounds(self, t: Int, old: Int) -> VimSpan:
+        """Span covering `(open_pos, close_pos + 1)` of surrounding delimiter `old`."""
+        var r = self.wins[t].cr
+        var c = self.wins[t].cc
+        var kind = surround_kind(old)
+        if kind == 1:
+            var q = obj_quote(self.wins[t].buf.line(r), r, c, True, old)
+            if not q.ok or q.c1 <= 0:
+                return VimSpan(False, 0, 0, 0, 0, False)
+            return VimSpan(True, r, q.c1 - 1, r, q.c2 + 1, False)
+        if kind > 0:
+            return obj_bracket(self.wins[t].buf, r, c, False, kind)
+        # arbitrary symmetric delimiter on the current line
+        var ln = self.wins[t].buf.line(r)
+        var a = -1
+        var b = -1
+        var i = c
+        while i >= 0:
+            if i < len(ln) and ln[i] == old:
+                a = i
+                break
+            i -= 1
+        var j = max(c, a + 1)
+        while j < len(ln):
+            if j != a and ln[j] == old:
+                b = j
+                break
+            j += 1
+        if a < 0 or b < 0:
+            return VimSpan(False, 0, 0, 0, 0, False)
+        return VimSpan(True, r, a, r, b + 1, False)
+
+    def vim_surround_del(mut self, t: Int, old: Int):
+        var s = self.vim_surround_bounds(t, old)
+        if not s.ok:
+            return
+        var g = self.wins[t].new_group()
+        _ = self.wins[t].buf.delete(s.r2, s.c2 - 1, s.r2, s.c2, self.wins[t].cr, self.wins[t].cc, g)
+        _ = self.wins[t].buf.delete(s.r1, s.c1, s.r1, s.c1 + 1, self.wins[t].cr, self.wins[t].cc, g)
+        self.wins[t].cr = s.r1
+        self.wins[t].cc = s.c1
+        self.wins[t].sync_want()
+        self.vim.changed = True
+        self.vim_settle(t)
+
+    def vim_surround_change(mut self, t: Int, old: Int, new_ch: Int):
+        var s = self.vim_surround_bounds(t, old)
+        if not s.ok:
+            return
+        var pair = surround_pair(new_ch)
+        var op_l = List[Int]()
+        op_l.append(pair[0])
+        var cl_l = List[Int]()
+        cl_l.append(pair[1])
+        var g = self.wins[t].new_group()
+        _ = self.wins[t].buf.delete(s.r2, s.c2 - 1, s.r2, s.c2, self.wins[t].cr, self.wins[t].cc, g)
+        _ = self.wins[t].buf.insert(s.r2, s.c2 - 1, cl_l, self.wins[t].cr, self.wins[t].cc, g)
+        _ = self.wins[t].buf.delete(s.r1, s.c1, s.r1, s.c1 + 1, self.wins[t].cr, self.wins[t].cc, g)
+        _ = self.wins[t].buf.insert(s.r1, s.c1, op_l, self.wins[t].cr, self.wins[t].cc, g)
+        self.wins[t].cr = s.r1
+        self.wins[t].cc = s.c1
+        self.wins[t].sync_want()
+        self.vim.changed = True
+        self.vim_settle(t)
+
+    def vim_surround_visual(mut self, t: Int, ch: Int):
+        """Visual `S<ch>`: wrap the selection with `<open>...<close>`."""
+        var pair = surround_pair(ch)
+        var sr = self.wins[t].sel_range()
+        var linewise = self.vim.mode == VM_VLINE
+        self.vim_save_gv(t)
+        self.vim.mode = VM_NORMAL
+        self.wins[t].vsel = 0
+        self.wins[t].sel = False
+        self.wins[t].extra.clear()
+        var g = self.wins[t].new_group()
+        var op_l = List[Int]()
+        op_l.append(pair[0])
+        var cl_l = List[Int]()
+        cl_l.append(pair[1])
+        if linewise:
+            var r2 = sr.r2 - (1 if sr.c2 == 0 and sr.r2 > sr.r1 else 0)
+            cl_l.insert(0, 10)
+            op_l.append(10)
+            _ = self.wins[t].buf.insert(r2, self.wins[t].buf.llen(r2), cl_l, self.wins[t].cr, self.wins[t].cc, g)
+            _ = self.wins[t].buf.insert(sr.r1, 0, op_l, self.wins[t].cr, self.wins[t].cc, g)
+            self.wins[t].cr = sr.r1
+            self.wins[t].cc = 0
+        else:
+            _ = self.wins[t].buf.insert(sr.r2, sr.c2, cl_l, self.wins[t].cr, self.wins[t].cc, g)
+            _ = self.wins[t].buf.insert(sr.r1, sr.c1, op_l, self.wins[t].cr, self.wins[t].cc, g)
+            self.wins[t].cr = sr.r1
+            self.wins[t].cc = sr.c1
+        self.wins[t].sync_want()
+        self.vim.changed = True
+        self.vim_settle(t)
+
     def vim_indent(mut self, t: Int, r1: Int, r2: Int, dir: Int):
         """> <: TurboMojo's indent of lines r1 to r2 (by the file's indentation)."""
         self.wins[t].sel = True
@@ -608,6 +1272,36 @@ __extension App:
         self.vim.changed = True
         self.vim_settle(t)
 
+    def vim_block_replace(mut self, t: Int, ch: Int):
+        """V-BLOCK `r<ch>`: replace every cell in the rectangular block with `ch`."""
+        if ch == 10 or ch == 13:
+            return
+        var lo = min(self.vim.ar, self.wins[t].cr)
+        var hi = max(self.vim.ar, self.wins[t].cr)
+        var c1 = min(self.vim.ac, self.wins[t].cc)
+        var c2 = max(self.vim.ac, self.wins[t].cc)
+        self.vim_save_gv(t)
+        self.vim.mode = VM_NORMAL
+        self.wins[t].vsel = 0
+        self.wins[t].sel = False
+        self.wins[t].extra.clear()
+        var g = self.wins[t].new_group()
+        for row in range(lo, hi + 1):
+            var rl = self.wins[t].buf.llen(row)
+            var rs = min(c1, rl)
+            var re = min(c2 + 1, rl)
+            if re > rs:
+                var rep = List[Int]()
+                for _ in range(re - rs):
+                    rep.append(ch)
+                _ = self.wins[t].buf.delete(row, rs, row, re, lo, c1, g)
+                _ = self.wins[t].buf.insert(row, rs, rep, lo, c1, g)
+        self.wins[t].cr = lo
+        self.wins[t].cc = c1
+        self.wins[t].sync_want()
+        self.vim.changed = True
+        self.vim_settle(t)
+
     def vim_join(mut self, t: Int, n: Int):
         """J: `n` lines into one (TurboMojo's join: the line break and the next line's
         indentation become one blank); one undo step."""
@@ -625,9 +1319,8 @@ __extension App:
             self.vim.changed = True
         self.vim_settle(t)
 
-    def vim_put(mut self, t: Int, after: Bool):
-        """p P: the register after / before the cursor - whole lines below / above."""
-        var n = self.vim.take_count()
+    def vim_reg_contents(mut self) -> Tuple[List[Int], Bool, Int]:
+        """Read the active register (consuming `regname`), returning `(text, lines, name)`."""
         var name = self.vim.regname
         self.vim.regname = 0
         var src = self.vim.reg.copy()
@@ -645,6 +1338,17 @@ __extension App:
             src = self.clipboard.copy()
             src_lines = len(src) > 0 and src[len(src) - 1] == 10
         elif name == 95:
+            return (List[Int](), False, 95)
+        return (src^, src_lines, name)
+
+    def vim_put(mut self, t: Int, after: Bool):
+        """p P: the register after / before the cursor - whole lines below / above."""
+        var n = self.vim.take_count()
+        var rc = self.vim_reg_contents()
+        var src = rc[0].copy()
+        var src_lines = rc[1]
+        var name = rc[2]
+        if name == 95:
             return
         if len(src) == 0:
             if name == 0:
@@ -700,11 +1404,27 @@ __extension App:
         if len(self.vim.dot) == 0:
             return
         var keys = self.vim.dot.copy()
+        var t = self.top()
+        var had = 0
+        var wrapped = False
+        if n > 1 and t >= 0 and self.wins[t].kind == WK_EDITOR and self.wins[t].forced_group == 0:
+            had = self.wins[t].forced_group
+            self.wins[t].forced_group = self.wins[t].new_group()
+            wrapped = True
         self.vim.replaying = True
-        for _ in range(n):
-            for k in keys:
-                self.handle_key(k)
+        try:
+            for _ in range(n):
+                for k in keys:
+                    self.handle_key(k)
+        except err:
+            self.vim.replaying = False
+            if wrapped and t >= 0 and t < len(self.wins):
+                self.wins[t].forced_group = had
+            raise err
         self.vim.replaying = False
+        if wrapped and t >= 0 and t < len(self.wins):
+            self.wins[t].forced_group = had
+            self.wins[t].break_group()
         self.vim.dot = keys^
         self.vim.cur.clear()
         self.vim.changed = False
@@ -717,15 +1437,117 @@ __extension App:
         self.vim.ac = self.wins[t].cc
         self.vim_settle(t)
 
-    def vim_visual_key(mut self, t: Int, ch: Int):
+    def vim_block_op(mut self, t: Int, ch: Int):
+        """d x y c I A > < J on a `VM_BLOCK` rectangular selection."""
+        var lo = min(self.vim.ar, self.wins[t].cr)
+        var hi = max(self.vim.ar, self.wins[t].cr)
+        var c1 = min(self.vim.ac, self.wins[t].cc)
+        var c2 = max(self.vim.ac, self.wins[t].cc)
+        self.vim_save_gv(t)
+        self.vim.count = 0
+        self.vim.mode = VM_NORMAL
+        self.wins[t].vsel = 0
+        self.wins[t].sel = False
+        self.wins[t].extra.clear()
+        if ch == 62 or ch == 60:
+            self.vim_apply(t, ch, VimSpan(True, lo, 0, hi, 0, True))
+            return
+        if ch == 74:
+            self.wins[t].cr = lo
+            self.vim_join(t, max(2, hi - lo + 1))
+            return
+        if ch == 73 or ch == 65:                    # I / A: multi-cursor column insert
+            var cs = List[Cur]()
+            for row in range(lo, hi + 1):
+                var rl = self.wins[t].buf.llen(row)
+                var col = min(c1, rl) if ch == 73 else min(c2 + 1, rl)
+                cs.append(Cur(row, col, False, row, 0, col))
+            self.wins[t].set_cursors(cs^, 0)
+            self.vim.ins_count = 1
+            self.vim_begin_insert_group(t)
+            self.vim_enter_insert(t)
+            return
+        # Collect block text (one line per row)
+        var yanked = List[Int]()
+        for row in range(lo, hi + 1):
+            if row > lo:
+                yanked.append(10)
+            var rl = self.wins[t].buf.llen(row)
+            var rs = min(c1, rl)
+            var re = min(c2 + 1, rl)
+            if re > rs:
+                for cp in self.wins[t].buf.get_text(row, rs, row, re):
+                    yanked.append(cp)
+        self.vim_store(yanked, False, ch == OP_Y)
+        if ch == OP_Y:
+            self.wins[t].cr = lo
+            self.wins[t].cc = c1
+            self.wins[t].sync_want()
+            self.vim_settle(t)
+            return
+        self.vim.changed = True
+        if ch == OP_C:
+            self.vim_begin_insert_group(t)
+        var g = self.wins[t].new_group()
+        var i_row = hi
+        while i_row >= lo:
+            var rl = self.wins[t].buf.llen(i_row)
+            var rs = min(c1, rl)
+            var re = min(c2 + 1, rl)
+            if re > rs:
+                _ = self.wins[t].buf.delete(i_row, rs, i_row, re, lo, c1, g)
+            i_row -= 1
+        if ch == OP_C:
+            var cs2 = List[Cur]()
+            for row in range(lo, hi + 1):
+                var col = min(c1, self.wins[t].buf.llen(row))
+                cs2.append(Cur(row, col, False, row, 0, col))
+            self.wins[t].set_cursors(cs2^, 0)
+            self.vim.ins_count = 1
+            self.vim_enter_insert(t)
+            return
+        self.wins[t].cr = lo
+        self.wins[t].cc = c1
+        self.wins[t].sync_want()
+        self.vim_settle(t)
+
+    def vim_visual_key(mut self, t: Int, ch: Int) raises:
+        if self.vim.pend == CH_I or self.vim.pend == CH_A:
+            var inner = self.vim.pend == CH_I
+            self.vim.pend = 0
+            var span = vim_object(self.wins[t].buf, self.wins[t].cr, self.wins[t].cc, inner, ch)
+            self.vim.count = 0
+            if span.ok:
+                if span.lines:
+                    self.vim.mode = VM_VLINE
+                    self.vim.ar = span.r1
+                    self.vim.ac = 0
+                    self.wins[t].cr = span.r2
+                    self.wins[t].cc = 0
+                else:
+                    self.vim.mode = VM_VISUAL
+                    self.vim.ar = span.r1
+                    self.vim.ac = span.c1
+                    self.wins[t].cr = span.r2
+                    self.wins[t].cc = max(0, span.c2 - 1)
+                self.wins[t].sync_want()
+                self.vim_settle(t)
+            return
         if self.vim_motion_key(t, ch):
+            return
+        if ch == CH_I or ch == CH_A:                  # viw, va", vi(...
+            self.vim.pend = ch
             return
         if ch == 58:                                  # : - with '<,'> for the selection's lines
             self.vim.count = 0
             self.vim_cmdline_start(t, ch)
         elif ch == 34:                                # "x
             self.vim.pend = 34
-        elif ch == 118 or ch == 86:                     # v V: the other kind, or back to Normal
+        elif ch == 114 and self.vim.mode == VM_BLOCK: # r<ch> on block
+            self.vim.pend = 114
+        elif ch == 83:                                # S<ch>: surround visual selection
+            self.vim.pend = PEND_VS
+        elif ch == 118 or ch == 86:                   # v V: the other kind, or back to Normal
             var want = VM_VISUAL if ch == 118 else VM_VLINE
             if self.vim.mode == want:
                 self.vim_normal(t, False)
@@ -741,25 +1563,69 @@ __extension App:
             self.vim.ac = c
             self.wins[t].sync_want()
             self.vim_settle(t)
-        elif ch == 100 or ch == 120 or ch == 121 or ch == 99 or ch == 62 or ch == 60 or ch == 74:
-            # d x y c > < J on the selection
+        elif self.vim.mode == VM_BLOCK and (ch == 73 or ch == 65 or ch == 100 or ch == 120 or ch == 121 or ch == 99 or ch == 62 or ch == 60 or ch == 74):
+            self.vim_block_op(t, OP_D if ch == 120 else ch)
+        elif ch == 112 or ch == 80:                   # p / P: replace visual selection
+            var rc = self.vim_reg_contents()
+            var src = rc[0].copy()
+            var name = rc[2]
+            if name == 95 or len(src) == 0:
+                self.vim_normal(t, False)
+                return
             var lines = self.wins[t].vsel == 2
             var sr = self.wins[t].sel_range()
-            var s: VimSpan
-            if lines:
-                var r2 = sr.r2 - (1 if sr.c2 == 0 and sr.r2 > sr.r1 else 0)
-                s = VimSpan(True, sr.r1, 0, r2, 0, True)
+            var r2 = sr.r2 - (1 if lines and sr.c2 == 0 and sr.r2 > sr.r1 else 0)
+            var s = VimSpan(True, sr.r1, 0, r2, 0, True) if lines else VimSpan(True, sr.r1, sr.c1, sr.r2, sr.c2, False)
+            var old_text = self.vim_span_text(t, s)
+            self.vim_save_gv(t)
+            self.vim.count = 0
+            self.vim.mode = VM_NORMAL
+            self.wins[t].vsel = 0
+            self.wins[t].sel = False
+            var g = self.wins[t].new_group()
+            if s.lines:
+                var ins = src.copy()
+                if len(ins) > 0 and ins[len(ins) - 1] == 10:
+                    _ = ins.pop()
+                _ = self.wins[t].buf.delete(s.r1, 0, s.r2, self.wins[t].buf.llen(s.r2), self.wins[t].cr, self.wins[t].cc, g)
+                _ = self.wins[t].buf.insert(s.r1, 0, ins, s.r1, 0, g)
+                self.wins[t].cr = s.r1
+                self.wins[t].cc = first_nonblank(self.wins[t].buf.line(s.r1))
             else:
-                s = VimSpan(True, sr.r1, sr.c1, sr.r2, sr.c2, False)
+                var ins2 = src.copy()
+                if rc[1] and len(ins2) > 0 and ins2[len(ins2) - 1] == 10:
+                    _ = ins2.pop()
+                _ = self.wins[t].buf.delete(s.r1, s.c1, s.r2, s.c2, self.wins[t].cr, self.wins[t].cc, g)
+                var e = self.wins[t].buf.insert(s.r1, s.c1, ins2, s.r1, s.c1, g)
+                self.wins[t].cr = e.r
+                self.wins[t].cc = max(0, e.c - 1)
+            if ch == 112:
+                self.vim.reg = old_text.copy()
+                self.vim.reg_lines = s.lines
+                self.clipboard = old_text^
+            self.wins[t].sync_want()
+            self.vim.changed = True
+            self.vim_settle(t)
+        elif ch == 100 or ch == 120 or ch == 121 or ch == 99 or ch == 62 or ch == 60 or ch == 74:
+            # d x y c > < J on the selection
+            var lines2 = self.wins[t].vsel == 2
+            var sr2 = self.wins[t].sel_range()
+            var s2: VimSpan
+            if lines2:
+                var r2_ = sr2.r2 - (1 if sr2.c2 == 0 and sr2.r2 > sr2.r1 else 0)
+                s2 = VimSpan(True, sr2.r1, 0, r2_, 0, True)
+            else:
+                s2 = VimSpan(True, sr2.r1, sr2.c1, sr2.r2, sr2.c2, False)
+            self.vim_save_gv(t)
             self.vim.count = 0
             self.vim.mode = VM_NORMAL
             self.wins[t].vsel = 0
             self.wins[t].sel = False
             if ch == 74:
-                self.wins[t].cr = s.r1
-                self.vim_join(t, max(2, s.r2 - s.r1 + 1))
+                self.wins[t].cr = s2.r1
+                self.vim_join(t, max(2, s2.r2 - s2.r1 + 1))
             else:
-                self.vim_apply(t, OP_D if ch == 120 else ch, s)
+                self.vim_apply(t, OP_D if ch == 120 else ch, s2)
         else:
             self.vim.count = 0
             self.say("Not a vim command in Visual mode: " + chr(ch))

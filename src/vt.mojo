@@ -59,7 +59,7 @@ comptime MODE_CURSOR_KEYS = 1           # DEC private modes (as the library pack
 comptime MODE_BRACKETED_PASTE = 2004
 
 
-def vt_reply_c(term: Int, userdata: Int, data: UnsafePointer[UInt8, MutAnyOrigin], n: Int):
+def vt_reply_c(term: Int, userdata: Int, data: Pointer[UInt8, MutAnyOrigin], n: Int):
     """Called by the library inside a write when the program asked something. No IDE
     state is touched here: the answer goes into the replies pipe."""
     var head = List[Int](length=2, fill=0)
@@ -162,7 +162,7 @@ struct VtTerm(Movable):
         self.scrollback = 0
         self.palette = Dict[Int, Int]()
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         if self.term != 0:
             external_call["ghostty_render_state_row_cells_free", NoneType](self.cells_it)
             external_call["ghostty_render_state_row_iterator_free", NoneType](self.rows_it)

@@ -15,10 +15,15 @@ source:
 build:
   number: 0
   script:
-    - mkdir -p $PREFIX/bin $PREFIX/share/turbomojo
+    - mkdir -p $PREFIX/bin $PREFIX/share/turbomojo/docs $PREFIX/share/turbomojo/completions
     - mojo build -D "TURBOMOJO_MOJO=$(mojo --version)" -I src src/main.mojo -o $PREFIX/bin/tmide -Xlinker $PREFIX/lib/libghostty-vt.a
+    - cp scripts/mcp_server.py $PREFIX/bin/tmide-mcp && chmod +x $PREFIX/bin/tmide-mcp
     - cp -r examples $PREFIX/share/turbomojo/
+    - cp docs/*.md $PREFIX/share/turbomojo/docs/
     - cp docs/PLUGINS.md README.md $PREFIX/share/turbomojo/
+    - $PREFIX/bin/tmide --completions bash > $PREFIX/share/turbomojo/completions/tmide.bash
+    - $PREFIX/bin/tmide --completions zsh > $PREFIX/share/turbomojo/completions/_tmide
+    - $PREFIX/bin/tmide --completions fish > $PREFIX/share/turbomojo/completions/tmide.fish
 
 requirements:
   build:

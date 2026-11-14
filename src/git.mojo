@@ -65,9 +65,12 @@ def status_command(root: String) -> String:
 
 
 def base_command(root: String, rel: String) -> String:
-    """The file as it is in the index (staged), with the work tree's line-end and filter
-    conversions applied so it compares with the file on disk."""
-    return "git -C " + shell_quote(root) + " --no-optional-locks cat-file --filters " + shell_quote(":" + rel)
+    """The file as it is in the index (staged), or stage 2 (ours) during an unmerged
+    conflict, with the work tree's line-end and filter conversions applied."""
+    var q = shell_quote(root)
+    var c0 = "git -C " + q + " --no-optional-locks cat-file --filters " + shell_quote(":" + rel)
+    var c2 = "git -C " + q + " --no-optional-locks cat-file --filters " + shell_quote(":2:" + rel)
+    return sh_script(c0 + " 2>/dev/null || " + c2 + " 2>/dev/null")
 
 
 def code_of_xy(kind: String, xy: String) -> Int:
@@ -114,6 +117,8 @@ def after_fields(entry: String, n: Int) -> String:
 struct GitStatus(Copyable, Movable):
     var root: String
     var branch: String              # '' when not known; "(detached)" off a branch
+    var ahead: Int
+    var behind: Int
     var files: Dict[String, Int]    # absolute path -> GS_*
     var dirs: Dict[String, Int]     # folders with changes in them -> the most urgent
     var untracked_dirs: List[String]  # folders nothing in which is tracked (absolute, no /)
@@ -122,6 +127,8 @@ struct GitStatus(Copyable, Movable):
     def __init__(out self):
         self.root = ""
         self.branch = ""
+        self.ahead = 0
+        self.behind = 0
         self.files = Dict[String, Int]()
         self.dirs = Dict[String, Int]()
         self.untracked_dirs = List[String]()
@@ -129,6 +136,8 @@ struct GitStatus(Copyable, Movable):
 
     def clear(mut self):
         self.branch = ""
+        self.ahead = 0
+        self.behind = 0
         self.files = Dict[String, Int]()
         self.dirs = Dict[String, Int]()
         self.untracked_dirs.clear()
@@ -160,6 +169,21 @@ struct GitStatus(Copyable, Movable):
                 continue
             if e.startswith("# branch.head "):
                 self.branch = String(e[byte=14:])
+                continue
+            if e.startswith("# branch.ab "):
+                var ab = String(e[byte=12:]).split(" ")
+                for tok in ab:
+                    var t = String(tok)
+                    if t.startswith("+"):
+                        try:
+                            self.ahead = atol(String(t[byte=1:]))
+                        except:
+                            pass
+                    elif t.startswith("-"):
+                        try:
+                            self.behind = atol(String(t[byte=1:]))
+                        except:
+                            pass
                 continue
             if e.startswith("#") or e.startswith("! "):
                 continue
@@ -207,6 +231,13 @@ struct GitStatus(Copyable, Movable):
     def changed_count(self) -> Int:
         return len(self.files)
 
+    def untracked_count(self) -> Int:
+        var n = len(self.untracked_dirs)
+        for entry in self.files.items():
+            if entry.value == GS_UNTRACKED:
+                n += 1
+        return n
+
 
 def head_command(root: String, rel: String) -> String:
     """The file as in the last commit (fails for a file the commit does not have)."""
@@ -219,7 +250,7 @@ def sh_script(script: String) -> String:
     return "sh -c " + shell_quote(script)
 
 
-def commit_script(root: String, msg_file: String, amend: Bool, all: Bool) -> String:
+def commit_script(root: String, msg_file: String, amend: Bool, all: Bool, add_untracked: Bool = False) -> String:
     """`git commit` with the message in `msg_file` (removed afterwards); what git (and
     the hooks) print goes to the output, error messages too."""
     var opts = String("")
@@ -229,10 +260,11 @@ def commit_script(root: String, msg_file: String, amend: Bool, all: Bool) -> Str
         opts += " -F " + shell_quote(msg_file)
     if amend:
         opts += " --amend"
-    if all:
+    if all and not add_untracked:
         opts += " --all"
+    var pre = String("git add -A && ") if add_untracked else String("")
     var rm = ("; rm -f " + shell_quote(msg_file)) if msg_file.byte_length() > 0 else String("")
-    return sh_script("cd " + shell_quote(root) + " && git commit --cleanup=strip" + opts
+    return sh_script("cd " + shell_quote(root) + " && " + pre + "git commit --cleanup=strip" + opts
         + " </dev/null 2>&1; rc=$?" + rm + "; exit $rc")
 
 
@@ -246,28 +278,55 @@ def commit_message(summary: String, details: String) -> String:
 
 def branches_command(root: String) -> String:
     return ("git -C " + shell_quote(root) + " for-each-ref --sort=-committerdate"
-        + " --format='%(HEAD)%(refname:short)' refs/heads")
+        + " --format='%(HEAD)%(refname:short)' refs/heads refs/remotes/origin")
 
 
 def parse_branches(output: String) -> Tuple[List[String], String]:
     """(branch names, the current one) from branches_command's output."""
-    var names = List[String]()
+    var locals = List[String]()
+    var remotes = List[String]()
     var current = String("")
     for l in output.split("\n"):
         var t = String(String(l).rstrip("\r"))
         if t.byte_length() < 2:
             continue
         var name = String(t[byte=1:])
+        if name == "origin" or name == "origin/HEAD":
+            continue
         if t.startswith("*"):
             current = name
-        names.append(name)
-    return (names^, current)
+        if name.startswith("origin/"):
+            if not (name in remotes):
+                remotes.append(name)
+        else:
+            if not (name in locals):
+                locals.append(name)
+    for r in remotes:
+        var short_name = String(r[byte=7:])
+        if not (short_name in locals):
+            locals.append(r)
+    return (locals^, current)
 
 
 def switch_script(root: String, branch: String, create: Bool) -> String:
     # (no "--": `-c --` would make "--" the name; a branch name cannot start with -)
+    if not create and branch.startswith("origin/"):
+        return sh_script("cd " + shell_quote(root) + " && git switch --track "
+            + shell_quote(branch) + " </dev/null 2>&1")
     return sh_script("cd " + shell_quote(root) + " && git switch " + ("-c " if create else "")
         + shell_quote(branch) + " </dev/null 2>&1")
+
+
+def stash_script(root: String, pop: Bool) -> String:
+    var sub = "pop" if pop else "push -u"
+    return sh_script("cd " + shell_quote(root) + " && git stash " + sub + " </dev/null 2>&1")
+
+
+def stage_file_script(root: String, rel: String, unstage: Bool) -> String:
+    var q = shell_quote(rel)
+    if unstage:
+        return sh_script("cd " + shell_quote(root) + " && (git reset -q HEAD -- " + q + " || git rm --cached -q -- " + q + ") </dev/null 2>&1")
+    return sh_script("cd " + shell_quote(root) + " && git add -- " + q + " </dev/null 2>&1")
 
 
 def branch_name_problem(name: String) -> String:

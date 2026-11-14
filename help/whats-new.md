@@ -28,6 +28,25 @@
   model & thinking selectors (`Alt-O`, `Alt-T`), `@file` Tab-completion, `Alt-Up` /
   `Alt-Down` prompt history, persistent sessions, Send diagnostics to agent, and a
   built-in MCP workspace server (`scripts/mcp_server.py`).
+- Full IDE audit & Mojo 1.2 GPU/SIMD upgrades:
+  - **Vim power suite**: `Ctrl-D`/`U`/`F`/`B` scrolling, `Ctrl-O`/`I` jumplist, `Ctrl-W`
+    pane navigation, `Ctrl-V` Visual-Block column editing, `q<reg>`/`@<reg>`/`@@`
+    register macros, `gd`/`gr`/`K` LSP navigation, and `:sp`/`:vsp` synchronized split
+    views of the same file (also Window > Split joint view).
+  - **Search & Git**: Search > Replace in files... with file globs and atomic multi-file
+    undo; File > Git status panel (`s`/`u`/`a`/`r`/`d`/`c`), Git stash / pop, remote
+    branch tracking checkout, Options > Inline git blame, untracked-file hunk staging,
+    and instant `inotify` `.git` index refresh.
+  - **LSP, Formatting, Testing & Debugging**: Options > Pixi environment selector +
+    warm 2-server LSP pool, automatic LSP start (`[tools] lsp_auto_start`), `textDocument/typeDefinition`,
+    `completionItem/resolve`, viewport-chunked inlay hints, diff-hunk `mojo format` +
+    Format on save, inline `[PASS]`/`[FAIL]` test lens + Run > Quick-run test at cursor,
+    live inline debugger variable ghosts, and CPU window SIMD lane formatting (`v`/`V`).
+  - **GPU & Codegen**: Window > GPU queue & monitor (live compute/VRAM sparklines,
+    temperature, power, active processes), Compile > Inspect generated code (ASM / LLVM
+    IR with `[SIMD]` and `[SPILL]` badges), Compile > Profile GPU kernels (`nsys` /
+    `rocprofv3`), `gpu_sync = true` run configuration support, and 4 New Project
+    templates (App, Library, GPU Kernel, Python Extension).
 
 ## 2.2: ready for other people
 - A program that uses a library which is not installed (`unable to locate module

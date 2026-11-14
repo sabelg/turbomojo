@@ -23,15 +23,17 @@ def names_module(line: String, prefix: String, module: String) -> Bool:
 
 
 def uses_gpu(source: String) -> Bool:
-    """Does this program use the GPU (its imports or a DeviceContext)?"""
+    """Does this program use the GPU (its imports, TileTensor, has_accelerator, or DeviceContext)?"""
     for raw in source.split("\n"):
         var l = String(String(raw).strip())
         if l.startswith("#"):
             continue
-        for m in ["gpu", "max"]:
+        for m in ["gpu", "std.gpu", "max"]:
             if names_module(l, "from ", String(m)) or names_module(l, "import ", String(m)):
                 return True
-        if l.find("DeviceContext") >= 0:
+        if names_module(l, "from ", "layout") and (l.find("TileTensor") >= 0 or l.find("TensorLayout") >= 0 or l.find("LayoutTensor") >= 0):
+            return True
+        if l.find("DeviceContext") >= 0 or l.find("TileTensor") >= 0 or l.find("has_accelerator") >= 0:
             return True
     return False
 

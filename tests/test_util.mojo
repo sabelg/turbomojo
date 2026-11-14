@@ -140,6 +140,10 @@ def test_fuzzy_score() raises:
     assert_true(fuzzy_score("Go To Line", "goto") > 0)
     # order matters for subsequences
     assert_equal(fuzzy_score("abc", "cba"), -1)
+    # exact / basename match and path/camelCase word boundaries
+    assert_equal(fuzzy_score("app.mojo  src/app.mojo", "app.mojo"), 2200)
+    assert_true(fuzzy_score("src/window_draw.mojo", "wd") > fuzzy_score("src/shadowed.mojo", "wd"))
+    assert_true(fuzzy_score("openQuickPicker", "oqp") > fuzzy_score("opaque", "oqp"))
 
 
 # ------------------------------------------------------------------ shell / ansi

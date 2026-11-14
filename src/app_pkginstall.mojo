@@ -24,6 +24,10 @@ from newproject import np_pixi_toml, np_platform, np_mojo_spec, np_name_problem
 
 
 __extension App:
+    def active_pixi_env(self) -> String:
+        """Selected Pixi environment name (`default` unless overridden)."""
+        return self.pixi_env if self.pixi_env.byte_length() > 0 else String("default")
+
     def env_for_tool(self, path: String, tool: String) -> String:
         """The pixi.toml whose installed environment has `tool` for files like `path`
         ('' if there is no project above it, its environment is not installed, pixi is
@@ -33,10 +37,15 @@ __extension App:
         var dir = find_up(dirname(path), "pixi.toml")
         if dir.byte_length() == 0:
             return ""
-        var env_tool = join_path(dir, ".pixi/envs/default/bin/" + tool)
+        var env_name = self.active_pixi_env()
+        var env_tool = join_path(dir, ".pixi/envs/" + env_name + "/bin/" + tool)
         if not path_exists(env_tool):
-            return ""
-        if which(tool) == env_tool:
+            if env_name == "default":
+                return ""
+            env_tool = join_path(dir, ".pixi/envs/default/bin/" + tool)
+            if not path_exists(env_tool):
+                return ""
+        if env_name == "default" and which(tool) == env_tool:
             return ""
         if which(self.pixi_cmd).byte_length() == 0:
             return ""
@@ -63,9 +72,13 @@ __extension App:
         on PATH."""
         var dir = find_up(dirname(path), "pixi.toml") if path.byte_length() > 0 else String("")
         if dir.byte_length() > 0:
-            var py = join_path(dir, ".pixi/envs/default/bin/python3")
+            var env_name = self.active_pixi_env()
+            var py = join_path(dir, ".pixi/envs/" + env_name + "/bin/python3")
             if path_exists(py):
                 return py
+            var def_py = join_path(dir, ".pixi/envs/default/bin/python3")
+            if path_exists(def_py):
+                return def_py
         return "python3"
 
     def docs_python(mut self, ai: Int) -> Int:
@@ -107,7 +120,7 @@ __extension App:
         var m = self.env_manifest(path)
         if m.byte_length() == 0:
             return cmd
-        return in_env(cmd, self.pixi_cmd, m)
+        return in_env(cmd, self.pixi_cmd, m, self.active_pixi_env())
 
     # ------------------------------------------------------------- the offer
     def pkg_check(mut self, output: String, file: String, after: Int) -> Bool:

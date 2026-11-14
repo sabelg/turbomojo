@@ -10,7 +10,7 @@ a terminal) both are asked again.
 from std.collections import List, Dict
 from appstate import *
 from util import *
-from window import Window, WK_EDITOR, WK_EXPLORER
+from window import Window, WK_EDITOR, WK_EXPLORER, WK_GIT
 from buffer import TextBuffer
 from git import *
 from linediff import *
@@ -29,6 +29,8 @@ comptime GQ_COMMIT = 5
 comptime GQ_BRANCHES = 6          # the list for the branch dialog
 comptime GQ_SWITCH = 7
 comptime GQ_BLAME = 8
+comptime GQ_STASH = 9
+comptime GQ_BLAME_INLINE = 10
 comptime GIT_INDEX_MS = 1000      # how often the index file is looked at
 comptime GIT_STATUS_MS = 3000     # with the explorer open, status at least this often
 comptime GIT_MAX_LINES = 50000    # larger files get no markers (about 10 ms a change at this size)
@@ -72,6 +74,13 @@ __extension App:
                 self.git.root = root
                 self.git_status_due = True
                 self.git_index = FileSig()
+                if root.byte_length() > 0:
+                    var gdir = join_path(root, ".git")
+                    if is_dir(gdir):
+                        _ = self.watch.watch_dir(gdir)
+                        var hdir = join_path(gdir, "refs/heads")
+                        if is_dir(hdir):
+                            _ = self.watch.watch_dir(hdir)
             var ok = self.git.root.byte_length() > 0 and self.git_allowed(self.git.root)
             if ok != self.git_ok:
                 # the folder was trusted (or the trust taken back): ask everything again
@@ -124,6 +133,21 @@ __extension App:
                     self.wins[j].buf.git_path = path
             self.git_start(GQ_BASE, base_command(root, rel), path)
             return
+        if self.git_line_blame and not self.git_inline_asking:
+            var ai = self.top_editor()
+            if ai >= 0 and self.wins[ai].path.byte_length() > 0 and not self.wins[ai].buf.large and self.wins[ai].buf.count() <= GIT_MAX_LINES:
+                var p = self.wins[ai].path
+                var ver = self.wins[ai].buf.version
+                if p != self.git_inline_path or ver != self.git_inline_ver:
+                    var w = self.git_where(p)
+                    if w[0].byte_length() > 0 and self.wins[ai].buf.git_state == GB_KNOWN:
+                        var tmp = self.git_tmp_file("iblame")
+                        if write_file(tmp, self.wins[ai].buf.to_bytes()):
+                            self.git_inline_asking = True
+                            self.git_inline_path = p
+                            self.git_inline_ver = ver
+                            self.git_start(GQ_BLAME_INLINE, blame_script(w[0], w[1], tmp), p)
+                            return
 
     def git_allowed(self, root: String) -> Bool:
         """git runs what a repository's own configuration names (core.fsmonitor,
@@ -161,6 +185,7 @@ __extension App:
             else:
                 self.git.clear()
             self.explorer_show()
+            self.git_status_refresh()
         elif req == GQ_BASE:
             if status == 0:
                 self.git_base_text(path, out)
@@ -180,7 +205,13 @@ __extension App:
             for i in range(len(self.wins)):
                 if self.wins[i].kind == WK_EDITOR and self.wins[i].path == path and self.wins[i].buf.git_state != GB_ASKED:
                     self.wins[i].buf.git_state = GB_UNKNOWN
-        elif req == GQ_COMMIT or req == GQ_BRANCHES or req == GQ_SWITCH or req == GQ_BLAME:
+        elif req == GQ_BLAME_INLINE:
+            self.git_inline_asking = False
+            if status == 0 and path == self.git_inline_path:
+                self.git_inline_rows = parse_blame(out)
+            else:
+                self.git_inline_rows.clear()
+        elif req == GQ_COMMIT or req == GQ_BRANCHES or req == GQ_SWITCH or req == GQ_BLAME or req == GQ_STASH:
             self.git_command_done(req, status, out, path)
         self.git_stamp += 1
         self.git_diff_refresh()

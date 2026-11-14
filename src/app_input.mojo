@@ -13,7 +13,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -56,6 +56,8 @@ from app_jobs import *
 from app_mouse import *
 from app_draw import *
 from app_vim import *
+from app_gpu import *
+from app_codegen import *
 
 
 __extension App:
@@ -71,6 +73,7 @@ __extension App:
         self.event_seq += 1
         self.handle_event(e)
         self.macro_key_live = False
+        self.sync_shared_buffers()
         self.sig_follow()
         self.layout_sync()
         self.explain_fit()
@@ -143,6 +146,9 @@ __extension App:
         if self.mode == M_NORMAL and self.sig_on and k == KEY_ESC and self.chord == 0:
             self.sig_close()                    # Esc takes the parameter tip away first
             return
+        if self.mode == M_NORMAL and self.sig_on and self.chord == 0 and (k == (KEY_UP | MOD_ALT) or k == (KEY_DOWN | MOD_ALT)):
+            if self.sig_cycle(-1 if k == (KEY_UP | MOD_ALT) else 1):
+                return
         if self.chord != 0:
             # the second key of a sequence such as Ctrl-K S
             var first = self.chord
@@ -207,6 +213,12 @@ __extension App:
             return
         if self.wins[t].kind == WK_BLAME and self.git_blame_key(k):
             return
+        if self.wins[t].kind == WK_GIT and self.git_status_key(k):
+            return
+        if self.wins[t].kind == WK_GPU and self.gpuwin_key(k):
+            return
+        if self.wins[t].kind == WK_CODEGEN and self.codegen_key(k):
+            return
         if self.wins[t].kind == WK_EXPLAIN and self.explain_key(k):
             return
         if self.wins[t].kind == WK_DOCPANE and self.docpane_key_event(k):
@@ -233,7 +245,7 @@ __extension App:
         elif (k == KEY_LEFT or k == KEY_RIGHT) and self.wins[t].kind == WK_MESSAGE:
             self.panel_show((self.msg_page + (1 if k == KEY_RIGHT else PG_COUNT - 1)) % PG_COUNT)
             return
-        elif self.wins[t].kind == WK_CPU and (k == 103 or k == 71 or k == 43 or k == 45):
+        elif self.wins[t].kind == WK_CPU and (k == 103 or k == 71 or k == 118 or k == 86 or k == 43 or k == 45):
             self.cpuwin_key(k)
             return
         elif self.wins[t].kind == WK_DEBUG and (k == KEY_ENTER or k == 32 or k == KEY_RIGHT or k == KEY_LEFT or k == 61 or k == KEY_DELETE):

@@ -311,6 +311,14 @@ __extension Window:
                 if seg == 0 and sev > 0 and pad >= 1:
                     # and a letter before the number: the colour is not the only sign
                     scr.put(self.x + 1, yy, 69 if sev == 1 else (87 if sev == 2 else 105), num_fg, pal.gutter_bg)   # E W i
+                elif seg == 0 and not is_msg and pad >= 1 and len(self.test_lens_rows) > 0:
+                    for tli in range(len(self.test_lens_rows)):
+                        if self.test_lens_rows[tli] == r:
+                            var ts = self.test_lens_states[tli]
+                            var tch = 0x2713 if ts == 2 else (0x2717 if ts == 3 else 0x25B7)
+                            var tfg = pal.msg_ok if ts == 2 else (pal.diag_err if ts == 3 else pal.gutter_fg)
+                            scr.put(self.x + 1, yy, tch, tfg, pal.gutter_bg)
+                            break
                 if seg == 0 and not is_msg and len(self.buf.bps) > 0:
                     var look = self.buf.bp_look(r)
                     if look == 1 or look == 3:
@@ -443,11 +451,20 @@ __extension Window:
             if fi >= 0 and s1 == n and fi < len(self.buf.fold_ends) and v + 2 >= off and v + 2 < lim:
                 var hidden = self.buf.fold_ends[fi] - r
                 _ = scr.text(cx0 + v + 1 - off, yy, " ⋯ " + String(hidden) + (" line " if hidden == 1 else " lines "), pal.gutter_fg, pal.gutter_bg)
-            elif s1 == n and not is_msg and len(self.buf.hints) > 0 and v + 2 >= off and v + 4 < lim:
-                # inlay hints are shown after the end of the line, not inside it
-                var note = self.buf.hints_text(r)
-                if note.byte_length() > 0:
-                    _ = scr.text(cx0 + v + 2 - off, yy, "◂ " + note, pal.syn[3], rowbg)
+            elif s1 == n and not is_msg and v + 2 >= off and v + 4 < lim:
+                var eol_x = cx0 + v + 2 - off
+                if len(self.buf.hints) > 0:
+                    # inlay hints are shown after the end of the line, not inside it
+                    var note = self.buf.hints_text(r)
+                    if note.byte_length() > 0:
+                        eol_x = scr.text(eol_x, yy, "◂ " + note + "  ", pal.syn[3], rowbg)
+                if len(self.dbg_inline_rows) > 0 and eol_x + 4 < cx0 + cls:
+                    for dli in range(len(self.dbg_inline_rows)):
+                        if self.dbg_inline_rows[dli] == r:
+                            eol_x = scr.text(eol_x, yy, "⟨" + self.dbg_inline_vals[dli] + "⟩  ", pal.msg_note, rowbg)
+                            break
+                if active and r == self.cr and r == self.inline_blame_row and self.inline_blame.byte_length() > 0 and not scr.plain and eol_x + 4 < cx0 + cls:
+                    _ = scr.text(eol_x, yy, "  " + self.inline_blame, pal.gutter_fg, rowbg)
             scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
             seg += 1
             if seg >= len(starts):

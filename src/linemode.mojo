@@ -288,7 +288,7 @@ __extension App:
             if not is_number(p[0]):
                 out.append(cmd + " N TEXT")
                 return out^
-            var r = 0
+            var r: Int
             try:
                 r = atol(p[0]) - 1
             except:

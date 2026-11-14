@@ -204,7 +204,7 @@ def inflate_raw(data: List[UInt8], start: Int, limit: Int) -> Tuple[Bool, List[U
                     index += 1
                 else:
                     var rl = 0
-                    var rep = 0
+                    var rep: Int
                     if sym == 16:
                         if index == 0:
                             s.bad = True

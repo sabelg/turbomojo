@@ -243,7 +243,7 @@ def initialize_arguments() -> String:
     return w.text()
 
 
-def launch_arguments(program: String, cwd: String, args: List[String]) -> String:
+def launch_arguments(program: String, cwd: String, args: List[String], env: List[String] = List[String]()) -> String:
     var w = JsonWriter()
     w.begin_obj()
     w.kv_str("program", program)
@@ -253,6 +253,12 @@ def launch_arguments(program: String, cwd: String, args: List[String]) -> String
     for a in args:
         w.str(a)
     w.end_arr()
+    if len(env) > 0:
+        w.key("env")
+        w.begin_arr()
+        for e in env:
+            w.str(e)
+        w.end_arr()
     w.kv_bool("stopOnEntry", False)
     w.end_obj()
     return w.text()
@@ -320,6 +326,7 @@ struct DebugSession(Copyable, Movable):
     var program: String
     var cwd: String
     var args: List[String]
+    var env: List[String]
     var caps: List[String]          # the capabilities the adapter said it has
     var config_cmds: List[String]   # requests to send when the adapter is ready for its
     var config_args: List[String]   #   configuration (breakpoints), before configurationDone
@@ -362,6 +369,7 @@ struct DebugSession(Copyable, Movable):
         self.program = ""
         self.cwd = ""
         self.args = List[String]()
+        self.env = List[String]()
         self.caps = List[String]()
         self.config_cmds = List[String]()
         self.config_args = List[String]()
@@ -440,7 +448,7 @@ struct DebugSession(Copyable, Movable):
         self.stop_ip = ""
         self.trace_seq = -1
 
-    def begin(mut self, adapter_cmd: String, program: String, cwd: String, args: List[String], stderr_path: String = "/dev/null") -> Bool:
+    def begin(mut self, adapter_cmd: String, program: String, cwd: String, args: List[String], stderr_path: String = "/dev/null", env: List[String] = List[String]()) -> Bool:
         """Start the adapter and the conversation that launches `program`."""
         if self.state != DS_OFF:
             return False
@@ -448,6 +456,7 @@ struct DebugSession(Copyable, Movable):
         self.program = program
         self.cwd = cwd
         self.args = args.copy()
+        self.env = env.copy()
         if adapter_cmd.byte_length() == 0 or not self.conn.start(adapter_cmd, stderr_path):
             self.error = "The debug adapter could not be started"
             return False
@@ -608,7 +617,7 @@ struct DebugSession(Copyable, Movable):
             self.take_capabilities(m.doc, m.body())
             if self.state == DS_INIT:
                 self.state = DS_LAUNCH
-                _ = self.conn.request("launch", launch_arguments(self.program, self.cwd, self.args))
+                _ = self.conn.request("launch", launch_arguments(self.program, self.cwd, self.args, self.env))
             return 0
         if m.name == "launch":
             if not m.success:

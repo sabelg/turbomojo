@@ -15,7 +15,7 @@ from palette import Palette, theme, THEME_COUNT
 from contrast import text_muted, text_disabled, dimmed
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -126,6 +126,15 @@ __extension App:
                 if self.wins[ti].buf.mixed_eol:
                     right += "Mixed>"          # both kinds in the file; saving writes this one
                 right += ("CRLF" if self.wins[ti].buf.crlf else "LF") + "  " + (("Tabs:" + String(self.wins[ti].buf.tab_width)) if self.wins[ti].buf.use_tabs else ("Spaces:" + String(self.wins[ti].buf.indent_size))) + "  "
+            if self.git.branch.byte_length() > 0 and self.scr.w >= 96:
+                var gb = "git:" + self.git.branch
+                if self.git.ahead > 0:
+                    gb += "↑" + String(self.git.ahead)
+                if self.git.behind > 0:
+                    gb += "↓" + String(self.git.behind)
+                right += gb + "  "
+            if self.pixi_env.byte_length() > 0 and self.pixi_env != "default" and self.scr.w >= 96:
+                right += "env:" + self.pixi_env + "  "
             if self.lsp.active() or self.extra_active():
                 right += "LSP  "
             if self.dbg.active():
@@ -194,6 +203,19 @@ __extension App:
             if self.wins[i].kind == WK_EDITOR:
                 self.git_marks_update(i)
                 self.scopes_update(i)
+                if self.git_line_blame and i == self.top_editor() and self.wins[i].path.byte_length() > 0 and self.wins[i].path == self.git_inline_path and self.wins[i].cr < len(self.git_inline_rows):
+                    ref br = self.git_inline_rows[self.wins[i].cr]
+                    if is_uncommitted(br.sha):
+                        self.wins[i].inline_blame = "You, uncommitted"
+                    else:
+                        var sum = br.summary
+                        if cp_len(sum) > 40:
+                            sum = slice_str(decode(sum), 0, 39) + "…"
+                        self.wins[i].inline_blame = br.author + ", " + ymd(br.time) + (" • " + sum if sum.byte_length() > 0 else String(""))
+                    self.wins[i].inline_blame_row = self.wins[i].cr
+                else:
+                    self.wins[i].inline_blame = ""
+                    self.wins[i].inline_blame_row = -1
             if self.wins[i].kind == WK_AGENT:
                 self.wins[i].title = self.agent_title()     # (before the frame is drawn)
             self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers and self.wins[i].w >= GUTTER_MIN_W)
@@ -310,8 +332,12 @@ __extension App:
                 for h in ["~Enter~ Go to", "~Esc~ Close", self.git_blame_summary()]:
                     items.append(h)
                     cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_GIT:
+                for h in ["~Enter~ Open", "~Space~ Stage/unstage", "~D~ Diff", "~C~ Commit", "~A~ Amend", "~B~ Branch", "~Z~ Stash", "~Esc~ Close"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_DIFF:
-                var dh = List[String]()
+                var dh: List[String]
                 if self.gd_proposal:
                     dh = ["~A~ Accept", "~S~ Accept all (session)", "~R~ Reject", "~Esc~ Later"]
                 elif self.gd_staged:
