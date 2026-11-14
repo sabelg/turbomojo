@@ -200,6 +200,8 @@ struct App(Movable):
     var run_label: String
     var run_file: String             # the file the last Ctrl-F9 ran
     var run_wants_gpu: Bool          # its source uses the GPU
+    var lsp_env: String              # the pixi.toml whose environment the server runs in ("" the IDE's own)
+    var lsp_front: String            # the file in front when the server last looked (P11-16)
     var pkg_lsp_again: Bool          # the language server stopped for an install: start it again (P11-14)
     var pkg_asked: List[String]      # libraries offered this session ("kind:module")
     var pkg_kind: Int                # the one being offered or installed (pkginstall.PK_*)
@@ -691,6 +693,8 @@ struct App(Movable):
         self.run_label = ""
         self.run_file = ""
         self.run_wants_gpu = False
+        self.lsp_env = ""
+        self.lsp_front = ""
         self.pkg_lsp_again = False
         self.pkg_asked = List[String]()
         self.pkg_kind = 0

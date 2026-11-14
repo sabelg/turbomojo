@@ -6086,3 +6086,29 @@ projects in $TMPDIR with only Mojo as a dependency, linux-aarch64):
 
 Nothing needed fixing. Not done: running the GPU program itself (it builds).
 
+## 2026-11-13 · P11-16 The language server follows the project · done
+
+- Gate: CHECK OK (132 test files, 1271 tests, 1005 s).
+
+What changed:
+- src/app_lsp.mojo: the server remembers the environment it was started in (lsp_env: the
+  pixi.toml, or "" for the IDE's own). lsp_follow_project, on the event loop's pass while a
+  server runs: when the file in front changes and is one the server follows, and its
+  environment differs (another project, or none), the server is stopped and started for
+  it; the status line says for which. Files of the same project keep the server.
+- README, USER_GUIDE, What's new.
+
+Verified:
+- tests/test_lib_docs.mojo, a new test with two projects, each with a stand-in server in
+  its environment, and a fake `pixi shell-hook` that puts that environment on PATH - so the
+  real command (bash, the hook, exec) starts the right one: same project, no restart;
+  another project, restarted with that one's pixi.toml in its command; a file of no
+  project, the IDE's own (a stand-in). No stand-in left running afterwards.
+- Mutation checks: 4 mutants, 3 caught (the comparison, the call from the loop, recording
+  the environment). The 4th - looking at every pass instead of only when the file in
+  front changes - behaves the same and only costs a `command -v` per pass; it is a guard
+  against that cost and no test sees it.
+
+Not done: include paths of the first file's folder stay those of the file the server was
+started for, within a project (as before).
+

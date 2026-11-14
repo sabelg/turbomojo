@@ -7,7 +7,7 @@ from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
 from pydocs import *
 from app import *
-from appstate import App, M_NORMAL, M_HOVER
+from appstate import App, M_NORMAL, M_HOVER, now_ns
 from signals import own_pid
 from util import env_or, run_system, run_capture, bytes_to_str, decode, to_str
 
@@ -112,6 +112,61 @@ def test_the_language_server_in_the_projects_environment() raises:
     assert_equal(app.lsp_server_command(d + "/q/a.mojo").find("shell-hook"), -1)     # no environment
     app.lsp_server = "/opt/other-lsp"                                                  # a configured one wins
     assert_equal(app.lsp_server_command(d + "/p/a.mojo").find("shell-hook"), -1)
+    _ = run_system("rm -rf '" + d + "'")
+
+
+def test_the_language_server_follows_the_project() raises:
+    var d = env_or("TMPDIR", "/tmp") + "/turbomojo-libdocs3-" + String(own_pid())
+    _ = run_system("rm -rf '" + d + "' && mkdir -p '" + d + "/p/.pixi/envs/default/bin' '" + d + "/q/.pixi/envs/default/bin' '" + d + "/loose'")
+    # each project's environment has a stand-in server that only stays alive; a fake
+    # `pixi shell-hook` puts that environment first on PATH, as the real one does
+    for pr in ["p", "q"]:
+        var bin = d + "/" + String(pr) + "/.pixi/envs/default/bin"
+        _ = run_system("touch '" + d + "/" + String(pr) + "/pixi.toml' && printf '#!/bin/sh\\nexec tail -f /dev/null\\n' > '" + bin + "/mojo-lsp-server' && chmod +x '" + bin + "/mojo-lsp-server'")
+    with open(d + "/fake-pixi.sh", "w") as f:
+        f.write("[ \"$1\" = shell-hook ] || exit 3\necho \"export PATH='$(dirname \"$5\")/.pixi/envs/default/bin':\\$PATH\"\n")
+    for f in ["p/a.mojo", "p/c.mojo", "q/b.mojo", "q/e.mojo", "loose/l.mojo"]:
+        with open(d + "/" + String(f), "w") as out:
+            out.write("def main():\n    pass\n")
+    var app = App()
+    app.scr.resize(100, 30)
+    app.pixi_cmd = "sh " + d + "/fake-pixi.sh"
+    app.tool_env_known = True
+    app.tool_env = ""
+    app.open_path(d + "/p/a.mojo")
+    app.open_path(d + "/p/c.mojo")
+    app.open_path(d + "/q/b.mojo")
+    app.open_path(d + "/q/e.mojo")
+    app.open_path(d + "/loose/l.mojo")
+    app.focus(app.find_editor(d + "/p/a.mojo"))
+    app.lsp_track(app.active_editor(), now_ns())
+    assert_equal(app.lsp.starts, 1)
+    assert_equal(app.lsp_env, d + "/p/pixi.toml")
+    _ = run_system("sleep 0.5")
+    assert_true(app.lsp.conn.proc.running, "the stand-in server did not start")
+    # another file of the same project: the same server
+    app.focus(app.find_editor(d + "/p/c.mojo"))
+    app.lsp_tick(now_ns())
+    assert_equal(app.lsp.starts, 1)
+    # a file of another project: started again in that one's environment
+    app.focus(app.find_editor(d + "/q/b.mojo"))
+    app.lsp_tick(now_ns())
+    assert_equal(app.lsp.starts, 2)
+    assert_equal(app.lsp_env, d + "/q/pixi.toml")
+    assert_true(app.lsp.server_cmd.find(d + "/q/pixi.toml") > 0, app.lsp.server_cmd)
+    assert_true(app.status.startswith("Language server: started again for q's environment"), app.status)
+    _ = run_system("sleep 0.5")
+    assert_true(app.lsp.conn.proc.running)
+    app.focus(app.find_editor(d + "/q/e.mojo"))
+    app.lsp_tick(now_ns())
+    assert_equal(app.lsp.starts, 2)
+    # a file of no project: the IDE's own server (a stand-in here too)
+    app.lsp_server = "tail -f /dev/null #"
+    app.focus(app.find_editor(d + "/loose/l.mojo"))
+    app.lsp_tick(now_ns())
+    assert_equal(app.lsp.starts, 3)
+    assert_equal(app.lsp_env, "")
+    app.lsp_stop()
     _ = run_system("rm -rf '" + d + "'")
 
 

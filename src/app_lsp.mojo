@@ -92,7 +92,9 @@ __extension App:
             if not self.lsp.start(self.lsp_server_command(path), self.cwd, log, own_pid(), now):
                 self.say("Could not start the language server")
                 return
+            self.lsp_env = self.lsp_manifest(path)     # the environment it runs in (P11-16)
         self.lsp_path = path
+        self.lsp_front = path
         self.lsp_uri = path_to_uri(path)
         # the server gets this file now rather than after the usual pause
         if self.lsp.find_doc(self.lsp_uri) < 0:
@@ -337,6 +339,25 @@ __extension App:
         at the front unless another page was chosen."""
         self.problems_show(True)
 
+    def lsp_follow_project(mut self, now: Int) -> Bool:
+        """The file in front belongs to another pixi environment than the server's (or
+        to none, or the server's to none): start the server again for it, so that it
+        sees that project's packages (P11-16). Looked at only when the file in front
+        changes. True when it was started again."""
+        var ai = self.active_editor()
+        if ai < 0 or self.wins[ai].path == self.lsp_front:
+            return False
+        self.lsp_front = self.wins[ai].path
+        if not self.lsp_wants(ai) or not self.lsp.active():
+            return False
+        if self.lsp_manifest(self.lsp_front) == self.lsp_env:
+            return False
+        self.lsp_stop()
+        self.lsp_track(ai, now)
+        var m = self.lsp_env
+        self.say("Language server: started again for " + (basename(dirname(m)) + "'s environment" if m.byte_length() > 0 else String("this file (no pixi environment)")))
+        return True
+
     def lsp_tick(mut self, now: Int):
         """Called on every pass of the event loop while a language server is in use."""
         if self.lsp_restart_due > 0 and now >= self.lsp_restart_due:
@@ -348,6 +369,8 @@ __extension App:
                 self.lsp_track(ri, now)
             return
         if not self.lsp.conn.proc.running:
+            return
+        if self.lsp_follow_project(now):
             return
         self.lsp.poll()
         if self.lsp.state == LSP_READY and not self.lsp_announced:

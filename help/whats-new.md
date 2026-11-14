@@ -8,7 +8,8 @@
   `pixi.toml` it offers to make the project first. Nothing is installed without a yes.
 - F1 on a name of a Python library your program imports (`np.zeros`) shows its
   documentation, from the project's own Python. The language server runs in the
-  project's environment, so it knows the Mojo packages installed there (MAX and others).
+  project's environment, so it knows the Mojo packages installed there (MAX and others),
+  and starts again in another project's when one of its files comes to the front.
 - `pixi run bundle` makes a tar file to copy to a server: TurboMojo and the libraries
   it needs, which runs there after unpacking, without pixi.
 - Help > Exercise done? checks your answer to a Mojo GPU Puzzle too: it runs your copy
