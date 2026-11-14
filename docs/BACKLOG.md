@@ -217,3 +217,18 @@ in the Modular forum [1, 2, 4, 16, 17].
   Blocked on running it: there is no Mac here. Done and checked: osx-arm64 in pixi.toml and pixi.lock; `scripts/macos-link.sh` compiles for arm64-apple-macosx14.0 and links with ld64.lld against the osx-arm64 packages and a libSystem stub - an arm64 Mach-O executable, signed ad hoc, no undefined symbol (the link found close_range, Linux-only, now replaced on macOS). See the journal.
 - [x] P11-13 Install what a program uses (asked by the user, 2026-11-13): when a build or run fails because a Mojo module (`unable to locate module 'max'`) or a Python one (`No module named 'numpy'`) is not installed, TurboMojo names it, finds the package on the project's channels, and offers to install it (`pixi add`, in the background), then runs again; without a pixi.toml it offers to make one first; nothing is installed without a yes
 - [x] P11-14 The documentation of what a program uses (asked by the user with P11-13, 2026-11-13): F1 / Ctrl-F1 on a name of a Python library the file imports (`np.zeros` with `var np = Python.import_module("numpy")`) shows pydoc's text from the project's Python; the language server runs in the project's environment, so the Mojo packages installed there (which come compiled) have their documentation on hover and Ctrl-F1, completion and errors; an install restarts it
+- [ ] P11-15 Install and documentation in the running IDE (asked by the user, 2026-11-13): with scripts/tui-test.sh, the real TurboMojo and the real pixi in a scratch project - a file that imports numpy fails, the offer, Install, it runs; F1 on `np.zeros`; hover on a MAX name with the project's language server. Fix what breaks
+- [ ] P11-16 The language server follows the project: when the file in front belongs to another pixi environment than the running server's, the server is started again for it (its packages, its include paths)
+- [ ] P11-17 Release 2.2: TurboMojo 2.2.0 (version, What's new, CHANGELOG, the conda package built and its tests run); the tag is made here and pushed only with the user's word
+
+## Phase 12: A vim interface (v2.3)
+
+Asked by the user (2026-11-13), for people who do not like the retro look: the everyday
+part of vim, as editors with a "vim mode" have it - not Vimscript, vim plugins or .vimrc.
+The Turbo, Modern and Emacs keymaps stay as they are.
+
+- [ ] P12-01 Modal editing core: `ui.keymap = "vim"` (and Options > Keys); Normal, Insert and Visual (characters and lines) modes; the mode in the status line; the cursor a block in Normal and a bar in Insert (DECSCUSR, where the terminal has it); Esc and i a I A o O v V
+- [ ] P12-02 Motions and operators: h j k l w b e W B E 0 ^ $ gg G f t F T ; , % { } with counts; d c y p P x r J > < with motions and counts (dd, 3dw, cw, yy); text objects iw aw i" a" i( a( i{ ip; `.` repeats the last change; u and Ctrl-R undo and redo
+- [ ] P12-03 Search and commands: / ? n N * #; `:w :q :wq :x :q! :e FILE :N :s/a/b/g :%s/a/b/g`, and `:` with TurboMojo's own commands (`:build`, `:run`, the command palette's names)
+- [ ] P12-04 Registers and the clipboard: the unnamed register, "a-"z, "0, and "+ / "* through the clipboard TurboMojo already uses (OSC 52 over SSH)
+- [ ] P12-05 A "Vim" preset (Options > Presets, and the first-run question): the Modern look, the vim keys, relative line numbers (`editor.relative_numbers`, new); the menu bar still reachable with F10 and Alt

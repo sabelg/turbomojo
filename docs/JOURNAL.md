@@ -6052,3 +6052,13 @@ Not done / unverified:
   (tools.docs_paths does that by hand); not done.
 - pydoc shows what the library's docstrings say, not its website.
 
+
+## 2026-11-13 · New tasks: P11-15 to P11-17, Phase 12 (vim)
+
+- The user approved the suggestions after P11-14: check the install and the documentation
+  in the running IDE (P11-15), the language server following the project (P11-16), release
+  2.2 (P11-17, the tag pushed only on their word); and a vim interface for people who do
+  not like the retro look - Phase 12, the everyday part of vim (modes, motions, operators,
+  text objects, search, `:` commands, registers, a Vim preset), not Vimscript or plugins.
+- A README recording was suggested too, but P11-02 already made one (an asciinema cast,
+  linked from the README); dropped.
