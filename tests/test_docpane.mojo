@@ -5,7 +5,7 @@ compile while it does (only `mojo doc` answers already there), more with Ctrl-F1
 standard library declarations from the downloaded reference; Enter opens the viewer."""
 from std.testing import assert_equal, assert_true, assert_false, TestSuite
 from std.collections import List
-from docpane import md_section, DOCPANE_SECTION_MAX
+from docpane import md_section, DOCPANE_SECTION_MAX, infer_receiver_owner, md_mojo_blocks
 from app_docpane import DOCPANE_IDLE_MS
 from window import WK_DOCPANE, WK_EDITOR
 from term import key_event, fkey, MOD_CTRL, KEY_ENTER, KEY_ESC
@@ -120,6 +120,38 @@ def test_the_pane_follows_the_cursor() raises:
     app.exec(CM_DOCS_PANE)
     assert_equal(app.docpane_index(), -1)
     assert_equal(app.wins[app.find_editor(d + "/main.mojo")].w, full)
+    _ = run_system("rm -rf " + shell_quote(d))
+
+
+def test_receiver_owner_and_snippet_actions() raises:
+    var code = "from std.python import Python\n\ndef main():\n    var items = List[Int]()\n    items.append(1)\n    var os = Python.import_module(\"os\")\n"
+    assert_equal(infer_receiver_owner(code, 4, "items.append"), "List")
+    assert_equal(infer_receiver_owner(code, 5, "Python.import_module"), "Python")
+    assert_equal(infer_receiver_owner("def f():\n    var s = \"hi\"\n    _ = s.byte_length()\n", 2, "s.byte_length"), "String")
+    var blocks = md_mojo_blocks("```mojo\ndef sig()\n```\n\nExample:\n```mojo no-test\ndef main():\n    print(1)\n```\n")
+    assert_equal(len(blocks), 2)
+    assert_true(blocks[1].find("print(1)") >= 0)
+
+    var d = scratch("rx")
+    _ = run_system("mkdir -p " + shell_quote(d + "/docs"))
+    _ = write_file(d + "/docs/std.docs.json", str_bytes(STD_JSON))
+    _ = write_file(d + "/main.mojo", str_bytes("def main():\n    var items = List[Int]()\n    items.append(1)\n"))
+    var app = App()
+    app.scr.resize(120, 34)
+    app.cwd = d
+    app.doc_home = d + "/docs"
+    app.open_path(d + "/main.mojo")
+    app.exec(CM_DOCS_PANE)
+    var ei = app.find_editor(d + "/main.mojo")
+    app.wins[ei].goto(2, 12)                                                    # on append of items.append
+    rest(app)
+    assert_true(pane_text(app).find("Appends a value.") >= 0, pane_text(app))   # List.append, not free def append!
+    app.focus(app.docpane_index())
+    app.handle(key_event(99))                                                   # 'c': copy snippet
+    assert_true(to_str(app.clipboard).find("def append") >= 0, to_str(app.clipboard))
+    app.handle(key_event(116))                                                  # 't': try snippet in scratch buffer
+    assert_equal(app.wins[app.top()].kind, WK_EDITOR)
+    assert_true(app.wins[app.top()].title.startswith("snippet-"))
     _ = run_system("rm -rf " + shell_quote(d))
 
 

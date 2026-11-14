@@ -170,5 +170,16 @@ def test_never_wider_than_asked_except_code() raises:
                 assert_equal(len(row.cps), len(row.st))
 
 
+def test_code_fence_info_strings_and_titles() raises:
+    var links = List[String]()
+    var r = md_render_rich("```mojo no-test title=\"demo.mojo\"\ndef hi():\n    pass\n```\n", 40, Highlighter(), links, True)
+    assert_equal(to_str(r[0].cps), "── demo.mojo ──")
+    assert_equal(styles(r[0]), "DDDDDDDDDDDDDDD")
+    assert_equal(to_str(r[1].cps), "def hi():")
+    assert_equal(r[1].st[0], MD_BLOCK + C_KW)
+    var comma = render("```mojo,ignore\ndef f():\n    pass\n```", 40)
+    assert_equal(comma[0].st[0], MD_BLOCK + C_KW)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

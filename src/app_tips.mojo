@@ -6,7 +6,7 @@ tips-shown); Help > No more tips (or ui.tips = false) stops them for good.
 from std.collections import List
 from appstate import *
 from util import *
-from commands import CM_SYMBOL, CM_AGAIN, CM_QUICK
+from commands import CM_SYMBOL, CM_AGAIN, CM_QUICK, CM_HELP
 from notify import NL_INFO
 from term import KEY_PGUP, KEY_PGDN, KEY_LEFT, KEY_RIGHT, KEY_BACKSPACE
 from tips import *
@@ -57,6 +57,11 @@ __extension App:
             if k.byte_length() == 0:
                 return ""
             return k + " finds the next match again, without the Find dialog"
+        if t == TIP_EXPLAIN:
+            var k = self.reg.key_label(CM_HELP)
+            if k.byte_length() == 0:
+                k = "F1"
+            return k + " on a line with an error (or in Problems) explains what it means and how to fix it"
         return ""
 
     def tips_off(mut self):

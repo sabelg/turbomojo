@@ -47,6 +47,8 @@ from app_tests import *
 from outline import *
 from symindex import *
 from docs import *
+from docpane import infer_receiver_owner
+from pydocs import dotted_at
 from project import *
 from runconfig import *
 from trust import *
@@ -300,6 +302,9 @@ __extension App:
         if name == "pkg:add":
             self.pkg_added(ok, self.job.cancelled, tstr)
             return
+        if name == "puzzle:install":
+            self.puzzle_env_installed(ok, self.job.cancelled, tstr)
+            return
         if name.startswith("puzzle:"):
             self.task_output("Puzzle checked in " + tstr)
             self.puzzle_finished(String(name[byte=7:]), ok, bytes_to_str(self.job.data))
@@ -504,7 +509,11 @@ __extension App:
                 md += ("\n\n---\n\n" if md.byte_length() > 0 else "") + part
         if md.byte_length() == 0:
             # not in the project: a name of the standard library, if its reference is downloaded
-            if self.docs_api_lookup(name, asked):
+            var owner_hint = String("")
+            var chain = dotted_at(self.wins[ai].buf.line(self.wins[ai].cr), self.wins[ai].cc)
+            if chain.find(".") >= 0:
+                owner_hint = infer_receiver_owner(to_str(self.wins[ai].buf.all_text()), self.wins[ai].cr, chain)
+            if self.docs_api_lookup(name, asked, owner_hint):
                 return True
             if not asked:
                 return False

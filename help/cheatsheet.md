@@ -28,6 +28,14 @@ The keys used most, with the Modern keymap (the default). Help > Keyboard refere
 | Alt-F11 | Terminal |
 | Ctrl-F10 | Send the selection to the Mojo REPL |
 | Alt-N / Alt-B | Next / previous changed block (git) |
-| Ctrl-F11 | Agent panel |
+| Ctrl-F11 / Shift-F11 | Agent panel / mention selection in prompt |
 | Shift-F10 | Notifications and what is running |
-| Ctrl-F1 | Documentation of the name at the cursor |
+| F1 / Ctrl-F1 | Explain error or keys / docs of name at cursor |
+| Shift-F1 / Alt-F1 | Mojo documentation reader / search all docs |
+
+In the **documentation reader** (Shift-F1): **/** searches all books, **Ctrl-F** (**F3** /
+**Shift-F3**) searches on the page, **G** jumps to a heading on the page, **C** copies a
+code block, **T** opens it in a scratch buffer, and **O** opens your own practice copy.
+In the **agent panel** (Ctrl-F11): **Alt-M** cycles mode (`ask` / `accept-edits` /
+`auto`), **Alt-O** picks the model, **Alt-T** sets thinking, **Tab** completes `@file`,
+and **Alt-Up** / **Alt-Down** recall prompts.

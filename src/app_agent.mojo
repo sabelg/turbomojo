@@ -17,12 +17,16 @@ from appstate import *
 from app_notify import *
 from util import *
 from window import Window, WK_EDITOR, WK_AGENT
-from term import KEY_ENTER, KEY_ESC, KEY_BACKSPACE, KEY_DELETE, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_UP, KEY_DOWN, KEY_PGUP, KEY_PGDN, K_BASE
+from term import KEY_ENTER, KEY_ESC, KEY_TAB, KEY_BACKSPACE, KEY_DELETE, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_UP, KEY_DOWN, KEY_PGUP, KEY_PGDN, K_BASE, MOD_ALT, ctrl
+from dialog import Dialog, Field, D_AGENT_MODEL, D_AGENT_MODE, D_AGENT_THINKING, D_AGENT_FILE
+from filestate import state_name
+from toml import toml_quote
 from json import JsonWriter
 from acp import *
 from agentchat import *
 from markdown import MdLine, md_render
 from app_outline import *
+from app_problems import *
 from agentsvc import allow_key, option_of
 from app_agentsvc import *
 from app_agentexplain import *
@@ -69,6 +73,11 @@ __extension App:
             else:
                 self.exec(CM_AGENT_START)
 
+    def agent_session_file(self, root: String) -> String:
+        if self.agent_sessions_dir.byte_length() == 0 or root.byte_length() == 0:
+            return ""
+        return self.agent_sessions_dir + "/" + state_name(root) + ".sid"
+
     def agent_start(mut self):
         if self.agent_command.byte_length() == 0:
             self.say("No agent is set up (tools.agent)")
@@ -78,8 +87,32 @@ __extension App:
         var log = state_dir() + "/agent.log"
         _ = run_system("mkdir -p " + shell_quote(state_dir()))   # (its stderr goes there: a first run has no folder yet)
         self.agent.services = True              # files and terminals through the editor
+        self.agent.resume_session_id = ""
+        var sf = self.agent_session_file(root)
+        if sf.byte_length() > 0 and path_exists(sf):
+            self.agent.resume_session_id = String(read_text(sf).strip())
         self.agent_forget()                     # a new session allows nothing yet
         _ = self.agent.start(self.agent_command, root, log, now_ns())
+
+    def agent_new_session(mut self) raises:
+        """Forget this project's saved session id, clear the conversation, and start a
+        fresh session."""
+        var sf = self.agent_session_file(self.symidx_root())
+        if sf.byte_length() > 0 and path_exists(sf):
+            _ = run_system("rm -f " + shell_quote(sf))
+        self.agent.resume_session_id = ""
+        if self.agent.active():
+            self.agent.stop()
+            self.agent_services_end()
+            self.agent_forget()
+        self.chat.clear()
+        self.chat.note("Starting a fresh agent session...")
+        if self.agent_index() < 0:
+            self.agent_toggle()
+        else:
+            self.focus(self.agent_index())
+            if self.agent_command.byte_length() > 0:
+                self.exec(CM_AGENT_START)
 
     def agent_title(self) -> String:
         var name = self.agent.agent_name if self.agent.agent_name.byte_length() > 0 else String("Agent")
@@ -121,13 +154,15 @@ __extension App:
                 self.chat.plan(e.entries)
             elif e.kind == AE_PERMISSION:
                 var key = allow_key(e.tool_kind, e.title)
-                if key in self.agent_allowed:
-                    # allowed for this session already
+                var auto_allow = self.agent_auto_exec() or (self.agent_auto_edits() and e.tool_kind == "edit")
+                if key in self.agent_allowed or auto_allow:
+                    # allowed for this session already, or by auto / accept-edits mode
                     var opt = option_of(e.option_kinds, e.option_ids, "allow_once")
                     if opt.byte_length() == 0:
                         opt = option_of(e.option_kinds, e.option_ids, "allow_always")
                     _ = self.agent.answer_permission(e.request, opt)
-                    self.chat.note("Allowed (this session): " + self.agent_what(e))
+                    var why = String("this session") if key in self.agent_allowed else (self.agent_effective_mode() + " mode")
+                    self.chat.note("Allowed (" + why + "): " + self.agent_what(e))
                 else:
                     if self.top() != self.agent_index():
                         # (the panel does not come to the front by itself: a key typed
@@ -138,6 +173,7 @@ __extension App:
             elif e.kind == AE_TURN_END:
                 self.chat.cancel_open_tools()
                 self.agent_check_answer()
+                self.export_ide_state()
                 if self.top() != self.agent_index():
                     self.notify_as("agent", NL_DONE if e.stop_reason == "end_turn" else NL_WARN, (self.agent.agent_name if self.agent.agent_name.byte_length() > 0 else String("The agent")) + " has finished", "" if e.stop_reason == "end_turn" else e.stop_reason)
                 if e.stop_reason == "error":
@@ -160,8 +196,38 @@ __extension App:
                     self.chat.note(e.text)
                 else:
                     self.chat.note("Mode: " + self.agent.mode_name(e.status))
+                self.export_ide_state()
+            elif e.kind == AE_MODEL:
+                if e.text.byte_length() > 0:
+                    self.chat.note(e.text)
+                else:
+                    var mname = self.agent.model_name(e.status)
+                    self.chat.note("Model: " + mname)
+                    self.say("Agent model: " + mname)
+                self.export_ide_state()
+            elif e.kind == AE_THINKING:
+                if e.text.byte_length() > 0:
+                    self.chat.note(e.text)
+                else:
+                    var tname = self.agent.thinking_name(e.status)
+                    self.chat.note("Thinking: " + tname)
+                    self.say("Agent thinking: " + tname)
+                self.export_ide_state()
             elif e.kind == AE_READY:
-                self.chat.note("Connected to " + self.agent.agent_name + " (" + self.agent_command + ")" + ((", mode " + self.agent.mode_name(self.agent.mode)) if self.agent.mode.byte_length() > 0 else String("")))
+                var sf = self.agent_session_file(self.agent.cwd)
+                if sf.byte_length() > 0 and self.agent.session_id.byte_length() > 0:
+                    _ = run_system("mkdir -p " + shell_quote(self.agent_sessions_dir))
+                    _ = write_file(sf, str_bytes(self.agent.session_id + "\n"))
+                var info = "Connected to " + self.agent.agent_name + " (" + self.agent_command + ")"
+                if self.agent.resumed:
+                    info += ", resumed session"
+                if self.agent.current_model.byte_length() > 0:
+                    info += ", model " + self.agent.model_name(self.agent.current_model)
+                if self.agent.thinking.byte_length() > 0:
+                    info += ", thinking " + self.agent.thinking_name(self.agent.thinking)
+                if self.agent.mode.byte_length() > 0:
+                    info += ", mode " + self.agent.mode_name(self.agent.mode)
+                self.chat.note(info)
                 # the agent's own tools may change files without asking the editor: by
                 # default it works in the mode in which it asks first
                 var want = self.agent_mode
@@ -172,6 +238,7 @@ __extension App:
                 if want.byte_length() > 0 and want != self.agent.mode:
                     if not self.agent.set_mode(want, now):
                         self.chat.note("The agent has no mode \"" + want + "\" (tools.agent_mode)")
+                self.export_ide_state()
                 if self.agent_pending.byte_length() > 0:
                     _ = self.agent.prompt_blocks(self.agent_pending, now)
                     self.agent_pending = ""
@@ -274,6 +341,10 @@ __extension App:
             self.exec(CM_AGENT_START)
             if not self.agent.active():
                 return                          # (folder trust was not given)
+        if len(self.agent_history) == 0 or self.agent_history[len(self.agent_history) - 1] != text:
+            self.agent_history.append(text)
+        self.agent_hist_idx = -1
+        self.agent_draft.clear()
         self.chat.user(text)
         var blocks = self.agent_blocks(text)
         if self.agent.state == AS_READY:
@@ -283,6 +354,224 @@ __extension App:
         self.agent_input.clear()
         self.agent_cur = 0
         self.agent_scroll = 0
+
+    # ------------------------------------------------- pickers & @completion
+    def agent_model_dialog(mut self):
+        if self.agent.state != AS_READY:
+            self.say("Start the agent first (Ctrl-F11) to choose its model")
+            return
+        if len(self.agent.model_ids) == 0:
+            self.say("This agent does not report available models")
+            return
+        var d = Dialog(D_AGENT_MODEL, "Agent Model", min(72, self.scr.w - 4), min(18, self.desk_h()))
+        d.fields.append(Field("~F~ilter", ""))
+        d.list_filter = True
+        var items = List[String]()
+        var data = List[Int]()
+        var active = 0
+        for k in range(len(self.agent.model_ids)):
+            var id = self.agent.model_ids[k]
+            var name = self.agent.model_names[k] if self.agent.model_names[k].byte_length() > 0 else id
+            if id == self.agent.current_model:
+                active = k
+            items.append(("* " if id == self.agent.current_model else "  ") + pad_right(name, 34) + " " + id)
+            data.append(k)
+        d.set_items(items^, data^)
+        d.muted_col = 37
+        d.list_sel = active
+        d.focus = 0
+        d.buttons.append("~O~K")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def agent_model_choose(mut self, idx: Int):
+        if idx < 0 or idx >= len(self.agent.model_ids):
+            return
+        var id = self.agent.model_ids[idx]
+        if id == self.agent.current_model:
+            self.say("Agent model: " + self.agent.model_name(id))
+            return
+        _ = self.agent.set_model(id, now_ns())
+
+    def agent_mode_dialog(mut self):
+        var ids = List[String]()
+        var names = List[String]()
+        var descs = List[String]()
+        if len(self.agent.mode_ids) > 0:
+            ids = self.agent.mode_ids.copy()
+            names = self.agent.mode_names.copy()
+            descs = self.agent.mode_texts.copy()
+        else:
+            ids.append("auto")
+            names.append("Auto")
+            descs.append("Edit files and run commands automatically")
+            ids.append("accept-edits")
+            names.append("Accept edits")
+            descs.append("Accept file edits automatically, ask before running commands")
+            ids.append("ask")
+            names.append("Ask (default)")
+            descs.append("Always ask before editing files or running commands")
+            ids.append("plan")
+            names.append("Plan")
+            descs.append("Plan first before making changes")
+        var cur = self.agent_effective_mode()
+        if cur == "ask" and len(self.agent.mode_ids) > 0:
+            var ak = self.agent.asking_mode()
+            if ak.byte_length() > 0:
+                cur = ak
+        var d = Dialog(D_AGENT_MODE, "Agent Mode", min(72, self.scr.w - 4), min(16, self.desk_h()))
+        var items = List[String]()
+        var data = List[Int]()
+        var active = 0
+        for k in range(len(ids)):
+            if ids[k] == cur:
+                active = k
+            items.append(("* " if ids[k] == cur else "  ") + pad_right(names[k], 20) + " " + descs[k])
+            data.append(k)
+        d.set_items(items^, data^)
+        d.muted_col = 23
+        d.list_sel = active
+        d.focus = 0
+        d.buttons.append("~O~K")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def agent_mode_choose(mut self, idx: Int):
+        var id = String("")
+        if len(self.agent.mode_ids) > 0:
+            if idx >= 0 and idx < len(self.agent.mode_ids):
+                id = self.agent.mode_ids[idx]
+        else:
+            var std_ids = ["auto", "accept-edits", "ask", "plan"]
+            if idx >= 0 and idx < len(std_ids):
+                id = std_ids[idx]
+        if id.byte_length() == 0:
+            return
+        self.agent_mode = id
+        self.persist_option("tools", "agent_mode", toml_quote(id))
+        if self.agent.state == AS_READY:
+            var target = self.agent.asking_mode() if id == "ask" else id
+            if target.byte_length() > 0 and target in self.agent.mode_ids and target != self.agent.mode:
+                _ = self.agent.set_mode(target, now_ns())
+        self.say("Agent mode: " + id)
+        self.export_ide_state()
+
+    def agent_thinking_dialog(mut self):
+        if self.agent.state != AS_READY:
+            self.say("Start the agent first (Ctrl-F11) to choose its thinking level")
+            return
+        if len(self.agent.thinking_ids) == 0:
+            self.say("This agent does not offer thinking levels")
+            return
+        var d = Dialog(D_AGENT_THINKING, "Agent Thinking", 50, min(14, self.desk_h()))
+        var items = List[String]()
+        var data = List[Int]()
+        var active = 0
+        for k in range(len(self.agent.thinking_ids)):
+            var id = self.agent.thinking_ids[k]
+            var name = self.agent.thinking_names[k] if self.agent.thinking_names[k].byte_length() > 0 else id
+            if id == self.agent.thinking:
+                active = k
+            items.append(("* " if id == self.agent.thinking else "  ") + pad_right(name, 20) + " " + id)
+            data.append(k)
+        d.set_items(items^, data^)
+        d.muted_col = 23
+        d.list_sel = active
+        d.focus = 0
+        d.buttons.append("~O~K")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def agent_thinking_choose(mut self, idx: Int):
+        if idx < 0 or idx >= len(self.agent.thinking_ids):
+            return
+        var id = self.agent.thinking_ids[idx]
+        if id == self.agent.thinking:
+            self.say("Agent thinking: " + self.agent.thinking_name(id))
+            return
+        _ = self.agent.set_thinking(id, now_ns())
+
+    def agent_complete_at(mut self):
+        """Complete `@file` before the cursor in the agent prompt: inline when one
+        project file matches, or via a searchable picker when several match."""
+        var at_pos = -1
+        var p = self.agent_cur - 1
+        while p >= 0 and self.agent_input[p] != 32:
+            if self.agent_input[p] == 64 and (p == 0 or self.agent_input[p - 1] == 32):
+                at_pos = p
+                break
+            p -= 1
+        if at_pos < 0:
+            if self.agent_cur > 0 and self.agent_input[self.agent_cur - 1] != 32:
+                self.agent_input.insert(self.agent_cur, 32)
+                self.agent_cur += 1
+            at_pos = self.agent_cur
+            self.agent_input.insert(self.agent_cur, 64)
+            self.agent_cur += 1
+        var prefix = slice_str(self.agent_input, at_pos + 1, self.agent_cur)
+        var root = self.symidx_root()
+        if not self.fidx.building and (not self.fidx.built or self.fidx.root != root):
+            self.fidx.start(root)
+            self.fidx.step(200)
+        var raw = self.fidx.files.copy() if self.fidx.built else self.fidx.fresh.copy()
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EDITOR and self.wins[i].path.byte_length() > 0 and self.wins[i].path not in raw:
+                raw.append(self.wins[i].path)
+        var rels = List[String]()
+        var matches = List[String]()
+        for fp in raw:
+            var rel = String(fp[byte=root.byte_length() + 1:]) if fp.startswith(root + "/") else fp
+            rels.append(rel)
+            if fuzzy_score(rel, prefix) >= 0:
+                matches.append(rel)
+        if len(matches) == 0:
+            self.say("No project file matches @" + prefix)
+            return
+        if len(matches) == 1 and prefix.byte_length() > 0:
+            self.agent_replace_at(at_pos, matches[0])
+            return
+        self.agent_at_start = at_pos
+        self.agent_files = rels^
+        var d = Dialog(D_AGENT_FILE, "Mention File (@)", min(72, self.scr.w - 4), min(20, self.desk_h()))
+        d.fields.append(Field("~F~ile", prefix))
+        d.list_filter = True
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        for k in range(len(self.agent_files)):
+            var rel = self.agent_files[k]
+            var name = basename(rel)
+            var where = dirname(rel) if rel != name else String("")
+            items.append(pad_right(name, 30) + " " + where)
+            keys.append(name + "  " + rel)
+            data.append(k)
+        d.keys = keys^
+        d.set_items(items^, data^)
+        d.muted_col = 31
+        d.focus = 0
+        d.buttons.append("~I~nsert")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def agent_replace_at(mut self, at_pos: Int, rel: String):
+        if at_pos < 0 or at_pos > self.agent_cur or self.agent_cur > len(self.agent_input):
+            return
+        while self.agent_cur > at_pos:
+            _ = self.agent_input.pop(at_pos)
+            self.agent_cur -= 1
+        for c in decode("@" + rel + " "):
+            self.agent_input.insert(self.agent_cur, c)
+            self.agent_cur += 1
+
+    def agent_file_choose(mut self, idx: Int):
+        if idx < 0 or idx >= len(self.agent_files):
+            return
+        var start = self.agent_at_start
+        var chosen = self.agent_files[idx]
+        self.agent_replace_at(start, chosen)
+        var ai = self.agent_index()
+        if ai >= 0:
+            self.focus(ai)
 
     def agent_mention(mut self) raises:
         """The editor's selection (as @file:first-last) or its file (@file) into the
@@ -367,6 +656,26 @@ __extension App:
             self.agent_cur = 0
         elif k == KEY_END:
             self.agent_cur = n
+        elif k == KEY_TAB or k == ctrl(32):
+            self.agent_complete_at()
+        elif k == (KEY_UP | MOD_ALT):
+            if len(self.agent_history) > 0:
+                if self.agent_hist_idx < 0:
+                    self.agent_draft = self.agent_input.copy()
+                    self.agent_hist_idx = len(self.agent_history) - 1
+                elif self.agent_hist_idx > 0:
+                    self.agent_hist_idx -= 1
+                self.agent_input = decode(self.agent_history[self.agent_hist_idx])
+                self.agent_cur = len(self.agent_input)
+        elif k == (KEY_DOWN | MOD_ALT):
+            if self.agent_hist_idx >= 0:
+                self.agent_hist_idx += 1
+                if self.agent_hist_idx >= len(self.agent_history):
+                    self.agent_hist_idx = -1
+                    self.agent_input = self.agent_draft.copy()
+                else:
+                    self.agent_input = decode(self.agent_history[self.agent_hist_idx])
+                self.agent_cur = len(self.agent_input)
         elif k == KEY_UP:
             self.agent_scroll += 1
         elif k == KEY_DOWN:
@@ -458,6 +767,8 @@ __extension App:
             sep = " working - Esc stops "
         elif self.agent_scroll > 0:
             sep = " " + String(self.agent_scroll) + " rows back - Down / PgDn "
+        elif self.agent.current_model.byte_length() > 0:
+            sep = " " + self.agent.model_name(self.agent.current_model) + " · " + self.agent_effective_mode() + " "
         self.scr.fill(x, y + area, w, 1, 0x2500, p.frame_inact, p.ed_bg)
         if sep.byte_length() > 0:
             _ = self.scr.text(x + 1, y + area, sep, p.frame_act, p.ed_bg)

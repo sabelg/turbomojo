@@ -1,6 +1,12 @@
+value-removed
+let-removed
+alias-removed
 unknown-name
 implicit-declaration
 fn-removed
+parameter-removed
+trait-conformance
+string-slice
 implicit-conversion
 implicit-copy
 uninitialized
@@ -9,9 +15,13 @@ aliasing
 immutable
 init-out
 field-uninitialized
+self-param
 no-attribute
+list-init
 invalid-call
 unknown-module
 string-length
+string-index
+comptime-assert
 indentation
 class

@@ -104,6 +104,11 @@ comptime CM_PRESETS = 234        # Options > Presets
 comptime CM_REPORT = 235         # Help > Report a problem
 comptime CM_GPU_STATUS = 236     # Options > GPU in the status line
 comptime CM_RELNUM = 237         # Options > Relative numbers (vim's relativenumber)
+comptime CM_AGENT_MODEL = 238    # System > Agent model...
+comptime CM_AGENT_MODE = 239     # System > Agent mode...
+comptime CM_AGENT_THINKING = 240 # System > Agent thinking...
+comptime CM_AGENT_NEW = 241      # System > New agent session
+comptime CM_AGENT_PROBLEMS = 242 # System > Send diagnostics to agent
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -794,6 +799,11 @@ def build_registry() -> Registry:
     r.hide(CM_AGENT_MENTION, "agent.mention", "Mention in agent prompt", "Put the selection (or this file) into the agent's prompt as @file:lines")
     r.bind(CM_AGENT_MENTION, fkey(11) | MOD_SHIFT)    # (not in a menu: no letter left in File)
     r.hide(CM_AGENT_START, "agent.start", "Start the agent", "Start the coding agent named by tools.agent")
+    r.cmd(CM_AGENT_MODEL, "agent.model", "Agent ~m~odel...", "Choose which model the coding agent uses")
+    r.cmd(CM_AGENT_MODE, "agent.mode", "Agent m~o~de...", "Choose whether the coding agent asks first, accepts edits, or runs automatically")
+    r.cmd(CM_AGENT_THINKING, "agent.thinking", "Agent ~t~hinking...", "Choose the coding agent's thinking level")
+    r.cmd(CM_AGENT_NEW, "agent.newSession", "~N~ew agent session", "Start a fresh coding agent conversation for this project")
+    r.cmd(CM_AGENT_PROBLEMS, "agent.sendProblems", "Send ~d~iagnostics to agent", "Send all current language server, build, and test problems to the coding agent")
     r.cmd(CM_GIT_COMMIT, "git.commit", "Comm~i~t...", "Commit what is staged (or every change to tracked files) with a message")
     r.cmd(CM_GIT_BRANCH, "git.branch", "~B~ranch...", "Switch to another branch of the repository, or make a new one")
     r.cmd(CM_GIT_BLAME, "git.blame", "Blam~e~", "Who last changed each line of this file, when, and in which commit")
@@ -887,6 +897,12 @@ def build_registry() -> Registry:
     r.menu("~≡~")
     r.item(CM_ABOUT)
     r.item(CM_PALETTE)
+    r.sep()
+    r.item(CM_AGENT_MODEL)
+    r.item(CM_AGENT_MODE)
+    r.item(CM_AGENT_THINKING)
+    r.item(CM_AGENT_NEW)
+    r.item(CM_AGENT_PROBLEMS)
     r.sep()
     r.item(CM_REFRESH)
 

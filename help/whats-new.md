@@ -16,9 +16,20 @@
   Modern look with vim's keys and relative line numbers. Options > Relative numbers
   (`editor.relative_numbers`) shows each line's distance from the cursor's line in the
   gutter, for 5j and 3dk. F10 and Alt still open the menus.
+- Documentation & Help upgrades: instant warm disk cache for the 1,600+ page offline
+  Mojo library (`tmide --warm-docs`), full syntax colouring on fenced blocks with
+  attributes (`mojo no-test`, `title="..."`) and in the Docs & Error Explanation panes,
+  dotted module search (`std.collections.list`), receiver-aware method lookup
+  (`items.append`), in-page search (`Ctrl-F` / `F3`), heading jump (`G`), collapsible
+  chapter headings, `C` / `T` to copy or try any code block, Mojo 1.2 legacy-syntax
+  banners on older course pages, 27 built-in Mojo 1.2 error pages, 13 interactive
+  exercises, and one-click background `pixi install` for the Mojo GPU Puzzles.
+- Coding agent upgrades: `auto`, `accept-edits`, and `ask` permission modes (`Alt-M`),
+  model & thinking selectors (`Alt-O`, `Alt-T`), `@file` Tab-completion, `Alt-Up` /
+  `Alt-Down` prompt history, persistent sessions, Send diagnostics to agent, and a
+  built-in MCP workspace server (`scripts/mcp_server.py`).
 
 ## 2.2: ready for other people
-
 - A program that uses a library which is not installed (`unable to locate module
   'max'`, `No module named 'numpy'`): TurboMojo finds its package on the project's
   channels and offers to install it with `pixi add`, then builds or runs again; with no

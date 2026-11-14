@@ -1,4 +1,4 @@
-# Exercise 7 of 8: standard library imports
+# Exercise 7 of 13: standard library imports
 #
 # The import names a module the way older Mojo did.
 # When it is right, it prints:

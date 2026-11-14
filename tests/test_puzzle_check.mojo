@@ -116,6 +116,14 @@ def test_checking_a_copy() raises:
     app.open_path(d + "/other.mojo")
     app.exec(CM_EX_CHECK)
     assert_true(app.status.find("your copy of a GPU puzzle") > 0, app.status)
+    # when pixi.toml is present without .pixi, D_PUZZLE_ENV offers one-click pixi install
+    _ = run_system("rm -rf '" + d + "/docs/mojo-gpu-puzzles/.pixi'")
+    with open(d + "/docs/mojo-gpu-puzzles/pixi.toml", "w") as f:
+        f.write("[project]\nname = \"puzzles\"\n")
+    app.pixi_cmd = "sh"
+    app.open_path(copy)
+    app.exec(CM_EX_CHECK)
+    assert_equal(app.dlg.kind, 57)                                              # D_PUZZLE_ENV
     _ = run_system("rm -rf '" + d + "'")
 
 

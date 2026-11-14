@@ -16,10 +16,11 @@ from appstate import *
 from util import *
 from window import Window, WK_EDITOR, WK_DOCPANE, WK_OUTLINE
 from term import KEY_ESC, KEY_ENTER
-from markdown import md_render
+from markdown import md_render_rich, MdLine
 from docs import docs_for
 from doclib import path_markdown, find_help, parse_query, cut, IK_API
-from docpane import md_section
+from docpane import md_section, md_mojo_blocks, infer_receiver_owner
+from pydocs import dotted_at
 from watch import file_sig
 from lsp import LSP_READY, path_to_uri
 from app_outline import *
@@ -74,18 +75,46 @@ __extension App:
         var pi = self.docpane_index()
         if pi < 0:
             return
-        var lines = md_render(md, max(16, self.wins[pi].w - 4), self.hl)
+        self.docpane_md = md
+        var w = max(16, self.wins[pi].w - 4)
+        var links = List[String]()
+        self.docpane_lines = md_render_rich(md, w, self.hl, links, True)
+        self.docpane_lines_w = w
         var text = List[Int]()
-        for k in range(len(lines)):
+        for k in range(len(self.docpane_lines)):
             if k > 0:
                 text.append(10)
-            for c in lines[k].cps:
+            for c in self.docpane_lines[k].cps:
                 text.append(c)
         self.wins[pi].title = title
         self.wins[pi].buf.load(text)
         self.wins[pi].buf.modified = False
         self.wins[pi].cr = 0
         self.wins[pi].top = 0
+
+    def docpane_draw(mut self, pi: Int):
+        """Draw the docs pane's Markdown with full rich styling over the window interior."""
+        if pi < 0 or pi >= len(self.wins) or self.wins[pi].w < 6 or self.wins[pi].h < 4:
+            return
+        var w = max(16, self.wins[pi].w - 4)
+        if w != self.docpane_lines_w and self.docpane_md.byte_length() > 0:
+            var links = List[String]()
+            self.docpane_lines = md_render_rich(self.docpane_md, w, self.hl, links, True)
+            self.docpane_lines_w = w
+            var text = List[Int]()
+            for k in range(len(self.docpane_lines)):
+                if k > 0:
+                    text.append(10)
+                for c in self.docpane_lines[k].cps:
+                    text.append(c)
+            var keep_cr = self.wins[pi].cr
+            var keep_top = self.wins[pi].top
+            self.wins[pi].buf.load(text)
+            self.wins[pi].buf.modified = False
+            self.wins[pi].cr = max(0, min(keep_cr, self.wins[pi].buf.count() - 1))
+            self.wins[pi].top = max(0, min(keep_top, self.wins[pi].buf.count() - 1))
+        var lines = self.docpane_lines.copy()
+        self.draw_md(self.wins[pi].x + 1, self.wins[pi].y + 1, max(2, self.wins[pi].w - 2), max(1, self.wins[pi].h - 2), lines, self.wins[pi].top)
 
     def docpane_tick(mut self, now: Int):
         """After each round of events: a new name under the cursor is looked up once
@@ -99,7 +128,8 @@ __extension App:
         var name = self.word_under(ai)
         if name.byte_length() == 0 or (decode(name)[0] >= 48 and decode(name)[0] <= 57):
             return                          # (what the pane shows stays)
-        var key = self.wins[ai].path + "\n" + name
+        var chain = dotted_at(self.wins[ai].buf.line(self.wins[ai].cr), self.wins[ai].cc)
+        var key = self.wins[ai].path + "\n" + name + "\n" + chain
         if key != self.docpane_key:
             self.docpane_key = key
             self.docpane_due = now + DOCPANE_IDLE_MS * 1000000
@@ -117,13 +147,15 @@ __extension App:
                 return self.doc_sizes[k] == sig.size and self.doc_times[k] == stamp
         return False
 
-    def docpane_api_entry(self, name: String) -> Int:
-        """The standard library declaration called `name` (a struct, trait or function
-        before a method of that name), or -1."""
+    def docpane_api_entry(self, name: String, owner_hint: String = "") -> Int:
+        """The standard library declaration called `name` (preferring `owner_hint` when
+        given, or a struct, trait or function before a method of that name), or -1."""
         if not self.doc_index.built:
             return -1
         var low = name.lower()
+        var olow = owner_hint.lower()
         var best = -1
+        var top_level = -1
         for f in find_help(self.doc_index, self.doc_lib, parse_query("@" + name), 40):
             ref e = self.doc_index.entries[f.entry]
             var last = e.low
@@ -131,10 +163,14 @@ __extension App:
             if sp >= 0:
                 last = cut(last, sp + 1, -1)
             if last == low:
-                if e.owner.byte_length() == 0:
+                if olow.byte_length() > 0 and e.owner.lower() == olow:
                     return f.entry
+                if e.owner.byte_length() == 0 and top_level < 0:
+                    top_level = f.entry
                 if best < 0:
                     best = f.entry
+        if top_level >= 0:
+            return top_level
         return best
 
     def docpane_lookup(mut self, name: String, asked: Bool):
@@ -142,6 +178,12 @@ __extension App:
         everywhere, running `mojo doc` if needed."""
         self.docpane_name = name
         self.docpane_entry = -1
+        var owner_hint = String("")
+        var ai_cur = self.active_editor()
+        if ai_cur >= 0:
+            var chain = dotted_at(self.wins[ai_cur].buf.line(self.wins[ai_cur].cr), self.wins[ai_cur].cc)
+            if chain.find(".") >= 0:
+                owner_hint = infer_receiver_owner(to_str(self.wins[ai_cur].buf.all_text()), self.wins[ai_cur].cr, chain)
         var md = String("")
         var n = 0
         for f in self.docs_files_for(name, asked):
@@ -156,13 +198,13 @@ __extension App:
         if md.byte_length() == 0:
             if asked:
                 self.docs_index_ready()
-            var e = self.docpane_api_entry(name)
+            var e = self.docpane_api_entry(name, owner_hint)
             if e >= 0:
                 ref ent = self.doc_index.entries[e]
                 md = md_section(path_markdown(self.doc_lib.pages[ent.page].path), ent.text, ent.nth)
                 if md.byte_length() > 0:
                     self.docpane_entry = e
-                    md += "\n\n*" + self.doc_lib.pages[ent.page].title + "* - **Enter** opens the page"
+                    md += "\n\n*" + self.doc_lib.pages[ent.page].title + "* - **Enter** opens the page, **C** copies code, **T** tries snippet"
         if md.byte_length() > 0:
             self.docpane_show("Docs: " + name, md)
             return
@@ -181,7 +223,16 @@ __extension App:
         else:
             self.docpane_show("Docs: " + self.docpane_name, text)
 
-    def docpane_key_event(mut self, k: Int) -> Bool:
+    def docpane_snippet(self) -> String:
+        """Code example from the docs pane (preferring a body example over the signature fence)."""
+        var blocks = md_mojo_blocks(self.docpane_md)
+        if len(blocks) >= 2:
+            return blocks[1]
+        if len(blocks) == 1:
+            return blocks[0]
+        return ""
+
+    def docpane_key_event(mut self, k: Int) raises -> Bool:
         if k == KEY_ESC:
             var te = self.top_editor()
             if te >= 0:
@@ -192,5 +243,22 @@ __extension App:
                 self.docs_goto_entry(self.docpane_entry)
             else:
                 self.say("This text is not from the documentation viewer's pages")
+            return True
+        if k == 99 or k == 67:                  # C: copy code block
+            var code = self.docpane_snippet()
+            if code.byte_length() == 0:
+                self.say("No code block in the docs pane")
+            else:
+                var cps = decode(code)
+                self.clipboard = cps.copy()
+                self.osc52(cps)
+                self.say("Copied code snippet to the clipboard")
+            return True
+        if k == 116 or k == 84:                 # T: try code block in scratch buffer
+            var code = self.docpane_snippet()
+            if code.byte_length() == 0:
+                self.say("No code block in the docs pane")
+            else:
+                self.open_scratch_snippet(code, self.docpane_name if self.docpane_name.byte_length() > 0 else String("snippet"))
             return True
         return False

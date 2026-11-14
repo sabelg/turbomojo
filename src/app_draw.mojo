@@ -56,6 +56,7 @@ from app_tests import *
 from app_gitdiff import *
 from app_gitcmd import *
 from app_explain import *
+from app_docpane import *
 from app_keybox import *
 from app_plugins import *
 from app_lspextra import *
@@ -226,6 +227,10 @@ __extension App:
             if self.wins[i].kind == WK_MESSAGE:
                 self.draw_pages(i, i == n - 1)
                 self.link_rows(i)
+            if self.wins[i].kind == WK_DOCPANE and not self.reader:
+                self.docpane_draw(i)
+            if self.wins[i].kind == WK_EXPLAIN and not self.reader:
+                self.explain_draw(i)
             if self.tiled and self.wins[i].kind == WK_EDITOR:
                 self.draw_tabs(i, i == n - 1)
                 continue                        # panes lie side by side: no shadow
@@ -277,7 +282,7 @@ __extension App:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_MESSAGE and self.msg_page == PG_PROBLEMS:
-                for h in ["~E~/~W~/~N~ Errors/warnings/notes", "~F~ This file", "~/~ Filter", "~C~ All"]:
+                for h in ["~E~/~W~/~N~ Errors/warnings/notes", "~F~ This file", "~/~ Filter", "~C~ All", "~A~ Ask agent", "~?~ Docs"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_MESSAGE and self.msg_page == PG_MESSAGE:
@@ -291,11 +296,11 @@ __extension App:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_DOCPANE:
-                for h in ["~Enter~ Open the page", "~Esc~ Back to the code", "~PgDn~ Read on"]:
+                for h in ["~Enter~ Open page", "~C~/~T~ Copy/Try", "~Esc~ Back to code", "~PgDn~ Read on"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_EXPLAIN:
-                for h in ["~Esc~ Close", "~F6~ Back to the code", "~PgDn~ Read on"]:
+                for h in ["~Esc~ Close", "~F6~ Code", "~C~/~T~ Copy/Try fix", "~A~ Ask agent", "~?~ Docs"]:
                     items.append(h)
                     cmds.append(CM_NONE)
                 if self.explain_python():

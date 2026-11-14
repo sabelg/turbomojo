@@ -16,12 +16,14 @@ comptime TK_PAGE = 1       # PgUp / PgDn in an editor
 comptime TK_LR = 2         # plain Left / Right
 comptime TK_BS = 3         # plain Backspace
 comptime TK_FIND = 4       # the Find dialog was opened
+comptime TK_ERROR = 5      # an error appeared in Problems / build
 
 comptime TIP_PAGE = 0
 comptime TIP_WORDS = 1
 comptime TIP_BACKSPACE = 2
 comptime TIP_AGAIN = 3
-comptime TIP_COUNT = 4
+comptime TIP_EXPLAIN = 4
+comptime TIP_COUNT = 5
 
 comptime PAGES_FOR_TIP = 6          # page presses ...
 comptime PAGES_WITHIN_MS = 10000    # ... within this long
@@ -41,6 +43,8 @@ def tip_name(t: Int) -> String:
         return "delete-word"
     if t == TIP_AGAIN:
         return "search-again"
+    if t == TIP_EXPLAIN:
+        return "f1-explain"
     return ""
 
 
@@ -92,6 +96,8 @@ struct TipRules(Copyable, Movable):
             if len(self.finds) >= FINDS_FOR_TIP:
                 self.finds.clear()
                 return TIP_AGAIN
+        elif kind == TK_ERROR:
+            return TIP_EXPLAIN
         return -1
 
 

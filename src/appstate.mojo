@@ -355,9 +355,16 @@ struct App(Movable):
     var docpane_due: Int       # when the docs pane looks up the name at the cursor (0: not waiting)
     var docpane_entry: Int     # the documentation index entry the pane shows (-1: none)
     var docpane_name: String   # the name it shows
+    var docpane_md: String     # raw Markdown shown in the docs pane (for rich redraw & snippets)
+    var docpane_lines: List[MdLine]
+    var docpane_lines_w: Int
     var hover_pane: Bool       # the language server's answer goes to the docs pane
     var agent_explaining: Bool # the agent's turn answers an explain request (its imports get checked)
     var explain_rect: List[Int]  # that editor's place before it made room (x, y, w, h)
+    var explain_md: String     # raw Markdown shown in the explanation window
+    var explain_lines: List[MdLine]
+    var explain_lines_w: Int
+    var puzzle_env_dir: String # folder where D_PUZZLE_ENV runs `pixi install`
     var blame_rows: List[BlameLine]
     var prob_build: List[Problem]   # the last build's errors and warnings (Problems page)
     var prob_filter: ProblemFilter  # what the Problems page shows
@@ -383,6 +390,13 @@ struct App(Movable):
     var gd_proposal: Bool           # the diff view shows agent_props[0]
     var agent_perms: List[AcpEvent] # permission requests waiting for the user's answer
     var agent_allowed: List[String] # allowed for this session (agentsvc.allow_key)
+    var agent_sessions_dir: String  # where per-project session ids are kept ('' in tests)
+    var ide_state_path: String      # live IDE state & diagnostics JSON for MCP ('' in tests)
+    var agent_history: List[String] # prompts sent in this session (Alt-Up / Alt-Down)
+    var agent_hist_idx: Int         # index into agent_history (-1: editing current draft)
+    var agent_draft: List[Int]      # unsent prompt kept while browsing agent_history
+    var agent_at_start: Int         # index of '@' in agent_input while picking a file
+    var agent_files: List[String]   # relative paths offered by D_AGENT_FILE
     var test_rows_file: List[Int]   # per line of its window: the file (-1: none)
     var test_rows_test: List[Int]   #   and the test (-1: the file's line, -2: a problem line)
     var test_target_file: Int
@@ -557,6 +571,8 @@ struct App(Movable):
     var doc_loaded: Bool
     var doc_rows: List[Int]          # the contents as shown: indexes into doc_lib.pages (hits first while searching)
     var doc_open_books: List[String] # titles of the books whose chapters are shown
+    var doc_closed_heads: List[String] # collapsed chapter headings inside open books
+    var doc_page_query: String       # last Ctrl-F query inside the documentation reader
     var doc_row: Int                 # the marked line of the contents
     var doc_toc_top: Int
     var doc_path: String             # the file the page pane shows ('' = the welcome page)
@@ -846,9 +862,16 @@ struct App(Movable):
         self.docpane_due = 0
         self.docpane_entry = -1
         self.docpane_name = ""
+        self.docpane_md = ""
+        self.docpane_lines = List[MdLine]()
+        self.docpane_lines_w = -1
         self.hover_pane = False
         self.agent_explaining = False
         self.explain_rect = List[Int]()
+        self.explain_md = ""
+        self.explain_lines = List[MdLine]()
+        self.explain_lines_w = -1
+        self.puzzle_env_dir = ""
         self.blame_rows = List[BlameLine]()
         self.prob_build = List[Problem]()
         self.prob_filter = ProblemFilter()
@@ -874,6 +897,13 @@ struct App(Movable):
         self.gd_proposal = False
         self.agent_perms = List[AcpEvent]()
         self.agent_allowed = List[String]()
+        self.agent_sessions_dir = ""
+        self.ide_state_path = ""
+        self.agent_history = List[String]()
+        self.agent_hist_idx = -1
+        self.agent_draft = List[Int]()
+        self.agent_at_start = -1
+        self.agent_files = List[String]()
         self.test_rows_file = List[Int]()
         self.test_rows_test = List[Int]()
         self.test_target_file = -1
@@ -1054,6 +1084,8 @@ struct App(Movable):
         self.doc_loaded = False
         self.doc_rows = List[Int]()
         self.doc_open_books = List[String]()
+        self.doc_closed_heads = List[String]()
+        self.doc_page_query = ""
         self.doc_row = 0
         self.doc_toc_top = 0
         self.doc_path = ""

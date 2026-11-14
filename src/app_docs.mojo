@@ -62,7 +62,7 @@ from app_terminal import *
 from app_tests import *
 from codequery import *
 from errhelp import explain_for, err_title
-from docpane import md_section
+from docpane import md_section, md_mojo_blocks
 from app_explain import *
 from app_keyecho import *
 from puzzlecheck import PUZZLES_DIR
@@ -78,12 +78,20 @@ comptime DOC_TEXT_MAX = 96          # the widest a page's text is laid out
 def doc_welcome(home: String, have: Bool) -> String:
     """What the page pane shows before a page is chosen."""
     if have:
-        return "# Mojo documentation\n\nChoose a book and a page in the contents on the left.\n\n- **Enter** opens what is marked; on a book it shows or hides its chapters\n- **Tab** moves between the contents and the page; on a page it steps through the links, **Enter** follows one\n- **/** opens the finder: words, phrases in quotes, @names of the standard library, #headings\n- **N** and **P** go to the next and the previous page, **Backspace** goes back\n- **O** on a lesson or an example opens your own copy of it in the editor: change it, **Ctrl-F9** runs it\n- **Esc** returns to the editor\n\nThe documentation is Modular's, downloaded from their public repositories into\n\n`" + home + "`\n\nHelp > Download documentation updates it."
+        return "# Mojo documentation\n\nChoose a book and a page in the contents on the left.\n\n- **Enter** opens what is marked; on a book or chapter heading it shows or hides what is under it\n- **Tab** moves between the contents and the page; on a page it steps through the links, **Enter** follows one\n- **/** opens the finder: words, phrases in quotes, @names of the standard library, #headings, dotted.paths\n- **Ctrl-F** finds text on the current page (**F3** / **Shift-F3** step through matches); **G** jumps to a heading on the page\n- **C** copies the code block in view; **T** opens it in a scratch buffer to run\n- **N** and **P** go to the next and the previous page, **Backspace** goes back\n- **O** on a lesson or an example opens your own copy of it in the editor: change it, **Ctrl-F9** runs it\n- **Esc** returns to the editor\n\nThe documentation is Modular's, downloaded from their public repositories into\n\n`" + home + "`\n\nHelp > Download documentation updates it."
     return "# Mojo documentation\n\nThe documentation has not been downloaded yet.\n\nPress **D** to download it now, or choose Help > Download documentation. This fetches, from Modular's public repositories on github.com/modular:\n\n- the Mojo manual, the language reference and the cheat sheets\n- the standard library reference (made from the library's sources)\n- the Mojo examples\n- the MAX documentation\n- the courses: Mojo GPU Puzzles, Build an LLM from Scratch, and the workshops\n\nIt needs `git` and about 100 MB, and goes into\n\n`" + home + "`\n\nNothing about you or your project is sent."
 
 
 __extension App:
     # ----------------------------------------------------------- loading
+    def docs_cache_path(self) -> String:
+        return self.doc_home + "/.doc_index.cache"
+
+    def docs_cache_stamp(self) -> String:
+        var s1 = file_sig(self.doc_home + "/SOURCES.txt")
+        var s2 = file_sig(self.doc_home + "/stdref/index.txt")
+        return "v1:" + String(s1.size) + ":" + String(s1.mtime_s) + ":" + String(s1.mtime_ns) + ":" + String(s2.size) + ":" + String(s2.mtime_s) + ":" + String(s2.mtime_ns)
+
     def docs_load(mut self):
         """Read the library (making the standard library pages first if the download is
         newer than they are)."""
@@ -95,9 +103,14 @@ __extension App:
         # TurboMojo's own book first (written anew: this version's pages, your keys)
         if self.help_dir.byte_length() > 0 and write_help(self.help_dir, self.keys_markdown()):
             self.doc_lib.help_dir = self.help_dir
-        self.doc_lib.load(self.doc_home)
-        self.doc_loaded = True
         self.doc_index = DocIndex()
+        var cached = False
+        if path_exists(self.doc_home + "/SOURCES.txt"):
+            self.doc_lib.load_help_only(self.doc_home)
+            cached = self.doc_index.load_cache(self.docs_cache_path(), self.docs_cache_stamp(), self.doc_lib)
+        if not cached:
+            self.doc_lib.load(self.doc_home)
+        self.doc_loaded = True
         if len(self.doc_open_books) == 0 and len(self.doc_lib.pages) > 0:
             self.doc_open_books.append(self.doc_lib.pages[0].title)
         self.docs_rows()
@@ -137,17 +150,28 @@ __extension App:
         self.open_path(path)
         self.say("Your copy of the tutorial: change anything (Help > Tutorial again after closing it makes a fresh one)")
 
+    def doc_head_key(self, k: Int) -> String:
+        return self.doc_lib.book_of(k) + "\t" + String(self.doc_lib.pages[k].depth) + "\t" + self.doc_lib.pages[k].title
+
     def docs_rows(mut self):
-        """The lines of the contents: search results first (if any), then every book,
-        with the chapters of the open ones."""
+        """The lines of the contents: every book, with the chapters of the open ones
+        (collapsed sub-headings hide the entries deeper than themselves)."""
         self.doc_rows.clear()
         var open = False
+        var closed_depth = 9999
         for k in range(len(self.doc_lib.pages)):
-            if self.doc_lib.pages[k].kind == DK_BOOK:
-                open = self.doc_lib.pages[k].title in self.doc_open_books
+            ref pg = self.doc_lib.pages[k]
+            if pg.kind == DK_BOOK:
+                open = pg.title in self.doc_open_books
+                closed_depth = 9999
                 self.doc_rows.append(k)
             elif open:
+                if pg.depth > closed_depth:
+                    continue
+                closed_depth = 9999
                 self.doc_rows.append(k)
+                if pg.kind == DK_HEADING and self.doc_head_key(k) in self.doc_closed_heads:
+                    closed_depth = pg.depth
         self.doc_row = max(0, min(self.doc_row, len(self.doc_rows) - 1))
 
     def docs_open(mut self):
@@ -212,8 +236,26 @@ __extension App:
         var k = self.doc_lib.find_path(path)
         if k >= 0:
             var book = self.doc_lib.book_of(k)
+            var changed_toc = False
             if not (book in self.doc_open_books):
                 self.doc_open_books.append(book)
+                changed_toc = True
+            # reopen any collapsed ancestor heading above page k
+            var need_depth = self.doc_lib.pages[k].depth
+            var j = k - 1
+            while j >= 0 and self.doc_lib.pages[j].kind != DK_BOOK:
+                if self.doc_lib.pages[j].kind == DK_HEADING and self.doc_lib.pages[j].depth < need_depth:
+                    need_depth = self.doc_lib.pages[j].depth
+                    var hk = self.doc_head_key(j)
+                    if hk in self.doc_closed_heads:
+                        var kept = List[String]()
+                        for h0 in self.doc_closed_heads:
+                            if h0 != hk:
+                                kept.append(h0)
+                        self.doc_closed_heads = kept^
+                        changed_toc = True
+                j -= 1
+            if changed_toc:
                 self.docs_rows()
             for r in range(len(self.doc_rows)):
                 if self.doc_rows[r] == k:
@@ -282,9 +324,20 @@ __extension App:
                     self.doc_row = r
             self.docs_toc_follow()
         elif page.kind == DK_HEADING:
-            if self.doc_row + 1 < len(self.doc_rows):
-                self.doc_row += 1
-                self.docs_toc_follow()
+            var hk = self.doc_head_key(v)
+            if hk in self.doc_closed_heads:
+                var kept = List[String]()
+                for h0 in self.doc_closed_heads:
+                    if h0 != hk:
+                        kept.append(h0)
+                self.doc_closed_heads = kept^
+            else:
+                self.doc_closed_heads.append(hk)
+            self.docs_rows()
+            for r in range(len(self.doc_rows)):
+                if self.doc_rows[r] == v:
+                    self.doc_row = r
+            self.docs_toc_follow()
         else:
             self.doc_mark = ""
             self.docs_show(page.path, "", True)
@@ -500,6 +553,8 @@ __extension App:
             self.docs_load()
         if not self.doc_index.built:
             self.doc_index.build(self.doc_lib)
+            if path_exists(self.doc_home + "/SOURCES.txt"):
+                _ = self.doc_index.save_cache(self.docs_cache_path(), self.docs_cache_stamp(), self.doc_lib)
 
     def docs_find_dialog(mut self, start: String):
         """Help > Find in documentation: one field, results as you type. Words must all
@@ -543,6 +598,48 @@ __extension App:
                     self.doc_found.append(f.copy())
         if shape == QS_PATH:
             self.doc_found = by_owner(self.doc_found, self.doc_index, path_parts(text))
+            # dotted module paths (`std.collections.list`, `std.testing`) match module pages directly
+            var dotted = lower_str(String(text.strip()))
+            var exact_mods = List[Found]()
+            var suffix_mods = List[Found]()
+            var pkg_mods = List[Found]()
+            for idx in range(len(self.doc_index.entries)):
+                if self.doc_index.entries[idx].kind != IK_TITLE:
+                    continue
+                var pg = self.doc_index.entries[idx].page
+                var ppath = self.doc_lib.pages[pg].path
+                if (ppath.find("/stdref/") >= 0 or ppath.find("/maxref/") >= 0) and ppath.endswith(".md"):
+                    var bn = basename(ppath)
+                    var mod = lower_str(cut(bn, 0, bn.byte_length() - 3))
+                    if mod == dotted:
+                        exact_mods.append(Found(idx, 2200))
+                    elif mod.endswith("." + dotted):
+                        suffix_mods.append(Found(idx, 1800))
+                    elif mod.startswith(dotted + "."):
+                        pkg_mods.append(Found(idx, 1200))
+            if len(exact_mods) > 0 or len(suffix_mods) > 0 or len(pkg_mods) > 0:
+                var merged = List[Found]()
+                for m0 in exact_mods:
+                    merged.append(m0.copy())
+                for m1 in suffix_mods:
+                    merged.append(m1.copy())
+                for f0 in self.doc_found:
+                    var dup = False
+                    for m2 in merged:
+                        if m2.entry == f0.entry:
+                            dup = True
+                            break
+                    if not dup and len(merged) < DOC_FIND_MAX:
+                        merged.append(f0.copy())
+                for m3 in pkg_mods:
+                    var dup = False
+                    for m4 in merged:
+                        if m4.entry == m3.entry:
+                            dup = True
+                            break
+                    if not dup and len(merged) < DOC_FIND_MAX:
+                        merged.append(m3.copy())
+                self.doc_found = merged^
         var items = List[String]()
         var data = List[Int]()
         var room = max(30, self.dlg.w - 44)
@@ -571,6 +668,11 @@ __extension App:
         for k in range(len(self.doc_found)):
             var e = self.doc_index.entries[self.doc_found[k].entry].copy()
             var what = e.text
+            if e.kind == IK_TITLE:
+                var ppath = self.doc_lib.pages[e.page].path
+                if (ppath.find("/stdref/") >= 0 or ppath.find("/maxref/") >= 0) and ppath.endswith(".md"):
+                    var bn = basename(ppath)
+                    what = cut(bn, 0, bn.byte_length() - 3)
             if e.kind == IK_API and e.owner.byte_length() > 0:
                 what = e.owner + "." + e.text
             if e.kind == IK_API and answered < FIND_ANSWERS:
@@ -651,12 +753,12 @@ __extension App:
                 line = by_word
         self.doc_scroll = max(0, line - (0 if e.kind <= IK_HEADING else 3))
 
-    def docs_api_lookup(mut self, name: String, load: Bool) -> Bool:
+    def docs_api_lookup(mut self, name: String, load: Bool, owner_hint: String = "") -> Bool:
         """Topic search for a name of the standard library: straight to its page if
         the name is declared once, the finder with the candidates if several times.
         False if the downloaded documentation does not know it. Without `load` only an
-        index that is already there is used."""
-        if load:
+        index that is already there (or a warm disk cache in interactive runs) is used."""
+        if load or (not self.doc_index.built and self.help_dir.byte_length() > 0 and path_exists(self.docs_cache_path())):
             self.docs_index_ready()
         if not self.doc_index.built or name.byte_length() == 0:
             return False
@@ -673,6 +775,19 @@ __extension App:
                 exact.append(f.entry)
         if len(exact) == 0:
             return False
+        if len(exact) > 1 and owner_hint.byte_length() > 0:
+            var olow = owner_hint.lower()
+            var owned = List[Int]()
+            for idx in exact:
+                if self.doc_index.entries[idx].owner.lower() == olow:
+                    owned.append(idx)
+            if len(owned) == 1:
+                self.doc_mark = ""
+                self.docs_goto_entry(owned[0])
+                return True
+            if len(owned) > 1:
+                self.docs_find_dialog(owner_hint + "." + name)
+                return True
         if len(exact) == 1:
             self.doc_mark = ""
             self.docs_goto_entry(exact[0])
@@ -710,6 +825,134 @@ __extension App:
             self.say("Your copy of " + basename(mine) + ", as you left it - Ctrl-F9 runs it")
         return True
 
+    def open_scratch_snippet(mut self, code: String, label: String) raises:
+        """Open `code` in a new scratch Mojo buffer so the user can edit or run it."""
+        var trimmed_code = code
+        while trimmed_code.endswith("\n\n"):
+            trimmed_code = cut(trimmed_code, 0, trimmed_code.byte_length() - 1)
+        if not trimmed_code.endswith("\n"):
+            trimmed_code += "\n"
+        self.mode = M_NORMAL
+        self.untitled_n += 1
+        var title = "snippet-" + String(self.untitled_n) + ".mojo"
+        var ei = self.new_editor(title, "")
+        self.wins[ei].buf.load(decode(trimmed_code))
+        self.wins[ei].buf.modified = False
+        self.focus(ei)
+        var can_run = trimmed_code.find("def main") >= 0
+        self.say("Opened " + label + " in " + title + (" - save & Ctrl-F9 to run" if can_run else " - add def main() to run"))
+
+    def docs_visible_snippet(self) -> String:
+        """Code block currently in view on the reader's page ('' if there is none)."""
+        var best_below = String("")
+        var last_above = String("")
+        var r = 0
+        var n = len(self.doc_lines)
+        while r < n:
+            if len(self.doc_lines[r].st) > 0 and self.doc_lines[r].st[0] >= MD_BLOCK:
+                var start = r
+                var block = String("")
+                while r < n and len(self.doc_lines[r].st) > 0 and self.doc_lines[r].st[0] >= MD_BLOCK:
+                    block += to_str(self.doc_lines[r].cps) + "\n"
+                    r += 1
+                if r > self.doc_scroll and best_below.byte_length() == 0:
+                    best_below = block
+                if start <= self.doc_scroll:
+                    last_above = block
+            else:
+                r += 1
+        if best_below.byte_length() > 0:
+            return best_below^
+        if last_above.byte_length() > 0:
+            return last_above^
+        var blocks = md_mojo_blocks(path_markdown(self.doc_path))
+        if len(blocks) > 0:
+            return blocks[0]
+        return ""
+
+    def docs_page_find_dialog(mut self):
+        """Ctrl-F in the reader: search text on the current page."""
+        self.docs_layout()
+        var seed = self.doc_page_query if self.doc_page_query.byte_length() > 0 else self.doc_mark
+        var d = Dialog(D_DOC_PAGEFIND, "Find on This Page", min(60, self.scr.w - 4), 8)
+        d.fields.append(Field("~F~ind", seed))
+        d.fields[0].fresh = True
+        d.buttons.append("~F~ind")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def docs_page_jump(mut self, step: Int, advance: Bool):
+        """Jump to the next (`step = 1`) or previous (`step = -1`) match of `doc_mark`
+        on the current page."""
+        var pat = self.doc_mark if self.doc_mark.byte_length() > 0 else self.doc_page_query
+        if pat.byte_length() == 0:
+            self.docs_page_find_dialog()
+            return
+        self.doc_mark = pat
+        self.doc_page_query = pat
+        self.docs_layout()
+        var low_pat = pat.lower()
+        var hits = List[Int]()
+        for r in range(len(self.doc_lines)):
+            if to_str(self.doc_lines[r].cps).lower().find(low_pat) >= 0:
+                hits.append(r)
+        if len(hits) == 0:
+            self.say("Not found on this page: " + pat)
+            return
+        var pick = 0
+        if step > 0:
+            var threshold = self.doc_scroll + (1 if advance else 0)
+            pick = 0
+            for i in range(len(hits)):
+                if hits[i] >= threshold:
+                    pick = i
+                    break
+        else:
+            var threshold = self.doc_scroll - (1 if advance else 0)
+            pick = len(hits) - 1
+            var i = len(hits) - 1
+            while i >= 0:
+                if hits[i] <= threshold:
+                    pick = i
+                    break
+                i -= 1
+        self.doc_focus = 1
+        self.doc_scroll = hits[pick]
+        self.say("Match " + String(pick + 1) + " of " + String(len(hits)) + " (F3 / Shift-F3 for next/previous)")
+
+    def docs_headings_dialog(mut self):
+        """G / @ in the reader: jump to any heading on the current page."""
+        self.docs_layout()
+        var items = List[String]()
+        var data = List[Int]()
+        var cur_sel = 0
+        for r in range(len(self.doc_lines)):
+            if len(self.doc_lines[r].st) == 0 or self.doc_lines[r].st[0] != MD_HEAD:
+                continue
+            if r > 0 and len(self.doc_lines[r - 1].st) > 0 and self.doc_lines[r - 1].st[0] == MD_HEAD:
+                continue
+            var indent = String("    ")
+            if r + 1 < len(self.doc_lines) and len(self.doc_lines[r + 1].cps) > 0:
+                if self.doc_lines[r + 1].cps[0] == 0x2550:
+                    indent = ""
+                elif self.doc_lines[r + 1].cps[0] == 0x2500:
+                    indent = "  "
+            items.append(indent + to_str(self.doc_lines[r].cps))
+            data.append(r)
+            if r <= self.doc_scroll + 2:
+                cur_sel = len(items) - 1
+        if len(items) == 0:
+            self.say("This page has no headings")
+            return
+        var d = Dialog(D_DOC_HEADINGS, "On This Page", min(72, self.scr.w - 4), min(24, max(10, len(items) + 8)))
+        d.fields.append(Field("~H~eading", ""))
+        d.list_filter = True
+        d.set_items(items^, data^)
+        d.list_sel = cur_sel
+        d.buttons.append("~G~o")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
     # --------------------------------------------------------------- keys
     def docs_hints(self) -> List[String]:
         var out = List[String]()
@@ -726,6 +969,8 @@ __extension App:
                 out.append("~O~ Try it")
             else:
                 out.append("~O~ Open file")
+            out.append("~G~ Headings")
+            out.append("~C~/~T~ Code")
         out.append("~/~ Find")
         out.append("~Esc~ Close")
         return out^
@@ -737,6 +982,18 @@ __extension App:
             return
         if k == 47:
             self.docs_find_dialog("")
+            return
+        if k == ctrl(102):
+            self.docs_page_find_dialog()
+            return
+        if k == fkey(3) or k == ctrl(108):
+            self.docs_page_jump(1, True)
+            return
+        if k == (fkey(3) | MOD_SHIFT):
+            self.docs_page_jump(-1, True)
+            return
+        if k == 103 or k == 71 or k == 64:
+            self.docs_headings_dialog()
             return
         if (k == 100 or k == 68) and len(self.doc_lib.pages) == 0:
             self.mode = M_NORMAL
@@ -761,6 +1018,26 @@ __extension App:
             self.mode = M_NORMAL
             self.open_path(file)
             self.say("Opened " + basename(file) + " from the documentation - save changes under another name")
+            return
+        if self.doc_focus == 1 and (k == 99 or k == 67):
+            var code = self.docs_visible_snippet()
+            if code.byte_length() == 0:
+                self.say("No code block on this page")
+            else:
+                var cps = decode(code)
+                self.clipboard = cps.copy()
+                self.osc52(cps)
+                self.say("Copied code block to the clipboard")
+            return
+        if self.doc_focus == 1 and (k == 116 or k == 84):
+            var dpath = self.doc_path
+            if is_source_path(dpath) and path_exists(dpath) and self.docs_try(dpath):
+                return
+            var code = self.docs_visible_snippet()
+            if code.byte_length() == 0:
+                self.say("No code block on this page")
+            else:
+                self.open_scratch_snippet(code, "code snippet")
             return
         if self.doc_focus == 0:
             var n = len(self.doc_rows)
@@ -882,18 +1159,17 @@ __extension App:
                 var v = self.doc_rows[i]
                 var text = String("")
                 var fg = p.doc_fg
-                if True:
-                    var page = self.doc_lib.pages[v].copy()
-                    for _ in range(min(page.depth, 6)):
-                        text += "  "
-                    if page.kind == DK_BOOK:
-                        text = (" ▾ " if page.title in self.doc_open_books else " ▸ ") + page.title
-                        fg = p.doc_bold
-                    elif page.kind == DK_HEADING:
-                        text += " " + page.title
-                        fg = p.doc_dim
-                    else:
-                        text += (" › " if page.path == self.doc_path else "   ") + page.title
+                var page = self.doc_lib.pages[v].copy()
+                for _ in range(min(page.depth, 6)):
+                    text += "  "
+                if page.kind == DK_BOOK:
+                    text = (" ▾ " if page.title in self.doc_open_books else " ▸ ") + page.title
+                    fg = p.doc_bold
+                elif page.kind == DK_HEADING:
+                    text += ("▸ " if self.doc_head_key(v) in self.doc_closed_heads else "▾ ") + page.title
+                    fg = p.doc_dim
+                else:
+                    text += (" › " if page.path == self.doc_path else "   ") + page.title
                 var bg = p.doc_bg
                 if i == self.doc_row:
                     # the marked line: strong while the contents have the keyboard

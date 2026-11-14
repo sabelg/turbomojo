@@ -10,11 +10,11 @@ from agentexplain import *
 from agentchat import CE_USER, CE_NOTE
 from problems import Problem, PS_BUILD, SEV_ERROR
 from term import wait_readable
-from commands import CM_AGENT_EXPLAIN, CM_AGENT_EXPLAIN_CODE
+from commands import CM_AGENT_EXPLAIN, CM_AGENT_EXPLAIN_CODE, CM_AGENT_PROBLEMS
 from app import *
 from appstate import App, now_ns
 from signals import own_pid
-from util import env_or, run_system, shell_quote, write_file, str_bytes, getcwd, which
+from util import env_or, run_system, shell_quote, write_file, str_bytes, getcwd, which, read_file, bytes_to_str, path_exists
 
 comptime MS = 1000000
 comptime STD_JSON = "{\"decl\": {\"kind\": \"package\", \"name\": \"std\", \"summary\": \"\", \"description\": \"\", \"modules\": [{\"kind\": \"module\", \"name\": \"__init__\", \"summary\": \"The standard library.\", \"description\": \"\"}], \"packages\": [{\"kind\": \"package\", \"name\": \"collections\", \"summary\": \"\", \"description\": \"\", \"packages\": [], \"modules\": [{\"kind\": \"module\", \"name\": \"list\", \"summary\": \"Defines the List type.\", \"description\": \"Imported automatically.\", \"aliases\": [], \"traits\": [], \"functions\": [{\"name\": \"make_list\", \"overloads\": [{\"signature\": \"def make_list(n: Int) -> List[Int]\", \"summary\": \"Makes a list.\", \"description\": \"\", \"deprecated\": \"\", \"args\": [{\"name\": \"n\", \"type\": \"Int\", \"description\": \"How many.\"}], \"parameters\": [], \"returns\": {\"type\": \"List[Int]\", \"doc\": \"The list.\"}, \"raisesDoc\": \"\"}]}, {\"name\": \"append\", \"overloads\": [{\"signature\": \"def append(a: List[Int], b: Int)\", \"summary\": \"Appends to a list.\", \"description\": \"\", \"deprecated\": \"\", \"args\": [], \"parameters\": [], \"raisesDoc\": \"\"}]}], \"structs\": [{\"kind\": \"struct\", \"name\": \"List\", \"signature\": \"struct List[T: AnyType, /]\", \"summary\": \"A resizable list.\", \"description\": \"Grows as needed.\", \"deprecated\": \"\", \"aliases\": [], \"fields\": [{\"name\": \"capacity\", \"type\": \"Int\", \"summary\": \"Room.\", \"description\": \"\"}], \"parameters\": [{\"name\": \"T\", \"type\": \"AnyType\", \"description\": \"The element type.\"}], \"parentTraits\": [{\"name\": \"Sized\"}, {\"name\": \"Copyable\"}], \"functions\": [{\"name\": \"append\", \"overloads\": [{\"signature\": \"def append(mut self, var value: T)\", \"summary\": \"Appends a value.\", \"description\": \"\", \"deprecated\": \"\", \"args\": [], \"parameters\": [], \"raisesDoc\": \"\"}]}]}]}, {\"kind\": \"module\", \"name\": \"empty\", \"summary\": \"\", \"description\": \"\", \"aliases\": [], \"structs\": [], \"traits\": [], \"functions\": []}]}]}, \"version\": \"1.2\"}"
@@ -112,6 +112,14 @@ def test_explain_an_error_with_local_help() raises:
     app.wins[app.top()].goto(1, 4)
     app.exec(CM_AGENT_EXPLAIN_CODE)
     pump(app, "Explain this code: a.mojo:1-4")
+    # send diagnostics to agent + live ide-state.json export
+    app.ide_state_path = d + "/ide-state.json"
+    app.problems_show(False)
+    assert_true(path_exists(d + "/ide-state.json"))
+    var state_json = bytes_to_str(read_file(d + "/ide-state.json"))
+    assert_true(state_json.find("cannot implicitly convert") > 0, state_json)
+    app.exec(CM_AGENT_PROBLEMS)
+    pump(app, "Send diagnostics to agent: 1 problem(s)")
     _ = app.agent.stop()
     _ = run_system("rm -rf " + shell_quote(d))
 

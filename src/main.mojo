@@ -34,6 +34,8 @@ FOLDER opens the Open dialog there.
   --screenshot OUT.svg [--size WxH] [--theme ID] [--command NAME]... [FILE]...
                   draw the IDE without a terminal and save the screen as SVG
                   (also when TERM=dumb; for screen readers and Emacs shells)
+  --warm-docs [FOLDER]
+                  pre-build the standard library Markdown pages and search cache
 
 Configuration: ~/.config/turbomojo/config.toml (Options writes there).
 Documentation: Help (Alt-H) inside TurboMojo."""
@@ -124,6 +126,13 @@ def main() raises:
     app.bp_enable(state_dir() + "/breakpoints")
     app.load_config()
     var args = argv()
+    if len(args) >= 2 and String(args[1]) == "--warm-docs":
+        app.help_dir = state_dir() + "/help"
+        if len(args) >= 3:
+            app.doc_home = String(args[2])
+        app.docs_index_ready()
+        print("Warmed documentation index: " + String(len(app.doc_lib.pages)) + " pages, " + String(len(app.doc_index.entries)) + " entries in " + app.doc_home)
+        return
     if len(args) >= 2 and String(args[1]) == "--screenshot":
         var sa = List[String]()
         for a in args:
@@ -171,6 +180,8 @@ def main() raises:
     app.key_uses_load(state_dir() + "/key-uses")
     app.tips_load(state_dir() + "/tips-shown")
     app.ex_home = state_dir() + "/exercises"
+    app.agent_sessions_dir = state_dir() + "/agent-sessions"
+    app.ide_state_path = state_dir() + "/ide-state.json"
     app.plugins_dir = config_home() + "/plugins"
     app.plugins_log_dir = state_dir()
     app.whats_new_check(state_dir() + "/seen-version")

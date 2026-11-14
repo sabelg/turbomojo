@@ -8,13 +8,21 @@ from std.collections import List
 from appstate import *
 from util import *
 from dialog import *
-from commands import CM_LSP
+from commands import CM_LSP, CM_AGENT_EXPLAIN
 from window import WK_EDITOR, WK_MESSAGE
 from lsp import uri_to_path, utf16_to_col
+from json import JsonWriter
 from problems import *
 from testexp import TS_FAIL, def_line
+from tips import TK_ERROR
+from app_tips import *
+from app_explain import *
+from app_docs import *
+from app_exec import *
 from app_jobs import *
 from app_layout import *
+from app_outline import *
+from app_agentsvc import *
 
 
 __extension App:
@@ -135,11 +143,33 @@ __extension App:
             self.pg_errs[PG_PROBLEMS] = errs^
             self.pg_idx[PG_PROBLEMS] = -1
             self.pg_search[PG_PROBLEMS] = False
+        if v.errors > 0 and self.tips_file.byte_length() > 0:
+            self.tip_feed(TK_ERROR)
+        self.export_ide_state()
 
     # ------------------------------------------------------------------ keys
-    def panel_filter_key(mut self, k: Int) -> Bool:
-        """Filter keys of the Problems and Message pages (False: not one)."""
+    def panel_filter_key(mut self, k: Int) raises -> Bool:
+        """Filter and action keys of the Problems and Message pages (False: not one)."""
         if self.msg_page == PG_PROBLEMS:
+            if k == 97 or k == 65:              # A: Ask agent about this error
+                self.exec(CM_AGENT_EXPLAIN)
+                return True
+            if k == 63:                         # ?: Search docs for this error
+                var row = self.explain_problems_row()
+                var q = String("")
+                if row.byte_length() > 0:
+                    var first_nl = row.find("\n")
+                    var line0 = String(row[byte=0:first_nl]) if first_nl >= 0 else row
+                    var ek = line0.find(" error: ")
+                    if ek < 0:
+                        ek = line0.find(" warning: ")
+                    q = String(String(line0[byte=line0.find(": ", ek) + 2:]).strip()) if ek >= 0 else String(line0.strip())
+                    var bt = q.rfind("  [")
+                    if bt > 0:
+                        var trimmed_q = String(q[byte=0:bt])
+                        q = trimmed_q
+                self.docs_find_dialog(q)
+                return True
             if k == 101 or k == 69:             # E
                 self.prob_filter.errors = not self.prob_filter.errors
             elif k == 119 or k == 87:           # W
@@ -231,6 +261,53 @@ __extension App:
         self.wins[mi].cr = 0
         self.wins[mi].top = 0
         self.wins[mi].follow = True
+
+    def export_ide_state(self):
+        """Write live IDE state (open editors and current Problems diagnostics) to
+        `ide_state_path` so MCP tools can inspect TurboMojo's live workspace."""
+        if self.ide_state_path.byte_length() == 0:
+            return
+        var w = JsonWriter()
+        w.begin_obj()
+        w.kv_str("project_dir", self.symidx_root())
+        var te = self.top_editor()
+        w.kv_str("active_file", self.wins[te].path if te >= 0 else String(""))
+        w.kv_str("agent_mode", self.agent_effective_mode())
+        w.kv_str("agent_model", self.agent.current_model)
+        w.kv_str("agent_thinking", self.agent.thinking)
+        w.kv_str("agent_session_id", self.agent.session_id)
+        w.key("editors")
+        w.begin_arr()
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_EDITOR:
+                w.begin_obj()
+                w.kv_str("path", self.wins[i].path)
+                w.kv_str("title", self.wins[i].title)
+                w.kv_int("line", self.wins[i].cr + 1)
+                w.kv_int("col", self.wins[i].cc + 1)
+                w.kv_bool("modified", self.wins[i].buf.modified)
+                w.kv_int("lines", self.wins[i].buf.count())
+                w.end_obj()
+        w.end_arr()
+        w.key("diagnostics")
+        w.begin_arr()
+        for p in self.problems_collect():
+            w.begin_obj()
+            var src = String("lsp") if p.source == PS_SERVER else (String("test") if p.source == PS_TEST else String("build"))
+            var sev = String("error") if p.severity == SEV_ERROR else (String("warning") if p.severity == SEV_WARNING else String("info"))
+            w.kv_str("source", src)
+            w.kv_str("severity", sev)
+            w.kv_str("path", p.path)
+            w.kv_int("line", p.line)
+            w.kv_int("col", p.col)
+            w.kv_str("message", p.message)
+            w.end_obj()
+        w.end_arr()
+        w.end_obj()
+        var d = dirname(self.ide_state_path)
+        if d.byte_length() > 0 and not path_exists(d):
+            _ = run_system("mkdir -p " + shell_quote(d))
+        _ = write_file(self.ide_state_path, str_bytes(w.text() + "\n"))
 
 
 def problems_tab(errors: Int, warnings: Int, shown: Int) -> String:

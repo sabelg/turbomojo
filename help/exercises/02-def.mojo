@@ -1,4 +1,4 @@
-# Exercise 2 of 8: functions are def
+# Exercise 2 of 13: functions are def
 #
 # This was written for an older Mojo. Make it build with Mojo 1.x.
 # When it is right, it prints:

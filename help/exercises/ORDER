@@ -6,3 +6,8 @@
 06-mut
 07-import
 08-logic
+09-comptime
+10-fieldwise
+11-utf8
+12-traits
+13-simd

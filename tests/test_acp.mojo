@@ -248,5 +248,46 @@ def test_agents_that_do_not_work() raises:
     _ = run_system("rm -rf " + shell_quote(d))
 
 
+def test_models_thinking_and_session_load() raises:
+    var d = scratch("rich")
+    var c = AcpClient()
+    assert_true(c.start(agent_cmd(d + "/log", "rich"), d, "/dev/null", now()))
+    _ = run_until(c, AE_READY)
+    assert_false(c.resumed)
+    assert_equal(c.current_model, "gemini-3.1-pro")
+    assert_equal(len(c.model_ids), 2)
+    assert_equal(c.model_name("claude-sonnet-4-6"), "Claude Sonnet 4.6")
+    assert_equal(c.thinking, "medium")
+    assert_equal(len(c.thinking_ids), 3)
+    assert_true(c.set_model("claude-sonnet-4-6", now()))
+    var ev = run_until(c, AE_MODEL)
+    assert_equal(c.current_model, "claude-sonnet-4-6")
+    assert_equal(ev[len(ev) - 1].status, "claude-sonnet-4-6")
+    assert_true(c.set_thinking("high", now()))
+    ev = run_until(c, AE_THINKING)
+    assert_equal(c.thinking, "high")
+    assert_equal(ev[len(ev) - 1].status, "high")
+    c.stop()
+    # session/load replays user & agent chunks before AE_READY
+    var c2 = AcpClient()
+    c2.resume_session_id = "sess_prev_99"
+    assert_true(c2.start(agent_cmd(d + "/log2", "rich"), d, "/dev/null", now()))
+    ev = run_until(c2, AE_READY)
+    assert_true(c2.resumed)
+    assert_equal(c2.session_id, "sess_prev_99")
+    assert_equal(text_of(ev, AE_USER), "earlier question")
+    assert_equal(text_of(ev, AE_MESSAGE), "earlier answer")
+    c2.stop()
+    # session/load error falls back automatically to session/new
+    var c3 = AcpClient()
+    c3.resume_session_id = "sess_missing"
+    assert_true(c3.start(agent_cmd(d + "/log3", "rich"), d, "/dev/null", now()))
+    _ = run_until(c3, AE_READY)
+    assert_false(c3.resumed)
+    assert_equal(c3.session_id, "sess_fake_1")
+    c3.stop()
+    _ = run_system("rm -rf " + shell_quote(d))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

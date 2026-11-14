@@ -56,6 +56,13 @@ comptime D_NEW_PROJECT = 47     # File > New project
 comptime D_SETUP = 48           # Help > Check setup
 comptime D_PRESETS = 49         # Options > Presets
 comptime D_PKG = 50             # install a library the program uses (P11-13)
+comptime D_AGENT_MODEL = 51     # System > Agent model
+comptime D_AGENT_MODE = 52      # System > Agent mode
+comptime D_AGENT_THINKING = 53  # System > Agent thinking
+comptime D_AGENT_FILE = 54      # @file completion in the agent prompt
+comptime D_DOC_PAGEFIND = 55    # Ctrl-F in the documentation reader: find on this page
+comptime D_DOC_HEADINGS = 56    # g / @ in the documentation reader: headings on this page
+comptime D_PUZZLE_ENV = 57      # install the GPU puzzles' pixi environment before checking
 
 comptime NEXT_NONE = 0
 comptime NEXT_CLOSE = 1

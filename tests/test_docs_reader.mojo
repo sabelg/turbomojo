@@ -772,5 +772,58 @@ def test_reader_fits_a_narrow_screen() raises:
     _ = run_system("rm -rf '" + dirname(d) + "'")
 
 
+def test_cache_dotted_modules_and_reader_enhancements() raises:
+    # JSX multi-line tag, TabItem value fallback, HTML table cells, and legacy Mojo banner
+    var mdx = doc_prepare("<Card\n  title=\"Box\"\n>\n<TabItem value=\"gpu\">\n```mojo\nfn old_kernel(inout x: Int):\n    let y = x\n```\n</TabItem>\n</Card>\n", "page.mdx")
+    assert_true(mdx.find("### Box") >= 0 and mdx.find("### Gpu") >= 0 and mdx.find("fn old_kernel") >= 0, mdx)
+    assert_true(has_legacy_mojo_code(mdx))
+    var html = html_markdown("<main><table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table></main>")
+    assert_true(html.find("A | B") >= 0 and html.find("1 | 2") >= 0, html)
+
+    var d = docs_home("r6")
+    with open(d + "/SOURCES.txt", "w") as f:
+        f.write("ref mojo/v1.2.0\n")
+    with open(d + "/mojo-gpu-puzzles/legacy.md", "w") as f:
+        f.write("# Old puzzle\n\n```mojo\nfn add(inout a: Int):\n    alias N = 4\n```\n")
+    var legacy_md = path_markdown(d + "/mojo-gpu-puzzles/legacy.md")
+    assert_true(legacy_md.find("earlier Mojo syntax") >= 0, legacy_md)
+
+    var app = reader(d)
+    app.exec(CM_DOCFIND)
+    # dotted module path search (`std.collections.list`) ranks the module page first
+    for c in decode("std.collections.list"):
+        app.handle(key_event(c))
+    assert_true(len(app.doc_found) > 0)
+    assert_true(app.dlg.items[0].find("std.collections.list") >= 0, app.dlg.items[0])
+    app.handle(key_event(KEY_ESC))
+
+    # disk cache round-trip
+    assert_true(path_exists(d + "/.doc_index.cache"))
+    var app2 = App()
+    app2.scr.resize(110, 32)
+    app2.doc_home = d
+    app2.docs_index_ready()
+    assert_equal(len(app2.doc_lib.pages), len(app.doc_lib.pages))
+    assert_equal(len(app2.doc_index.entries), len(app.doc_index.entries))
+
+    # in-page search (Ctrl-F), heading jump (G), and copy snippet (C)
+    app2.exec(CM_MOJODOCS)
+    app2.docs_show(d + "/stdref/std.collections.list.md", "", True)
+    app2.doc_focus = 1
+    app2.docs_layout()
+    app2.handle(key_event(ctrl(102)))               # Ctrl-F: Find on Page
+    for c in decode("make_list"):
+        app2.handle(key_event(c))
+    app2.handle(key_event(KEY_ENTER))
+    assert_equal(app2.mode, M_DOCS)
+    assert_equal(app2.doc_mark, "make_list")
+    app2.handle(key_event(103))                     # 'g': On this page headings
+    assert_true(len(app2.dlg.items) >= 2)
+    app2.handle(key_event(KEY_ESC))
+    app2.handle(key_event(99))                      # 'c': Copy code block
+    assert_true(len(app2.clipboard) > 0)
+    _ = run_system("rm -rf '" + dirname(d) + "'")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

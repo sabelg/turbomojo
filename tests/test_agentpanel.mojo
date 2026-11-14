@@ -6,13 +6,13 @@ from std.collections import List
 from std.time import perf_counter_ns
 from agentchat import *
 from acp import AS_READY, AS_FAILED
-from term import wait_readable, key_event, KEY_ENTER, KEY_ESC, KEY_BACKSPACE, KEY_PGUP, ctrl, fkey, MOD_CTRL, MOD_SHIFT
+from term import wait_readable, key_event, KEY_ENTER, KEY_ESC, KEY_TAB, KEY_UP, KEY_DOWN, KEY_BACKSPACE, KEY_PGUP, ctrl, fkey, MOD_CTRL, MOD_SHIFT, MOD_ALT
 from app import *
 from appstate import App, now_ns, M_NORMAL, M_DIALOG
 from window import WK_EDITOR, WK_AGENT
-from commands import CM_AGENT, CM_AGENT_MENTION
+from commands import CM_AGENT, CM_AGENT_MENTION, CM_AGENT_MODEL, CM_AGENT_THINKING, CM_AGENT_NEW
 from signals import own_pid
-from util import env_or, run_system, shell_quote, write_file, str_bytes, decode, to_str, getcwd, read_file, bytes_to_str
+from util import env_or, run_system, shell_quote, write_file, str_bytes, decode, to_str, getcwd, read_file, bytes_to_str, path_exists
 
 comptime MS = 1000000
 
@@ -255,6 +255,68 @@ def test_without_an_agent() raises:
     app2.exec(CM_AGENT)
     assert_equal(app2.mode, M_DIALOG)
     assert_false(app2.agent.active())
+    _ = run_system("rm -rf " + shell_quote(d))
+
+
+def test_history_completion_pickers_and_session_resume() raises:
+    var d = scratch("ux")
+    _ = write_file(d + "/b.mojo", str_bytes("def b(): pass\n"))
+    var app = ide(d)
+    app.agent_sessions_dir = d + "/sessions"
+    app.agent_command = agent_cmd(d + "/log", "rich")
+    app.agent_mode = "auto"
+    app.exec(CM_AGENT)
+    pump(app, "Connected to Fake Agent")
+    assert_true(path_exists(app.agent_session_file(d)))
+    # prompt history with Alt-Up / Alt-Down preserves draft
+    type_text(app, "hello")
+    app.handle(key_event(KEY_ENTER))
+    pump(app, "Hello")
+    type_text(app, "draft")
+    app.handle(key_event(KEY_UP | MOD_ALT))
+    assert_equal(to_str(app.agent_input), "hello")
+    app.handle(key_event(KEY_DOWN | MOD_ALT))
+    assert_equal(to_str(app.agent_input), "draft")
+    app.agent_input.clear()
+    app.agent_cur = 0
+    # @file inline completion when a single file matches
+    type_text(app, "check @b.m")
+    app.handle(key_event(KEY_TAB))
+    assert_equal(to_str(app.agent_input), "check @b.mojo ")
+    # @ picker dialog when multiple files match
+    type_text(app, "@")
+    app.handle(key_event(KEY_TAB))
+    assert_equal(app.mode, M_DIALOG)
+    app.handle(key_event(KEY_ENTER))
+    assert_equal(app.mode, M_NORMAL)
+    assert_true(to_str(app.agent_input).find(".mojo ") > 0, to_str(app.agent_input))
+    app.agent_input.clear()
+    app.agent_cur = 0
+    # model & thinking picker dialogs
+    app.exec(CM_AGENT_MODEL)
+    assert_equal(app.mode, M_DIALOG)
+    app.handle(key_event(KEY_DOWN))
+    app.handle(key_event(KEY_ENTER))
+    pump(app, "Model: Claude Sonnet 4.6")
+    app.exec(CM_AGENT_THINKING)
+    assert_equal(app.mode, M_DIALOG)
+    app.handle(key_event(KEY_DOWN))
+    app.handle(key_event(KEY_ENTER))
+    pump(app, "Thinking: High")
+    app.agent.stop()
+    # restarting in the same project resumes the saved session via session/load
+    var app2 = ide(d)
+    app2.agent_sessions_dir = d + "/sessions"
+    app2.agent_command = agent_cmd(d + "/log2", "rich")
+    app2.agent_mode = "auto"
+    app2.exec(CM_AGENT)
+    pump(app2, "resumed session")
+    assert_true(app2.chat.markdown("").find("earlier answer") >= 0)
+    # CM_AGENT_NEW clears and starts a fresh session
+    app2.exec(CM_AGENT_NEW)
+    pump(app2, "Connected to Fake Agent")
+    assert_false(app2.agent.resumed)
+    app2.agent.stop()
     _ = run_system("rm -rf " + shell_quote(d))
 
 

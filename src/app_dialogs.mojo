@@ -23,6 +23,7 @@ from dialog import *
 from util import *
 from appstate import *
 from app_notify import *
+from app_agent import *
 from app_problems import *
 from app_lsp import *
 from lsp import *
@@ -318,6 +319,27 @@ __extension App:
                 self.docs_find_go(self.dlg.selected_item())
             elif self.doc_find_back:
                 self.mode = M_DOCS
+        elif kind == D_DOC_PAGEFIND:
+            self.mode = M_DOCS
+            if b == 0:
+                var q = String(self.dlg.field_text(0).strip())
+                if q.byte_length() > 0:
+                    self.doc_page_query = q
+                    self.doc_mark = q
+                    self.docs_page_jump(1, False)
+                else:
+                    self.doc_mark = ""
+                    self.doc_page_query = ""
+        elif kind == D_DOC_HEADINGS:
+            self.mode = M_DOCS
+            if b == 0:
+                var sel = self.dlg.selected_item()
+                if sel >= 0 and sel < len(self.dlg.item_data):
+                    self.doc_focus = 1
+                    self.doc_scroll = self.dlg.item_data[sel]
+        elif kind == D_PUZZLE_ENV:
+            if b == 0:
+                self.puzzle_env_install()
         elif kind == D_DOCFETCH:
             if b == 0:
                 self.docs_fetch()
@@ -420,6 +442,22 @@ __extension App:
                 self.compiler = c
                 self.persist_option("tools", "compiler", toml_quote(c))
                 self.say("Compiler: " + c)
+        elif kind == D_AGENT_MODEL and b == 0:
+            var s = self.dlg.selected_item()
+            if s >= 0:
+                self.agent_model_choose(self.dlg.item_data[s])
+        elif kind == D_AGENT_MODE and b == 0:
+            var s = self.dlg.selected_item()
+            if s >= 0:
+                self.agent_mode_choose(self.dlg.item_data[s])
+        elif kind == D_AGENT_THINKING and b == 0:
+            var s = self.dlg.selected_item()
+            if s >= 0:
+                self.agent_thinking_choose(self.dlg.item_data[s])
+        elif kind == D_AGENT_FILE and b == 0:
+            var s = self.dlg.selected_item()
+            if s >= 0:
+                self.agent_file_choose(self.dlg.item_data[s])
 
     # ------------------------------------------------------------ find / replace
     def current_search(self) -> Search:
@@ -608,8 +646,8 @@ __extension App:
             self.find_close(True)
         else:
             self.mode = M_NORMAL
-            if self.dlg.kind == D_DOCFIND and self.doc_find_back:
-                self.mode = M_DOCS              # back to the page the finder was opened from
+            if (self.dlg.kind == D_DOCFIND and self.doc_find_back) or self.dlg.kind == D_DOC_PAGEFIND or self.dlg.kind == D_DOC_HEADINGS:
+                self.mode = M_DOCS              # back to the page the dialog was opened from
             if self.dlg.kind == D_RENAME_APPLY:
                 self.act_command_due = False
                 self.say(self.edit_noun + " cancelled - nothing was changed")

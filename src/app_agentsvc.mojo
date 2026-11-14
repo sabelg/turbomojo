@@ -34,6 +34,22 @@ comptime ERR_PARAMS = -32602
 
 
 __extension App:
+    def agent_effective_mode(self) -> String:
+        """The mode the session is working in (or switching into): `mode_wanted` while a
+        `session/set_mode` request is in flight, else `agent.mode`, else `agent_mode`."""
+        if self.agent.mode_id >= 0 and self.agent.mode_wanted.byte_length() > 0:
+            return self.agent.mode_wanted
+        if self.agent.mode.byte_length() > 0:
+            return self.agent.mode
+        return self.agent_mode
+
+    def agent_auto_edits(self) -> Bool:
+        var m = self.agent_effective_mode()
+        return m == "auto" or m == "accept-edits"
+
+    def agent_auto_exec(self) -> Bool:
+        return self.agent_effective_mode() == "auto"
+
     def agent_path_ok(self, path: String, write: Bool) -> Bool:
         """The agent may use this file: it is in the project (or, for reading, open in
         the editor)."""
@@ -85,8 +101,9 @@ __extension App:
                 self.agent.answer(e.request, "{}")          # nothing to change
                 return
             self.agent_props.append(Proposal(e.request, path, got[0], new, got[1]))
-            if "edit" in self.agent_allowed and len(self.agent_props) == 1:
-                self.chat.note("Writing (allowed this session): " + self.agent_rel(path))
+            if ("edit" in self.agent_allowed or self.agent_auto_edits()) and len(self.agent_props) == 1:
+                var why = String("allowed this session") if "edit" in self.agent_allowed else (self.agent_effective_mode() + " mode")
+                self.chat.note("Writing (" + why + "): " + self.agent_rel(path))
                 self.agent_proposal_answer(True)
                 return
             self.chat.note("The agent proposes " + ("changes to " if got[1] else "a new file ") + self.agent_rel(path) + ": A accepts, S accepts its writes for this session, R rejects (in the diff view; Enter in the empty prompt shows it again)")
@@ -130,8 +147,9 @@ __extension App:
                 self.agent.answer_error(e.request, ERR_PARAMS, "no command")
                 return
             self.agent_asks.append(RunAsk(e.request, argv^, cwd, env^, limit, title))
-            if allow_key("execute", title) in self.agent_allowed:
-                self.chat.note("Running (allowed this session): `" + title + "` in " + cwd)
+            if allow_key("execute", title) in self.agent_allowed or self.agent_auto_exec():
+                var why = String("allowed this session") if allow_key("execute", title) in self.agent_allowed else String("auto mode")
+                self.chat.note("Running (" + why + "): `" + title + "` in " + cwd)
                 self.agent_ask_answer(True)
                 return
             self.chat.note("The agent wants to run `" + title + "` in " + cwd + ": Y runs it, A always (this session), N refuses")

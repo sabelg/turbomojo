@@ -227,5 +227,14 @@ def test_documentation_folders_outside_the_project() raises:
     _ = run_system("rm -rf '" + dir + "' '" + libdir + "'")
 
 
+def test_parametric_struct_and_trait_metadata() raises:
+    var rich_json = "{\"decl\": {\"kind\": \"module\", \"name\": \"boxmod\", \"structs\": [{\"kind\": \"struct\", \"name\": \"Box\", \"signature\": \"struct Box[T: Copyable]\", \"summary\": \"Holds a T.\", \"description\": \"\", \"deprecated\": \"\", \"parameters\": [{\"name\": \"T\", \"type\": \"Copyable\", \"description\": \"Element type.\"}], \"parentTraits\": [{\"name\": \"Copyable\"}, {\"name\": \"Writable\"}], \"fields\": [], \"functions\": []}]}, \"version\": \"1.2\"}"
+    var e = parse_mojo_doc(json_parse(rich_json))
+    var out = docs_for(e, "Box")
+    assert_true(out.find("struct Box[T: Copyable]") >= 0, out)
+    assert_true(out.find("**Parameters:**\n\n- `T: Copyable` - Element type.") >= 0, out)
+    assert_true(out.find("**Implemented traits:** `Copyable`, `Writable`") >= 0, out)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

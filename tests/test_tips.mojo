@@ -138,5 +138,15 @@ def test_no_more_tips() raises:
     _ = run_system("rm -rf " + shell_quote(d))
 
 
+def test_error_explain_tip() raises:
+    var d = scratch("err")
+    var app = editor_app(d)
+    app.tip_feed(TK_ERROR)
+    app.notes_tick(now_ns() + (TYPING_PAUSE_MS + 1) * MS)
+    assert_true(tip_toasts(app).find("explains what it means and how to fix it") >= 0, tip_toasts(app))
+    assert_true(bytes_to_str(read_file(d + "/tips-shown")).find("f1-explain") >= 0)
+    _ = run_system("rm -rf " + shell_quote(d))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

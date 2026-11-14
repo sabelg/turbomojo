@@ -1,4 +1,4 @@
-# Exercise 1 of 8: a new name needs var
+# Exercise 1 of 13: a new name needs var
 #
 # Mojo does not create a variable the first time you assign to it.
 # When it is right, it prints:

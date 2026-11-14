@@ -718,20 +718,34 @@ def md_render_rich(text: String, width: Int, hl: Highlighter, mut links: List[St
             md_table(rows, w, links, out)
             continue
         if fence:
-            # the language after the fence decides whether to colour the code
+            # the language is the first word after the fence (before spaces, commas or attributes)
+            var q0 = ind + 3
+            while q0 < len(line) and (line[q0] == 96 or line[q0] == 126):
+                q0 += 1
+            while q0 < len(line) and is_space(line[q0]):
+                q0 += 1
             var lang = List[Int]()
-            for q in range(ind + 3, len(line)):
-                if not is_space(line[q]) and line[q] != 96 and line[q] != 126:
-                    var lc = line[q]
-                    if lc >= 65 and lc <= 90:
-                        lc += 32
-                    lang.append(lc)
+            var q = q0
+            while q < len(line) and not is_space(line[q]) and line[q] != 44 and line[q] != 123 and line[q] != 58:
+                var lc = line[q]
+                if lc >= 65 and lc <= 90:
+                    lc += 32
+                lang.append(lc)
+                q += 1
+            var info_rest = List[Int]()
+            for r0 in range(q, len(line)):
+                info_rest.append(line[r0])
+            var fence_title = html_attr(info_rest, "title")
             var name = to_str(lang)
             code_lang_ok = len(lang) == 0 or name == "mojo" or name == "python" or name == "py" or name == "🔥"
             code_state = 0
             in_code = True
             if md_gap(len(out), last_kind, 3, blank_seen):
                 out.append(MdLine())
+            if rich and fence_title.byte_length() > 0:
+                var th = MdLine()
+                th.add_all(decode("── " + fence_title + " ──"), MD_DIM)
+                out.append(th^)
             last_kind = 3
             blank_seen = False
             continue

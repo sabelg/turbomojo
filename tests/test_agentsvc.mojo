@@ -202,5 +202,50 @@ def test_commands_run_after_a_yes() raises:
     _ = run_system("rm -rf " + shell_quote(d))
 
 
+def test_auto_and_accept_edits_modes() raises:
+    var d = scratch("automode")
+    var app = App()
+    app.scr.resize(120, 34)
+    app.cwd = d
+    app.project_dir = d
+    app.agent_mode = "auto"
+    _ = write_file(d + "/a.mojo", str_bytes("one\ntwo\n"))
+    app.open_path(d + "/a.mojo")
+    app.agent_command = agent_cmd(d + "/log")
+    app.exec(CM_AGENT)
+    pump(app, "Connected")
+    # in auto mode, writes apply hands-free without opening a proposal diff, yet keep single-step Undo
+    say(app, "write " + d + "/a.mojo one\\nAUTO\\n")
+    pump(app, "write: ok")
+    assert_equal(app.gd_index(), -1)
+    assert_equal(bytes_to_str(read_file(d + "/a.mojo")), "one\nAUTO\n")
+    var ei = app.find_editor(d + "/a.mojo")
+    app.focus(ei)
+    app.exec(CM_UNDO)
+    assert_equal(to_str(app.wins[app.find_editor(d + "/a.mojo")].buf.all_text()), "one\ntwo\n")
+    # in auto mode, terminal commands and permission requests run hands-free
+    app.focus(app.agent_index())
+    say(app, "run echo handsfree")
+    pump(app, "exit 0 truncated False: handsfree")
+    assert_equal(len(app.agent_asks), 0)
+    say(app, "permrun")
+    pump(app, "told: selected yes")
+    assert_equal(len(app.agent_perms), 0)
+    # in accept-edits mode, edits go in automatically while commands still ask
+    app.agent_mode = "accept-edits"
+    _ = app.agent.set_mode("accept-edits", now_ns())
+    pump(app, "Mode: Accept Edits")
+    say(app, "write " + d + "/a.mojo edited\\n")
+    pump(app, "write: ok")
+    assert_equal(bytes_to_str(read_file(d + "/a.mojo")), "edited\n")
+    say(app, "run echo askme")
+    pump(app, "The agent wants to run `echo askme`", False)
+    assert_equal(len(app.agent_asks), 1)
+    app.handle(key_event(110))
+    pump(app, "run refused")
+    app.agent.stop()
+    _ = run_system("rm -rf " + shell_quote(d))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

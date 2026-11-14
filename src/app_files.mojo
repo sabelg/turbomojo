@@ -25,6 +25,7 @@ from appstate import *
 from symindex import *
 from outline import scan_outline
 from app_lsp import *
+from app_problems import *
 from lsp import *
 from app_watch import *
 from watch import *
@@ -151,6 +152,7 @@ __extension App:
         self.say("Saved " + self.wins[i].path + note)
         var saved = self.wins[i].path
         self.plugins_event("save", saved)
+        self.export_ide_state()
         return True
 
     # ------------------------------------------------- history between sessions

@@ -12,7 +12,7 @@ from window import WK_EDITOR, WK_MESSAGE
 from agentexplain import *
 from errhelp import explain_for, err_body
 from docpane import md_section
-from doclib import path_markdown
+from doclib import path_markdown, has_legacy_mojo_code
 from outline import scan_outline, scope_path
 from agentchat import CE_AGENT, CE_USER
 from acp import AS_READY, AS_FAILED, AS_STOPPED
@@ -28,8 +28,10 @@ comptime EXPLAIN_CODE_MAX = 80      # the most lines of code sent
 __extension App:
     def explain_excerpts(mut self, text: String) -> List[String]:
         """The documentation of the standard library names `text` uses (the quoted
-        ones first), at most EXCERPTS_MAX pages."""
+        ones first), at most EXCERPTS_MAX pages; pages with removed pre-1.2 syntax
+        are only used as a last resort."""
         var out = List[String]()
+        var legacy = List[String]()
         self.docs_index_ready()
         if not self.doc_index.built:
             return out^
@@ -49,7 +51,15 @@ __extension App:
             if sec.byte_length() == 0:
                 continue
             pages.append(ent.page)
-            out.append(doc_excerpt(self.doc_lib.pages[ent.page].title + " - " + ent.text, sec))
+            var exc = doc_excerpt(self.doc_lib.pages[ent.page].title + " - " + ent.text, sec)
+            if has_legacy_mojo_code(sec):
+                legacy.append(exc)
+            else:
+                out.append(exc)
+        for exc in legacy:
+            if len(out) >= EXCERPTS_MAX:
+                break
+            out.append(exc)
         return out^
 
     def code_lines(self, ei: Int, first: Int, last: Int) -> List[String]:
@@ -167,9 +177,8 @@ __extension App:
         self.agent_scroll = 0
 
     def agent_check_answer(mut self):
-        """After an explain answer: build its imports with the installed Mojo."""
-        if not self.agent_explaining:
-            return
+        """After an agent answer: build any Mojo imports in its code blocks with the
+        installed Mojo compiler so hallucinated 0.x/24.x imports are caught immediately."""
         self.agent_explaining = False
         var text = String("")
         for k in range(len(self.chat.entries) - 1, -1, -1):
@@ -198,3 +207,48 @@ __extension App:
                 said = True
         if not said:
             self.chat.note("The answer's imports could not be checked (the check program did not build)")
+
+    def agent_send_problems(mut self) raises:
+        """Send all current LSP, build, and test diagnostics (with code snippets and local
+        Mojo documentation excerpts) to the coding agent."""
+        var probs = self.problems_collect()
+        if len(probs) == 0:
+            self.say("No diagnostics to send (run F7 or F9 first)")
+            return
+        var lines = List[String]()
+        lines.append("Fix the following Mojo diagnostics in this project:\n")
+        var shown_files = List[String]()
+        var combined = String("")
+        var limit = min(15, len(probs))
+        for k in range(limit):
+            ref p = probs[k]
+            var sev = String("error") if p.severity == 1 else (String("warning") if p.severity == 2 else String("note"))
+            var rel = self.rel_path(p.path) if p.path.byte_length() > 0 else String("<project>")
+            lines.append("- `" + rel + ":" + String(max(1, p.line)) + ":" + String(max(1, p.col)) + "` [" + sev + "]: " + p.message)
+            for m in p.more:
+                lines.append("  " + m)
+            combined += p.message + "\n"
+            if p.path.byte_length() > 0 and len(shown_files) < 4 and p.path not in shown_files:
+                shown_files.append(p.path)
+                var ei = self.find_editor(p.path)
+                var snippet = String("")
+                var ln = max(1, p.line)
+                if ei >= 0:
+                    snippet = numbered(self.code_lines(ei, ln - 1 - EXPLAIN_AROUND, ln - 1 + EXPLAIN_AROUND), max(1, ln - EXPLAIN_AROUND))
+                elif path_exists(p.path):
+                    var all = read_text(p.path).split("\n")
+                    var sl = List[String]()
+                    for r in range(max(0, ln - 1 - EXPLAIN_AROUND), min(len(all), ln + EXPLAIN_AROUND)):
+                        sl.append(String(all[r]))
+                    snippet = numbered(sl, max(1, ln - EXPLAIN_AROUND))
+                if snippet.byte_length() > 0:
+                    lines.append("\n### Context: `" + rel + "`\n```mojo\n" + snippet + "\n```\n")
+                    combined += snippet + "\n"
+        if len(probs) > limit:
+            lines.append("\n(...and " + String(len(probs) - limit) + " more diagnostic(s))")
+        var excerpts = self.explain_excerpts(combined)
+        if len(excerpts) > 0:
+            lines.append("\n## Local Mojo 1.2 Documentation Excerpts")
+            for ex in excerpts:
+                lines.append(ex)
+        self.agent_ask("Send diagnostics to agent: " + String(len(probs)) + " problem(s)", "\n".join(lines))

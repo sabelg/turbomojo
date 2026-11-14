@@ -33,7 +33,7 @@ def test_the_guides_keys_do_something() raises:
     is one of the few keys the IDE handles itself)."""
     var guide = bytes_to_str(read_file(getcwd() + "/docs/USER_GUIDE.md"))
     var reg = build_registry()
-    var own = ["F10", "F7", "F8", "Shift-F8", "F4", "Shift-F5", "Alt-1", "Alt-9", "Ctrl-Alt-Down", "Ctrl-Space"]
+    var own = ["F10", "F7", "F8", "Shift-F8", "F4", "Shift-F5", "Shift-F3", "Alt-1", "Alt-9", "Alt-M", "Alt-O", "Alt-T", "Alt-Up", "Alt-Down", "Ctrl-Alt-Down", "Ctrl-Space"]
     var parts = guide.split("**")
     var checked = 0
     for k in range(1, len(parts), 2):

@@ -1,4 +1,4 @@
-# Exercise 4 of 8: copying is asked for
+# Exercise 4 of 13: copying is asked for
 #
 # Lists are not copied behind your back. Keep both lists.
 # When it is right, it prints:

@@ -36,6 +36,8 @@ comptime AE_READY = 9           # the session is open
 comptime AE_FAILED = 10         # the agent could not be started, or ended (text: why)
 comptime AE_OTHER = 11          # an update this client does not show (its kind in `kind_name`)
 comptime AE_MODE = 13           # the session's mode changed (status: the mode; text: a problem)
+comptime AE_MODEL = 14          # the session's model changed (status: model id; text: a problem)
+comptime AE_THINKING = 15       # the session's thinking level changed (status: level; text: a problem)
 comptime AE_SERVICE = 12        # the agent asks the editor (fs/*, terminal/*): method in
                                 # kind_name, request id in request, params (JSON) in text
 
@@ -163,6 +165,20 @@ struct AcpClient(Movable):
     var mode_texts: List[String]
     var mode_id: Int            # a session/set_mode request waiting for its answer
     var mode_wanted: String
+    var current_model: String   # models.currentModelId
+    var model_ids: List[String]
+    var model_names: List[String]
+    var model_req_id: Int       # a session/set_model request waiting for its answer
+    var model_wanted: String
+    var thinking: String        # thought_level configOption currentValue
+    var thinking_ids: List[String]
+    var thinking_names: List[String]
+    var cfg_req_id: Int         # a session/set_config_option request waiting for its answer
+    var thinking_wanted: String
+    var resume_session_id: String   # sessionId to try loading via session/load
+    var load_id: Int
+    var resumed: Bool
+    var mcp_servers_json: String    # JSON array passed as mcpServers in session/new & load
 
     def __init__(out self):
         self.conn = RpcConn()
@@ -192,6 +208,20 @@ struct AcpClient(Movable):
         self.mode_texts = List[String]()
         self.mode_id = -1
         self.mode_wanted = ""
+        self.current_model = ""
+        self.model_ids = List[String]()
+        self.model_names = List[String]()
+        self.model_req_id = -1
+        self.model_wanted = ""
+        self.thinking = ""
+        self.thinking_ids = List[String]()
+        self.thinking_names = List[String]()
+        self.cfg_req_id = -1
+        self.thinking_wanted = ""
+        self.resume_session_id = ""
+        self.load_id = -1
+        self.resumed = False
+        self.mcp_servers_json = "[]"
 
     def fd(self) -> Int:
         return self.conn.fd() if self.conn.proc.running else -1
@@ -211,7 +241,20 @@ struct AcpClient(Movable):
         self.conn.lines = True
         self.problem = ""
         self.session_id = ""
+        self.init_id = -1
+        self.new_id = -1
+        self.load_id = -1
+        self.resumed = False
         self.prompt_id = -1
+        self.mode_id = -1
+        self.model_req_id = -1
+        self.cfg_req_id = -1
+        self.current_model = ""
+        self.model_ids.clear()
+        self.model_names.clear()
+        self.thinking = ""
+        self.thinking_ids.clear()
+        self.thinking_names.clear()
         self.permissions.clear()
         self.events.clear()
         self.refused.clear()
@@ -335,6 +378,81 @@ struct AcpClient(Movable):
                 return self.mode_names[k] if self.mode_names[k].byte_length() > 0 else id
         return id
 
+    def set_model(mut self, id: String, now: Int) -> Bool:
+        """Ask the agent to switch to one of the models it offers."""
+        if self.state != AS_READY or id not in self.model_ids:
+            return False
+        self.model_wanted = id
+        self.model_req_id = self.conn.request("session/set_model", "{\"sessionId\":" + json_quote(self.session_id) + ",\"modelId\":" + json_quote(id) + "}", now)
+        return True
+
+    def model_name(self, id: String) -> String:
+        for k in range(len(self.model_ids)):
+            if self.model_ids[k] == id:
+                return self.model_names[k] if self.model_names[k].byte_length() > 0 else id
+        return id
+
+    def set_thinking(mut self, val: String, now: Int) -> Bool:
+        """Ask the agent to set its `thought_level` config option."""
+        if self.state != AS_READY or val not in self.thinking_ids:
+            return False
+        self.thinking_wanted = val
+        self.cfg_req_id = self.conn.request("session/set_config_option", "{\"sessionId\":" + json_quote(self.session_id) + ",\"configId\":\"thought_level\",\"value\":" + json_quote(val) + "}", now)
+        return True
+
+    def thinking_name(self, id: String) -> String:
+        for k in range(len(self.thinking_ids)):
+            if self.thinking_ids[k] == id:
+                return self.thinking_names[k] if self.thinking_names[k].byte_length() > 0 else id
+        return id
+
+    def parse_config_options(mut self, doc: Json, opts: Int):
+        if opts < 0 or doc.kind(opts) != J_ARR:
+            return
+        for opt in doc.children(opts):
+            var cid = doc.str(doc.get(opt, "id"))
+            if cid == "thought_level":
+                self.thinking = doc.str(doc.get(opt, "currentValue"))
+                self.thinking_ids.clear()
+                self.thinking_names.clear()
+                var arr = doc.get(opt, "options")
+                if arr >= 0 and doc.kind(arr) == J_ARR:
+                    for o in doc.children(arr):
+                        self.thinking_ids.append(doc.str(doc.get(o, "value")))
+                        self.thinking_names.append(doc.str(doc.get(o, "name")))
+            elif cid == "model":
+                var cv = doc.str(doc.get(opt, "currentValue"))
+                if cv.byte_length() > 0:
+                    self.current_model = cv
+            elif cid == "mode":
+                var mv = doc.str(doc.get(opt, "currentValue"))
+                if mv.byte_length() > 0:
+                    self.mode = mv
+
+    def parse_session_meta(mut self, doc: Json, r: Int):
+        var modes = doc.get(r, "modes")
+        self.mode = doc.str(doc.get(modes, "currentModeId"))
+        self.mode_ids.clear()
+        self.mode_names.clear()
+        self.mode_texts.clear()
+        var am = doc.get(modes, "availableModes")
+        if am >= 0 and doc.kind(am) == J_ARR:
+            for md in doc.children(am):
+                self.mode_ids.append(doc.str(doc.get(md, "id")))
+                self.mode_names.append(doc.str(doc.get(md, "name")))
+                self.mode_texts.append(doc.str(doc.get(md, "description")))
+        var models = doc.get(r, "models")
+        if models >= 0 and doc.kind(models) == J_OBJ:
+            self.current_model = doc.str(doc.get(models, "currentModelId"))
+            self.model_ids.clear()
+            self.model_names.clear()
+            var av = doc.get(models, "availableModels")
+            if av >= 0 and doc.kind(av) == J_ARR:
+                for ml in doc.children(av):
+                    self.model_ids.append(doc.str(doc.get(ml, "modelId")))
+                    self.model_names.append(doc.str(doc.get(ml, "name")))
+        self.parse_config_options(doc, doc.get(r, "configOptions"))
+
     def answer(mut self, request: String, result_json: String):
         """Answer a request of the agent (a service the editor gave)."""
         self.conn.respond(request, result_json)
@@ -378,6 +496,8 @@ struct AcpClient(Movable):
                         self.mode = m.doc.str(m.doc.get(u, "currentModeId"))
                         ev.kind = AE_MODE
                         ev.status = self.mode
+                    elif ev.kind_name == "config_option_update":
+                        self.parse_config_options(m.doc, m.doc.get(u, "configOptions"))
                     self.events.append(ev^)
         elif m.kind == RPC_REQUEST:
             if m.method == "session/request_permission":
@@ -437,8 +557,28 @@ struct AcpClient(Movable):
             if am >= 0 and m.doc.kind(am) == J_ARR:
                 for a in m.doc.children(am):
                     self.auth_methods.append(m.doc.str(m.doc.get(a, "id")))
-            self.new_id = self.conn.request("session/new", "{\"cwd\":" + json_quote(self.cwd) + ",\"mcpServers\":[]}", self.started_ns)
+            if self.load_session and self.resume_session_id.byte_length() > 0:
+                self.session_id = self.resume_session_id
+                self.load_id = self.conn.request("session/load", "{\"sessionId\":" + json_quote(self.resume_session_id) + ",\"cwd\":" + json_quote(self.cwd) + ",\"mcpServers\":" + self.mcp_servers_json + "}", self.started_ns)
+            else:
+                self.new_id = self.conn.request("session/new", "{\"cwd\":" + json_quote(self.cwd) + ",\"mcpServers\":" + self.mcp_servers_json + "}", self.started_ns)
             self.state = AS_OPENING
+            return
+        if m.id == self.load_id:
+            self.load_id = -1
+            if m.kind == RPC_ERROR:
+                self.session_id = ""
+                self.resume_session_id = ""
+                self.events.clear()
+                self.new_id = self.conn.request("session/new", "{\"cwd\":" + json_quote(self.cwd) + ",\"mcpServers\":" + self.mcp_servers_json + "}", self.started_ns)
+                return
+            var sid = m.doc.str(m.doc.get(m.result(), "sessionId"))
+            if sid.byte_length() > 0:
+                self.session_id = sid
+            self.resumed = True
+            self.parse_session_meta(m.doc, m.result())
+            self.state = AS_READY
+            self.events.append(AcpEvent(AE_READY))
             return
         if m.id == self.new_id:
             self.new_id = -1
@@ -452,17 +592,8 @@ struct AcpClient(Movable):
             if self.session_id.byte_length() == 0:
                 self.fail("no session: the agent gave no session id")
                 return
-            var modes = m.doc.get(m.result(), "modes")
-            self.mode = m.doc.str(m.doc.get(modes, "currentModeId"))
-            self.mode_ids.clear()
-            self.mode_names.clear()
-            self.mode_texts.clear()
-            var am = m.doc.get(modes, "availableModes")
-            if am >= 0 and m.doc.kind(am) == J_ARR:
-                for md in m.doc.children(am):
-                    self.mode_ids.append(m.doc.str(m.doc.get(md, "id")))
-                    self.mode_names.append(m.doc.str(m.doc.get(md, "name")))
-                    self.mode_texts.append(m.doc.str(m.doc.get(md, "description")))
+            self.resumed = False
+            self.parse_session_meta(m.doc, m.result())
             self.state = AS_READY
             self.events.append(AcpEvent(AE_READY))
             return
@@ -474,6 +605,27 @@ struct AcpClient(Movable):
             else:
                 self.mode = self.mode_wanted
             e.status = self.mode
+            self.events.append(e^)
+            return
+        if m.id == self.model_req_id:
+            self.model_req_id = -1
+            var e = AcpEvent(AE_MODEL)
+            if m.kind == RPC_ERROR:
+                e.text = "the agent did not change its model: " + m.error_message()
+            else:
+                self.current_model = self.model_wanted
+            e.status = self.current_model
+            self.events.append(e^)
+            return
+        if m.id == self.cfg_req_id:
+            self.cfg_req_id = -1
+            var e = AcpEvent(AE_THINKING)
+            if m.kind == RPC_ERROR:
+                e.text = "the agent did not change its thinking level: " + m.error_message()
+            else:
+                self.thinking = self.thinking_wanted
+                self.parse_config_options(m.doc, m.doc.get(m.result(), "configOptions"))
+            e.status = self.thinking
             self.events.append(e^)
             return
         if m.id == self.prompt_id:

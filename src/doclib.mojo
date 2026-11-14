@@ -5,8 +5,8 @@ from helpbook import help_pages
 from std.collections import List
 from json import Json, json_parse
 from util import (
-    decode, to_str, read_file, bytes_to_str, decode_list, join_path, dirname, basename, path_exists,
-    is_dir, list_dir, env_or, slice_str,
+    decode, to_str, read_file, write_file, str_bytes, bytes_to_str, decode_list, join_path, dirname,
+    basename, path_exists, is_dir, list_dir, env_or, slice_str,
 )
 
 comptime DK_BOOK = 0        # a book's title line
@@ -306,6 +306,54 @@ def image_markdown(alt: String, src: String) -> String:
     return "![" + alt.replace("]", ")").replace("[", "(") + "](" + src.replace(" ", "%20").replace(")", "%29") + ")"
 
 
+def is_external_doc_path(path: String) -> Bool:
+    """Whether `path` lives inside one of the downloaded external repositories or courses."""
+    for part in ["/modular/", "/workshops/", "/devrel-extras/", "/max-llm-book/", "/mojo-gpu-puzzles/", "/advent-of-mojo/"]:
+        if path.find(String(part)) >= 0:
+            return True
+    return False
+
+
+def is_legacy_mojo_line(line: String) -> Bool:
+    """Whether a line of Mojo code uses pre-1.2 removed syntax (`fn`, `let`, `alias`,
+    `@value`, `@parameter`, `inout`, `owned`)."""
+    var t = trimmed(line)
+    if t.startswith("#") or t.startswith("//"):
+        return False
+    if t.startswith("fn ") or t.startswith("async fn ") or t.startswith("let ") or t.startswith("alias "):
+        return True
+    if t == "@value" or t.startswith("@value(") or t == "@parameter":
+        return True
+    if line.find("(inout ") >= 0 or line.find(", inout ") >= 0 or line.find("(owned ") >= 0 or line.find(", owned ") >= 0:
+        return True
+    return False
+
+
+def has_legacy_mojo_code(body: String) -> Bool:
+    """Whether any ```mojo code block in `body` uses pre-1.2 removed syntax."""
+    var in_mojo = False
+    var in_other = False
+    for l in text_lines(body):
+        var t = trimmed(l)
+        if t.startswith("```") or t.startswith("~~~"):
+            if in_mojo or in_other:
+                in_mojo = False
+                in_other = False
+            else:
+                var rest = trimmed(cut(t, 3, -1)).lower()
+                if rest.startswith("mojo") or rest.startswith("🔥"):
+                    in_mojo = True
+                else:
+                    in_other = True
+            continue
+        if in_mojo and is_legacy_mojo_line(l):
+            return True
+    return False
+
+
+comptime LEGACY_MOJO_NOTE = "> **Note (Mojo 1.2):** Some examples on this page use earlier Mojo syntax (`fn`, `let`, `alias`, `@value`, `inout`). In Mojo 1.2 use `def`, `var`, `comptime`, `@fieldwise_init`, and `mut`.\n\n"
+
+
 def doc_prepare(text: String, path: String) -> String:
     """A documentation page as plain Markdown for the reader: the header's title as
     first heading, includes expanded, admonitions as quotes, web-only markup (imports,
@@ -316,6 +364,7 @@ def doc_prepare(text: String, path: String) -> String:
     var lines = text_lines(fm[2])
     var has_h1 = False
     var in_code = False
+    var legacy_note = is_external_doc_path(path) and has_legacy_mojo_code(fm[2])
     for l in lines:
         var t = trimmed(l)
         if t.startswith("```"):
@@ -324,13 +373,18 @@ def doc_prepare(text: String, path: String) -> String:
             has_h1 = True
     if fm[0].byte_length() > 0 and not has_h1:
         out += "# " + fm[0] + "\n\n"
+        if legacy_note:
+            out += LEGACY_MOJO_NOTE
+            legacy_note = False
     in_code = False
     var in_import = False       # inside "import {" ... "} from '...'"
     var in_comment = False
     var admonition = False
     var svg = 0
-    for raw in lines:
-        var l = raw
+    var li = 0
+    while li < len(lines):
+        var l = lines[li]
+        li += 1
         var t = trimmed(l)
         if l.find("{{#include ") >= 0:
             l = expand_includes(l, dir)
@@ -391,6 +445,16 @@ def doc_prepare(text: String, path: String) -> String:
                 out += "\n> **" + label + (": " + title if title.byte_length() > 0 else String("")) + "**\n>\n"
                 admonition = True
                 continue
+        # multi-line JSX component tags: join continuation lines until '>'
+        if t.startswith("<") and t.find(">") < 0 and not t.startswith("</") and t.byte_length() > 1:
+            var fb = Int(t.as_bytes()[1])
+            if fb >= 65 and fb <= 90:
+                var joined = 0
+                while li < len(lines) and t.find(">") < 0 and joined < 12:
+                    t += " " + trimmed(lines[li])
+                    li += 1
+                    joined += 1
+                l = t
         # components: a title where they have one, otherwise just their content
         if t.startswith("<") and t.endswith(">") and t.find("</") != 0:
             var name_end = 1
@@ -403,6 +467,8 @@ def doc_prepare(text: String, path: String) -> String:
                 var title = attr_of(t, "title")
                 if title.byte_length() == 0:
                     title = attr_of(t, "label")
+                if title.byte_length() == 0 and name == "TabItem":
+                    title = nice_name(attr_of(t, "value"))
                 if title.byte_length() > 0:
                     out += "\n### " + title + "\n\n"
                     var summary = attr_of(t, "summary")
@@ -417,7 +483,9 @@ def doc_prepare(text: String, path: String) -> String:
         if l.find("<") >= 0:
             l = inline_html(l)
         t = trimmed(l)
+        var was_h1 = False
         if t.startswith("#"):
+            was_h1 = t.startswith("# ")
             var brace = l.find("{#")
             if brace > 0:
                 l = trimmed(cut(l, 0, brace))
@@ -429,6 +497,11 @@ def doc_prepare(text: String, path: String) -> String:
                 out += "> " + l + "\n"
         else:
             out += l + "\n"
+            if was_h1 and legacy_note:
+                out += "\n" + LEGACY_MOJO_NOTE
+                legacy_note = False
+    if legacy_note:
+        out = LEGACY_MOJO_NOTE + out
     return tidy_blank_lines(out)
 
 
@@ -715,6 +788,12 @@ def html_markdown(html: String) -> String:
             item_open = False
             quote += -1 if closing else 1
             quote = max(0, quote)
+            continue
+        if (name == "td" or name == "th") and not closing:
+            if trimmed(cur).byte_length() > 0 and not cur.endswith("| "):
+                if not cur.endswith(" "):
+                    cur += " "
+                cur += "| "
             continue
         if name == "p" or name == "div" or name == "section" or name == "details" or name == "tr" or name == "table" or name == "hr":
             out += html_block(cur, lists, quote, item_open)
@@ -1045,9 +1124,8 @@ struct DocLibrary(Copyable, Movable):
         self.drop_empty_book()
 
     # --------------------------------------------------------- everything
-    def load(mut self, home: String):
-        """Read what is in the documentation folder. Parts that were not downloaded are
-        simply missing."""
+    def load_help_only(mut self, home: String):
+        """Populate only TurboMojo's built-in help book (`0..help_count`)."""
         self.home = home
         self.pages.clear()
         self.help_count = 0
@@ -1060,6 +1138,11 @@ struct DocLibrary(Copyable, Movable):
                     self.add_page(self.help_dir + "/" + hp[k], 1, hp[k + 1])
                 k += 2
             self.help_count = len(self.pages)
+
+    def load(mut self, home: String):
+        """Read what is in the documentation folder. Parts that were not downloaded are
+        simply missing."""
+        self.load_help_only(home)
         var mojo_site = home + "/modular/Mojo/docs/site"
         var mojo_bars = mojo_site + "/docs_root/sidebars.json"
         self.add_sidebar("Mojo Manual", mojo_site, mojo_bars, "manualSidebar")
@@ -1110,6 +1193,24 @@ struct DocLibrary(Copyable, Movable):
         self.add_sidebar("MAX: Serving", max_site, max_bars, "servingDevSidebar")
         self.add_sidebar("MAX: Model Development", max_site, max_bars, "modelDevSidebar")
         self.add_sidebar("MAX: GPU Programming", max_site, max_bars, "gpuDevSidebar")
+        var max_index = home + "/maxref/index.txt"
+        if path_exists(max_index):
+            self.book("MAX Mojo API")
+            for l in text_lines(file_text(max_index)):
+                var parts = l.split("\t")
+                if len(parts) != 3:
+                    continue
+                var depth = 1
+                try:
+                    depth = atol(String(parts[0]))
+                except:
+                    continue
+                var rel = String(parts[2])
+                if rel.byte_length() == 0:
+                    self.pages.append(DocPage(String(parts[1]), "", depth, DK_HEADING))
+                else:
+                    self.pages.append(DocPage(String(parts[1]), home + "/maxref/" + rel, depth, DK_PAGE))
+            self.drop_empty_book()
 
     def page_markdown(self, k: Int) -> String:
         """The Markdown the reader shows for entry k."""
@@ -1320,6 +1421,96 @@ struct DocIndex(Copyable, Movable):
             if lib.pages[k].kind >= DK_PAGE:
                 self.add_page(lib, k)
         self.built = True
+
+    def save_cache(self, path: String, stamp: String, lib: DocLibrary) -> Bool:
+        """Persist downloaded books and their search entries so cold starts load in ms."""
+        if not self.built:
+            return False
+        var hc = lib.help_count
+        var out = stamp + "\n"
+        for k in range(hc, len(lib.pages)):
+            var p = lib.pages[k].copy()
+            var ct = p.title.replace("\t", " ").replace("\n", " ")
+            var cp = p.path.replace("\t", " ").replace("\n", " ")
+            out += "P\t" + String(p.kind) + "\t" + String(p.depth) + "\t" + cp + "\t" + ct + "\n"
+        for e in self.entries:
+            if e.page < hc:
+                continue
+            var ct = e.text.replace("\t", " ").replace("\n", " ")
+            var co = e.owner.replace("\t", " ").replace("\n", " ")
+            out += "I\t" + String(e.kind) + "\t" + String(e.page - hc) + "\t" + String(e.nth) + "\t" + co + "\t" + ct + "\n"
+        return write_file(path, str_bytes(out))
+
+    def load_cache(mut self, path: String, stamp: String, mut lib: DocLibrary) -> Bool:
+        """Load downloaded books and index entries from `path` if `stamp` matches
+        (`lib` already holds its built-in help book in `0..lib.help_count`)."""
+        if not path_exists(path):
+            return False
+        var raw = file_text(path)
+        var nl = raw.find("\n")
+        if nl < 0 or String(raw[byte=0:nl]) != stamp:
+            return False
+        var hc = lib.help_count
+        var ext_pages = List[DocPage]()
+        var ext_entries = List[IndexEntry]()
+        var pos = nl + 1
+        var total = raw.byte_length()
+        while pos < total:
+            var end = raw.find("\n", pos)
+            if end < 0:
+                end = total
+            if end > pos:
+                var line = String(raw[byte=pos:end])
+                if line.startswith("P\t"):
+                    var t1 = line.find("\t", 2)
+                    var t2 = line.find("\t", t1 + 1) if t1 >= 0 else -1
+                    var t3 = line.find("\t", t2 + 1) if t2 >= 0 else -1
+                    if t3 < 0:
+                        return False
+                    var kind: Int
+                    var depth: Int
+                    try:
+                        kind = atol(String(line[byte=2:t1]))
+                        depth = atol(String(line[byte=t1 + 1:t2]))
+                    except:
+                        return False
+                    var ppath = String(line[byte=t2 + 1:t3])
+                    var ptitle = String(line[byte=t3 + 1:])
+                    ext_pages.append(DocPage(ptitle, ppath, depth, kind))
+                elif line.startswith("I\t"):
+                    var t1 = line.find("\t", 2)
+                    var t2 = line.find("\t", t1 + 1) if t1 >= 0 else -1
+                    var t3 = line.find("\t", t2 + 1) if t2 >= 0 else -1
+                    var t4 = line.find("\t", t3 + 1) if t3 >= 0 else -1
+                    if t4 < 0:
+                        return False
+                    var kind: Int
+                    var rpage: Int
+                    var nth: Int
+                    try:
+                        kind = atol(String(line[byte=2:t1]))
+                        rpage = atol(String(line[byte=t1 + 1:t2]))
+                        nth = atol(String(line[byte=t2 + 1:t3]))
+                    except:
+                        return False
+                    if rpage < 0 or rpage >= len(ext_pages):
+                        return False
+                    var owner = String(line[byte=t3 + 1:t4])
+                    var text = String(line[byte=t4 + 1:])
+                    ext_entries.append(IndexEntry(kind, hc + rpage, text, nth, owner))
+                else:
+                    return False
+            pos = end + 1
+        for p in ext_pages:
+            lib.pages.append(p.copy())
+        self.entries.clear()
+        for k in range(hc):
+            if lib.pages[k].kind >= DK_PAGE:
+                self.add_page(lib, k)
+        for e in ext_entries:
+            self.entries.append(e.copy())
+        self.built = True
+        return True
 
 
 struct DocQuery(Copyable, Movable):

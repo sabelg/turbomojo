@@ -1,4 +1,4 @@
-# Exercise 8 of 8: it builds, but is it right?
+# Exercise 8 of 13: it builds, but is it right?
 #
 # This one builds and runs - and prints the wrong sum. Find out why.
 # When it is right, it prints:

@@ -12,7 +12,9 @@ from appstate import *
 from util import *
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_EXPLAIN
 from term import KEY_ESC
-from markdown import md_render
+from markdown import md_render_rich, MdLine
+from docpane import md_mojo_blocks
+from commands import CM_AGENT_EXPLAIN
 from errhelp import *
 from errhelp_pages import ERR_PAGE_COUNT, err_page_key
 from app_docs import *
@@ -74,7 +76,7 @@ __extension App:
         if row.byte_length() > 0:
             var page = explain_for(row)
             if page < 0:
-                self.say("No explanation for this message yet (Help > Error messages lists the ones there are)")
+                self.say("No explanation for this message yet (A: ask agent, ?: search docs, or Help > Error messages)")
                 return True
             var e = self.errs_at_cursor_path()
             self.explain_open(page, e)
@@ -121,18 +123,46 @@ __extension App:
             xi = self.top()
         self.wins[xi].title = "Explanation: " + err_title(page)
         self.wins[xi].path = "explain:" + err_page_key(page)
-        var lines = md_render(err_body(page), max(20, self.wins[xi].w - 4), self.hl)
+        self.explain_md = err_body(page)
+        var w = max(20, self.wins[xi].w - 4)
+        var links = List[String]()
+        self.explain_lines = md_render_rich(self.explain_md, w, self.hl, links, True)
+        self.explain_lines_w = w
         var text = List[Int]()
-        for k in range(len(lines)):
+        for k in range(len(self.explain_lines)):
             if k > 0:
                 text.append(10)
-            for c in lines[k].cps:
+            for c in self.explain_lines[k].cps:
                 text.append(c)
         self.wins[xi].buf.load(text)
         self.wins[xi].buf.modified = False
         self.wins[xi].cr = 0
         self.wins[xi].top = 0
-        self.say("Explanation of the error: Esc closes it, F6 goes back to the code")
+        self.say("Explanation of the error: Esc closes, F6 code, C copy fix, T try fix, A ask agent")
+
+    def explain_draw(mut self, xi: Int):
+        """Draw the error explanation's Markdown with full rich styling over the window interior."""
+        if xi < 0 or xi >= len(self.wins) or self.wins[xi].w < 6 or self.wins[xi].h < 4:
+            return
+        var w = max(20, self.wins[xi].w - 4)
+        if w != self.explain_lines_w and self.explain_md.byte_length() > 0:
+            var links = List[String]()
+            self.explain_lines = md_render_rich(self.explain_md, w, self.hl, links, True)
+            self.explain_lines_w = w
+            var text = List[Int]()
+            for k in range(len(self.explain_lines)):
+                if k > 0:
+                    text.append(10)
+                for c in self.explain_lines[k].cps:
+                    text.append(c)
+            var keep_cr = self.wins[xi].cr
+            var keep_top = self.wins[xi].top
+            self.wins[xi].buf.load(text)
+            self.wins[xi].buf.modified = False
+            self.wins[xi].cr = max(0, min(keep_cr, self.wins[xi].buf.count() - 1))
+            self.wins[xi].top = max(0, min(keep_top, self.wins[xi].buf.count() - 1))
+        var lines = self.explain_lines.copy()
+        self.draw_md(self.wins[xi].x + 1, self.wins[xi].y + 1, max(2, self.wins[xi].w - 2), max(1, self.wins[xi].h - 2), lines, self.wins[xi].top)
 
     def explain_beside(mut self, ei: Int, xi: Int):
         """Give the explanation the right (or lower) half of the editor's place."""
@@ -200,11 +230,45 @@ __extension App:
                 return err_body(i).find("## Coming from Python") >= 0
         return False
 
-    def explain_key(mut self, k: Int) -> Bool:
+    def explain_fix_snippet(self) -> String:
+        """The fixed 'After (builds)' code block from the open error explanation."""
+        var blocks = md_mojo_blocks(self.explain_md)
+        if len(blocks) > 0:
+            return blocks[len(blocks) - 1]
+        return ""
+
+    def explain_key(mut self, k: Int) raises -> Bool:
         if k == KEY_ESC:
             self.explain_close()
             return True
         if (k == 112 or k == 80) and self.explain_python():      # P: Coming from Python
             self.help_page("coming-from-python.md")
+            return True
+        if k == 97 or k == 65:                                   # A: Ask agent about this error
+            self.exec(CM_AGENT_EXPLAIN)
+            return True
+        if k == 63:                                              # ?: Search docs for this error
+            var xi = self.explain_index()
+            var q = String("")
+            if xi >= 0 and self.wins[xi].title.startswith("Explanation: "):
+                q = String(self.wins[xi].title[byte=13:])
+            self.docs_find_dialog(q)
+            return True
+        if k == 99 or k == 67:                                   # C: Copy fixed code block
+            var code = self.explain_fix_snippet()
+            if code.byte_length() == 0:
+                self.say("No code block on this explanation page")
+            else:
+                var cps = decode(code)
+                self.clipboard = cps.copy()
+                self.osc52(cps)
+                self.say("Copied fixed 'After' example to the clipboard")
+            return True
+        if k == 116 or k == 84:                                  # T: Try fixed code in scratch buffer
+            var code = self.explain_fix_snippet()
+            if code.byte_length() == 0:
+                self.say("No code block on this explanation page")
+            else:
+                self.open_scratch_snippet(code, "fixed example")
             return True
         return False

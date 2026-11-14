@@ -227,16 +227,91 @@ while True:
         if mode == "nosession":
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Authentication required"}})
         else:
-            send({"jsonrpc": "2.0", "id": rid, "result": {"sessionId": session, "modes": {
+            res = {"sessionId": session, "modes": {
                 "currentModeId": "auto",
                 "availableModes": [{"id": "default", "name": "Manual", "description": "Always ask before making changes"},
+                                   {"id": "accept-edits", "name": "Accept Edits", "description": "Accept file edits automatically"},
                                    {"id": "auto", "name": "Auto", "description": "Decides by itself"},
-                                   {"id": "plan", "name": "Plan", "description": "Plans first"}]}}})
+                                   {"id": "plan", "name": "Plan", "description": "Plans first"}]}}
+            if mode == "rich":
+                res["models"] = {
+                    "currentModelId": "gemini-3.1-pro",
+                    "availableModels": [
+                        {"modelId": "gemini-3.1-pro", "name": "Gemini 3.1 Pro"},
+                        {"modelId": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
+                    ],
+                }
+                res["configOptions"] = [{
+                    "id": "thought_level",
+                    "name": "Thinking Level",
+                    "currentValue": "medium",
+                    "options": [
+                        {"value": "low", "name": "Low"},
+                        {"value": "medium", "name": "Medium"},
+                        {"value": "high", "name": "High"},
+                    ],
+                }]
+            send({"jsonrpc": "2.0", "id": rid, "result": res})
+    elif method == "session/load":
+        sid = m["params"].get("sessionId", "")
+        if sid == "sess_missing":
+            send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32002, "message": "session not found"}})
+        else:
+            session = sid
+            chunk("earlier question", "user_message_chunk")
+            chunk("earlier answer", "agent_message_chunk")
+            send({"jsonrpc": "2.0", "id": rid, "result": {
+                "sessionId": session,
+                "modes": {
+                    "currentModeId": "auto",
+                    "availableModes": [{"id": "default", "name": "Manual", "description": "Always ask before making changes"},
+                                       {"id": "accept-edits", "name": "Accept Edits", "description": "Accept file edits automatically"},
+                                       {"id": "auto", "name": "Auto", "description": "Decides by itself"},
+                                       {"id": "plan", "name": "Plan", "description": "Plans first"}],
+                },
+                "models": {
+                    "currentModelId": "gemini-3.1-pro",
+                    "availableModels": [
+                        {"modelId": "gemini-3.1-pro", "name": "Gemini 3.1 Pro"},
+                        {"modelId": "claude-sonnet-4-6", "name": "Claude Sonnet 4.6"},
+                    ],
+                },
+                "configOptions": [{
+                    "id": "thought_level",
+                    "name": "Thinking Level",
+                    "currentValue": "medium",
+                    "options": [
+                        {"value": "low", "name": "Low"},
+                        {"value": "medium", "name": "Medium"},
+                        {"value": "high", "name": "High"},
+                    ],
+                }],
+            }})
     elif method == "session/set_mode":
-        if m["params"].get("modeId") not in ("default", "auto", "plan"):
+        if m["params"].get("modeId") not in ("default", "accept-edits", "auto", "plan"):
             send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "no such mode"}})
         else:
             send({"jsonrpc": "2.0", "id": rid, "result": {}})
+    elif method == "session/set_model":
+        if m["params"].get("modelId") not in ("gemini-3.1-pro", "claude-sonnet-4-6"):
+            send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "no such model"}})
+        else:
+            send({"jsonrpc": "2.0", "id": rid, "result": {}})
+    elif method == "session/set_config_option":
+        val = m["params"].get("value")
+        if m["params"].get("configId") != "thought_level" or val not in ("low", "medium", "high"):
+            send({"jsonrpc": "2.0", "id": rid, "error": {"code": -32602, "message": "bad option"}})
+        else:
+            send({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": [{
+                "id": "thought_level",
+                "name": "Thinking Level",
+                "currentValue": val,
+                "options": [
+                    {"value": "low", "name": "Low"},
+                    {"value": "medium", "name": "Medium"},
+                    {"value": "high", "name": "High"},
+                ],
+            }]}})
     elif method == "session/prompt":
         blocks = m["params"]["prompt"]
         text = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")

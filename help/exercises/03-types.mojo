@@ -1,4 +1,4 @@
-# Exercise 3 of 8: text is not a number
+# Exercise 3 of 13: text is not a number
 #
 # Fix the first error, build again: a second one is waiting behind it. Reading
 # each new message is part of the exercise.

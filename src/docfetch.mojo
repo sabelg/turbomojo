@@ -18,6 +18,7 @@ comptime FETCH_SCRIPT = """#!/usr/bin/env bash
 #   MOJO_DOCS_REF=main scripts/fetch-docs.sh    take the newest docs instead of the ones
 #                                     that match the installed Mojo
 set -u
+SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || pwd)"
 DEST="${1:-${XDG_DATA_HOME:-$HOME/.local/share}/turbomojo/docs}"
 BASE="https://github.com/modular"
 command -v git >/dev/null 2>&1 || { echo "error: git is needed to download the documentation"; exit 2; }
@@ -110,6 +111,15 @@ if [ -d modular/Mojo/stdlib/std ] && command -v mojo >/dev/null 2>&1; then
 fi
 
 { echo "fetched $(date -u +%Y-%m-%dT%H:%M:%SZ)"; echo "ref $REF"; for d in */; do [ -f "$d.fetched-commit" ] && echo "${d%/} $(cat "$d.fetched-commit")"; done; } > SOURCES.txt
+rm -f .doc_index.cache
+TMIDE_BIN=""
+if command -v tmide >/dev/null 2>&1; then TMIDE_BIN="$(command -v tmide)"
+elif [ -x "$SCRIPT_DIR/../build/tmide" ]; then TMIDE_BIN="$SCRIPT_DIR/../build/tmide"
+fi
+if [ -n "$TMIDE_BIN" ]; then
+  echo "== standard library pages & search cache"
+  "$TMIDE_BIN" --warm-docs "$DEST" || true
+fi
 echo
 if [ "$FAILED" -gt 0 ]; then echo "Done, but $FAILED part(s) could not be downloaded."; exit 1; fi
 echo "Done. In TurboMojo: Help > Mojo documentation."

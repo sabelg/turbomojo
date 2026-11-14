@@ -23,7 +23,7 @@ from app_files import *
 from app_problems import *
 from app_notify import *
 from app_outline import *
-from notify import NL_DONE
+from notify import NL_DONE, NL_ERROR, NL_INFO
 from report import home_as_tilde
 from puzzlecheck import PUZZLES_DIR, puzzle_mojo, puzzle_runner, puzzle_rel, puzzle_name, puzzle_flags, puzzle_checks_itself, puzzle_command
 
@@ -109,6 +109,7 @@ __extension App:
             d.list_sel = sel
             d.buttons.append("~O~pen")
             d.buttons.append("~R~eset")
+            d.buttons.append("Chec~k~")
             d.buttons.append("~C~lose")
         else:
             d.lines.append("Small Mojo programs that are wrong until you fix them.")
@@ -143,6 +144,9 @@ __extension App:
                 _ = write_file(self.ex_path(i), str_bytes(self.ex_original(i)))
                 self.open_path(self.ex_path(i))
             self.say("Exercise " + String(i + 1) + " is as it was at the start")
+        elif b == 2:
+            self.ex_open(i)
+            self.ex_check()
 
     def ex_open(mut self, i: Int) raises:
         """Your copy of exercise i (made from the original the first time)."""
@@ -238,12 +242,54 @@ __extension App:
         # the Mojo of their own environment (made once by `pixi install` in their folder)
         var mojo = puzzle_mojo(root)
         if not path_exists(mojo):
-            self.say(name + " needs the puzzles' own environment (Mojo with MAX): run `pixi install` once in " + home_as_tilde(root, env_or("HOME", "")))
+            var shown_root = home_as_tilde(root, env_or("HOME", ""))
+            self.say(name + " needs the puzzles' own environment (Mojo with MAX): run `pixi install` once in " + shown_root)
+            if path_exists(root + "/pixi.toml") and which(self.pixi_cmd).byte_length() > 0:
+                self.puzzle_env_dir = root
+                var d = Dialog(D_PUZZLE_ENV, "GPU Puzzles Environment", min(70, self.scr.w - 4), 12)
+                d.lines.append(name + " needs the GPU puzzles' own environment (Mojo + MAX):")
+                d.lines.append("  " + shown_root)
+                d.lines.append("")
+                d.lines.append("Run `pixi install` there in the background now, then check " + name + "?")
+                d.buttons.append("~I~nstall & check")
+                d.buttons.append("~C~ancel")
+                self.show(d^)
             return
         var limit = String("timeout 300 ") if which("timeout").byte_length() > 0 else String("")
         var cmd = "cd " + shell_quote(dirname(path)) + " && (" + puzzle_command(puzzle_runner(root), root, path, puzzle_flags(src), limit) + ") 2>&1"
         if self.start_job(JOB_TASK, cmd, dirname(path), "puzzle:" + rel):
             self.task_output("Checking " + name + "...")
+
+    def puzzle_env_install(mut self):
+        """Start `pixi install` in `self.puzzle_env_dir` as a background task."""
+        if self.puzzle_env_dir.byte_length() == 0 or self.job_busy():
+            return
+        var dir = self.puzzle_env_dir
+        var cmd = "cd " + shell_quote(dir) + " && exec " + self.pixi_cmd + " install 2>&1 </dev/null"
+        if self.start_job(JOB_TASK, cmd, dir, "puzzle:install"):
+            self.task_output("Installing GPU puzzles environment (pixi install)...")
+            self.say("Installing GPU puzzles environment - Ctrl-F2 cancels it")
+
+    def puzzle_env_installed(mut self, ok: Bool, cancelled: Bool, tstr: String):
+        """Called when `puzzle:install` finishes; automatically checks the open puzzle on success."""
+        if cancelled:
+            var msg = "GPU puzzles install cancelled after " + tstr
+            self.task_output(msg)
+            self.notify_as("exercise", NL_INFO, "GPU Puzzles", msg, True)
+            self.say(msg)
+            return
+        if not ok:
+            var msg = "GPU puzzles `pixi install` failed after " + tstr + " (see Message page)"
+            self.task_output(msg)
+            self.notify_as("exercise", NL_ERROR, "GPU Puzzles", msg, True)
+            self.say(msg)
+            return
+        self.task_output("GPU puzzles environment installed in " + tstr)
+        self.say("GPU puzzles environment installed (" + tstr + ") - checking puzzle...")
+        try:
+            self.ex_check()
+        except err:
+            self.say(String(err))
 
     def puzzle_finished(mut self, rel: String, ok: Bool, output: String):
         """The end of a puzzle's check (from finish_task)."""

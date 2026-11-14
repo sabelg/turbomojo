@@ -151,7 +151,7 @@ use that environment, as `pixi run` would, so what was added is found; MAX's
 activation script then sends Modular's usage telemetry on its first start, as it does
 with `pixi run`.
 
-Their documentation: **F1** (or Help > Topic search) on a name of a Python library the
+Their documentation: **Ctrl-F1** (or **F1**, or Help > Topic search) on a name of a Python library the
 file imports - `np.zeros` after `var np = Python.import_module("numpy")` - shows Python's
 own documentation of it (pydoc), from the project's Python where pixi installed the
 library. Mojo packages come compiled, without their sources, so their documentation
@@ -189,28 +189,38 @@ at a time; File > Commit, Branch and Blame do what they say.
 ## Coding agents
 
 **Ctrl-F11** opens the agent panel for a coding agent that speaks the Agent Client
-Protocol - set `agent = "claude-agent-acp"` (or another) under `[tools]`. It asks before
-every change to a file and every command, unless you allow one for the session; a
-change it proposes opens in the diff view to accept or reject. **Shift-F11** mentions the
-selection in your prompt. Help > Ask agent about this error (or this code) sends it the
-code with TurboMojo's explanation of the error and the documentation that fits, and
-checks the imports of its answer against your Mojo.
+Protocol - set `agent = "agy acp"` or `agent = "claude-agent-acp"` under `[tools]`, and
+`agent_mode` to `"ask"`, `"accept-edits"`, or `"auto"`. Inside the agent panel: **Alt-M**
+cycles permission mode, **Alt-O** switches the model, **Alt-T** cycles thinking level,
+**Tab** completes `@file` paths, and **Alt-Up** / **Alt-Down** recall earlier prompts.
+**Shift-F11** mentions the selection in your prompt. Help > Ask agent about this error
+(or this code) and File > Send diagnostics to agent ground the prompt with your code,
+compiler/LSP diagnostics, TurboMojo's error explanation and Mojo 1.2 documentation
+excerpts, and check the imports of its answer against your Mojo.
 
 ## Help while you work
 
-- **F1** on a problem explains Mojo's message beside the code: what it means, how to fix
-  it, a program before and after. Help > Error messages has them all.
-- **Ctrl-F1** documentation of the name at the cursor; **Shift-F1** Modular's manual and
-  library reference (Help > Download documentation fetches it once); **Alt-F1** searches
-  it - names, `List.append`, or a pasted error line.
+- **F1** on a problem explains Mojo's message beside the code (27 Mojo 1.2 pages with
+  syntax-coloured Before and After programs; **C** copies the fixed code, **T** opens it
+  in a scratch buffer, **A** asks the agent, **?** searches the docs). Help > Error
+  messages has them all.
+- **Ctrl-F1** documentation of the name at the cursor (with receiver-aware resolution
+  for `items.append`, `Python.import_module`, etc.); **Shift-F1** Modular's manual and
+  library reference (Help > Download documentation fetches it once and pre-builds a warm
+  search cache); **Alt-F1** searches it - names, `List.append`, dotted module paths like
+  `std.collections.list`, or a pasted error line. In the reader, **Ctrl-F** (**F3** /
+  **Shift-F3**) searches on the current page, **G** jumps to a heading, **C** copies a
+  code block, and **T** opens it in a scratch buffer.
+- Help > Docs pane keeps rich syntax-coloured documentation beside the code, following
+  the cursor (**Enter** opens the full page, **C** copies code, **T** tries it).
 - Help > Coming from Python: what is different in Mojo, and the keys next to VS Code's.
-- Help > Exercises: small programs that are wrong until you fix them; Help > Exercise
-  done? checks yours.
+- Help > Exercises: 13 small Mojo 1.2 programs that are wrong until you fix them; Help >
+  Exercise done? checks yours.
 - The Mojo GPU Puzzles (a course in the documentation): **O** on a puzzle's program
   opens your own copy; fill it in, then Help > Exercise done? runs it in each of the
-  puzzle's modes, as the course's tests do, and says whether your answer is right. The
-  puzzles import MAX, so they need their own environment: run `pixi install` once in
-  the downloaded `mojo-gpu-puzzles` folder (`~/.local/share/turbomojo/docs/`).
+  puzzle's modes, as the course's tests do, and says whether your answer is right. When
+  the puzzles' MAX environment has not been created yet, TurboMojo offers to run `pixi
+  install` in the background automatically and then checks your puzzle.
 - Help > Cheat sheet, Keyboard reference (**F1** elsewhere), Tutorial, What's new.
 - Notifications that come while you type wait for a pause; **Shift-F10** lists them and
   what is running. Nothing that happens in the background takes the keyboard: when the

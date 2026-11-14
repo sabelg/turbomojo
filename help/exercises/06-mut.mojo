@@ -1,4 +1,4 @@
-# Exercise 6 of 8: changing self
+# Exercise 6 of 13: changing self
 #
 # A method that changes its struct must say so.
 # When it is right, it prints:

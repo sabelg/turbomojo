@@ -52,6 +52,18 @@ def function_markdown(doc: Json, fn_node: Int, kind: String, owner: String, modu
         var text = prose(doc.str(doc.get(ov, "summary")), doc.str(doc.get(ov, "description")))
         if text.byte_length() > 0:
             out += "\n\n" + text
+        var params = String("")
+        for p in doc.children(doc.get(ov, "parameters")):
+            var pd = String(doc.str(doc.get(p, "description")).strip())
+            if pd.byte_length() == 0:
+                continue
+            params += "\n- `" + doc.str(doc.get(p, "name")) + "`"
+            var pty = doc.str(doc.get(p, "type"))
+            if pty.byte_length() > 0:
+                params += " (`" + pty + "`)"
+            params += ": " + pd
+        if params.byte_length() > 0:
+            out += "\n\n**Parameters:**\n" + params
         # only the arguments that are explained
         var args = String("")
         for a in doc.children(doc.get(ov, "args")):
@@ -102,13 +114,29 @@ def add_type(doc: Json, node: Int, word: String, module: String, mut out: List[D
     var name = doc.str(doc.get(node, "name"))
     if name.byte_length() == 0:
         return
-    var md = "```mojo\n" + word + " " + name + "\n```\n\n" + where_line(word, "", module)
+    var sig = doc.str(doc.get(node, "signature"), word + " " + name)
+    var md = "```mojo\n" + sig + "\n```\n\n" + where_line(word, "", module)
     var dep = doc.str(doc.get(node, "deprecated"))
     if dep.byte_length() > 0:
         md += "\n\n**Deprecated:** " + dep
     var text = prose(doc.str(doc.get(node, "summary")), doc.str(doc.get(node, "description")))
     if text.byte_length() > 0:
         md += "\n\n" + text
+    var params = String("")
+    for p in doc.children(doc.get(node, "parameters")):
+        var pname = doc.str(doc.get(p, "name"))
+        var pty = doc.str(doc.get(p, "type"))
+        var ptext = String(doc.str(doc.get(p, "description")).strip())
+        params += "\n- `" + pname + ((": " + pty) if pty.byte_length() > 0 else String("")) + "`" + ((" - " + ptext) if ptext.byte_length() > 0 else String(""))
+    if params.byte_length() > 0:
+        md += "\n\n**Parameters:**\n" + params
+    var traits = String("")
+    for tr in doc.children(doc.get(node, "parentTraits")):
+        var tname = doc.str(doc.get(tr, "name"))
+        if tname.byte_length() > 0:
+            traits += ("" if traits.byte_length() == 0 else ", ") + "`" + tname + "`"
+    if traits.byte_length() > 0:
+        md += "\n\n**Implemented traits:** " + traits
     var fields = String("")
     for f in doc.children(doc.get(node, "fields")):
         var fname = doc.str(doc.get(f, "name"))
@@ -132,18 +160,27 @@ def add_type(doc: Json, node: Int, word: String, module: String, mut out: List[D
 
 
 def add_module(doc: Json, node: Int, mut out: List[DocEntry]):
-    var module = doc.str(doc.get(node, "name"))
-    add_aliases(doc, node, "", module, out)
-    add_functions(doc, node, "function", "", module, out)
-    for s in doc.children(doc.get(node, "structs")):
-        add_type(doc, s, "struct", module, out)
-    for t in doc.children(doc.get(node, "traits")):
-        add_type(doc, t, "trait", module, out)
-    # a package: its modules and sub-packages
-    for m in doc.children(doc.get(node, "modules")):
-        add_module(doc, m, out)
-    for p in doc.children(doc.get(node, "packages")):
-        add_module(doc, p, out)
+    var stack = List[Int]()
+    stack.append(node)
+    while len(stack) > 0:
+        var cur = stack.pop()
+        var module = doc.str(doc.get(cur, "name"))
+        add_aliases(doc, cur, "", module, out)
+        add_functions(doc, cur, "function", "", module, out)
+        for s in doc.children(doc.get(cur, "structs")):
+            add_type(doc, s, "struct", module, out)
+        for t in doc.children(doc.get(cur, "traits")):
+            add_type(doc, t, "trait", module, out)
+        # a package: its modules and sub-packages (pushed in reverse to keep document order)
+        var subs = List[Int]()
+        for m in doc.children(doc.get(cur, "modules")):
+            subs.append(m)
+        for p in doc.children(doc.get(cur, "packages")):
+            subs.append(p)
+        var j = len(subs) - 1
+        while j >= 0:
+            stack.append(subs[j])
+            j -= 1
 
 
 def parse_mojo_doc(doc: Json) -> List[DocEntry]:

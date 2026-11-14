@@ -491,6 +491,16 @@ __extension App:
             self.agent_start()
         elif cmd == CM_AGENT_MENTION:
             self.agent_mention()
+        elif cmd == CM_AGENT_MODEL:
+            self.agent_model_dialog()
+        elif cmd == CM_AGENT_MODE:
+            self.agent_mode_dialog()
+        elif cmd == CM_AGENT_THINKING:
+            self.agent_thinking_dialog()
+        elif cmd == CM_AGENT_NEW:
+            self.agent_new_session()
+        elif cmd == CM_AGENT_PROBLEMS:
+            self.agent_send_problems()
         elif cmd == CM_GIT_COMMIT:
             self.git_commit_dialog()
         elif cmd == CM_GIT_BRANCH:

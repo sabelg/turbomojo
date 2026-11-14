@@ -1,4 +1,4 @@
-# Exercise 5 of 8: a struct's constructor
+# Exercise 5 of 13: a struct's constructor
 #
 # A constructor writes a new value.
 # When it is right, it prints:
