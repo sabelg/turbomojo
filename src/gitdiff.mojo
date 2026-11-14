@@ -7,13 +7,14 @@ buffer (as edited); in "Staged" mode the old side is HEAD and the new side the i
 """
 from std.collections import List
 from linediff import Hunk, diff_lines, line_hash
-from util import decode
+from util import decode, cp_len, slice_str
 
 comptime DR_HEADER = 0      # @@ -a,la +b,lb @@
 comptime DR_SAME = 1        # a line both sides have (context)
 comptime DR_OLD = 2         # only the old side (removed)
 comptime DR_NEW = 3         # only the new side (added)
 comptime DR_NOTE = 4        # something said about the whole diff
+comptime DR_SPLIT_CHG = 5   # side-by-side paired old/new changed row (± ... │ ...)
 
 comptime DIFF_CONTEXT = 3
 
@@ -95,6 +96,84 @@ def unified(old: Side, new: Side, hunks: List[Hunk], context: Int = DIFF_CONTEXT
             rows.append(DiffRow(DR_NEW, "+" + new.lines[h.b + k], hi, h.b + k))
         for k in range(after):
             rows.append(DiffRow(DR_SAME, " " + old.lines[h.a + h.la + k], hi, h.b + h.lb + k))
+    return rows^
+
+
+def _pad_num(n: Int) -> String:
+    if n <= 0:
+        return "    "
+    var s = String(n)
+    while s.byte_length() < 4:
+        s = " " + s
+    return s
+
+
+def _fit_col(s: String, width: Int) -> String:
+    var clean = s.replace("\t", "    ")
+    var cps = decode(clean)
+    var w = max(4, width)
+    if len(cps) > w:
+        return slice_str(cps, 0, w - 1) + "…"
+    var out = clean
+    var pad = w - len(cps)
+    for _ in range(pad):
+        out += " "
+    return out
+
+
+def side_by_side(old: Side, new: Side, hunks: List[Hunk], total_w: Int, context: Int = DIFF_CONTEXT) -> List[DiffRow]:
+    """Build side-by-side split diff rows (`left │ right`) pairing deleted and added lines."""
+    var rows = List[DiffRow]()
+    var usable = max(32, total_w - 4)
+    var half_w = max(14, (usable - 3) // 2)
+    var text_w = max(8, half_w - 7)
+    var shown_to = 0
+    for hi in range(len(hunks)):
+        var h = hunks[hi].copy()
+        var c0 = max(max(0, h.a - context), shown_to)
+        var c1 = min(len(old.lines), h.a + h.la + context)
+        if hi + 1 < len(hunks):
+            c1 = min(c1, hunks[hi + 1].a)
+        var before = h.a - c0
+        var after = c1 - (h.a + h.la)
+        shown_to = c1
+        var ostart = c0
+        var nstart = h.b - before
+        var olen = before + h.la + after
+        var nlen = before + h.lb + after
+        rows.append(
+            DiffRow(
+                DR_HEADER,
+                "@@ -" + String(ostart + 1 if olen > 0 else ostart) + "," + String(olen)
+                + " +" + String(nstart + 1 if nlen > 0 else nstart) + "," + String(nlen) + " @@  [split]",
+                hi,
+                max(0, h.b),
+            )
+        )
+        for k in range(before):
+            var ltxt = " " + _pad_num(c0 + k + 1) + "  " + _fit_col(old.lines[c0 + k], text_w)
+            var rtxt = _pad_num(nstart + k + 1) + "  " + _fit_col(new.lines[nstart + k], text_w)
+            rows.append(DiffRow(DR_SAME, ltxt + " │ " + rtxt, hi, nstart + k))
+        var pairs = max(h.la, h.lb)
+        for k in range(pairs):
+            var has_l = k < h.la
+            var has_r = k < h.lb
+            if has_l and has_r:
+                var ltxt = "±" + _pad_num(h.a + k + 1) + "- " + _fit_col(old.lines[h.a + k], text_w)
+                var rtxt = _pad_num(h.b + k + 1) + "+ " + _fit_col(new.lines[h.b + k], text_w)
+                rows.append(DiffRow(DR_SPLIT_CHG, ltxt + " │ " + rtxt, hi, h.b + k))
+            elif has_l:
+                var ltxt = "-" + _pad_num(h.a + k + 1) + "- " + _fit_col(old.lines[h.a + k], text_w)
+                var rtxt = "      " + _fit_col("", text_w)
+                rows.append(DiffRow(DR_OLD, ltxt + " │ " + rtxt, hi, h.b))
+            else:
+                var ltxt = "+     " + _fit_col("", text_w)
+                var rtxt = _pad_num(h.b + k + 1) + "+ " + _fit_col(new.lines[h.b + k], text_w)
+                rows.append(DiffRow(DR_NEW, ltxt + " │ " + rtxt, hi, h.b + k))
+        for k in range(after):
+            var ltxt = " " + _pad_num(h.a + h.la + k + 1) + "  " + _fit_col(old.lines[h.a + h.la + k], text_w)
+            var rtxt = _pad_num(h.b + h.lb + k + 1) + "  " + _fit_col(new.lines[h.b + h.lb + k], text_w)
+            rows.append(DiffRow(DR_SAME, ltxt + " │ " + rtxt, hi, h.b + h.lb + k))
     return rows^
 
 

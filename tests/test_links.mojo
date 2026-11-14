@@ -129,7 +129,7 @@ def test_the_message_window() raises:
     # switched off
     app.apply_settings(load_settings("[ui]\nhyperlinks = false\n", ""))
     app.draw()
-    at = find_on_screen(app, "a.mojo:2:5")
+    _ = find_on_screen(app, "a.mojo:2:5")
     var esc = List[UInt8]()
     app.scr.render(esc)
     assert_true(bytes_to_str(esc).find("]8;;file") < 0)

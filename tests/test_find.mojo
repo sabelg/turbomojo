@@ -497,7 +497,7 @@ def test_single_line_selection_seeds_the_search_text() raises:
 
 def test_huge_text_searches_on_enter_only() raises:
     var src = String("")
-    for i in range(50010):
+    for _ in range(50010):
         src += "row\n"
     src += "needle here\nneedle again\n"
     var app = make(src)

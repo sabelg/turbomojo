@@ -182,14 +182,13 @@ def test_the_agent_waits_for_the_user() raises:
     app.project_dir = d
     _ = write_file(d + "/a.mojo", str_bytes("one\n"))
     app.open_path(d + "/a.mojo")
-    var ei = app.top()
     app.agent_command = "python3 " + shell_quote(getcwd() + "/tests/helpers/fake_acp_agent.py") + " " + shell_quote(d + "/log")
     app.exec(CM_AGENT)
     pump(app, "Connected")
     # asked to run a command while the editor is in front: a notice, not the panel
     say(app, "permrun")
     app.focus(app.find_editor(d + "/a.mojo"))
-    ei = app.top()
+    var ei = app.top()
     pump(app, "The agent asks to `git status --short`", False)
     assert_equal(app.top(), ei)
     assert_true(notice_has(app, "to answer"), "no notice with the key")

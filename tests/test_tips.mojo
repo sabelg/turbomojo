@@ -28,14 +28,14 @@ def test_the_rules() raises:
         assert_equal(slow.feed(TK_PAGE, t + k * 3000 * MS), -1)
     # a run of Left / Right, broken by another key
     var lr = TipRules()
-    for k in range(LR_FOR_TIP - 1):
+    for _ in range(LR_FOR_TIP - 1):
         assert_equal(lr.feed(TK_LR, t), -1)
     assert_equal(lr.feed(TK_OTHER, t), -1)
-    for k in range(LR_FOR_TIP - 1):
+    for _ in range(LR_FOR_TIP - 1):
         assert_equal(lr.feed(TK_LR, t), -1)
     assert_equal(lr.feed(TK_LR, t), TIP_WORDS)
     var bs = TipRules()
-    for k in range(BS_FOR_TIP - 1):
+    for _ in range(BS_FOR_TIP - 1):
         assert_equal(bs.feed(TK_BS, t), -1)
     assert_equal(bs.feed(TK_BS, t), TIP_BACKSPACE)
     var f = TipRules()

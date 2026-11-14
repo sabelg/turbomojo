@@ -147,6 +147,45 @@ TOOLS = [
             "required": ["file_path"],
         },
     },
+    {
+        "name": "turbomojo_debug_inspect",
+        "description": (
+            "Inspect the live debugger session inside TurboMojo (active stop location, stack frames, "
+            "local variables, watches, CPU/SIMD registers, and disassembly), and optionally evaluate "
+            "an LLDB/Mojo expression in the stopped frame."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "Optional expression or `:lldb command` to evaluate in the stopped debugger frame.",
+                },
+            },
+        },
+    },
+    {
+        "name": "turbomojo_run_test",
+        "description": (
+            "Run a Mojo 1.2 TestSuite file (or a single `test_*` function via `--only`) with `mojo run`, "
+            "parse structured PASS/FAIL/SKIP results and failure locations, and sync inline ✓/✗ gutter "
+            "lenses into the running TurboMojo IDE session."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Path to the Mojo test file (`test_*.mojo`)."},
+                "test_name": {"type": "string", "description": "Optional single `test_*` function name to run via `--only`."},
+                "include_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional extra -I include directories.",
+                },
+                "timeout_sec": {"type": "integer", "description": "Execution timeout in seconds (default 90)."},
+            },
+            "required": ["path"],
+        },
+    },
 ]
 
 
@@ -496,6 +535,109 @@ def run_codegen_inspect(file_path: str, stage: str, filter_symbol: str, include_
             pass
 
 
+def run_mojo_test_file(file_path: str, test_name: str, include_paths: list[str], timeout_sec: int = 90) -> dict:
+    p = Path(file_path).expanduser().resolve()
+    if not p.is_file():
+        return {"ok": False, "error": f"File not found: {p}"}
+    mojo_bin = shutil.which("mojo") or str(Path.home() / ".local/bin/mojo")
+    inc_set = []
+    for inc in include_paths:
+        if inc not in inc_set:
+            inc_set.append(inc)
+    # Walk ancestors up to 3 levels to locate project root (`pixi.toml` / `src/`)
+    proj_root = p.parent
+    for anc in [p.parent, p.parent.parent, p.parent.parent.parent]:
+        if (anc / "pixi.toml").is_file() or (anc / "mojoproject.toml").is_file():
+            proj_root = anc
+            break
+    if (proj_root / "src").is_dir() and str(proj_root / "src") not in inc_set:
+        inc_set.append(str(proj_root / "src"))
+    elif p.parent.name == "src" and str(p.parent) not in inc_set:
+        inc_set.append(str(p.parent))
+    cmd = [mojo_bin, "run"]
+    for inc in inc_set:
+        cmd.extend(["-I", inc])
+    # Link libghostty-vt.a automatically when running tests inside a pixi workspace that provides it
+    ghostty_lib = proj_root / ".pixi" / "envs" / "default" / "lib" / "libghostty-vt.a"
+    if ghostty_lib.is_file():
+        try:
+            src_txt = p.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            src_txt = ""
+        if "from app import" in src_txt or "import app" in src_txt or "from vt import" in src_txt:
+            cmd.extend(["-Xlinker", str(ghostty_lib)])
+    cmd.append(str(p))
+    tname = (test_name or "").strip()
+    if tname:
+        cmd.extend(["--only", tname])
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=max(5, min(600, int(timeout_sec or 90))),
+            cwd=str(proj_root),
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {"ok": False, "file": str(p), "timeout": True, "error": f"Timed out after {timeout_sec}s: {exc}"}
+    except Exception as exc:
+        return {"ok": False, "file": str(p), "error": str(exc)}
+    elapsed = round(time.monotonic() - t0, 3)
+    combined = (proc.stdout or "") + (proc.stderr or "")
+    tests = []
+    passed = 0
+    failed = 0
+    skipped = 0
+    row_re = re.compile(r"^\s*(PASS|FAIL|SKIP)\s*\[\s*([^\]]*)\]\s*(\S+)")
+    at_re = re.compile(r"^\s*At\s+(.+?\.(?:mojo|🔥)):(\d+):(\d+):\s*(.*)$")
+    for raw_line in combined.splitlines():
+        m = row_re.match(raw_line)
+        if m:
+            kind, dur, name = m.group(1), m.group(2).strip(), m.group(3).strip()
+            if kind == "PASS":
+                passed += 1
+            elif kind == "FAIL":
+                failed += 1
+            else:
+                skipped += 1
+            tests.append({"name": name, "status": kind.lower(), "duration_s": dur, "messages": []})
+            continue
+        if tests and tests[-1]["status"] == "fail" and raw_line.startswith("      "):
+            msg_txt = raw_line.strip()
+            tests[-1]["messages"].append(msg_txt)
+            am = at_re.match(raw_line)
+            if am and "location" not in tests[-1]:
+                tests[-1]["location"] = {
+                    "file": am.group(1),
+                    "line": int(am.group(2)),
+                    "col": int(am.group(3)),
+                    "summary": am.group(4),
+                }
+    ide_sync = send_ide_ipc(
+        "report_test_results",
+        {
+            "path": str(p),
+            "output": combined,
+            "exit_code": proc.returncode,
+            "keep_skipped": bool(tname),
+        },
+    )
+    return {
+        "ok": proc.returncode == 0 and failed == 0,
+        "file": str(p),
+        "test_filter": tname or None,
+        "exit_code": proc.returncode,
+        "elapsed_s": elapsed,
+        "passed": passed,
+        "failed": failed,
+        "skipped": skipped,
+        "tests": tests,
+        "ide_synced": bool(ide_sync and ide_sync.get("ok")),
+        "output": combined[-4000:].strip(),
+    }
+
+
 def handle_call(name: str, args: dict) -> dict:
     if name == "turbomojo_get_diagnostics":
         out = {"ide_state": read_ide_state() or {"note": "No live TurboMojo session state file yet."}}
@@ -554,6 +696,23 @@ def handle_call(name: str, args: dict) -> dict:
         flt = (args or {}).get("filter_symbol", "") or ""
         incs = (args or {}).get("include_paths") or []
         return run_codegen_inspect(fp, stage, flt, incs)
+    if name == "turbomojo_debug_inspect":
+        expr = str((args or {}).get("expression") or "").strip()
+        rep = send_ide_ipc("debug_inspect", {"expression": expr}, timeout_s=2.0)
+        if rep is not None:
+            return rep
+        return {
+            "ok": False,
+            "active": False,
+            "state": "offline",
+            "note": "No live TurboMojo TUI session is currently running.",
+        }
+    if name == "turbomojo_run_test":
+        fp = (args or {}).get("path", "")
+        tname = (args or {}).get("test_name", "") or ""
+        incs = (args or {}).get("include_paths") or []
+        tsec = int((args or {}).get("timeout_sec", 90) or 90)
+        return run_mojo_test_file(fp, tname, incs, tsec)
     raise ValueError(f"Unknown tool: {name}")
 
 

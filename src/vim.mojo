@@ -61,6 +61,12 @@ struct VimState(Copyable, Movable):
     var mark_paths: List[String]    # marks a..z
     var mark_rows: List[Int]
     var mark_cols: List[Int]
+    var gmark_paths: List[String]   # global marks A..Z (jump across files)
+    var gmark_rows: List[Int]
+    var gmark_cols: List[Int]
+    var ctx_path: String            # context mark for '' / `` jump-back toggle
+    var ctx_row: Int
+    var ctx_col: Int
     var rec_reg: Int        # macro register being recorded (0: none, 'a'..'z' or 'A'..'Z')
     var rec_keys: List[Int]
     var macros: List[List[Int]]     # recorded key codes for @a..@z
@@ -69,6 +75,12 @@ struct VimState(Copyable, Movable):
     var cl_on: Bool         # the command line (/ ? :) is being typed on the status row
     var cl_kind: Int        # ...its first character: / ? or :
     var cl_text: List[Int]
+    var cl_hist_cmd: List[String]       # ':' command-line history
+    var cl_hist_search: List[String]    # '/' and '?' search history
+    var cl_hist_idx: Int                # -1 when editing live draft, else index into history
+    var cl_draft: String                # saved live draft before Up/Down browsing
+    var cl_tab_cands: List[String]      # ':' Tab completion candidates
+    var cl_tab_idx: Int
     var cl_v1: Int          # the Visual selection's rows when : was typed there (-1: none)
     var cl_v2: Int
     var cl_orig_r: Int      # cursor before / or ? incremental preview
@@ -112,6 +124,12 @@ struct VimState(Copyable, Movable):
         self.mark_paths = List[String]()
         self.mark_rows = List[Int]()
         self.mark_cols = List[Int]()
+        self.gmark_paths = List[String]()
+        self.gmark_rows = List[Int]()
+        self.gmark_cols = List[Int]()
+        self.ctx_path = ""
+        self.ctx_row = -1
+        self.ctx_col = 0
         self.rec_reg = 0
         self.rec_keys = List[Int]()
         self.macros = List[List[Int]]()
@@ -120,6 +138,12 @@ struct VimState(Copyable, Movable):
         self.cl_on = False
         self.cl_kind = 0
         self.cl_text = List[Int]()
+        self.cl_hist_cmd = List[String]()
+        self.cl_hist_search = List[String]()
+        self.cl_hist_idx = -1
+        self.cl_draft = ""
+        self.cl_tab_cands = List[String]()
+        self.cl_tab_idx = -1
         self.cl_v1 = -1
         self.cl_v2 = -1
         self.cl_orig_r = 0
@@ -136,6 +160,9 @@ struct VimState(Copyable, Movable):
             self.mark_paths.append("")
             self.mark_rows.append(-1)
             self.mark_cols.append(0)
+            self.gmark_paths.append("")
+            self.gmark_rows.append(-1)
+            self.gmark_cols.append(0)
             self.macros.append(List[Int]())
         self.reg0 = List[Int]()
         self.reg0_lines = False
@@ -182,7 +209,7 @@ def vim_keys_markdown() -> String:
         ["gd gr K", "Normal", "Go to definition, find references, describe symbol (hover)"],
         ["[d ]d [c ]c", "Normal", "Previous / next diagnostic or git change"],
         ["za zM zR zz zt zb", "Normal", "Toggle fold, fold all, expand all, centre / top / bottom scroll"],
-        ["ma 'a `a", "Normal, Visual", "Set mark a..z, jump to its line or exact column"],
+        ["ma mA 'a 'A ''", "Normal, Visual", "Set local mark a..z or global mark A..Z, jump to it or jump back ('')"],
         ["qa q @a @@", "Normal", "Record macro into a..z, stop recording, play @a or last macro"],
         ["gcc gc", "Normal, Visual", "Toggle line comment on the line, motion, or selection"],
         ["ds cs S", "Normal, Visual", "Delete, change, or add surrounding quotes/brackets (ds\", cs\"', Visual S))"],

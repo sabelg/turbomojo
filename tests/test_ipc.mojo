@@ -96,6 +96,49 @@ def test_ipc_roundtrip_and_edits_undo() raises:
     app.wins[ei].undo()
     assert_true(to_str(app.wins[ei].buf.line(1)).find("21") >= 0)
 
+    # 4. debug_inspect reports live debugger/CPU state cleanly
+    var w4 = JsonWriter()
+    w4.begin_obj()
+    w4.kv_str("id", "t4")
+    w4.kv_str("op", "debug_inspect")
+    w4.end_obj()
+    _ = write_bytes_atomic(tmp + "/ipc/req-t4.json", str_bytes(w4.text()))
+    assert_true(app.ipc_tick())
+    var r4 = json_parse(bytes_to_str(read_file(tmp + "/ipc/resp-t4.json")))
+    assert_true(r4.bool(r4.get(0, "ok"), False))
+    assert_false(r4.bool(r4.get(0, "active"), True))
+    assert_equal(r4.str(r4.get(0, "state"), ""), "inactive")
+
+    # 5. report_test_results updates TestFile counts and syncs editor gutter test lenses
+    var test_path = tmp + "/test_sample.mojo"
+    _ = write_file(
+        test_path,
+        str_bytes(
+            "from std.testing import assert_equal, TestSuite\n\ndef test_ok() raises:\n    assert_equal(1, 1)\n\ndef test_bad() raises:\n    assert_equal(1, 2)\n\ndef main() raises:\n    TestSuite.discover_tests[__functions_in_module()]().run()\n"
+        ),
+    )
+    app.open_path(test_path)
+    var tei = app.find_editor(test_path)
+    assert_true(tei >= 0)
+    var w5 = JsonWriter()
+    w5.begin_obj()
+    w5.kv_str("id", "t5")
+    w5.kv_str("op", "report_test_results")
+    w5.kv_str("path", test_path)
+    w5.kv_int("exit_code", 1)
+    w5.kv_str(
+        "output",
+        "Running 2 tests for " + test_path + "\n    PASS [ 0.001 ] test_ok\n    FAIL [ 0.002 ] test_bad\n      At " + test_path + ":7:17: AssertionError: 1 != 2\nSummary [ 0.003 ] 2 tests run: 1 passed , 1 failed , 0 skipped\n",
+    )
+    w5.end_obj()
+    _ = write_bytes_atomic(tmp + "/ipc/req-t5.json", str_bytes(w5.text()))
+    assert_true(app.ipc_tick())
+    var r5 = json_parse(bytes_to_str(read_file(tmp + "/ipc/resp-t5.json")))
+    assert_true(r5.bool(r5.get(0, "ok"), False))
+    assert_equal(r5.int(r5.get(0, "passed")), 1)
+    assert_equal(r5.int(r5.get(0, "failed")), 1)
+    assert_equal(len(app.wins[tei].test_lens_rows), 2)
+
     _ = run_system("rm -rf " + shell_quote(tmp))
 
 

@@ -115,7 +115,7 @@ def test_after_a_doubtful_glyph_the_next_cell_is_placed() raises:
     x = s.draw_cp(x, 0, 0x1F600, 7, 0)        # an emoji
     x = s.text(x, 0, "d", 7, 0)
     x = s.text(x, 0, "é", 7, 0)          # a combining accent
-    x = s.text(x, 0, "f", 7, 0)
+    _ = s.text(x, 0, "f", 7, 0)
     var f = frame(s)
     assert_true(f.find("ab" + chr(0x4E2D) + "c") >= 0, f)
     assert_true(f.find(chr(0x1F600) + "\x1b[1;8Hd") >= 0, f)

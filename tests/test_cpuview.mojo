@@ -154,6 +154,7 @@ def test_the_cpu_window_at_a_stop() raises:
     app.dlg.fields[0].text = decode("0x20")
     app.dialog_button(0)
     text = follow(app, "Memory at 0x0000000000000020")
+    text = follow(app, "0000000000000020  ?? ?? ")
     assert_true(text.find("0000000000000020  ?? ?? ") > 0, text)
     app.handle(key_event(103))
     app.dlg.fields[0].text = decode("n")

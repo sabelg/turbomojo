@@ -116,6 +116,7 @@ comptime JOB_DOCS = 4                    # downloading the documentation
 comptime JOB_DEBUG = 5                   # building a program to debug it
 comptime JOB_TESTS = 6                   # running (or listing) tests for the test explorer
 comptime JOB_CODEGEN = 7                 # emitting assembly / LLVM IR for the codegen inspector
+comptime JOB_CELL = 8                    # running an interactive # %% code cell
 comptime JOB_TASK = 3                    # a pixi task of the project
 comptime SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -723,6 +724,21 @@ struct App(Movable):
     var max_model_args: String
     var max_presets: List[String]
     var max_cmds: List[String]
+    var snip_wid: Int
+    var snip_rows: List[Int]
+    var snip_c1: List[Int]
+    var snip_c2: List[Int]
+    var snip_idx: Int
+    var comp_srv_extra: Int
+    var def_srv: Int
+    var ref_srv: Int
+    var ren_srv: Int
+    var act_srv: Int
+    var sig_srv: Int
+    var ren_local: Bool
+    var gd_side_by_side: Bool
+    var cell_advance: Bool
+    var cell_tmp_path: String
 
     def __init__(out self):
         self.term = Terminal()
@@ -1280,6 +1296,21 @@ struct App(Movable):
         self.max_model_args = ""
         self.max_presets = List[String]()
         self.max_cmds = List[String]()
+        self.snip_wid = -1
+        self.snip_rows = List[Int]()
+        self.snip_c1 = List[Int]()
+        self.snip_c2 = List[Int]()
+        self.snip_idx = 0
+        self.comp_srv_extra = -1
+        self.def_srv = -1
+        self.ref_srv = -1
+        self.ren_srv = -1
+        self.act_srv = -1
+        self.sig_srv = -1
+        self.ren_local = False
+        self.gd_side_by_side = False
+        self.cell_advance = False
+        self.cell_tmp_path = ""
 
     # =================================================================== utils
     def desk_h(self) -> Int:

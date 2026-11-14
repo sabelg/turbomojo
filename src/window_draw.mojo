@@ -4,7 +4,7 @@ from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
 from screen import Screen, UL_CURLY, UL_DASHED, UL_DOTTED
 from palette import Palette, mix
-from highlight import Highlighter, C_TEXT, C_DEF
+from highlight import Highlighter, C_TEXT, C_DEF, lang_for_path, HL_MOJO, HL_PYTHON
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width, slice_str
 from grapheme import cluster_end
 from git import GB_KNOWN, GS_NONE, GS_CONFLICT, GS_DELETED, GS_UNTRACKED, GS_ADDED
@@ -256,6 +256,7 @@ __extension Window:
             wword = word_at(self.buf.line(self.cr), self.cc)
         var sr = self.sel_range()
         # find highlighter state at the first visible line
+        var lang = lang_for_path(self.path, self.title)
         var st = self.lex_state_at(self.top)
         scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
         var classes = List[Int]()
@@ -274,7 +275,7 @@ __extension Window:
                 ln = self.buf.line(r)
                 self.wrap_layout(ln, starts, vs)
                 if not plain:
-                    st = hl.line(ln, st, classes)
+                    st = hl.line(ln, st, classes, lang)
                     if len(self.buf.sem) > 0:
                         self.buf.sem_apply(r, classes)
                 loaded = r
@@ -323,6 +324,10 @@ __extension Window:
                 # the line the program being debugged is stopped at
                 rowbg = pal.msg_sel_bg
                 rowfg = pal.msg_sel_fg
+                scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
+            elif len(ln) >= 7 and ((ln[0] == 60 and ln[1] == 60 and ln[2] == 60 and ln[3] == 60 and ln[4] == 60 and ln[5] == 60 and ln[6] == 60) or (ln[0] == 61 and ln[1] == 61 and ln[2] == 61 and ln[3] == 61 and ln[4] == 61 and ln[5] == 61 and ln[6] == 61) or (ln[0] == 62 and ln[1] == 62 and ln[2] == 62 and ln[3] == 62 and ln[4] == 62 and ln[5] == 62 and ln[6] == 62)):
+                # merge conflict delimiter banner
+                rowbg = mix(pal.diag_err if ln[0] != 61 else pal.diag_warn, bg, 22)
                 scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
             elif hl_line and active and r == self.cr:
                 rowbg = pal.curline_bg
@@ -422,6 +427,19 @@ __extension Window:
                     continue
                 var cfg = rowfg
                 var cbg = rowbg
+                if self.kind == WK_DIFF and not (r == self.cr and active) and len(ln) > 0 and ln[0] == 0xB1:
+                    var bar_idx = -1
+                    for bi in range(len(ln)):
+                        if ln[bi] == 0x2502:
+                            bar_idx = bi
+                            break
+                    if bar_idx >= 0:
+                        if c == bar_idx:
+                            cfg = pal.gutter_fg
+                        elif c < bar_idx:
+                            cfg = pal.msg_err
+                        else:
+                            cfg = pal.msg_ok
                 if not plain:
                     cfg = pal.syn[classes[c]]
                 while wi + 1 < len(ws) and c >= ws[wi + 1]:
@@ -519,6 +537,8 @@ __extension Window:
                         if self.dbg_inline_rows[dli] == r:
                             eol_x = scr.text(eol_x, yy, "⟨" + self.dbg_inline_vals[dli] + "⟩  ", pal.msg_note, rowbg)
                             break
+                if (lang == HL_MOJO or lang == HL_PYTHON) and len(ln) >= 4 and ln[0] == 35 and ln[1] == 32 and ln[2] == 37 and ln[3] == 37 and not scr.plain and eol_x + 18 < cx0 + cls:
+                    eol_x = scr.text(eol_x, yy, "  [Ctrl-Enter: Run Cell]", pal.msg_note, rowbg)
                 if active and r == self.cr and r == self.inline_blame_row and self.inline_blame.byte_length() > 0 and not scr.plain and eol_x + 4 < cx0 + cls:
                     _ = scr.text(eol_x, yy, "  " + self.inline_blame, pal.gutter_fg, rowbg)
             scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)

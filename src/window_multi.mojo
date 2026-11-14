@@ -9,8 +9,9 @@ of the text and of their line, which an edit before them does not change. All ed
 one step share one undo group."""
 from std.collections import List
 from buffer import TextBuffer, Pos
+from highlight import lang_for_path, comment_prefix_for_lang
 from search import Search, make_search
-from util import is_ident
+from util import is_ident, decode
 from window import *
 from window_search import *
 from window_lines import *
@@ -27,6 +28,9 @@ comptime OP_HOME = 9
 comptime OP_END = 10
 comptime OP_DELSEL = 11
 comptime OP_LINE_START = 12       # column 0 (Home toggles with the indentation instead)
+comptime OP_DEL_WORD_LEFT = 13    # Ctrl-Backspace across every cursor
+comptime OP_CASE = 14             # upper / lower case at every cursor
+comptime OP_TAB_SPACES = 15       # insert tab / spaces to next stop at every cursor
 
 comptime MAX_CURSORS = 2000
 
@@ -158,6 +162,15 @@ __extension Window:
             self.begin_move(flag)
             self.cc = 0
             self.sync_want()
+        elif op == OP_DEL_WORD_LEFT:
+            if not self.has_sel():
+                self.move_left(True, True)
+            _ = self.delete_sel(self.new_group())
+            self.sync_want()
+        elif op == OP_CASE:
+            _ = self.change_case(flag)
+        elif op == OP_TAB_SPACES:
+            self.tab(False)
 
     def multi(mut self, op: Int, a: Int, flag: Bool, flag2: Bool, text: List[Int]):
         """Carry out `op` at every cursor as one undo step."""
@@ -188,7 +201,7 @@ __extension Window:
             if order[k] == main:
                 smain = k
             sorted.append(cs[order[k]].copy())
-        var edits = op <= OP_INSERT or op == OP_DELSEL
+        var edits = op <= OP_INSERT or op == OP_DELSEL or op == OP_DEL_WORD_LEFT or op == OP_CASE or op == OP_TAB_SPACES
         if edits:
             var g: Int
             self.set_main(sorted[len(sorted) - 1])
@@ -774,4 +787,188 @@ __extension Window:
             self.multi_texts(OP_INSERT, 0, False, False, clip, lines)
         else:
             self.multi(OP_INSERT, 0, False, False, clip)
+        self.break_group()
+
+    def select_all_occurrences(mut self) -> Int:
+        """Select every non-overlapping occurrence of the current selection (or word at
+        cursor) across the buffer, keeping the cursor originally under the user's caret
+        as the main cursor. Returns the resulting cursor count (0 if nothing matched)."""
+        if not self.has_sel():
+            if not self.select_word_here():
+                return 0
+        var q = self.sel_range()
+        if q.r1 != q.r2:
+            return 0
+        var text = self.selected_text()
+        if len(text) == 0:
+            return 0
+        var s = make_search(text, True, False, False)
+        var cs = List[Cur]()
+        var main_idx = -1
+        var n = self.buf.count()
+        for r in range(n):
+            var ln = self.buf.line(r)
+            var c = 0
+            while len(cs) < MAX_CURSORS:
+                var m = s.caps_in(ln, c)
+                if len(m) == 0 or m[1] <= m[0]:
+                    break
+                if r == q.r1 and m[0] == q.c1:
+                    main_idx = len(cs)
+                cs.append(Cur(r, m[1], True, r, m[0], self.vcol(r, m[1])))
+                c = m[1]
+            if len(cs) >= MAX_CURSORS:
+                break
+        if len(cs) == 0:
+            return 0
+        self.set_cursors(cs^, main_idx if main_idx >= 0 else 0)
+        self.break_group()
+        self.follow = True
+        return self.cursor_count()
+
+    def _unique_cursor_rows(self, cs: List[Cur]) -> List[Int]:
+        """Sorted unique buffer rows touched by any cursor or selection in `cs`."""
+        var rows = List[Int]()
+        for k in range(len(cs)):
+            var r1 = cs[k].r
+            var r2 = cs[k].r
+            if cs[k].sel:
+                var a = cur_start(cs[k])
+                var b = cur_end(cs[k])
+                r1 = a.r
+                r2 = b.r
+                if b.c == 0 and r2 > r1:
+                    r2 -= 1
+            for r in range(r1, r2 + 1):
+                var pos = len(rows)
+                var dup = False
+                for m in range(len(rows)):
+                    if rows[m] == r:
+                        dup = True
+                        break
+                    if rows[m] > r:
+                        pos = m
+                        break
+                if not dup:
+                    rows.append(r)
+                    var t = len(rows) - 1
+                    while t > pos:
+                        rows[t] = rows[t - 1]
+                        t -= 1
+                    rows[pos] = r
+        return rows^
+
+    def indent_lines_multi(mut self, dir: Int):
+        """Indent (`dir > 0`) or unindent (`dir < 0`) every unique line covered by any
+        cursor/selection in a single undo step without collapsing multiple cursors."""
+        var cs = self.all_cursors()
+        var rows = self._unique_cursor_rows(cs)
+        if len(rows) == 0:
+            return
+        var g = self.new_group()
+        for r in rows:
+            if dir > 0:
+                if self.buf.llen(r) == 0:
+                    continue
+                var sp = self.indent_unit()
+                _ = self.buf.insert(r, 0, sp, self.cr, self.cc, g)
+                for k in range(len(cs)):
+                    if cs[k].r == r:
+                        cs[k].c += len(sp)
+                    if cs[k].sel and cs[k].ar == r and cs[k].ac > 0:
+                        cs[k].ac += len(sp)
+            else:
+                var n = 0
+                if self.buf.at(r, 0) == 9:
+                    n = 1
+                else:
+                    while n < self.buf.indent_size and self.buf.at(r, n) == 32:
+                        n += 1
+                if n == 0:
+                    continue
+                _ = self.buf.delete(r, 0, r, n, self.cr, self.cc, g)
+                for k in range(len(cs)):
+                    if cs[k].r == r:
+                        cs[k].c = max(0, cs[k].c - n)
+                    if cs[k].sel and cs[k].ar == r:
+                        cs[k].ac = max(0, cs[k].ac - n)
+        for k in range(len(cs)):
+            cs[k].want = self.vcol(cs[k].r, cs[k].c)
+        self.set_cursors(cs^, len(cs) - 1)
+        self.break_group()
+        self.clamp()
+        self.follow = True
+
+    def tab_multi(mut self, shift: Bool):
+        """Tab / Shift-Tab across one or many cursors without collapsing."""
+        if shift:
+            self.indent_lines_multi(-1)
+            return
+        var cs = self.all_cursors()
+        for c in cs:
+            if c.sel and c.ar != c.r:
+                self.indent_lines_multi(1)
+                return
+        self.multi(OP_TAB_SPACES, 0, False, False, List[Int]())
+        self.break_group()
+
+    def toggle_comment_multi(mut self):
+        """Language-aware line comment toggle (`//` for C/C++/CUDA, `#` otherwise) across
+        every unique row covered by any cursor/selection without collapsing multi-cursors."""
+        var pfx_str = comment_prefix_for_lang(lang_for_path(self.path, self.title))
+        if pfx_str.byte_length() == 0:
+            pfx_str = "#"
+        var pfx = decode(pfx_str)
+        var plen = len(pfx)
+        var cs = self.all_cursors()
+        var rows = self._unique_cursor_rows(cs)
+        var all_commented = True
+        var min_ind = 1 << 30
+        for r in rows:
+            if self.buf.llen(r) == 0:
+                continue
+            var ind = self.indent_of(r)
+            min_ind = min(min_ind, ind)
+            for p in range(plen):
+                if self.buf.at(r, ind + p) != pfx[p]:
+                    all_commented = False
+                    break
+        if min_ind == 1 << 30:
+            return
+        var g = self.new_group()
+        for r in rows:
+            if self.buf.llen(r) == 0:
+                continue
+            if all_commented:
+                var ind = self.indent_of(r)
+                var n = plen + (1 if self.buf.at(r, ind + plen) == 32 else 0)
+                _ = self.buf.delete(r, ind, r, ind + n, self.cr, self.cc, g)
+                for k in range(len(cs)):
+                    if cs[k].r == r and cs[k].c > ind:
+                        cs[k].c = max(ind, cs[k].c - n)
+                    cs[k].sel = False
+            else:
+                var t = List[Int]()
+                for ch in pfx:
+                    t.append(ch)
+                t.append(32)
+                _ = self.buf.insert(r, min_ind, t, self.cr, self.cc, g)
+                for k in range(len(cs)):
+                    if cs[k].r == r and cs[k].c >= min_ind:
+                        cs[k].c += len(t)
+                    cs[k].sel = False
+        for k in range(len(cs)):
+            cs[k].want = self.vcol(cs[k].r, cs[k].c)
+        self.set_cursors(cs^, len(cs) - 1)
+        self.break_group()
+        self.clamp()
+        self.follow = True
+
+    def case_multi(mut self, upper: Bool):
+        """Convert every cursor's selection (or word at cursor) to upper/lower case in one
+        undo step without collapsing multiple cursors."""
+        if not self.has_multi():
+            _ = self.change_case(upper)
+            return
+        self.multi(OP_CASE, 0, upper, False, List[Int]())
         self.break_group()

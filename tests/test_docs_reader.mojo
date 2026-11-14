@@ -324,7 +324,6 @@ def test_the_help_index_and_what_it_finds() raises:
     assert_equal(found_list(index, lib, "`add_10", 50), "CODE def add_10(a: Int) -> Int: <Puzzle 1: Map>")          # an included file
     # one book only
     assert_equal(found_list(index, lib, "print in:examples", 50), "CODE print(\"life\") <life.mojo>")
-    assert_equal(found_list(index, lib, "intro in:puzzles", 50), "TITLE Introduction <Introduction> | TEXT Hello. <Introduction>" if False else found_list(index, lib, "intro in:puzzles", 50))
     assert_true(found_list(index, lib, "intro in:puzzles", 50).startswith("TITLE Introduction <Introduction>"))
     assert_equal(found_list(index, lib, "zebra in:nosuchbook", 50), "")
     # a page full of the same word does not crowd the list: a few of its lines, not forty

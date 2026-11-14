@@ -2635,7 +2635,7 @@ def test_whole_text_is_sent_when_the_edits_cannot_be_listed() raises:
     var uri = path_to_uri(dir + "/a.mojo")
     var i = app.find_editor(dir + "/a.mojo")
     # more single edits than are remembered
-    for k in range(2100):
+    for _ in range(2100):
         _ = app.wins[i].buf.insert(0, 0, decode("y"), 0, 0, 0)
     assert_true(app.wins[i].buf.changes_lost)
     settle(app)

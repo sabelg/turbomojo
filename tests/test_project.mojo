@@ -129,7 +129,6 @@ def test_project_is_found_from_a_subfolder() raises:
     assert_equal(outside.mode, M_NORMAL)
     assert_equal(outside.status, "No pixi.toml in this folder or above it")
     put(d + "/pixi.toml", "[workspace]\nname = \"bare\"\n")
-    outside.cwd = d + "/"                                # (looked up again for another folder)
     outside.cwd = d
     outside.pixi_for = ""
     outside.exec(CM_TASKS)

@@ -10,7 +10,9 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
-from highlight import Highlighter
+from highlight import Highlighter, lang_for_path, C_CMT, C_STR
+from snippets import synthesize_mojo_quickfixes
+from symindex import FileIndex, is_mojo_file
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
@@ -317,7 +319,10 @@ __extension App:
             return
         self.ref_retries = 0
         if not self.references_request(ai):
-            if self.lsp.state == LSP_READY and not self.lsp.table.references:
+            var xk = self.extra_for(self.wins[ai].path)
+            if xk >= 0 and self.lsp_extra[xk].client.state == LSP_READY and not self.lsp_extra[xk].client.table.references:
+                self.say("This language server does not find references")
+            elif xk < 0 and self.lsp.state == LSP_READY and not self.lsp.table.references:
                 self.say("This language server does not find references")
             else:
                 self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
@@ -326,7 +331,27 @@ __extension App:
 
     def references_request(mut self, ai: Int) -> Bool:
         var path = self.wins[ai].path
-        if path.byte_length() == 0 or self.lsp.state != LSP_READY or not self.lsp.table.references:
+        if path.byte_length() == 0:
+            return False
+        var xk = self.extra_for(path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or not self.lsp_extra[xk].client.table.references:
+                return False
+            self.extra_send_now(xk, ai)
+            var xuri = path_to_uri(path)
+            if self.lsp_extra[xk].client.find_doc(xuri) < 0:
+                return False
+            var xid = self.lsp_extra[xk].client.request_references(xuri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now_ns())
+            if xid < 0:
+                return False
+            self.ref_srv = xk
+            self.ref_req_id = xid
+            self.ref_req_path = path
+            self.ref_req_row = self.wins[ai].cr
+            self.ref_req_col = self.wins[ai].cc
+            self.ref_retry_due = 0
+            return True
+        if self.lsp.state != LSP_READY or not self.lsp.table.references:
             return False
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
@@ -336,6 +361,7 @@ __extension App:
         var id = self.lsp.request_references(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
         if id < 0:
             return False
+        self.ref_srv = -1
         self.ref_req_id = id
         self.ref_req_path = path
         self.ref_req_row = self.wins[ai].cr
@@ -388,20 +414,147 @@ __extension App:
         self.say(summary + " - " + self.reg.key_label(CM_NEXTERR) + " / " + self.reg.key_label(CM_PREVERR) + " step through them")
 
     # ================================================================ rename
+    def valid_ident_name(self, s: String) -> Bool:
+        var cps = decode(s)
+        if len(cps) == 0 or not is_alpha(cps[0]):
+            return False
+        for c in cps:
+            if not is_ident(c):
+                return False
+        return not (s in self.hl.kws)
+
+    def local_rename_start(mut self, ai: Int):
+        """Open the Rename Symbol dialog backed by IDE token-verified project rename."""
+        var w = self.word_under(ai)
+        if w.byte_length() == 0 or not self.valid_ident_name(w):
+            self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
+            return
+        self.wins[ai].collapse()
+        self.ren_path = self.wins[ai].path
+        self.ren_row = self.wins[ai].cr
+        self.ren_col = self.wins[ai].cc
+        self.ren_srv = -1
+        self.ren_local = True
+        self.ren_stage = 0
+        self.rename_ask(w)
+
+    def local_rename_execute(mut self, old_name: String, new_name: String) raises:
+        """Token-verified rename across open buffers and matching project files, skipping
+        matches inside comments (C_CMT) and string literals (C_STR)."""
+        if not self.valid_ident_name(new_name):
+            self.say("Invalid identifier name: " + new_name)
+            return
+        self.snapshot_versions()
+        var target_lang = lang_for_path(self.ren_path)
+        var paths = List[String]()
+        var seen = Dict[String, Int]()
+        if self.ren_path.byte_length() > 0:
+            seen[self.ren_path] = 1
+            paths.append(self.ren_path)
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_EDITOR and self.wins[k].path.byte_length() > 0:
+                var p = self.wins[k].path
+                if p not in seen and lang_for_path(p) == target_lang:
+                    seen[p] = 1
+                    paths.append(p)
+        var root = self.symidx_root()
+        if root.byte_length() > 0 and self.ren_path.byte_length() > 0:
+            var fi = FileIndex()
+            fi.start(root)
+            while fi.building:
+                fi.step(100)
+            for p in fi.files:
+                if p not in seen and lang_for_path(p) == target_lang:
+                    seen[p] = 1
+                    paths.append(p)
+        var old_cps = decode(old_name)
+        var m = len(old_cps)
+        var we = WorkspaceEdit()
+        var cls = List[Int]()
+        for p in paths:
+            var wi = self.find_editor(p)
+            var lines = List[List[Int]]()
+            if wi >= 0:
+                for r in range(self.wins[wi].buf.count()):
+                    lines.append(self.wins[wi].buf.line(r))
+            else:
+                var raw_bytes = read_file(p)
+                if len(raw_bytes) == 0 or len(raw_bytes) > 2 * 1024 * 1024:
+                    continue
+                if bytes_to_str(raw_bytes).find(old_name) < 0:
+                    continue
+                lines = self.file_lines(p)
+            var st = 0
+            for r in range(len(lines)):
+                var ln = lines[r].copy()
+                st = self.hl.line(ln, st, cls, target_lang)
+                var n = len(ln)
+                if n < m:
+                    continue
+                var i = 0
+                while i <= n - m:
+                    if is_alpha(ln[i]) and (i == 0 or not is_ident(ln[i - 1])) and (i + m == n or not is_ident(ln[i + m])):
+                        var ok = cls[i] != C_CMT and cls[i] != C_STR
+                        if ok:
+                            for q in range(m):
+                                if ln[i + q] != old_cps[q] or cls[i + q] == C_CMT or cls[i + q] == C_STR:
+                                    ok = False
+                                    break
+                        if ok:
+                            we.add(p, LspEdit(r, col_to_utf16(ln, i), r, col_to_utf16(ln, i + m), new_name))
+                            i += m
+                            continue
+                    i += 1
+        if we.count() == 0:
+            self.say("Nothing found to rename for '" + old_name + "'")
+            return
+        self.offer_edit(we^, "Rename", "Rename Symbol", "Rename " + old_name + " to " + new_name + " (token-verified)", "Renamed " + old_name + " to " + new_name)
+
     def rename_command(mut self):
         """Rename symbol: ask the language server whether the symbol at the cursor can
-        be renamed, ask the user for the new name, then for the edits (rename_reply)."""
+        be renamed, or fall back to IDE token-verified rename when LSP is off."""
         var ai = self.active_editor()
         if ai < 0:
             return
         var path = self.wins[ai].path
+        self.ren_local = False
+        var xk = self.extra_for(path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or self.lsp_extra[xk].client.find_doc(path_to_uri(path)) < 0:
+                if path.byte_length() > 0 and self.word_under(ai).byte_length() > 0:
+                    self.local_rename_start(ai)
+                else:
+                    self.say("Start its language server first (" + self.reg.key_label(CM_LSP) + ")")
+                return
+            if not self.lsp_extra[xk].client.table.rename:
+                self.say("This language server does not rename symbols")
+                return
+            self.wins[ai].collapse()
+            self.ren_srv = xk
+            self.ren_path = path
+            self.ren_row = self.wins[ai].cr
+            self.ren_col = self.wins[ai].cc
+            self.ren_retries = 0
+            self.ren_stage = 0
+            if self.lsp_extra[xk].client.table.prepare_rename:
+                self.ren_stage = 1
+                self.rename_resend()
+                if self.ren_stage == 1:
+                    self.say("Asking " + self.lsp_extra[xk].name + "...")
+                return
+            self.rename_ask(self.word_under(ai))
+            return
         if self.lsp.state != LSP_READY or path.byte_length() == 0 or self.lsp.find_doc(path_to_uri(path)) < 0:
+            if path.byte_length() > 0 and self.word_under(ai).byte_length() > 0:
+                self.local_rename_start(ai)
+                return
             self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
             return
         if not self.lsp.table.rename:
             self.say("This language server does not rename symbols")
             return
         self.wins[ai].collapse()
+        self.ren_srv = -1
         self.ren_path = path
         self.ren_row = self.wins[ai].cr
         self.ren_col = self.wins[ai].cc
@@ -423,14 +576,22 @@ __extension App:
             self.ren_req_id = -1
             return
         var now = now_ns()
-        self.lsp_send_changes(ai, now, False)
         var uri = path_to_uri(self.ren_path)
         var c16 = self.wins[ai].buf.utf16_col(self.ren_row, self.ren_col)
-        if self.ren_stage == 1:
-            self.ren_req_id = self.lsp.request_prepare_rename(uri, self.ren_row, c16, now)
+        if self.ren_srv >= 0 and self.ren_srv < len(self.lsp_extra):
+            self.extra_send_now(self.ren_srv, ai)
+            if self.ren_stage == 1:
+                self.ren_req_id = self.lsp_extra[self.ren_srv].client.request_prepare_rename(uri, self.ren_row, c16, now)
+            else:
+                self.snapshot_versions()
+                self.ren_req_id = self.lsp_extra[self.ren_srv].client.request_rename(uri, self.ren_row, c16, self.ren_new, now)
         else:
-            self.snapshot_versions()
-            self.ren_req_id = self.lsp.request_rename(uri, self.ren_row, c16, self.ren_new, now)
+            self.lsp_send_changes(ai, now, False)
+            if self.ren_stage == 1:
+                self.ren_req_id = self.lsp.request_prepare_rename(uri, self.ren_row, c16, now)
+            else:
+                self.snapshot_versions()
+                self.ren_req_id = self.lsp.request_rename(uri, self.ren_row, c16, self.ren_new, now)
         if self.ren_req_id < 0:
             self.ren_stage = 0
             self.say("The language server cannot be asked now")
@@ -449,13 +610,20 @@ __extension App:
         d.buttons.append("~C~ancel")
         self.show(d^)
 
-    def rename_accept(mut self, typed: String):
+    def rename_accept(mut self, typed: String) raises:
         """The new name was entered."""
         var name = String(typed.strip())
         if name.byte_length() == 0 or name == self.ren_old:
+            self.ren_local = False
             self.say("The name was not changed")
             return
         self.ren_new = name
+        if self.ren_local:
+            self.ren_local = False
+            var old_n = String(self.ren_old)
+            var new_n = String(self.ren_new)
+            self.local_rename_execute(old_n, new_n)
+            return
         self.ren_stage = 2
         self.ren_retries = 0
         self.rename_resend()
@@ -475,6 +643,14 @@ __extension App:
                 self.ren_retry_due = now_ns() + COMP_RETRY_MS * 1000000
                 return
             self.ren_stage = 0
+            if stage == 2 and self.ren_srv < 0 and lower_str(self.lsp.server_name).find("mojo") >= 0 and self.valid_ident_name(self.ren_new):
+                try:
+                    var old_n2 = String(self.ren_old)
+                    var new_n2 = String(self.ren_new)
+                    self.local_rename_execute(old_n2, new_n2)
+                    return
+                except _:
+                    pass
             self.say("Language server: " + m.error_message())
             return
         if stage == 1:
@@ -727,54 +903,25 @@ __extension App:
                     else:
                         var end_u16 = self.wins[ai].buf.utf16_col(end_r, len(self.wins[ai].buf.line(end_r)))
                         out.append(self.make_local_action(path, String(choice[0]), 0, 0, end_r, end_u16, "", choice[3]))
-        # 2. Mojo 1.2 stdlib prefix & removed-syntax quick fixes
+        # 2. Mojo 1.2 stdlib prefix, removed-syntax, convention & diagnostic-driven quick fixes
         if path.endswith(".mojo") or path.endswith(".🔥"):
-            var raw_cps = self.wins[ai].buf.line(cr)
-            var raw = to_str(raw_cps)
-            var end_u16 = self.wins[ai].buf.utf16_col(cr, len(raw_cps))
-            var ind = 0
-            while ind < raw.byte_length() and (Int(raw.as_bytes()[ind]) == 32 or Int(raw.as_bytes()[ind]) == 9):
-                ind += 1
-            var prefix = String(raw[byte=0:ind])
-            var rest = String(raw[byte=ind:])
-            var std_mods = [
-                "collections", "testing", "memory", "sys", "os", "math", "algorithm",
-                "time", "utils", "random", "pathlib", "tempfile", "ffi", "io", "hashlib",
-                "logger", "subprocess", "complex", "bit", "benchmark", "compile",
-                "python", "atomic", "iter", "base64",
-            ]
-            if rest.startswith("from ") or rest.startswith("import "):
-                var is_from = rest.startswith("from ")
-                var after_kw = String(rest[byte=5:] if is_from else rest[byte=7:])
-                var trimmed_after = String(after_kw.lstrip())
-                var mod_end = trimmed_after.byte_length()
-                for k in range(trimmed_after.byte_length()):
-                    var b = Int(trimmed_after.as_bytes()[k])
-                    if b == 46 or b == 32 or b == 44 or b == 9:
-                        mod_end = k
-                        break
-                var mod = String(trimmed_after[byte=0:mod_end])
-                var is_std = False
-                for m in std_mods:
-                    if mod == String(m):
-                        is_std = True
-                        break
-                if is_std:
-                    var kw = String("from std.") if is_from else String("import std.")
-                    out.append(self.make_local_action(path, "Prefix stdlib module with 'std.' (" + kw + mod + ")", cr, 0, cr, end_u16, prefix + kw + trimmed_after))
-                elif mod == "gpu":
-                    var kw_max = String("from max.") if is_from else String("import max.")
-                    out.append(self.make_local_action(path, "Import GPU module from MAX (" + kw_max + mod + ")", cr, 0, cr, end_u16, prefix + kw_max + trimmed_after))
-            if rest.startswith("fn "):
-                out.append(self.make_local_action(path, "Replace removed 'fn' with 'def' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "def " + String(rest[byte=3:])))
-            elif rest.startswith("alias "):
-                out.append(self.make_local_action(path, "Replace removed 'alias' with 'comptime' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "comptime " + String(rest[byte=6:])))
-            elif rest.startswith("let "):
-                out.append(self.make_local_action(path, "Replace removed 'let' with 'var' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "var " + String(rest[byte=4:])))
-            elif rest == "@value" or rest.startswith("@value "):
-                out.append(self.make_local_action(path, "Replace removed '@value' with '@fieldwise_init' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "@fieldwise_init" + String(rest[byte=6:])))
-            elif rest.startswith("@parameter if ") or rest.startswith("@parameter for "):
-                out.append(self.make_local_action(path, "Replace removed '@parameter' with 'comptime' (Mojo 1.2)", cr, 0, cr, end_u16, prefix + "comptime " + String(rest[byte=11:])))
+            var dmsgs = List[String]()
+            var dc1 = List[Int]()
+            var dc2 = List[Int]()
+            for mk in self.wins[ai].buf.marks:
+                if mk.l1 <= cr and cr <= mk.l2:
+                    dmsgs.append(mk.message)
+                    dc1.append(mk.c1 if mk.l1 == cr else 0)
+                    dc2.append(mk.c2 if mk.l2 == cr else self.wins[ai].buf.llen(cr))
+            for pb in self.prob_build:
+                if pb.path == path and pb.line == cr + 1:
+                    dmsgs.append(pb.message)
+                    dc1.append(max(0, pb.col - 1))
+                    dc2.append(max(0, pb.col - 1))
+            for qf in synthesize_mojo_quickfixes(self.wins[ai].buf, cr, self.wins[ai].cc, dmsgs, dc1, dc2):
+                var u1 = self.wins[ai].buf.utf16_col(qf.r1, qf.c1)
+                var u2 = self.wins[ai].buf.utf16_col(qf.r2, qf.c2)
+                out.append(self.make_local_action(path, qf.title, qf.r1, u1, qf.r2, u2, qf.new_text, qf.preferred))
         return out^
 
     def show_actions_dialog(mut self):
@@ -803,6 +950,32 @@ __extension App:
             return
         var path = self.wins[ai].path
         var local = self.local_code_actions(ai)
+        var xk = self.extra_for(path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or path.byte_length() == 0 or self.lsp_extra[xk].client.find_doc(path_to_uri(path)) < 0:
+                if len(local) > 0:
+                    self.actions = local^
+                    self.show_actions_dialog()
+                    return
+                self.say("Start its language server first (" + self.reg.key_label(CM_LSP) + ")")
+                return
+            if not self.lsp_extra[xk].client.table.code_action:
+                if len(local) > 0:
+                    self.actions = local^
+                    self.show_actions_dialog()
+                    return
+                self.say("This language server offers no quick fixes")
+                return
+            self.act_srv = xk
+            self.act_retries = 0
+            self.act_stage = 1
+            self.act_path = path
+            self.act_row = self.wins[ai].cr
+            self.act_col = self.wins[ai].cc
+            self.actions_resend()
+            if self.act_req_id >= 0:
+                self.say("Asking " + self.lsp_extra[xk].name + "...")
+            return
         if self.lsp.state != LSP_READY or path.byte_length() == 0 or self.lsp.find_doc(path_to_uri(path)) < 0:
             if len(local) > 0:
                 self.actions = local^
@@ -817,6 +990,7 @@ __extension App:
                 return
             self.say("This language server offers no quick fixes")
             return
+        self.act_srv = -1
         self.act_retries = 0
         self.act_stage = 1
         self.act_path = path
@@ -833,25 +1007,32 @@ __extension App:
             self.act_req_id = -1
             return
         var now = now_ns()
-        self.lsp_send_changes(ai, now, False)
         self.snapshot_versions()
-        if self.act_stage == 2:
-            self.act_req_id = self.lsp.request_action_resolve(self.act_chosen.raw, now)
+        var r1 = self.wins[ai].cr
+        var c1 = self.wins[ai].cc
+        var r2 = r1
+        var c2 = c1
+        if self.wins[ai].sel:
+            var ar = self.wins[ai].ar
+            var ac = self.wins[ai].ac
+            if ar < r1 or (ar == r1 and ac < c1):
+                r1 = ar
+                c1 = ac
+            else:
+                r2 = ar
+                c2 = ac
+        if self.act_srv >= 0 and self.act_srv < len(self.lsp_extra):
+            self.extra_send_now(self.act_srv, ai)
+            if self.act_stage == 2:
+                self.act_req_id = self.lsp_extra[self.act_srv].client.request_action_resolve(self.act_chosen.raw, now)
+            else:
+                self.act_req_id = self.lsp_extra[self.act_srv].client.request_code_actions(path_to_uri(self.act_path), r1, self.wins[ai].buf.utf16_col(r1, c1), r2, self.wins[ai].buf.utf16_col(r2, c2), now)
         else:
-            var r1 = self.wins[ai].cr
-            var c1 = self.wins[ai].cc
-            var r2 = r1
-            var c2 = c1
-            if self.wins[ai].sel:
-                var ar = self.wins[ai].ar
-                var ac = self.wins[ai].ac
-                if ar < r1 or (ar == r1 and ac < c1):
-                    r1 = ar
-                    c1 = ac
-                else:
-                    r2 = ar
-                    c2 = ac
-            self.act_req_id = self.lsp.request_code_actions(path_to_uri(self.act_path), r1, self.wins[ai].buf.utf16_col(r1, c1), r2, self.wins[ai].buf.utf16_col(r2, c2), now)
+            self.lsp_send_changes(ai, now, False)
+            if self.act_stage == 2:
+                self.act_req_id = self.lsp.request_action_resolve(self.act_chosen.raw, now)
+            else:
+                self.act_req_id = self.lsp.request_code_actions(path_to_uri(self.act_path), r1, self.wins[ai].buf.utf16_col(r1, c1), r2, self.wins[ai].buf.utf16_col(r2, c2), now)
         if self.act_req_id < 0:
             self.act_stage = 0
             self.say("The language server cannot be asked now")
@@ -897,7 +1078,8 @@ __extension App:
             self.say("Not available: " + self.act_chosen.disabled)
             return
         if self.act_chosen.edit_json.byte_length() == 0 and self.act_chosen.command.byte_length() == 0:
-            if not self.lsp.table.code_action_resolve:
+            var can_resolve = (self.act_srv >= 0 and self.act_srv < len(self.lsp_extra) and self.lsp_extra[self.act_srv].client.table.code_action_resolve) or (self.act_srv < 0 and self.lsp.table.code_action_resolve)
+            if not can_resolve:
                 self.say("Quick fix: the server sent no changes")
                 return
             self.act_stage = 2
@@ -928,7 +1110,12 @@ __extension App:
             return
         self.act_command_due = False
         self.snapshot_versions()
-        if self.lsp.request_execute(self.act_chosen.command, self.act_chosen.args_json, now_ns()) < 0:
+        var ok_id: Int
+        if self.act_srv >= 0 and self.act_srv < len(self.lsp_extra):
+            ok_id = self.lsp_extra[self.act_srv].client.request_execute(self.act_chosen.command, self.act_chosen.args_json, now_ns())
+        else:
+            ok_id = self.lsp.request_execute(self.act_chosen.command, self.act_chosen.args_json, now_ns())
+        if ok_id < 0:
             self.say("The language server cannot be asked now")
 
     def server_edits(mut self):
@@ -958,7 +1145,10 @@ __extension App:
         self.def_retries = 0
         self.def_is_type = False
         if not self.definition_request(ai):
-            if self.lsp.state == LSP_READY and not self.lsp.table.definition:
+            var xk = self.extra_for(self.wins[ai].path)
+            if xk >= 0 and self.lsp_extra[xk].client.state == LSP_READY and not self.lsp_extra[xk].client.table.definition:
+                self.say("This language server does not find definitions")
+            elif xk < 0 and self.lsp.state == LSP_READY and not self.lsp.table.definition:
                 self.say("This language server does not find definitions")
             else:
                 self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
@@ -979,7 +1169,28 @@ __extension App:
 
     def definition_request(mut self, ai: Int) -> Bool:
         var path = self.wins[ai].path
-        if path.byte_length() == 0 or self.lsp.state != LSP_READY or not self.lsp.table.definition:
+        if path.byte_length() == 0:
+            return False
+        var xk = self.extra_for(path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or not self.lsp_extra[xk].client.table.definition:
+                return False
+            self.extra_send_now(xk, ai)
+            var xuri = path_to_uri(path)
+            if self.lsp_extra[xk].client.find_doc(xuri) < 0:
+                return False
+            self.lsp_extra[xk].client.cancel_request(self.def_req_id)
+            var xid = self.lsp_extra[xk].client.request_definition(xuri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now_ns())
+            if xid < 0:
+                return False
+            self.def_srv = xk
+            self.def_req_id = xid
+            self.def_req_path = path
+            self.def_req_row = self.wins[ai].cr
+            self.def_req_col = self.wins[ai].cc
+            self.def_retry_due = 0
+            return True
+        if self.lsp.state != LSP_READY or not self.lsp.table.definition:
             return False
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
@@ -990,6 +1201,7 @@ __extension App:
         var id = self.lsp.request_definition(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
         if id < 0:
             return False
+        self.def_srv = -1
         self.def_req_id = id
         self.def_req_path = path
         self.def_req_row = self.wins[ai].cr
@@ -999,7 +1211,28 @@ __extension App:
 
     def typedef_request(mut self, ai: Int) -> Bool:
         var path = self.wins[ai].path
-        if path.byte_length() == 0 or self.lsp.state != LSP_READY:
+        if path.byte_length() == 0:
+            return False
+        var xk = self.extra_for(path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY:
+                return False
+            self.extra_send_now(xk, ai)
+            var xuri = path_to_uri(path)
+            if self.lsp_extra[xk].client.find_doc(xuri) < 0:
+                return False
+            self.lsp_extra[xk].client.cancel_request(self.def_req_id)
+            var xid = self.lsp_extra[xk].client.request_type_definition(xuri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now_ns())
+            if xid < 0:
+                return False
+            self.def_srv = xk
+            self.def_req_id = xid
+            self.def_req_path = path
+            self.def_req_row = self.wins[ai].cr
+            self.def_req_col = self.wins[ai].cc
+            self.def_retry_due = 0
+            return True
+        if self.lsp.state != LSP_READY:
             return False
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
@@ -1010,6 +1243,7 @@ __extension App:
         var id = self.lsp.request_type_definition(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
         if id < 0:
             return False
+        self.def_srv = -1
         self.def_req_id = id
         self.def_req_path = path
         self.def_req_row = self.wins[ai].cr

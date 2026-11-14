@@ -68,7 +68,7 @@ from app_vim import *
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_RUN_CELL or cmd == CM_RUN_CELL_NEXT or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
@@ -252,7 +252,7 @@ __extension App:
         var ai = self.active_editor()
         if ai >= 0 and self.wins[ai].has_multi():
             # only these know about several cursors; everything else works on the main one
-            if not (cmd == CM_ADDNEXT or cmd == CM_SKIPNEXT or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO or cmd == CM_MACRO_REC or cmd == CM_MACRO_PLAY or (cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE)):
+            if not (cmd == CM_ADDNEXT or cmd == CM_SKIPNEXT or cmd == CM_SELECT_ALL_OCC or cmd == CM_CURABOVE or cmd == CM_CURBELOW or cmd == CM_COMMENT or cmd == CM_INDENT or cmd == CM_UNINDENT or cmd == CM_UPPER or cmd == CM_LOWER or cmd == CM_CUT or cmd == CM_COPY or cmd == CM_PASTE or cmd == CM_CLEAR or cmd == CM_UNDO or cmd == CM_REDO or cmd == CM_MACRO_REC or cmd == CM_MACRO_PLAY or (cmd >= CM_CUR_LEFT and cmd <= CM_INSERT_MODE)):
                 self.wins[ai].collapse()
         if cmd == CM_REPORT:
             self.report_problem()
@@ -348,7 +348,10 @@ __extension App:
             self.cursor_command(cmd)
         elif cmd == CM_INDENT or cmd == CM_UNINDENT:
             if ai >= 0:
-                self.wins[ai].indent_lines(1 if cmd == CM_INDENT else -1)
+                if self.wins[ai].has_multi():
+                    self.wins[ai].indent_lines_multi(1 if cmd == CM_INDENT else -1)
+                else:
+                    self.wins[ai].indent_lines(1 if cmd == CM_INDENT else -1)
                 self.wins[ai].follow = True
         elif cmd == CM_HOVER:
             self.hover_command()
@@ -384,7 +387,7 @@ __extension App:
                 self.say(String(n) + " lines sorted" if n > 0 else "Already in order")
         elif cmd == CM_UPPER or cmd == CM_LOWER:
             if ai >= 0:
-                _ = self.wins[ai].change_case(cmd == CM_UPPER)
+                self.wins[ai].case_multi(cmd == CM_UPPER)
         elif cmd == CM_FOLD:
             if ai >= 0 and not self.wins[ai].toggle_fold(self.wins[ai].cr):
                 self.say("Nothing to fold here")
@@ -414,6 +417,13 @@ __extension App:
                     self.say("No more occurrences to skip to")
                 elif self.wins[ai].has_multi():
                     self.say(String(self.wins[ai].cursor_count()) + " cursors")
+        elif cmd == CM_SELECT_ALL_OCC:
+            if ai >= 0:
+                var n_occ = self.wins[ai].select_all_occurrences()
+                if n_occ <= 0:
+                    self.say("No word or selection to match")
+                else:
+                    self.say(String(n_occ) + (" occurrence selected" if n_occ == 1 else " occurrences selected"))
         elif cmd == CM_EXPAND_SEL:
             if ai >= 0:
                 if not self.wins[ai].expand_selection():
@@ -431,7 +441,7 @@ __extension App:
                 self.wins[ai].select_all()
         elif cmd == CM_COMMENT:
             if ai >= 0:
-                self.wins[ai].toggle_comment()
+                self.wins[ai].toggle_comment_multi()
         elif cmd == CM_DUPLINE:
             if ai >= 0:
                 self.wins[ai].duplicate_line()
@@ -482,6 +492,10 @@ __extension App:
             self.quick_dialog("")
         elif cmd == CM_RUN:
             self.run_program(False)
+        elif cmd == CM_RUN_CELL:
+            self.run_code_cell(False)
+        elif cmd == CM_RUN_CELL_NEXT:
+            self.run_code_cell(True)
         elif cmd == CM_TEST:
             self.run_program(True)
         elif cmd == CM_TEST_CURSOR:
@@ -549,6 +563,14 @@ __extension App:
             self.git_next_change(True)
         elif cmd == CM_GIT_PREV:
             self.git_next_change(False)
+        elif cmd == CM_CONFLICT_NEXT:
+            self.conflict_next()
+        elif cmd == CM_CONFLICT_OURS:
+            self.conflict_resolve(0)
+        elif cmd == CM_CONFLICT_THEIRS:
+            self.conflict_resolve(1)
+        elif cmd == CM_CONFLICT_BOTH:
+            self.conflict_resolve(2)
         elif cmd == CM_TESTEXP:
             self.tests_toggle()
         elif cmd == CM_TEST_RUN:

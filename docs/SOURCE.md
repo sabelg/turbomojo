@@ -31,14 +31,14 @@ struct of `appstate.mojo`, one area each.
 | `src/app_gitdiff.mojo` | The diff view and the change (hunk) commands: File > Diff of this file, Stage change, Revert change, Next / Previous change. |
 | `src/app_gpu.mojo` | The GPU on the status line (P11-10a) and the live GPU telemetry monitor (`Window > GPU queue & monitor`, WK_GPU). |
 | `src/app_input.mojo` | Keyboard and paste input routing. |
-| `src/app_ipc.mojo` | IDE-side handler for file-queue IPC (`src/ipc.mojo`): handles `ping`, `open_location`, `get_buffer`, and `apply_edits` from `tmide --reuse` and `tmide-mcp`. |
+| `src/app_ipc.mojo` | IDE-side handler for file-queue IPC (`src/ipc.mojo`): handles `ping`, `open_location`, `get_buffer`, `apply_edits`, `debug_inspect`, and `report_test_results` from `tmide --reuse` and `tmide-mcp`. |
 | `src/app_jobs.mojo` | Compiler integration: background build/format jobs, messages, run. |
 | `src/app_keybox.mojo` | After a prefix key (WordStar's Ctrl-K and Ctrl-Q, Emacs's C-x, any two-key binding): if the second key does not come within a moment, a box above the status line lists the keys that may follow, with their commands. |
 | `src/app_keyecho.mojo` | The calm key echo (P7-07): after a command is run from a menu, the command palette or a click, the status line says which key does it - "Next time: Ctrl-K B" - in the keymap in use. |
 | `src/app_layout.mojo` | The tiled layout in the application: panes with tabs that share the screen. |
 | `src/app_links.mojo` | Hyperlinks (OSC 8) on the file:line references the IDE shows: every row of the Message window's pages (Message, Search, Problems) and of the agent panel. |
 | `src/app_lsp.mojo` | Language server integration in the IDE (first slice: live diagnostics for one file). |
-| `src/app_lspextra.mojo` | Language servers for other languages, by configuration ([lsp.<name>] in the config file: command, extensions, language). |
+| `src/app_lspextra.mojo` | Language servers for other languages ([lsp.<name>] in configuration or auto-discovered). |
 | `src/app_menus.mojo` | Menu bar navigation. |
 | `src/app_mouse.mojo` | Mouse handling. |
 | `src/app_nav.mojo` | Moving between places: go to definition, lists of places, the back/forward jump list. |
@@ -64,6 +64,7 @@ struct of `appstate.mojo`, one area each.
 | `src/breakpoints.mojo` | Breakpoints: where the debugger is to stop. |
 | `src/buffer.mojo` | Text buffer: a rope of UTF-8 text addressed by (row, column in codepoints), with grouped undo/redo and the per-file settings (line endings, indentation, final newline). |
 | `src/caps.mojo` | Terminal capabilities: what the terminal says it supports, and colour-depth handling. |
+| `src/cells.mojo` | Interactive `# %%` code cells ("Terminal Notebook" mode) for Mojo and Python. |
 | `src/codegen.mojo` | Mojo codegen & kernel inspector (`Compile > Inspect generated code`, WK_CODEGEN): parses `mojo build --emit=asm` and `--emit=llvm` output, strips noisy assembler metadata directives while keeping function labels and instructions, badges SIMD vector operations (`[SIMD]`) and register stack spills (`[SPILL]`), and summarizes vectorization density. |
 | `src/codequery.mojo` | What a search for help looks like, so one box can take code as well as words: a name (`append`), a dotted path (`List.append`, `std.collections.list`), or a pasted error line (`x.mojo:3:5: error: use of unknown declaration 'y'`), besides the finder's own syntax (words, "a phrase", @api, #heading, `code, in:book). |
 | `src/commands.mojo` | Command registry: the single table of commands, their titles, hints and default keys. |
@@ -92,7 +93,7 @@ struct of `appstate.mojo`, one area each.
 | `src/grapheme.mojo` | Grapheme clusters: what a user perceives as one character. |
 | `src/grep.mojo` | Find in files: walks a folder and searches every text file, a little at a time so the editor stays responsive (call `step` from the event loop until `done`). |
 | `src/helpbook.mojo` | TurboMojo's own help: the "TurboMojo" book of the documentation viewer (the guide, the cheat sheet, the keyboard reference, what's new) and the tutorial file. |
-| `src/highlight.mojo` | Mojo syntax highlighter (line-based with triple-quoted string state). |
+| `src/highlight.mojo` | Polyglot syntax highlighter (Mojo, Python, C/C++/CUDA, TOML, JSON, Shell/YAML, Markdown). |
 | `src/inflate.mojo` | Inflate: the zlib / DEFLATE decompressor (RFC 1950, 1951), for PNG pictures. |
 | `src/ipc.mojo` | Portable file-queue IPC between CLI (`tmide --reuse`), MCP (`tmide-mcp`), and a live IDE. |
 | `src/json.mojo` | JSON reader and writer (RFC 8259). |
@@ -136,6 +137,7 @@ struct of `appstate.mojo`, one area each.
 | `src/setupcheck.mojo` | Help > Check setup (P11-05): is everything TurboMojo uses there? Mojo (and is it the release TurboMojo was built with), pixi, the language server, the debugger, the documentation, the terminal's colours and keys - each with what fixes it when it is missing. |
 | `src/signals.mojo` | Signal handling for the event loop. |
 | `src/sixel.mojo` | Sixel output, for pictures in the docs reader where the terminal has no kitty graphics (P10-22c): a decoded picture scaled to its cells, its colours put on the 6 x 6 x 6 cube (216 registers), sent band by band (six pixel rows each) with run-length counts. |
+| `src/snippets.mojo` | Mojo 1.2 tab-stop snippet engine and IDE-synthesized quick-fix rules. |
 | `src/stdref.mojo` | The standard library reference: `mojo doc`'s JSON for the `std` package (made by scripts/fetch-docs.sh) turned into one Markdown page per module, with an index that the documentation library reads as a book. |
 | `src/strings.mojo` | The UI's words outside the code: the menu titles and every command's title and hint (what the menus, the command palette, the status line and the keyboard reference show) can come from a strings file, so the IDE can be translated. |
 | `src/svgshot.mojo` | The screen as an SVG picture (P11-02): `tmide --screenshot FILE.svg` draws the IDE as it would appear and writes what is in its cells - characters, colours, bold, underlines - as a grid of text, so the README can show it without a screen recorder. |

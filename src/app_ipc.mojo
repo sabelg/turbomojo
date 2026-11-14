@@ -1,13 +1,19 @@
 """IDE-side handler for file-queue IPC (`src/ipc.mojo`): handles `ping`, `open_location`,
-`get_buffer`, and `apply_edits` from `tmide --reuse` and `tmide-mcp`."""
+`get_buffer`, `apply_edits`, `debug_inspect`, and `report_test_results` from
+`tmide --reuse` and `tmide-mcp`."""
 from std.collections import List
 from std.os import listdir
+from std.time import perf_counter_ns
+from std.ffi import external_call
 from appstate import *
+from dap import DS_STOPPED, DS_RUNNING
+from dbgview import nice_value, nice_type, console_command, console_result
 from dialog import NEXT_NONE
 from grep import sort_names
-from json import json_parse, JsonWriter, J_ARR
+from json import json_parse, JsonWriter, json_quote, J_ARR
 from signals import own_pid
 from swap import write_bytes_atomic, delete_file
+from testexp import TestFile, parse_run, apply_report
 from util import (
     path_exists, read_file, bytes_to_str, str_bytes, abs_path, basename, dirname, shell_quote,
     run_system, decode,
@@ -17,6 +23,8 @@ from app_jobs import *
 from app_lsp import *
 from app_problems import *
 from app_layout import *
+from app_debug import *
+from app_tests import *
 
 
 @fieldwise_init
@@ -292,6 +300,151 @@ __extension App:
             w.kv_int("applied", len(edits))
             w.kv_bool("modified", self.wins[wi].buf.modified)
             w.kv_int("lines", self.wins[wi].buf.count())
+            w.end_obj()
+            return w.text()
+        if op == "debug_inspect":
+            var expr = String(doc.str(doc.get(0, "expression"), "").strip())
+            var eval_ok = False
+            var eval_res = String("")
+            if expr.byte_length() > 0 and self.dbg.active() and self.dbg.state == DS_STOPPED:
+                var fid_part = String("")
+                if self.dview.sel >= 0 and self.dview.sel < len(self.dview.frames):
+                    fid_part = ",\"frameId\":" + String(self.dview.frames[self.dview.sel].id)
+                var seq = self.dbg.ask(
+                    "evaluate",
+                    "{\"expression\":" + json_quote(console_command(expr)) + fid_part + ",\"context\":\"repl\"}",
+                )
+                if seq > 0:
+                    var deadline = Int(perf_counter_ns()) + 300_000_000
+                    var got_eval = False
+                    while Int(perf_counter_ns()) < deadline and not got_eval:
+                        _ = self.dbg.pump()
+                        for ai in range(len(self.dbg.answers)):
+                            if self.dbg.answers[ai].request_seq == seq:
+                                var ans = self.dbg.answers.pop(ai)
+                                eval_ok = ans.success
+                                var b = ans.body()
+                                if ans.success:
+                                    eval_res = console_result(ans.doc.str(ans.doc.get(b, "result"), ""))
+                                else:
+                                    eval_res = ans.message
+                                got_eval = True
+                                break
+                        if not got_eval:
+                            _ = external_call["usleep", Int32](Int32(5000))
+                    if len(self.dbg.answers) > 0:
+                        self.dv_answers()
+            var state_str = "inactive"
+            if self.dbg.active():
+                state_str = "stopped" if self.dbg.state == DS_STOPPED else ("running" if self.dbg.state == DS_RUNNING else "starting")
+            var dv_txt = String("")
+            var dv_lines = self.dview.lines()
+            for i in range(len(dv_lines)):
+                if i > 0:
+                    dv_txt += "\n"
+                dv_txt += dv_lines[i]
+            var cpu_txt = String("")
+            var cpu_lines = self.cpu.lines()
+            for i in range(len(cpu_lines)):
+                if i > 0:
+                    cpu_txt += "\n"
+                cpu_txt += cpu_lines[i]
+            var w = JsonWriter()
+            w.begin_obj()
+            w.kv_str("id", req_id)
+            w.kv_bool("ok", True)
+            w.kv_bool("active", self.dbg.active())
+            w.kv_str("state", state_str)
+            w.kv_str("program", self.dbg_source)
+            w.kv_str("stop_file", self.dbg.stop_file)
+            w.kv_int("stop_line", self.dbg.stop_line)
+            w.kv_str("stop_reason", self.dbg.stop_text)
+            w.key("frames")
+            w.begin_arr()
+            for f in self.dview.frames:
+                w.begin_obj()
+                w.kv_int("id", f.id)
+                w.kv_str("name", f.name)
+                w.kv_str("path", f.path)
+                w.kv_int("line", f.line)
+                w.end_obj()
+            w.end_arr()
+            w.key("locals")
+            w.begin_arr()
+            for nd in self.dview.nodes:
+                w.begin_obj()
+                w.kv_str("name", nd.name)
+                w.kv_str("type", nice_type(nd.type))
+                w.kv_str("value", nice_value(nd.value))
+                w.kv_int("depth", nd.depth)
+                w.end_obj()
+            w.end_arr()
+            w.key("watches")
+            w.begin_arr()
+            for ws in self.dview.watch_shown:
+                w.str(ws)
+            w.end_arr()
+            w.key("registers")
+            w.begin_arr()
+            for rg in self.cpu.regs:
+                w.begin_obj()
+                w.kv_str("name", rg.name)
+                w.kv_str("value", rg.value)
+                w.kv_bool("changed", rg.changed)
+                w.end_obj()
+            for vrg in self.cpu.vregs:
+                w.begin_obj()
+                w.kv_str("name", vrg.name)
+                w.kv_str("value", vrg.value)
+                w.kv_bool("changed", vrg.changed)
+                w.end_obj()
+            w.end_arr()
+            w.kv_str("debug_view", dv_txt)
+            w.kv_str("cpu_view", cpu_txt)
+            if expr.byte_length() > 0:
+                w.kv_str("expression", expr)
+                w.kv_bool("eval_ok", eval_ok)
+                w.kv_str("eval_result", eval_res)
+            w.end_obj()
+            return w.text()
+        if op == "report_test_results":
+            var p_raw = doc.str(doc.get(0, "path"), "")
+            if p_raw.byte_length() == 0:
+                return ipc_error_json(req_id, "missing path")
+            var p = abs_path(self.cwd, p_raw)
+            var out_txt = doc.str(doc.get(0, "output"), "")
+            var exit_code = doc.int(doc.get(0, "exit_code"), 0)
+            var keep_skipped = doc.bool(doc.get(0, "keep_skipped"), False)
+            var fi = -1
+            for k in range(len(self.test_files)):
+                if self.test_files[k].path == p:
+                    fi = k
+                    break
+            if fi < 0:
+                self.test_files.append(TestFile(p))
+                fi = len(self.test_files) - 1
+            var reports = parse_run(out_txt)
+            if len(reports) > 0:
+                for rep in reports:
+                    apply_report(self.test_files[fi], rep, keep_skipped)
+            elif exit_code != 0:
+                self.test_files[fi].problem.clear()
+                for ln in out_txt.split("\n"):
+                    var s = String(String(ln).rstrip("\r"))
+                    if s.byte_length() > 0 and len(self.test_files[fi].problem) < 20:
+                        self.test_files[fi].problem.append(s)
+            var cnts = self.test_files[fi].counts()
+            self.tests_sync_lens()
+            self.tests_show()
+            self.export_ide_state()
+            var w = JsonWriter()
+            w.begin_obj()
+            w.kv_str("id", req_id)
+            w.kv_bool("ok", True)
+            w.kv_str("path", p)
+            w.kv_int("passed", cnts[0])
+            w.kv_int("failed", cnts[1])
+            w.kv_int("skipped", cnts[2])
             w.end_obj()
             return w.text()
         return ipc_error_json(req_id, "unknown op: " + op)

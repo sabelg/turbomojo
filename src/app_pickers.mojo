@@ -10,7 +10,8 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
-from highlight import Highlighter
+from highlight import Highlighter, lang_for_path, HL_MOJO
+from snippets import mojo_snippets, expand_snippet_full, pos_after_offset
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
@@ -465,7 +466,56 @@ __extension App:
                     out.append(w)
         return out^
 
-    def comp_rebuild(mut self, prefix: String, words: List[String]):
+    def snip_clear(mut self):
+        self.snip_wid = -1
+        self.snip_rows.clear()
+        self.snip_c1.clear()
+        self.snip_c2.clear()
+        self.snip_idx = 0
+
+    def snip_jump(mut self, ai: Int, back: Bool) -> Bool:
+        """Advance (or step back) between active snippet tabstops on Tab / Shift-Tab."""
+        if ai < 0 or self.snip_wid != self.wins[ai].wid or len(self.snip_rows) == 0:
+            return False
+        if self.snip_idx >= 0 and self.snip_idx < len(self.snip_rows):
+            var prev_r = self.snip_rows[self.snip_idx]
+            var old_c2 = self.snip_c2[self.snip_idx]
+            if self.wins[ai].cr == prev_r and not self.wins[ai].has_sel():
+                var delta = self.wins[ai].cc - old_c2
+                if delta != 0:
+                    self.snip_c2[self.snip_idx] = max(self.snip_c1[self.snip_idx], self.wins[ai].cc)
+                    for q in range(len(self.snip_rows)):
+                        if q != self.snip_idx and self.snip_rows[q] == prev_r and self.snip_c1[q] >= old_c2:
+                            self.snip_c1[q] = max(0, self.snip_c1[q] + delta)
+                            self.snip_c2[q] = max(self.snip_c1[q], self.snip_c2[q] + delta)
+        var nxt = self.snip_idx - 1 if back else self.snip_idx + 1
+        if nxt < 0:
+            return True
+        if nxt >= len(self.snip_rows):
+            self.snip_clear()
+            return False
+        self.snip_idx = nxt
+        var r = max(0, min(self.snip_rows[nxt], self.wins[ai].buf.count() - 1))
+        var llen = self.wins[ai].buf.llen(r)
+        var c1 = max(0, min(self.snip_c1[nxt], llen))
+        var c2 = max(c1, min(self.snip_c2[nxt], llen))
+        if c2 > c1:
+            self.wins[ai].sel = True
+            self.wins[ai].ar = r
+            self.wins[ai].ac = c1
+            self.wins[ai].cr = r
+            self.wins[ai].cc = c2
+        else:
+            self.wins[ai].sel = False
+            self.wins[ai].cr = r
+            self.wins[ai].cc = c1
+        self.wins[ai].sync_want()
+        self.wins[ai].follow = True
+        if nxt == len(self.snip_rows) - 1 and c2 == c1:
+            self.snip_clear()
+        return True
+
+    def comp_rebuild(mut self, prefix: String, words: List[String], mojo_snips: Bool = False):
         """Fill the popup's lists: the server's items that fit what is typed (exact prefix
         first, falling back to case-insensitive prefix or fuzzy subsequence when no exact
         prefix fits), followed by words from the text that the server did not offer."""
@@ -519,12 +569,45 @@ __extension App:
             self.comp_doc.append("")
             self.comp_raw.append("")
             self.comp_srv_idx.append(-1)
+        if mojo_snips and prefix.byte_length() > 0:
+            for sn in mojo_snippets():
+                if sn.trigger.startswith(prefix) and sn.label not in seen:
+                    seen[sn.label] = 1
+                    self.comp_items.append(sn.label)
+                    self.comp_insert.append(sn.body)
+                    self.comp_kind.append(15)
+                    self.comp_detail.append(sn.detail)
+                    self.comp_doc.append(sn.doc)
+                    self.comp_raw.append("")
+                    self.comp_srv_idx.append(-1)
 
     def lsp_request_completion(mut self, ai: Int, start: Int, trigger: String) -> Bool:
         """Ask the language server what could come at the cursor. The answer arrives
         later (completion_arrived). False if there is no server to ask."""
         var path = self.wins[ai].path
-        if path.byte_length() == 0 or self.lsp.state != LSP_READY or not self.lsp.table.completion:
+        if path.byte_length() == 0:
+            return False
+        var xk = self.extra_for(path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or not self.lsp_extra[xk].client.table.completion:
+                return False
+            self.extra_send_now(xk, ai)
+            var xuri = path_to_uri(path)
+            if self.lsp_extra[xk].client.find_doc(xuri) < 0:
+                return False
+            self.lsp_extra[xk].client.cancel_request(self.comp_req_id)
+            var xid = self.lsp_extra[xk].client.request_completion(xuri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, now_ns())
+            if xid < 0:
+                return False
+            self.comp_srv_extra = xk
+            self.comp_req_id = xid
+            self.comp_req_path = path
+            self.comp_req_row = self.wins[ai].cr
+            self.comp_req_start = start
+            self.comp_req_trigger = trigger
+            self.comp_retry_due = 0
+            return True
+        if self.lsp.state != LSP_READY or not self.lsp.table.completion:
             return False
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
@@ -535,6 +618,7 @@ __extension App:
         var id = self.lsp.request_completion(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, now)
         if id < 0:
             return False
+        self.comp_srv_extra = -1
         self.comp_req_id = id
         self.comp_req_path = path
         self.comp_req_row = self.wins[ai].cr
@@ -577,7 +661,8 @@ __extension App:
         var member = start > 0 and start <= len(line) and line[start - 1] == 46
         if prefix.byte_length() > 0 and not (member and same and len(self.comp_srv) > 0):
             words = self.collect_completions(ai, prefix)
-        self.comp_rebuild(prefix, words)
+        var want_snips = not member and lang_for_path(self.wins[ai].path, self.wins[ai].title) == HL_MOJO
+        self.comp_rebuild(prefix, words, want_snips)
         self.comp_waiting = False
         if len(self.comp_items) == 0:
             self.mode = M_NORMAL
@@ -644,7 +729,8 @@ __extension App:
         if prefix.byte_length() > 0 and not (member and len(self.comp_srv) > 0):
             # after "x." the server's members are the answer; keywords would be noise
             words = self.collect_completions(ai, prefix)
-        self.comp_rebuild(prefix, words)
+        var want_snips = not member and lang_for_path(self.wins[ai].path, self.wins[ai].title) == HL_MOJO
+        self.comp_rebuild(prefix, words, want_snips)
         if len(self.comp_items) == 0:
             if waiting:
                 self.say("No completions here")
@@ -671,8 +757,13 @@ __extension App:
             return
         if self.comp_resolve_label == self.comp_items[k]:
             return                          # already asked for this one
-        self.lsp.cancel_request(self.comp_resolve_id)
-        var id = self.lsp.request_resolve(self.comp_raw[k], now_ns())
+        var id: Int
+        if self.comp_srv_extra >= 0 and self.comp_srv_extra < len(self.lsp_extra):
+            self.lsp_extra[self.comp_srv_extra].client.cancel_request(self.comp_resolve_id)
+            id = self.lsp_extra[self.comp_srv_extra].client.request_resolve(self.comp_raw[k], now_ns())
+        else:
+            self.lsp.cancel_request(self.comp_resolve_id)
+            id = self.lsp.request_resolve(self.comp_raw[k], now_ns())
         if id >= 0:
             self.comp_resolve_id = id
             self.comp_resolve_label = self.comp_items[k]
@@ -701,12 +792,18 @@ __extension App:
         var k = self.comp_sel
         var sidx = self.comp_srv_idx[k] if k < len(self.comp_srv_idx) else -1
         var raw_ins = String(self.comp_insert[k])
-        var is_snip = sidx >= 0 and (self.comp_srv[sidx].insert_format == 2 or self.comp_srv[sidx].kind == 15)
-        var tab_off = -1
+        var is_snip = (k < len(self.comp_kind) and self.comp_kind[k] == 15) or (sidx >= 0 and (self.comp_srv[sidx].insert_format == 2 or self.comp_srv[sidx].kind == 15))
+        self.snip_clear()
+        var line_indent = String("")
+        if is_snip and sidx < 0 and raw_ins.find("\n") >= 0:
+            var cur_ln = self.wins[ai].buf.line(self.wins[ai].cr)
+            var ind_n = 0
+            while ind_n < min(self.comp_start, len(cur_ln)) and (cur_ln[ind_n] == 32 or cur_ln[ind_n] == 9):
+                ind_n += 1
+            line_indent = slice_str(cur_ln, 0, ind_n)
+        var sn_exp = expand_snippet_full(raw_ins, line_indent) if is_snip else expand_snippet_full("", "")
         if is_snip:
-            var exp = expand_lsp_snippet(raw_ins)
-            raw_ins = exp[0]
-            tab_off = exp[1]
+            raw_ins = sn_exp.text
         var text = decode(raw_ins)
         var g = self.wins[ai].new_group()
         self.wins[ai].forced_group = g
@@ -754,19 +851,16 @@ __extension App:
                 self.wins[ai].ar = self.wins[ai].cr
                 self.wins[ai].ac = self.comp_start
                 self.wins[ai].insert_text(text, ACT_OTHER)
-        if tab_off >= 0:
-            # Place cursor at the $1 / $0 tabstop within the inserted snippet
-            var r = base_row
-            var c = base_col
-            for q in range(min(tab_off, len(text))):
-                if text[q] == 10:
-                    r += 1
-                    c = 0
-                else:
-                    c += 1
-            self.wins[ai].cr = min(r, self.wins[ai].buf.count() - 1)
-            self.wins[ai].cc = min(c, self.wins[ai].buf.llen(self.wins[ai].cr))
-            self.wins[ai].sync_want()
+        if is_snip and len(sn_exp.stops) > 0:
+            for si in range(len(sn_exp.stops)):
+                var p1 = pos_after_offset(base_row, base_col, text, sn_exp.stops[si].start)
+                var p2 = pos_after_offset(base_row, base_col, text, sn_exp.stops[si].end)
+                self.snip_rows.append(p1.r)
+                self.snip_c1.append(p1.c)
+                self.snip_c2.append(p2.c if p2.r == p1.r else p1.c)
+            self.snip_wid = self.wins[ai].wid
+            self.snip_idx = -1
+            _ = self.snip_jump(ai, False)
         # Apply additionalTextEdits (e.g. auto-imports at top of file) in reverse line order
         if sidx >= 0 and len(self.comp_srv[sidx].extra_edits) > 0:
             var extras = self.comp_srv[sidx].extra_edits.copy()
@@ -807,15 +901,17 @@ __extension App:
     def maybe_trigger_completion(mut self, ch: Int):
         """After a character was typed in the editor: if it is one of the server's
         trigger characters (such as "."), ask for completions at once."""
-        if self.lsp.state != LSP_READY or len(self.lsp.table.completion_triggers) == 0:
-            return
         var ai = self.active_editor()
         if ai < 0 or self.wins[ai].has_multi():
             return
         var one = List[Int]()
         one.append(ch)
         var s = to_str(one)
-        if not (s in self.lsp.table.completion_triggers):
+        var xk = self.extra_for(self.wins[ai].path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or not (s in self.lsp_extra[xk].client.table.completion_triggers):
+                return
+        elif self.lsp.state != LSP_READY or not (s in self.lsp.table.completion_triggers):
             return
         self.comp_srv_have = False
         self.comp_retries = 0
@@ -915,7 +1011,10 @@ __extension App:
             return
         self.sig_retries = 0
         if not self.sig_request(ai, "", self.sig_on):
-            if self.lsp.state == LSP_READY and not self.lsp.table.signature_help:
+            var xk = self.extra_for(self.wins[ai].path)
+            if xk >= 0 and self.lsp_extra[xk].client.state == LSP_READY and not self.lsp_extra[xk].client.table.signature_help:
+                self.say("This language server does not describe parameters")
+            elif xk < 0 and self.lsp.state == LSP_READY and not self.lsp.table.signature_help:
                 self.say("This language server does not describe parameters")
             else:
                 self.say("Start the language server first (" + self.reg.key_label(CM_LSP) + ")")
@@ -924,7 +1023,29 @@ __extension App:
 
     def sig_request(mut self, ai: Int, trigger: String, again: Bool) -> Bool:
         var path = self.wins[ai].path
-        if path.byte_length() == 0 or self.lsp.state != LSP_READY or not self.lsp.table.signature_help:
+        if path.byte_length() == 0:
+            return False
+        var xk = self.extra_for(path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or not self.lsp_extra[xk].client.table.signature_help:
+                return False
+            self.extra_send_now(xk, ai)
+            var xuri = path_to_uri(path)
+            if self.lsp_extra[xk].client.find_doc(xuri) < 0:
+                return False
+            self.lsp_extra[xk].client.cancel_request(self.sig_req_id)
+            var xid = self.lsp_extra[xk].client.request_signature(xuri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, again, now_ns())
+            if xid < 0:
+                return False
+            self.sig_srv = xk
+            self.sig_req_id = xid
+            self.sig_path = path
+            self.sig_row = self.wins[ai].cr
+            self.sig_col = self.wins[ai].cc
+            self.sig_version = self.wins[ai].buf.version
+            self.sig_retry_due = 0
+            return True
+        if self.lsp.state != LSP_READY or not self.lsp.table.signature_help:
             return False
         var uri = path_to_uri(path)
         if self.lsp.find_doc(uri) < 0:
@@ -935,6 +1056,7 @@ __extension App:
         var id = self.lsp.request_signature(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, again, now)
         if id < 0:
             return False
+        self.sig_srv = -1
         self.sig_req_id = id
         self.sig_path = path
         self.sig_row = self.wins[ai].cr
@@ -944,7 +1066,10 @@ __extension App:
         return True
 
     def sig_close(mut self):
-        self.lsp.cancel_request(self.sig_req_id)
+        if self.sig_srv >= 0 and self.sig_srv < len(self.lsp_extra):
+            self.lsp_extra[self.sig_srv].client.cancel_request(self.sig_req_id)
+        else:
+            self.lsp.cancel_request(self.sig_req_id)
         self.sig_on = False
         self.sig_asked = False
         self.sig_req_id = -1
@@ -972,14 +1097,24 @@ __extension App:
     def maybe_trigger_signature(mut self, ch: Int):
         """After a character was typed in the editor: "(", ",", and "[" (for Mojo
         compile-time parameters) bring up the parameter tip."""
-        if self.lsp.state != LSP_READY or not self.lsp.table.signature_help:
-            return
         var ai = self.active_editor()
         if ai < 0 or self.wins[ai].has_multi():
             return
         var one = List[Int]()
         one.append(ch)
         var s = to_str(one)
+        var xk = self.extra_for(self.wins[ai].path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or not self.lsp_extra[xk].client.table.signature_help:
+                return
+            if not (s in self.lsp_extra[xk].client.table.signature_triggers):
+                return
+            self.sig_retries = 0
+            self.sig_asked = False
+            _ = self.sig_request(ai, s, self.sig_on)
+            return
+        if self.lsp.state != LSP_READY or not self.lsp.table.signature_help:
+            return
         var mojo_param = s == "[" and is_mojo_file(self.wins[ai].path)
         if not (s in self.lsp.table.signature_triggers) and not mojo_param:
             return

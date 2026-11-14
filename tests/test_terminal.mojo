@@ -298,9 +298,8 @@ def test_the_repl_and_sending_code_to_it() raises:
             break
         print("    (the REPL died while starting; trying once more)")
     assert_true(ok, "the REPL did not give 84 and 43:\n" + shown)
-    var e = app.top_editor()
     # no selection: the cursor's line, and the cursor goes to the next one
-    e = app.top_editor()                        # (window order changed when the REPL's opened)
+    var e = app.top_editor()                    # (window order changed when the REPL's opened)
     app.wins[e].sel = False
     app.wins[e].goto(1, 0)
     app.handle(key_event(fkey(10) | MOD_CTRL))

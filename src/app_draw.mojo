@@ -339,11 +339,11 @@ __extension App:
             if t >= 0 and self.wins[t].kind == WK_DIFF:
                 var dh: List[String]
                 if self.gd_proposal:
-                    dh = ["~A~ Accept", "~S~ Accept all (session)", "~R~ Reject", "~Esc~ Later"]
+                    dh = ["~A~ Accept", "~S~ Accept all (session)", "~R~ Reject", "~V~ Split/Unified", "~Esc~ Later"]
                 elif self.gd_staged:
-                    dh = ["~U~ Unstage", "~Tab~ Changes", "~Esc~ Close"]
+                    dh = ["~U~ Unstage", "~V~ Split/Unified", "~Tab~ Changes", "~Esc~ Close"]
                 else:
-                    dh = ["~Enter~ Go to", "~S~ Stage", "~R~ Revert", "~Tab~ Staged", "~Esc~ Close"]
+                    dh = ["~Enter~ Go to", "~S~ Stage", "~R~ Revert", "~V~ Split/Unified", "~Tab~ Staged", "~Esc~ Close"]
                 for h in dh:
                     items.append(h)
                     cmds.append(CM_NONE)

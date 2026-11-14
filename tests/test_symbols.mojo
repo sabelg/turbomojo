@@ -267,7 +267,7 @@ def test_word_at_and_its_spans() raises:
     assert_equal(len(word_at(decode("n = 1234"), 6)), 0)                         # a number
     assert_equal(to_str(word_at(decode("größe = 1"), 2)), "größe")
     assert_equal(len(word_at(decode(""), 0)), 0)
-    assert_equal(len(word_at(decode("ab"), 99)), 0 if False else 2)              # past the end: the last word
+    assert_equal(len(word_at(decode("ab"), 99)), 2)                               # past the end: the last word
     var sp = word_spans(decode("total = total_x + total; subtotal(total)"), decode("total"))
     assert_equal(len(sp), 6)
     assert_equal(sp[0], 0)

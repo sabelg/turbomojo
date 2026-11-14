@@ -144,6 +144,8 @@ __extension App:
             raise Error("Could not write " + self.wins[i].path)
         self.wins[i].buf.modified = False
         self.wins[i].buf.mixed_eol = False      # written with one kind of line end
+        self.wins[i].buf.lstate.clear()
+        self.wins[i].buf.lstate.append(0)
         self.wins[i].disk_hash = 0 if self.wins[i].buf.large else content_hash(b)
         self.wins[i].disk_size = -1 if self.wins[i].buf.large else len(b)
         self.store_history(i)

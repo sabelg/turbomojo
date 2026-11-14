@@ -12,7 +12,10 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
-from highlight import Highlighter
+from highlight import Highlighter, HL_PYTHON, lang_for_path
+from cells import parse_cells, cell_at_row, build_cell_runner_source
+from signals import own_pid
+from swap import delete_file
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
@@ -390,6 +393,8 @@ __extension App:
             return "Building " + self.job.path + " ..."
         if self.job.kind == JOB_TESTS:
             return self.job.exe
+        if self.job.kind == JOB_CELL:
+            return "Cell [" + self.job.exe + "] in " + basename(self.job.path)
         if self.job.kind == JOB_DEBUG:
             return "Building " + self.job.path + " for debugging (no optimization, full debug information) ..."
         return "Formatting " + self.job.path + " ..."
@@ -432,7 +437,7 @@ __extension App:
             _ = self.fill_messages(self.job_heading(), self.job.data.copy(), "Compiling...")
         if got and self.job.kind == JOB_TESTS and self.job.pid != 0:
             self.tests_take_output(False)
-        if got and (self.job.kind == JOB_TASK or self.job.kind == JOB_DOCS) and self.job.pid != 0:
+        if got and (self.job.kind == JOB_TASK or self.job.kind == JOB_DOCS or self.job.kind == JOB_CELL) and self.job.pid != 0:
             self.task_output("Running...")
         if eof:
             self.finish_job()
@@ -445,6 +450,8 @@ __extension App:
             self.docs_fetched(st)
         elif self.job.kind == JOB_TASK:
             self.finish_task(st, secs)
+        elif self.job.kind == JOB_CELL:
+            self.finish_cell(st, secs)
         elif self.job.kind == JOB_BUILD:
             self.finish_build(st, secs)
         elif self.job.kind == JOB_DEBUG:
@@ -792,3 +799,64 @@ __extension App:
         self.term.wait_byte()
         self.term.enter()
         self.scr.force = True
+
+    def run_code_cell(mut self, advance: Bool) raises:
+        """Execute the `# %%` cell at the cursor (synthesizing prior-cell imports/defs
+        and state into a temporary Mojo or Python runner) and stream output to Message."""
+        if self.job_busy():
+            return
+        var i = self.top_editor()
+        if i < 0:
+            self.say("No open file to run cell from")
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            self.say("Empty buffer")
+            return
+        var ci = cell_at_row(cells, self.wins[i].cr)
+        if ci < 0 or ci >= len(cells):
+            ci = 0
+        var is_py = lang_for_path(self.wins[i].path, self.wins[i].title) == HL_PYTHON
+        var runner_src = build_cell_runner_source(self.wins[i].buf, cells, ci, is_py)
+        var tmp = env_or("TMPDIR", "/tmp") + "/turbomojo-cell-" + String(own_pid()) + (".py" if is_py else ".mojo")
+        if not write_file(tmp, str_bytes(runner_src)):
+            self.say("Could not write cell runner: " + tmp)
+            return
+        self.cell_tmp_path = tmp
+        self.cell_advance = advance
+        var p = self.wins[i].path
+        var dir = dirname(p) if p.byte_length() > 0 else String(self.cwd)
+        var env_ref = p if p.byte_length() > 0 else dir
+        var inner: String
+        if is_py:
+            inner = "cd " + shell_quote(dir) + " && exec python3 " + shell_quote(tmp)
+        else:
+            var inc = " -I " + shell_quote(dir) + self.include_flags()
+            inner = "cd " + shell_quote(dir) + " && exec " + self.mojo_for(env_ref) + " run" + inc + " " + shell_quote(tmp)
+        var cmd = self.with_env(env_ref, inner) + " 2>&1"
+        var label = cells[ci].title
+        var target_name = p if p.byte_length() > 0 else self.wins[i].title
+        if self.start_job(JOB_CELL, cmd, target_name, label):
+            if advance and ci + 1 < len(cells):
+                self.wins[i].goto(cells[ci + 1].start_row, 0)
+            self.panel_write(PG_MESSAGE)
+            _ = self.fill_messages("Cell [" + label + "] in " + basename(target_name), List[UInt8](), "Running cell...")
+            self.say("Running cell [" + label + "] ...")
+
+    def finish_cell(mut self, status: Int, secs: Float64):
+        if self.cell_tmp_path.byte_length() > 0:
+            delete_file(self.cell_tmp_path)
+            self.cell_tmp_path = ""
+        var ok = status == 0 and not self.job.cancelled
+        var ms = Int(secs * 1000.0)
+        var dur = (String(ms) + " ms") if ms < 1000 else (String(Int(secs * 10) // 10) + "." + String(Int(secs * 10) % 10) + " s")
+        var footer: String
+        if self.job.cancelled:
+            footer = "Cell cancelled after " + dur
+        elif ok:
+            footer = "Cell [" + self.job.exe + "] completed in " + dur
+        else:
+            footer = "Cell [" + self.job.exe + "] failed (exit " + String(status >> 8) + ") in " + dur
+        self.panel_write(PG_MESSAGE)
+        _ = self.fill_messages("Cell [" + self.job.exe + "] in " + basename(self.job.path), self.job.data.copy(), footer)
+        self.say(footer)

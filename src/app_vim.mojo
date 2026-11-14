@@ -453,7 +453,7 @@ __extension App:
                 self.wins[top_now].forced_group = had_g
                 self.wins[top_now].break_group()
             return True
-        if p == 109:                        # m<a-z>: set mark
+        if p == 109:                        # m<a-z> / m<A-Z>: set local or global mark
             self.vim.pend = 0
             self.vim.cur.clear()
             if base >= 97 and base <= 122:
@@ -461,9 +461,15 @@ __extension App:
                 self.vim.mark_paths[mi] = self.wins[t].path
                 self.vim.mark_rows[mi] = self.wins[t].cr
                 self.vim.mark_cols[mi] = self.wins[t].cc
+            elif base >= 65 and base <= 90:
+                var gi = base - 65
+                self.vim.gmark_paths[gi] = self.wins[t].path
+                self.vim.gmark_rows[gi] = self.wins[t].cr
+                self.vim.gmark_cols[gi] = self.wins[t].cc
+                self.say("Global mark '" + chr(base) + " set")
             else:
                 self.vim_cancel()
-                self.say("Marks are a..z")
+                self.say("Marks are a..z or A..Z")
             return True
         if p == PEND_DS or p == PEND_CS1 or p == PEND_CS2 or p == PEND_VS:
             self.vim.pend = 0
@@ -555,31 +561,71 @@ __extension App:
         self.vim_done()
         return True
 
+    def vim_note_ctx(mut self, t: Int):
+        """Record the cursor position before a non-linear jump so `''` / ``` ``` toggles back."""
+        if t >= 0 and t < len(self.wins):
+            self.vim.ctx_path = self.wins[t].path
+            self.vim.ctx_row = self.wins[t].cr
+            self.vim.ctx_col = self.wins[t].cc
+
     # ------------------------------------------------------------------ motions
     def vim_motion_key(mut self, t: Int, ch: Int) raises -> Bool:
         """The keys that move (or begin a motion: g, f t F T, ', `); False for any other."""
-        if self.vim.pend == 39 or self.vim.pend == 96:      # 'a `a '' ``
+        if self.vim.pend == 39 or self.vim.pend == 96:      # 'a `a 'A `A '' ``
             var linewise = self.vim.pend == 39
             self.vim.pend = 0
             if ch == 39 or ch == 96:
                 if self.vim.op == 0:
                     self.vim.count = 0
-                    self.jump_back()
+                    if self.vim.ctx_row >= 0:
+                        var prev_p = self.wins[t].path
+                        var prev_r = self.wins[t].cr
+                        var prev_c = self.wins[t].cc
+                        var cp_path = self.vim.ctx_path
+                        var cp_row = self.vim.ctx_row
+                        var cp_col = self.vim.ctx_col
+                        var target_t = t
+                        if cp_path.byte_length() > 0 and cp_path != self.wins[t].path and path_exists(cp_path):
+                            self.open_path(cp_path)
+                            target_t = self.top()
+                            if target_t < 0 or self.wins[target_t].kind != WK_EDITOR:
+                                return True
+                        var tr0 = max(0, min(cp_row, self.wins[target_t].buf.count() - 1))
+                        self.wins[target_t].cr = tr0
+                        self.wins[target_t].cc = first_nonblank(self.wins[target_t].buf.line(tr0)) if linewise else min(cp_col, self.wins[target_t].buf.llen(tr0))
+                        self.wins[target_t].sync_want()
+                        self.vim_settle(target_t)
+                        self.vim.ctx_path = prev_p
+                        self.vim.ctx_row = prev_r
+                        self.vim.ctx_col = prev_c
+                    else:
+                        self.jump_back()
                 else:
                     self.vim_cancel()
                 return True
-            if ch < 97 or ch > 122:
+            var is_lower = ch >= 97 and ch <= 122
+            var is_upper = ch >= 65 and ch <= 90
+            if not is_lower and not is_upper:
                 self.vim_cancel()
-                self.say("Marks are a..z")
+                self.say("Marks are a..z or A..Z")
                 return True
-            var mi = ch - 97
-            var mr = self.vim.mark_rows[mi]
+            var mr: Int
+            var mpath: String
+            var mc: Int
+            if is_lower:
+                var mi = ch - 97
+                mr = self.vim.mark_rows[mi]
+                mpath = self.vim.mark_paths[mi]
+                mc = self.vim.mark_cols[mi]
+            else:
+                var gi = ch - 65
+                mr = self.vim.gmark_rows[gi]
+                mpath = self.vim.gmark_paths[gi]
+                mc = self.vim.gmark_cols[gi]
             if mr < 0:
                 self.vim_cancel()
                 self.say("E20: Mark not set")
                 return True
-            var mpath = self.vim.mark_paths[mi]
-            var mc = self.vim.mark_cols[mi]
             if self.vim.op != 0:
                 var op = self.vim.op
                 self.vim.op = 0
@@ -596,6 +642,7 @@ __extension App:
                     self.vim_apply(t, op, span)
                 return True
             self.vim.count = 0
+            self.vim_note_ctx(t)
             self.jump_mark()
             var target_t = t
             if mpath.byte_length() > 0 and mpath != self.wins[t].path:
@@ -718,6 +765,7 @@ __extension App:
             var m2 = vim_move(self.wins[t].buf, r, c, ch, n2, counted2, arg, again, False)
             if m2.ok:
                 if ch == CH_G or ch == 71 or ch == 37 or ch == 123 or ch == 125:
+                    self.vim_note_ctx(t)
                     self.jump_mark()
                 self.wins[t].cr = m2.r
                 self.wins[t].cc = m2.c

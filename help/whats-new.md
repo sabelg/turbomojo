@@ -55,6 +55,24 @@
     `rocprofv3` / `compute-sanitizer` with parsed top-kernel summary), Run > MAX serve /
     benchmark... (`max serve` & `max benchmark`), `gpu_sync = true` run configuration
     support, and 4 New Project templates (App, Library, GPU Kernel, Python Extension).
+  - **Mojo 1.2 Quick Fixes, Snippets, Polyglot LSP, Split Diff & Code Cells**:
+    IDE-synthesized Mojo 1.2 quick fixes on `Alt-Enter` (`std.` / `max.gpu` imports,
+    `fn` -> `def`, `alias` -> `comptime`, `let` -> `var`, `@value` -> `@fieldwise_init`,
+    `inout` -> `mut`, `out self` in `__init__`, missing `var`, missing `raises`,
+    `.copy()` / `^`, `s.byte_length()`); multi-tabstop snippet engine (`$1`, `$2`, `$0`)
+    with 9 built-in Mojo 1.2 templates (`struct`, `def`, `main`, `test`, `gpu`, `pymod`,
+    `trait`, `comptime`, `writable`); polyglot syntax colouring (Python, C/C++/CUDA,
+    TOML, JSON, Shell/YAML, Markdown) plus full extra-server LSP parity (`pyright`,
+    `ruff`, `clangd` auto-discovery, completion, hover, signature help, go to definition,
+    references, rename, code actions); Edit > Select every occurrence (`Alt-Shift-D`),
+    multi-cursor `Tab`/`Shift-Tab`, language-aware `Ctrl-/`, `Ctrl-Backspace`, case
+    transforms, and IDE token-verified multi-file fallback symbol rename (`Shift-F2`);
+    side-by-side split diff (`v` in File > Diff) and Git merge-conflict navigator/actions
+    (Next conflict, Accept ours / theirs / both, including `diff3`); `# %%` interactive
+    Mojo & Python code cells (`Ctrl-Enter` / `Ctrl-Shift-Enter`); live MCP co-debugging
+    & test execution (`turbomojo_debug_inspect`, `turbomojo_run_test`); and Vim `:`/`/`
+    `Up`/`Down` history, `:` `Tab` command & path completion, uppercase global marks
+    (`mA`–`mZ`), and `''` jump-back.
 
 ## 2.2: ready for other people
 - A program that uses a library which is not installed (`unable to locate module

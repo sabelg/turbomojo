@@ -74,9 +74,15 @@ __extension App:
         if self.wins[i].buf.large:
             self.say("The language server is off in large-file mode")
             return
-        var xk = self.extra_for(self.wins[i].path)
+        var wp = String(self.wins[i].path)
+        var xk = self.extra_for(wp)
+        if xk < 0 and not is_mojo_file(wp):
+            xk = self.extra_auto_probe(wp)
         if xk >= 0:
             self.extra_toggle(xk, i)            # a file of another language: its own server
+            return
+        if not is_mojo_file(self.wins[i].path):
+            self.say("No language server configured or found for " + basename(self.wins[i].path))
             return
         if self.lsp_restart_due > 0 and self.lsp_restart_path == self.wins[i].path:
             # asked again while a restart was pending: that cancels it
@@ -509,43 +515,43 @@ __extension App:
                 else:
                     self.say("Language server: " + self.lsp.last_error)
             return
-        if self.comp_retry_due > 0 and now >= self.comp_retry_due:
+        if self.comp_retry_due > 0 and now >= self.comp_retry_due and self.comp_srv_extra < 0:
             self.completion_retry(now)
-        if self.hover_retry_due > 0 and now >= self.hover_retry_due:
+        if self.hover_retry_due > 0 and now >= self.hover_retry_due and self.hover_srv < 0:
             self.hover_retry_due = 0
             var hi = self.active_editor()
             if not self.hover_still_wanted() or not self.hover_request(hi):
                 self.hover_req_id = -1
-        if self.def_retry_due > 0 and now >= self.def_retry_due:
+        if self.def_retry_due > 0 and now >= self.def_retry_due and self.def_srv < 0:
             self.def_retry_due = 0
             var di = self.active_editor()
             var def_ok = self.typedef_request(di) if self.def_is_type else self.definition_request(di)
             if not self.definition_still_wanted() or not def_ok:
                 self.def_req_id = -1
-        if self.ref_retry_due > 0 and now >= self.ref_retry_due:
+        if self.ref_retry_due > 0 and now >= self.ref_retry_due and self.ref_srv < 0:
             self.ref_retry_due = 0
             var ri = self.active_editor()
             if not self.references_still_wanted() or not self.references_request(ri):
                 self.ref_req_id = -1
-        if self.ren_retry_due > 0 and now >= self.ren_retry_due:
+        if self.ren_retry_due > 0 and now >= self.ren_retry_due and self.ren_srv < 0:
             self.ren_retry_due = 0
             self.rename_resend()
-        if self.act_retry_due > 0 and now >= self.act_retry_due:
+        if self.act_retry_due > 0 and now >= self.act_retry_due and self.act_srv < 0:
             self.act_retry_due = 0
             self.actions_resend()
-        if self.sig_retry_due > 0 and now >= self.sig_retry_due:
+        if self.sig_retry_due > 0 and now >= self.sig_retry_due and self.sig_srv < 0:
             self.sig_retry_due = 0
             var si = self.active_editor()
             if si < 0 or not self.sig_request(si, "", self.sig_on):
                 self.sig_close()
         for m in self.lsp.take_replies():
-            if m.id == self.comp_req_id:
+            if m.id == self.comp_req_id and self.comp_srv_extra < 0:
                 self.completion_arrived(m)
-            elif m.id == self.comp_resolve_id:
+            elif m.id == self.comp_resolve_id and self.comp_srv_extra < 0:
                 self.resolve_arrived(m)
             elif m.id == self.hover_req_id and self.hover_srv < 0:
                 self.hover_arrived(m)
-            elif m.id == self.sig_req_id:
+            elif m.id == self.sig_req_id and self.sig_srv < 0:
                 self.sig_arrived(m)
             elif m.id == self.outline_req_id:
                 self.outline_arrived(m)
@@ -553,13 +559,13 @@ __extension App:
                 self.semantic_arrived(m, now)
             elif m.id == self.hint_req_id:
                 self.hints_arrived(m, now)
-            elif m.id == self.act_req_id:
+            elif m.id == self.act_req_id and self.act_srv < 0:
                 self.actions_reply(m)
-            elif m.id == self.ren_req_id:
+            elif m.id == self.ren_req_id and self.ren_srv < 0:
                 self.rename_reply(m)
-            elif m.id == self.ref_req_id:
+            elif m.id == self.ref_req_id and self.ref_srv < 0:
                 self.references_arrived(m)
-            elif m.id == self.def_req_id:
+            elif m.id == self.def_req_id and self.def_srv < 0:
                 try:
                     self.definition_arrived(m)
                 except e:

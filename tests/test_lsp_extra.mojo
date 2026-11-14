@@ -92,18 +92,17 @@ def test_a_real_python_server() raises:
     assert_true(problems_text(app).find("`sys`") >= 0, problems_text(app))
     # Describe symbol is asked of it (ruff describes the rule of a noqa comment)
     assert_true(app.lsp_extra[0].client.table.hover)                  # (ruff's server describes rules)
-    if True:
-        app.wins[ei].buf.load(decode("import os  # noqa: F401\n"))
-        pump(app, 600)
-        app.wins[ei].goto(0, 21)
-        app.exec(CM_HOVER)
-        assert_equal(app.hover_srv, 0)
-        for _ in range(100):
-            pump(app, 50)
-            if app.mode == M_HOVER:
-                break
-        assert_equal(app.mode, M_HOVER, app.status)
-        app.mode = 0
+    app.wins[ei].buf.load(decode("import os  # noqa: F401\n"))
+    pump(app, 600)
+    app.wins[ei].goto(0, 21)
+    app.exec(CM_HOVER)
+    assert_equal(app.hover_srv, 0)
+    for _ in range(100):
+        pump(app, 50)
+        if app.mode == M_HOVER:
+            break
+    assert_equal(app.mode, M_HOVER, app.status)
+    app.mode = 0
     # F7 again: stopped, the marks go
     app.focus(app.find_editor(d + "/x.py"))
     app.exec(CM_LSP)

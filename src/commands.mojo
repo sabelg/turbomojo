@@ -129,6 +129,13 @@ comptime CM_EXPAND_SEL = 259     # Edit > Expand selection
 comptime CM_SHRINK_SEL = 260     # Edit > Shrink selection
 comptime CM_SKIPNEXT = 261       # Edit > Skip occurrence
 comptime CM_INDENT_GUIDES = 262  # Palette: Indent guides
+comptime CM_SELECT_ALL_OCC = 263 # Edit > Select every occurrence
+comptime CM_CONFLICT_NEXT = 264  # File > Next merge conflict
+comptime CM_CONFLICT_OURS = 265  # Palette: Git accept ours
+comptime CM_CONFLICT_THEIRS = 266 # Palette: Git accept theirs
+comptime CM_CONFLICT_BOTH = 267  # Palette: Git accept both
+comptime CM_RUN_CELL = 268       # Compile > Run code cell (# %%)
+comptime CM_RUN_CELL_NEXT = 269  # Palette / Ctrl-Shift-Enter: Run code cell & advance
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -745,6 +752,7 @@ def build_registry() -> Registry:
     r.cmd(CM_DUPLINE, "edit.duplicateLine", "~D~uplicate line", "Duplicate the current line", [ctrl(100)])
     r.cmd(CM_ADDNEXT, "edit.addNextOccurrence", "Add ~n~ext occurrence", "Select the word, then add a cursor at its next occurrence", [alt(100)])
     r.cmd(CM_SKIPNEXT, "edit.skipNextOccurrence", "S~k~ip occurrence", "Move the last multi-cursor match to the next occurrence", [alt(107)])
+    r.cmd(CM_SELECT_ALL_OCC, "edit.selectAllOccurrences", "Select e~v~ery occurrence", "Select every occurrence of the word or selection across the buffer", [alt(100) | MOD_SHIFT])
     r.cmd(CM_EXPAND_SEL, "edit.expandSelection", "Expand ~s~election", "Expand selection outward: word, quotes/brackets, line, indented block", [KEY_RIGHT | MOD_ALT | MOD_SHIFT])
     r.cmd(CM_SHRINK_SEL, "edit.shrinkSelection", "S~h~rink selection", "Shrink selection back to the previous range", [KEY_LEFT | MOD_ALT | MOD_SHIFT])
     r.cmd(CM_CURABOVE, "edit.addCursorAbove", "Add cursor a~b~ove", "Add a cursor on the line above", [KEY_UP | MOD_CTRL | MOD_ALT, KEY_UP | MOD_SHIFT | MOD_ALT])
@@ -837,6 +845,10 @@ def build_registry() -> Registry:
     r.cmd(CM_GIT_BLAME, "git.blame", "Blam~e~", "Who last changed each line of this file, when, and in which commit")
     r.hide(CM_GIT_STASH, "git.stash", "Git: Stash changes", "Save uncommitted changes (including untracked files) on git's stash stack")
     r.hide(CM_GIT_STASH_POP, "git.stashPop", "Git: Pop stash", "Apply and remove the latest git stash entry")
+    r.cmd(CM_CONFLICT_NEXT, "git.nextConflict", "Next ~u~nresolved conflict", "Jump to the next <<<<<<< merge conflict marker in this file")
+    r.hide(CM_CONFLICT_OURS, "git.acceptOurs", "Git: Accept current change (ours)", "Resolve the merge conflict at the cursor by keeping the current branch's lines")
+    r.hide(CM_CONFLICT_THEIRS, "git.acceptTheirs", "Git: Accept incoming change (theirs)", "Resolve the merge conflict at the cursor by keeping the incoming branch's lines")
+    r.hide(CM_CONFLICT_BOTH, "git.acceptBoth", "Git: Accept both changes", "Resolve the merge conflict at the cursor by keeping both branches' lines")
     r.cmd(CM_GIT_LINEBLAME, "git.lineBlame", "Inline ~y~ear/author blame", "Show dimmed git blame author, date and summary at the end of the cursor's line")
     r.cmd(CM_TEST, "run.test", "~T~est", "Run this file's TestSuite (std.testing) with `mojo run`")
     r.cmd(CM_TEST_CURSOR, "run.testAtCursor", "~Q~uick-run test at cursor", "Run the enclosing def test_* function at the cursor with --only")
@@ -851,6 +863,9 @@ def build_registry() -> Registry:
     r.cmd(CM_CODEGEN, "compile.inspectCodegen", "~I~nspect generated code", "Emit assembly or LLVM IR with SIMD vectorization and stack-spill badges")
     r.cmd(CM_GPU_PROFILE, "compile.profileGpu", "Profile ~G~PU kernels", "Profile GPU kernels with nsys or rocprofv3 into the Message window")
     r.cmd(CM_MAX_SERVE, "run.maxServe", "~M~AX serve / benchmark...", "Launch max serve or max benchmark for a MAX project or Hugging Face model")
+    r.cmd(CM_RUN_CELL, "run.codeCell", "~R~un code cell (# %%)", "Execute the # %% interactive code cell at the cursor with prior definitions", [KEY_ENTER | MOD_CTRL])
+    r.hide(CM_RUN_CELL_NEXT, "run.codeCellAndAdvance", "Run code cell and advance (# %%)", "Execute the # %% code cell at the cursor and jump to the next cell")
+    r.bind(CM_RUN_CELL_NEXT, KEY_ENTER | MOD_CTRL | MOD_SHIFT)
     r.cmd(CM_NEXTERR, "compile.nextMessage", "~N~ext message", "Jump to the next compiler message", [fkey(8) | MOD_ALT])
     r.cmd(CM_PREVERR, "compile.previousMessage", "~P~revious message", "Jump to the previous compiler message", [fkey(7) | MOD_ALT])
     r.cmd(CM_CANCEL, "compile.cancel", "C~a~ncel build", "Stop the running build or format", [fkey(2) | MOD_CTRL])
@@ -991,6 +1006,7 @@ def build_registry() -> Registry:
     r.sep()
     r.item(CM_ADDNEXT)
     r.item(CM_SKIPNEXT)
+    r.item(CM_SELECT_ALL_OCC)
     r.item(CM_EXPAND_SEL)
     r.item(CM_SHRINK_SEL)
     r.item(CM_CURABOVE)
@@ -1038,6 +1054,7 @@ def build_registry() -> Registry:
     r.sep()
     r.item(CM_PREVERR)
     r.item(CM_NEXTERR)
+    r.item(CM_CONFLICT_NEXT)
 
     r.menu("~R~un")
     r.item(CM_RUN)
@@ -1074,6 +1091,7 @@ def build_registry() -> Registry:
     r.item(CM_CODEGEN)
     r.item(CM_GPU_PROFILE)
     r.item(CM_MAX_SERVE)
+    r.item(CM_RUN_CELL)
     r.sep()
     r.item(CM_NEXTERR)
     r.item(CM_PREVERR)

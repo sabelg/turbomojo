@@ -40,7 +40,12 @@ fi
 export MOJO VT_LINK
 
 echo "== build"
-"$MOJO" build -D "TURBOMOJO_MOJO=$("$MOJO" --version)" -I src src/main.mojo -o build/tmide $VT_LINK 2> >(grep -v Crashpad >&2)
+"$MOJO" build -D "TURBOMOJO_MOJO=$("$MOJO" --version)" -I src src/main.mojo -o build/tmide $VT_LINK > build/build.log 2>&1 || { grep -v Crashpad build/build.log >&2; exit 1; }
+grep -v Crashpad build/build.log >&2 || true
+if grep -q "warning:" build/build.log; then
+  echo "FAILED: build/tmide produced compiler warning(s)"
+  exit 1
+fi
 
 JOBS="${TM_JOBS:-$(( $(nproc) / 2 ))}"
 [ "$JOBS" -ge 1 ] || JOBS=1
@@ -59,8 +64,13 @@ if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
       return 0
     fi
     if "$MOJO" build -I src "$t" -o "build/tests/$name" $VT_LINK > "build/tests/$name.log" 2>&1; then
-      printf '%s\n' "$sig" > "build/tests/$name.sha256"
-      echo "built $t"
+      if grep -q "warning:" "build/tests/$name.log"; then
+        rm -f "build/tests/$name.sha256"
+        echo "WARNED: $t"
+      else
+        printf '%s\n' "$sig" > "build/tests/$name.sha256"
+        echo "built $t"
+      fi
     else
       rm -f "build/tests/$name.sha256"
       echo "DID NOT BUILD: $t"
@@ -68,10 +78,10 @@ if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
   }
   export -f compile_one
   ls tests/test_*.mojo | xargs -P "$JOBS" -I{} bash -c 'compile_one "$@"' _ {} | sort > build/tests/compile.txt
-  if grep -q "DID NOT BUILD" build/tests/compile.txt; then
-    for t in $(grep "DID NOT BUILD" build/tests/compile.txt | sed 's/DID NOT BUILD: //'); do
-      echo "FAILED: $t (compile)"
-      grep -v -e Crashpad -e warning -e '^ ' -e '^Included' "build/tests/$(basename "$t" .mojo).log" | head -40
+  if grep -q -E "DID NOT BUILD|WARNED" build/tests/compile.txt; then
+    for t in $(grep -E "DID NOT BUILD|WARNED" build/tests/compile.txt | sed -E 's/(DID NOT BUILD|WARNED): //'); do
+      echo "FAILED: $t (compile/warnings)"
+      grep -v -e Crashpad -e '^Included' "build/tests/$(basename "$t" .mojo).log" | head -40
     done
     exit 1
   fi
@@ -87,8 +97,13 @@ else
       return 0
     fi
     if "$MOJO" build -I src -I tests "build/tests/$s.mojo" -o "build/tests/$s" $VT_LINK > "build/tests/$s.log" 2>&1; then
-      printf '%s\n' "$want" > "build/tests/$s.sha256"
-      echo "built $s"
+      if grep -q "warning:" "build/tests/$s.log"; then
+        rm -f "build/tests/$s.sha256"
+        echo "WARNED: $s"
+      else
+        printf '%s\n' "$want" > "build/tests/$s.sha256"
+        echo "built $s"
+      fi
     else
       rm -f "build/tests/$s.sha256"
       echo "DID NOT BUILD: $s"
@@ -96,10 +111,10 @@ else
   }
   export -f compile_shard
   cat build/tests/shards.txt | xargs -P "$JOBS" -I{} bash -c 'compile_shard "$@"' _ {} | sort > build/tests/compile.txt
-  if grep -q "DID NOT BUILD" build/tests/compile.txt; then
-    for s in $(grep "DID NOT BUILD" build/tests/compile.txt | sed 's/DID NOT BUILD: //'); do
-      echo "FAILED: $s (compile)"
-      grep -v -e Crashpad -e warning -e '^ ' -e '^Included' "build/tests/$s.log" | head -40
+  if grep -q -E "DID NOT BUILD|WARNED" build/tests/compile.txt; then
+    for s in $(grep -E "DID NOT BUILD|WARNED" build/tests/compile.txt | sed -E 's/(DID NOT BUILD|WARNED): //'); do
+      echo "FAILED: $s (compile/warnings)"
+      grep -v -e Crashpad -e '^Included' "build/tests/$s.log" | head -40
     done
     exit 1
   fi

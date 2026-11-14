@@ -48,6 +48,7 @@ This file is made by `tmide --keys` (TurboMojo 2.2.0).
 | Complete word | Ctrl-Space | Ctrl-Space | Ctrl-Space |
 | Add next occurrence | Alt-D | Alt-D, Ctrl-K T | - |
 | Skip occurrence | Alt-K | Alt-K | Alt-K |
+| Select every occurrence | Alt-Shift-D | Alt-Shift-D | Alt-Shift-D |
 | Expand selection | Alt-Shift-Right | Alt-Shift-Right | Alt-Shift-Right |
 | Shrink selection | Alt-Shift-Left | Alt-Shift-Left | Alt-Shift-Left |
 | Add cursor above | Ctrl-Alt-Up, Alt-Shift-Up | Ctrl-Alt-Up, Alt-Shift-Up | Ctrl-Alt-Up, Alt-Shift-Up |
@@ -113,6 +114,7 @@ This file is made by `tmide --keys` (TurboMojo 2.2.0).
 |---|---|---|---|
 | Build | F9, Ctrl-B | F9, Ctrl-B | F9 |
 | Format source | Alt-F9 | Alt-F9 | Alt-F9 |
+| Run code cell (# %%) | Ctrl-Enter | Ctrl-Enter | Ctrl-Enter |
 | Cancel build | Ctrl-F2 | Ctrl-F2 | Ctrl-F2 |
 | Check with language server | F7 | F7 | F7 |
 
@@ -177,6 +179,7 @@ This file is made by `tmide --keys` (TurboMojo 2.2.0).
 | Insert / overwrite | - | Ctrl-V | - |
 | Send to REPL | Ctrl-F10 | Ctrl-F10 | Ctrl-F10 |
 | Mention in agent prompt | Shift-F11 | Shift-F11 | Shift-F11 |
+| Run code cell and advance (# %%) | Ctrl-Shift-Enter | Ctrl-Shift-Enter | Ctrl-Shift-Enter |
 
 ## Always
 
@@ -214,7 +217,7 @@ vim's. A number before a command repeats it (3j, 2dd, 3.).
 | gd gr K | Normal | Go to definition, find references, describe symbol (hover) |
 | [d ]d [c ]c | Normal | Previous / next diagnostic or git change |
 | za zM zR zz zt zb | Normal | Toggle fold, fold all, expand all, centre / top / bottom scroll |
-| ma 'a `a | Normal, Visual | Set mark a..z, jump to its line or exact column |
+| ma mA 'a 'A '' | Normal, Visual | Set local mark a..z or global mark A..Z, jump to it or jump back ('') |
 | qa q @a @@ | Normal | Record macro into a..z, stop recording, play @a or last macro |
 | gcc gc | Normal, Visual | Toggle line comment on the line, motion, or selection |
 | ds cs S | Normal, Visual | Delete, change, or add surrounding quotes/brackets (ds", cs"', Visual S)) |

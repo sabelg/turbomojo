@@ -24,6 +24,41 @@ from app_agent import *
 from commands import CM_GIT_STAGE
 
 
+@fieldwise_init
+struct ConflictBlock(Copyable, Movable):
+    var start_row: Int
+    var anc_row: Int
+    var sep_row: Int
+    var end_row: Int
+
+
+def find_conflict_blocks(buf: TextBuffer) -> List[ConflictBlock]:
+    """Locate Git merge-conflict blocks (`<<<<<<<` .. optional `|||||||` .. `=======` .. `>>>>>>>`)."""
+    var out = List[ConflictBlock]()
+    var n = buf.count()
+    var s_row = -1
+    var a_row = -1
+    var sep_row = -1
+    for r in range(n):
+        var ln = buf.line(r)
+        if len(ln) < 7:
+            continue
+        if ln[0] == 60 and ln[1] == 60 and ln[2] == 60 and ln[3] == 60 and ln[4] == 60 and ln[5] == 60 and ln[6] == 60:
+            s_row = r
+            a_row = -1
+            sep_row = -1
+        elif s_row >= 0 and sep_row < 0 and ln[0] == 124 and ln[1] == 124 and ln[2] == 124 and ln[3] == 124 and ln[4] == 124 and ln[5] == 124 and ln[6] == 124:
+            a_row = r
+        elif s_row >= 0 and sep_row < 0 and ln[0] == 61 and ln[1] == 61 and ln[2] == 61 and ln[3] == 61 and ln[4] == 61 and ln[5] == 61 and ln[6] == 61:
+            sep_row = r
+        elif s_row >= 0 and sep_row > s_row and ln[0] == 62 and ln[1] == 62 and ln[2] == 62 and ln[3] == 62 and ln[4] == 62 and ln[5] == 62 and ln[6] == 62:
+            out.append(ConflictBlock(s_row, a_row, sep_row, r))
+            s_row = -1
+            a_row = -1
+            sep_row = -1
+    return out^
+
+
 __extension App:
     def gd_index(self) -> Int:
         for i in range(len(self.wins)):
@@ -94,7 +129,7 @@ __extension App:
         var t = self.top()
         # start on the first change
         for r in range(len(self.gd_rows)):
-            if self.gd_rows[r].kind == DR_OLD or self.gd_rows[r].kind == DR_NEW:
+            if self.gd_rows[r].kind == DR_OLD or self.gd_rows[r].kind == DR_NEW or self.gd_rows[r].kind == DR_SPLIT_CHG:
                 self.wins[t].cr = r
                 self.wins[t].follow = True
                 break
@@ -124,7 +159,7 @@ __extension App:
             self.agent_proposal_rows()
             return
         var ei = self.find_editor(self.gd_path)
-        var stamp = self.git_stamp * 2 + (1 if self.gd_staged else 0)
+        var stamp = self.git_stamp * 4 + (2 if self.gd_staged else 0) + (1 if self.gd_side_by_side else 0) + self.wins[di].w * 19
         if ei >= 0:
             stamp += (self.wins[ei].buf.version + 1) * 1000003
         if stamp == self.gd_stamp:
@@ -148,11 +183,11 @@ __extension App:
         else:
             var sides = self.git_diff_sides(ei)
             hunks = side_hunks(sides[0], sides[1])
-            rows = unified(sides[0], sides[1], hunks)
+            rows = side_by_side(sides[0], sides[1], hunks, self.wins[di].w) if self.gd_side_by_side else unified(sides[0], sides[1], hunks)
             if len(rows) == 0:
                 rows.append(DiffRow(DR_NOTE, "(nothing staged)" if self.gd_staged else "(no changes against the index)", -1, -1))
         di = self.gd_index()
-        self.wins[di].title = ("Staged: " if self.gd_staged else "Changes: ") + name
+        self.wins[di].title = ("Staged: " if self.gd_staged else "Changes: ") + name + (" [split]" if self.gd_side_by_side else String(""))
         var text = List[Int]()
         for k in range(len(rows)):
             if k > 0:
@@ -173,19 +208,19 @@ __extension App:
         editor's text) against what the agent wants."""
         if len(self.agent_props) == 0:
             return
-        var stamp = len(self.agent_props) * 7 + 3
+        var di = self.gd_index()
+        var stamp = len(self.agent_props) * 14 + (1 if self.gd_side_by_side else 0) + (self.wins[di].w * 19 if di >= 0 else 0)
         if stamp == self.gd_stamp:
             return
         self.gd_stamp = stamp
         var old = Side.of(self.agent_props[0].old)
         var new = Side.of(self.agent_props[0].new)
         var hunks = side_hunks(old, new)
-        var rows = unified(old, new, hunks)
+        var rows = side_by_side(old, new, hunks, self.wins[di].w if di >= 0 else 80) if self.gd_side_by_side else unified(old, new, hunks)
         if len(rows) == 0:
             rows.append(DiffRow(DR_NOTE, "(the same text)", -1, -1))
-        var di = self.gd_index()
         var more = len(self.agent_props) - 1
-        self.wins[di].title = ("Proposed: " if self.agent_props[0].exists else "Proposed new file: ") + basename(self.agent_props[0].path) + ((" (+" + String(more) + " more)") if more > 0 else String(""))
+        self.wins[di].title = ("Proposed: " if self.agent_props[0].exists else "Proposed new file: ") + basename(self.agent_props[0].path) + ((" (+" + String(more) + " more)") if more > 0 else String("")) + (" [split]" if self.gd_side_by_side else String(""))
         var text = List[Int]()
         for k in range(len(rows)):
             if k > 0:
@@ -200,6 +235,14 @@ __extension App:
     def git_diff_key(mut self, k: Int) raises -> Bool:
         """Keys of the diff view (False: not one of its keys)."""
         var t = self.top()
+        if k == 118 or k == 86:                 # V: toggle unified <-> side-by-side split diff
+            self.gd_side_by_side = not self.gd_side_by_side
+            self.gd_stamp = -1
+            self.wins[t].cr = 0
+            self.wins[t].top = 0
+            self.git_diff_refresh()
+            self.say("Diff view: " + ("side-by-side split" if self.gd_side_by_side else "unified"))
+            return True
         if self.gd_proposal:
             if k == 97 or k == 65:              # A
                 self.agent_proposal_answer(True)
@@ -447,3 +490,104 @@ __extension App:
         self.wins[ei].cc = 0
         self.wins[ei].sel = False
         self.wins[ei].follow = True
+
+    # ------------------------------------------------------- merge conflict resolution
+    def conflict_next(mut self):
+        """Jump to the next Git merge-conflict block (`<<<<<<< ... ======= ... >>>>>>>`)
+        in the active editor, wrapping around."""
+        var ei = self.top_editor()
+        if ei < 0:
+            self.say("No open file")
+            return
+        var blocks = find_conflict_blocks(self.wins[ei].buf)
+        if len(blocks) == 0:
+            self.say("No merge conflicts in " + (basename(self.wins[ei].path) if self.wins[ei].path.byte_length() > 0 else self.wins[ei].title))
+            return
+        var pick = 0
+        for i in range(len(blocks)):
+            if blocks[i].start_row > self.wins[ei].cr:
+                pick = i
+                break
+        self.focus(ei)
+        ei = self.top_editor()
+        self.wins[ei].goto(blocks[pick].start_row, 0)
+        self.say(
+            "Merge conflict "
+            + String(pick + 1)
+            + " of "
+            + String(len(blocks))
+            + " — Palette: Merge Conflict: Accept Ours / Theirs / Both"
+        )
+
+    def conflict_resolve(mut self, mode: Int):
+        """Resolve the merge-conflict block containing the cursor as a single Undo step:
+        `mode == 0` = Ours, `mode == 1` = Theirs, `mode == 2` = Both."""
+        var ei = self.top_editor()
+        if ei < 0:
+            self.say("No open file")
+            return
+        var blocks = find_conflict_blocks(self.wins[ei].buf)
+        if len(blocks) == 0:
+            self.say("No merge conflicts in this file")
+            return
+        var hit = -1
+        for i in range(len(blocks)):
+            if blocks[i].start_row <= self.wins[ei].cr and self.wins[ei].cr <= blocks[i].end_row:
+                hit = i
+                break
+        if hit < 0:
+            self.say("Cursor is not inside a merge conflict (File > Next merge conflict jumps to one)")
+            return
+        var b = blocks[hit].copy()
+        var ours_end = b.anc_row if b.anc_row >= 0 else b.sep_row
+        var kept = List[List[Int]]()
+        if mode == 0 or mode == 2:
+            for r in range(b.start_row + 1, ours_end):
+                kept.append(self.wins[ei].buf.line(r))
+        if mode == 1 or mode == 2:
+            for r in range(b.sep_row + 1, b.end_row):
+                kept.append(self.wins[ei].buf.line(r))
+        var g = self.wins[ei].new_group()
+        var cr = self.wins[ei].cr
+        var cc = self.wins[ei].cc
+        var nlines = self.wins[ei].buf.count()
+        if len(kept) == 0:
+            if b.end_row + 1 < nlines:
+                _ = self.wins[ei].buf.delete(b.start_row, 0, b.end_row + 1, 0, cr, cc, g)
+            elif b.start_row > 0:
+                _ = self.wins[ei].buf.delete(
+                    b.start_row - 1,
+                    self.wins[ei].buf.llen(b.start_row - 1),
+                    b.end_row,
+                    self.wins[ei].buf.llen(b.end_row),
+                    cr,
+                    cc,
+                    g,
+                )
+            else:
+                _ = self.wins[ei].buf.delete(0, 0, b.end_row, self.wins[ei].buf.llen(b.end_row), cr, cc, g)
+        else:
+            var repl = List[Int]()
+            for i in range(len(kept)):
+                if i > 0:
+                    repl.append(10)
+                for cp in kept[i]:
+                    repl.append(cp)
+            _ = self.wins[ei].buf.delete(b.start_row, 0, b.end_row, self.wins[ei].buf.llen(b.end_row), cr, cc, g)
+            _ = self.wins[ei].buf.insert(b.start_row, 0, repl, cr, cc, g)
+        self.wins[ei].sel = False
+        self.wins[ei].cr = min(b.start_row, self.wins[ei].buf.count() - 1)
+        self.wins[ei].cc = 0
+        self.wins[ei].sync_want()
+        self.wins[ei].break_group()
+        self.wins[ei].follow = True
+        self.sync_shared_buffers(ei)
+        var rem = len(find_conflict_blocks(self.wins[ei].buf))
+        var label = "Ours" if mode == 0 else ("Theirs" if mode == 1 else "Both")
+        self.say(
+            "Accepted "
+            + label
+            + " ("
+            + (String(rem) + " conflict(s) remaining" if rem > 0 else String("all merge conflicts resolved"))
+            + ")"
+        )

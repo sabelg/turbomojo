@@ -325,22 +325,21 @@ __extension App:
             self.wins[t].multi(OP_BACK, 0, False, False, none)
         elif k == (KEY_BACKSPACE | MOD_CTRL):
             # delete the word to the left (terminals with the kitty protocol report this key)
-            self.wins[t].collapse()
-            if not self.wins[t].has_sel():
-                self.wins[t].move_left(True, True)
-            _ = self.wins[t].delete_sel(self.wins[t].new_group())
-            self.wins[t].sync_want()
+            self.wins[t].multi(OP_DEL_WORD_LEFT, 0, False, False, none)
         elif k == KEY_DELETE:
             self.wins[t].multi(OP_DEL, 0, False, False, none)
         elif k == KEY_TAB:
-            self.wins[t].collapse()
-            self.wins[t].tab(False)
+            if self.snip_jump(t, False):
+                return
+            self.wins[t].tab_multi(False)
         elif k == (KEY_TAB | MOD_SHIFT):
-            self.wins[t].collapse()
-            self.wins[t].tab(True)
+            if self.snip_jump(t, True):
+                return
+            self.wins[t].tab_multi(True)
         elif k == KEY_INSERT:
             self.insert_mode = not self.insert_mode
         elif k == KEY_ESC:
+            self.snip_clear()
             if self.wins[t].has_multi():
                 self.wins[t].collapse()         # first Esc: back to one cursor
             else:

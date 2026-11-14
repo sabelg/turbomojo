@@ -9,7 +9,7 @@ from git import GB_KNOWN
 from outline import OutlineItem
 from screen import Screen
 from palette import Palette
-from highlight import Highlighter, C_TEXT, line_state, scan_states
+from highlight import Highlighter, C_TEXT, line_state, scan_states, lang_for_path
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
 from search import Search
 from grapheme import cluster_end, cluster_start, cluster_width, ends_with_plain_mark
@@ -553,6 +553,7 @@ struct Window(Copyable, Movable):
         if self.kind != WK_EDITOR or self.buf.large:
             return
         var count = self.buf.count()
+        var lang = lang_for_path(self.path, self.title)
         if self.buf.ldirty_from >= 0:
             var row = self.buf.ldirty_from
             var last = self.buf.ldirty_to
@@ -563,7 +564,7 @@ struct Window(Copyable, Movable):
                 var budget = LEX_BUDGET
                 while row < count:
                     var bytes = self.buf.line_bytes(row)
-                    st = line_state(bytes, 0, len(bytes), st)
+                    st = line_state(bytes, 0, len(bytes), st, lang)
                     self.buf.lex_work += 1
                     if row + 1 >= len(self.buf.lstate):
                         self.buf.lstate.append(UInt8(st))
@@ -588,7 +589,7 @@ struct Window(Copyable, Movable):
             var a = self.buf.rope.line_start(known)
             var b = self.buf.rope.line_start(stop)      # rows known..stop-1 end with a newline
             var block = self.buf.rope.slice_bytes(a, b)
-            _ = scan_states(block, Int(self.buf.lstate[known]), self.buf.lstate)
+            _ = scan_states(block, Int(self.buf.lstate[known]), self.buf.lstate, lang)
             self.buf.lex_work += stop - known
             if len(self.buf.lstate) - 1 != stop:
                 break                               # defensive: never loop forever
@@ -598,6 +599,7 @@ struct Window(Copyable, Movable):
         otherwise computed by scanning from the last cached line (slow path)."""
         if self.kind != WK_EDITOR or self.buf.large:
             return 0
+        var lang = lang_for_path(self.path, self.title)
         var known = len(self.buf.lstate) - 1
         var clean = self.buf.ldirty_from < 0 or self.buf.ldirty_from >= row
         if row <= known and clean:
@@ -606,7 +608,7 @@ struct Window(Copyable, Movable):
         var st = Int(self.buf.lstate[from_row])
         for r in range(from_row, min(row, self.buf.count())):
             var bytes = self.buf.line_bytes(r)
-            st = line_state(bytes, 0, len(bytes), st)
+            st = line_state(bytes, 0, len(bytes), st, lang)
         return st
 
     def ensure_visible(mut self):
