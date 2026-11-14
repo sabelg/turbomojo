@@ -279,6 +279,7 @@ struct App(Movable):
     var dlg: Dialog
     var clipboard: List[Int]
     var line_numbers: Bool
+    var rel_numbers: Bool       # editor.relative_numbers: the gutter counts from the cursor's line
     var auto_indent: Bool
     var hl_line: Bool
     var insert_mode: Bool
@@ -770,6 +771,7 @@ struct App(Movable):
         self.dlg = Dialog(D_NONE, "", 10, 5)
         self.clipboard = List[Int]()
         self.line_numbers = True
+        self.rel_numbers = False
         self.auto_indent = True
         self.hl_line = True
         self.insert_mode = True
@@ -1379,6 +1381,7 @@ struct App(Movable):
         self.motion_apply()
         self.scheme_seen = 0
         self.line_numbers = s.line_numbers
+        self.rel_numbers = s.relative_numbers
         self.auto_indent = s.auto_indent
         self.hl_line = s.highlight_line
         self.show_clock = s.clock

@@ -103,6 +103,7 @@ comptime CM_SETUP = 233          # Help > Check setup
 comptime CM_PRESETS = 234        # Options > Presets
 comptime CM_REPORT = 235         # Help > Report a problem
 comptime CM_GPU_STATUS = 236     # Options > GPU in the status line
+comptime CM_RELNUM = 237         # Options > Relative numbers (vim's relativenumber)
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -813,6 +814,7 @@ def build_registry() -> Registry:
     r.cmd(CM_COMPILER, "compile.compilerCommand", "~C~ompiler command...", "Choose which mojo executable to use")
     # ---- Options
     r.cmd(CM_LINENUM, "options.lineNumbers", "~L~ine numbers", "Toggle the line number gutter")
+    r.cmd(CM_RELNUM, "options.relativeNumbers", "Relative num~b~ers", "Number the lines from the cursor's (the vim preset has it)")
     r.cmd(CM_AUTOINDENT, "options.autoIndent", "~A~uto indent", "Toggle smart auto indentation")
     r.cmd(CM_HLLINE, "options.highlightLine", "~H~ighlight line", "Toggle current line highlighting")
     r.cmd(CM_GPU_STATUS, "options.gpuStatus", "~G~PU in the status line", "Show the GPU your programs run on (asked once, in the background)")
@@ -842,7 +844,7 @@ def build_registry() -> Registry:
     r.cmd(CM_HELP_NEW, "help.whatsNew", "W~h~at's new", "What changed in this version of TurboMojo")
     r.cmd(CM_NOTICES, "help.notifications", "~N~otifications...", "What is running now and the messages of this session (builds, tests, git, the agent)", [fkey(10) | MOD_SHIFT])
     r.cmd(CM_SCREEN_READER, "options.screenReader", "Screen-reader ~m~ode", "A plain, linear screen for screen readers: no frames or shading, the cursor on what has the focus, no animation")
-    r.cmd(CM_PRESETS, "options.presets", "~P~resets...", "Turbo (the blue desktop, overlapping windows) or Modern (terminal colours, panes, the explorer) in one choice")
+    r.cmd(CM_PRESETS, "options.presets", "~P~resets...", "Turbo (the blue desktop, overlapping windows), Modern (terminal colours, panes, the explorer) or Vim (Modern with vim's keys) in one choice")
     r.cmd(CM_THEME_PICK, "options.theme", "~C~olour theme...", "Choose a colour theme (built in, or a file in ~/.config/turbomojo/themes), or follow the terminal's light / dark; each shows as you move through the list")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
@@ -1014,6 +1016,7 @@ def build_registry() -> Registry:
 
     r.menu("~O~ptions")
     r.item(CM_LINENUM)
+    r.item(CM_RELNUM)
     r.item(CM_AUTOINDENT)
     r.item(CM_HLLINE)
     r.item(CM_CLOCK)

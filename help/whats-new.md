@@ -12,6 +12,10 @@
   :w :q :wq :x :e :42 :%s/a/b/g and TurboMojo's own commands by name (:build, :run).
   Registers too: "a to "z ("A adds), "0 the last copy, "_ none, and "+ the clipboard,
   which reaches the terminal's clipboard over SSH as well.
+- A Vim preset (Options > Presets, and **Vim start** in the first run's question): the
+  Modern look with vim's keys and relative line numbers. Options > Relative numbers
+  (`editor.relative_numbers`) shows each line's distance from the cursor's line in the
+  gutter, for 5j and 3dk. F10 and Alt still open the menus.
 
 ## 2.2: ready for other people
 

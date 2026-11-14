@@ -52,7 +52,7 @@ Requirements: Linux with glibc 2.34 or newer. pixi fetches everything else: the 
 
 **macOS (Apple silicon): not yet.** `osx-arm64` is one of pixi's platforms, and `scripts/macos-link.sh` compiles TurboMojo for macOS 14 and links it here, on Linux, against the osx-arm64 packages (an arm64 Mach-O executable with every function found), but it has not been run on a Mac: the terminal handling, the pseudo-terminals and the file watching on macOS are untested.
 
-Prefer a current editor's look to the blue desktop? Pick **Modern start** in the first run's theme question, or **Options ▸ Presets…** later: your terminal's own colours, panes with tabs and the file explorer.
+Prefer a current editor's look to the blue desktop? Pick **Modern start** in the first run's theme question, or **Options ▸ Presets…** later: your terminal's own colours, panes with tabs and the file explorer. **Vim start** (or the Vim preset) is the same with vim's keys and relative line numbers; F10 and Alt still open the menus.
 
 Working on a server over SSH, in tmux? The user guide's [On a remote machine](docs/USER_GUIDE.md#on-a-remote-machine-ssh-tmux) has the five tmux settings that make copying, the mouse, colours, keys and pictures work.
 
@@ -136,6 +136,7 @@ inlay_hints = true          # the language server's notes (inferred types) after
 persistent_undo = true      # keep undo history, cursor, scroll and folds between sessions
 auto_pairs = true           # typing ( [ { " ' also inserts the closing one
 highlight_word = true       # show the other uses of the word the cursor is on
+relative_numbers = false    # the gutter counts lines from the cursor's (vim's relativenumber)
 trim_trailing_whitespace = false   # on save (.editorconfig overrides)
 rulers = []                 # e.g. [80, 100]: vertical guides after these columns
 

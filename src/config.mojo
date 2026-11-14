@@ -46,6 +46,7 @@ Example:
     minimap = false             # the whole file in braille dots at the right edge
     minimap_style = "auto"      # braille | blocks (half blocks, for fonts without braille); auto: blocks on the Linux console
     highlight_word = true       # show the other uses of the word the cursor is on
+    relative_numbers = false    # the gutter counts lines from the cursor's (vim's relativenumber)
     trim_trailing_whitespace = false   # on save (.editorconfig overrides)
     rulers = []                 # e.g. [80, 100]: vertical guides after these columns
     tab_width = 4               # display width of a tab character
@@ -188,6 +189,7 @@ struct Settings(Copyable, Movable):
     var sticky_scroll: Bool
     var minimap: Bool
     var highlight_word: Bool
+    var relative_numbers: Bool
     var persistent_undo: Bool
     var trim_trailing: Bool
     var rulers: List[Int]
@@ -249,6 +251,7 @@ struct Settings(Copyable, Movable):
         self.sticky_scroll = True
         self.minimap = False
         self.highlight_word = True
+        self.relative_numbers = False
         self.persistent_undo = True
         self.trim_trailing = False
         self.rulers = List[Int]()
@@ -327,6 +330,7 @@ struct Settings(Copyable, Movable):
         self.sticky_scroll = self.take_bool(doc, "editor.sticky_scroll", self.sticky_scroll)
         self.minimap = self.take_bool(doc, "editor.minimap", self.minimap)
         self.highlight_word = self.take_bool(doc, "editor.highlight_word", self.highlight_word)
+        self.relative_numbers = self.take_bool(doc, "editor.relative_numbers", self.relative_numbers)
         self.persistent_undo = self.take_bool(doc, "editor.persistent_undo", self.persistent_undo)
         self.trim_trailing = self.take_bool(doc, "editor.trim_trailing_whitespace", self.trim_trailing)
         var ri = doc.find("editor.rulers")
@@ -503,7 +507,7 @@ struct Settings(Copyable, Movable):
                 self.lsp_langs.append(lang)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
             if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):

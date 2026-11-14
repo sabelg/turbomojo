@@ -6292,3 +6292,35 @@ a motion dropping it; the reference's row. The other three vim test files pass w
 Not done: the numbered registers "1 to "9 and "- (small deletes), the read-only ones
 (". ": "% "/), :registers, Ctrl-R in Insert mode, and reading the system clipboard ("+p
 puts TurboMojo's clipboard: a terminal does not hand its clipboard to a program).
+
+## 2026-11-14 · P12-05 A Vim preset and relative line numbers · done
+
+- Gate: CHECK OK (137 test files, 1305 tests, 1146 s). The first run failed on the
+  Options menu's golden picture (tests/golden/dropdown_options.txt), which now has the
+  Relative numbers line; regenerated, and the second run passed.
+
+What changed: Options > Presets has a third preset, Vim (src/app_presets.mojo): the
+Modern look (Terminal ANSI, panes with tabs, the explorer) with the Vim keys and
+relative line numbers; the dialog knows it again from the settings (tiled + ansi + the
+vim keymap). Modern now also takes vim's keys and relative numbers away; Turbo leaves
+the keys and the numbering alone. The first run's theme question has "Vim start" under
+"Modern start" (src/app_dialogs.mojo), previewed in Modern's colours. New setting
+`editor.relative_numbers` (src/config.mojo) and Options > Relative numbers (CM_RELNUM,
+`options.relativeNumbers`, checked in the menu, saved): the gutter shows each line's
+distance from the cursor's line, the cursor's line its own number (vim's `number` +
+`relativenumber`); turning it on with the numbers off turns them on. F10 and Alt still
+open the menus in vim's Normal and Insert modes (they did since P12-01; now tested).
+
+Verified: tests/test_vim_start.mojo, 5 tests - the setting (parsed, no warning, reaching
+the App); the gutter's numbers off and on, the cursor's line, the check mark, saving,
+bringing line numbers back; the Vim preset from the dialog, saved, recognised, Modern
+undoing it, Turbo leaving it; the first run's Vim start; F10 and Alt-F in Normal mode
+and F10 in Insert mode. tests/test_presets.mojo updated (Turbo Classic is one line
+lower in the first-run question). By hand in tui-test with the vim keymap: 3 2 1 4 1 2 3
+in the gutter with the cursor on line 4, F10 opening the File menu.
+- Mutation checks: 16 mutants, 15 caught on the first run; the survivor (App not taking
+  `relative_numbers` from the settings) is caught by a new assertion.
+
+Not done: vim's `numberwidth`, relative numbers alone without the cursor's absolute
+number (vim's relativenumber without number), and a :set command for it (`:set` is not
+TurboMojo's way of changing settings; Options is).

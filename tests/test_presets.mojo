@@ -104,8 +104,9 @@ def test_the_first_run_offers_modern() raises:
     assert_true(app.first_run_theme())
     assert_equal(app.dlg.kind, D_THEME)
     assert_true(app.dlg.items[0].startswith("Modern start"), app.dlg.items[0])
-    assert_equal(app.dlg.list_sel, 2)               # (on the theme in use: Turbo Classic)
+    assert_equal(app.dlg.list_sel, 3)               # (on the theme in use: Turbo Classic)
     # moving onto it shows its colours, as the themes do
+    app.handle(key_event(KEY_UP))
     app.handle(key_event(KEY_UP))
     app.handle(key_event(KEY_UP))
     app.theme_preview()

@@ -81,6 +81,8 @@ __extension App:
             # the other way to start: P11-06
             items.append("Modern start: your terminal's colours, panes with tabs, the explorer")
             data.append(THEME_ITEM_MODERN)
+            items.append("Vim start: Modern, with vim's keys and relative line numbers")
+            data.append(THEME_ITEM_VIM)
         items.append(auto_name)
         data.append(-1)
         var auto_at = len(items) - 1
@@ -121,7 +123,7 @@ __extension App:
             return
         var k = self.dlg.item_data[sel]
         var id = String("auto") if k < 0 else (self.themes.ids[k] if k < self.themes.count() else self.theme_id)
-        if k == THEME_ITEM_MODERN:
+        if k == THEME_ITEM_MODERN or k == THEME_ITEM_VIM:
             id = PRESET_MODERN_THEME
         if id != self.theme_id:
             self.theme_id = id
@@ -148,9 +150,9 @@ __extension App:
 
     def theme_chosen(mut self, k: Int):
         self.theme_before = ""
-        if k == THEME_ITEM_MODERN:
+        if k == THEME_ITEM_MODERN or k == THEME_ITEM_VIM:
             try:
-                self.preset_apply(PRESET_MODERN)
+                self.preset_apply(PRESET_MODERN if k == THEME_ITEM_MODERN else PRESET_VIM)
             except:
                 pass
             return

@@ -213,6 +213,8 @@ __extension App:
         # Options are remembered across sessions
         if cmd == CM_LINENUM:
             self.persist_option("ui", "line_numbers", toml_bool(self.line_numbers))
+        elif cmd == CM_RELNUM:
+            self.persist_option("editor", "relative_numbers", toml_bool(self.rel_numbers))
         elif cmd == CM_HLLINE:
             self.persist_option("ui", "highlight_line", toml_bool(self.hl_line))
         elif cmd == CM_CLOCK:
@@ -578,6 +580,10 @@ __extension App:
             self.goto_error(-1)
         elif cmd == CM_LINENUM:
             self.line_numbers = not self.line_numbers
+        elif cmd == CM_RELNUM:
+            self.rel_numbers = not self.rel_numbers
+            if self.rel_numbers and not self.line_numbers:
+                self.exec(CM_LINENUM)           # (numbers to count with)
         elif cmd == CM_AUTOINDENT:
             self.auto_indent = not self.auto_indent
         elif cmd == CM_HLLINE:

@@ -285,6 +285,8 @@ __extension Window:
                 scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
             if self.gut > 0:
                 var num = String(r + 1) if seg == 0 else String("")
+                if seg == 0 and self.rel_nums and r != self.cr and not is_msg:
+                    num = String(r - self.cr if r > self.cr else self.cr - r)   # (vim: its own number on the cursor's line)
                 var fold_mark = 32
                 if seg == 0 and not is_msg:
                     if self.buf.fold_index(r) >= 0:

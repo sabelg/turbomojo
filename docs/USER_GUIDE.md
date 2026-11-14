@@ -219,12 +219,15 @@ checks the imports of its answer against your Mojo.
 
 ## Settings, themes and keymaps
 
-**Two ways to start.** Options > Presets... has Turbo - Turbo Classic's blue desktop and
-overlapping windows - and Modern - Terminal ANSI (your terminal's own colours), the tiled
+**Three ways to start.** Options > Presets... has Turbo - Turbo Classic's blue desktop and
+overlapping windows -, Modern - Terminal ANSI (your terminal's own colours), the tiled
 layout of panes with tabs, the file explorer open at each start (`ui.explorer`) and the
-Modern keys. The first run's theme question has Modern at its top. A preset changes and
-saves those settings; each can still be changed alone afterwards (Turbo leaves your keymap
-as it is).
+Modern keys - and Vim - Modern with the Vim keys and relative line numbers. The first run's
+theme question has Modern and Vim at its top. A preset changes and saves those settings;
+each can still be changed alone afterwards (Turbo leaves your keymap and line numbering as
+they are). Options > Relative numbers (`editor.relative_numbers`) shows in the gutter how
+far each line is from the cursor's, which is the count for 5j or 3dk; the cursor's line
+keeps its own number.
 
 The Options menu changes the common settings and writes them to
 `~/.config/turbomojo/config.toml`; a project can have its own `.turbomojo.toml`. Options >

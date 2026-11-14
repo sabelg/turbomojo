@@ -1,6 +1,7 @@
   ≡  File  Edit  Text  Search  Run  Compile  Options  Window
                               ┌──────────────────────────┐
                               │√Line numbers             │
+                              │ Relative numbers         │
                               │ Auto indent              │
                               │ Highlight line           │
                               │ Clock                    │
@@ -15,6 +16,5 @@
                               ├──────────────────────────┤
                               │ Keys: Modern             │
                               │ Keys: Turbo / WordStar   │
-                              │ Keys: Emacs              │
                               └────────────────────────▼─┘
 

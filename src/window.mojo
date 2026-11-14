@@ -115,6 +115,7 @@ struct Window(Copyable, Movable):
     var box_r: Int        # its moving corner
     var box_v: Int
     var forced_group: Int # while set, every edit joins this undo group
+    var rel_nums: Bool      # the gutter counts from the cursor's line (the app sets it)
     var hs: Search        # the search whose matches are highlighted
     var hs_on: Bool
     var word_hl: Bool           # show the other uses of the word at the cursor
@@ -197,6 +198,7 @@ struct Window(Copyable, Movable):
         self.box_r = 0
         self.box_v = 0
         self.forced_group = 0
+        self.rel_nums = False
         self.hs = Search()
         self.hs_on = False
         self.word_hl = True
