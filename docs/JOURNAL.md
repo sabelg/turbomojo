@@ -6342,3 +6342,14 @@ TurboMojo's way of changing settings; Options is).
   .vimrc; no search as you type; no numbered registers).
 - The runner has nothing left to do; its loop stays armed and each wake-up only checks
   docs/BACKLOG.md for new tasks.
+
+## 2026-11-14 · CI: the time limit raised to 180 minutes
+
+- CI run 43587414455 (the user's commit 80d6a69, with Phase 12): linux-aarch64 passed
+  (CHECK OK, 90 min); linux-64 was cancelled at its 120-minute limit while it was still
+  compiling the test programs, with no test failure in its log. linux-64 had taken 84
+  and then 90 minutes on the two runs before. The same commit passed the gate here
+  (CHECK OK, 137 test files, 1313 tests, 1172 s).
+- .github/workflows/ci.yml: `timeout-minutes` 180 for the check and canary jobs.
+- Not verified: that linux-64 finishes within 180 (it needs a push and a CI run - the
+  user's word).

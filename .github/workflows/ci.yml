@@ -31,9 +31,11 @@ jobs:
           - platform: linux-aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    # GitHub's runners have 4 CPUs: compiling the ~120 test programs alone takes most
-    # of an hour there (it is about 15 min for the whole gate on a large machine).
-    timeout-minutes: 120
+    # GitHub's runners have 4 CPUs: compiling the ~140 test programs alone takes well
+    # over an hour there (it is about 20 min for the whole gate on a large machine).
+    # The whole gate took 84-90 min on linux-64 in Nov 2026 and went past 120 with 137
+    # test files; 180 leaves room for the tests to grow.
+    timeout-minutes: 180
     env:
       TM_JOBS: "4"
     steps:
@@ -58,7 +60,7 @@ jobs:
     name: canary (nightly Mojo)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       TM_JOBS: "4"
     continue-on-error: true
