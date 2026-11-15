@@ -14,6 +14,7 @@ from commands import CM_SAVEALL, CM_SPLIT_DOWN, CM_SPLIT_RIGHT, CM_NEXT_TAB, CM_
 from vim import *
 from vim_motion import *
 from vim_cmd import *
+from grep import collect_search_files, MAX_FILE_BYTES, is_binary
 from app_vim import *
 from app_files import *
 from app_exec import *
@@ -26,6 +27,64 @@ def title_plain(t: String) -> String:
         if c == 126 or c == 32 or c == 46 or c == 0x2026:
             continue
         out += chr(lower(c))
+    return out^
+
+
+def _parse_norm_keys(raw: List[Int]) -> List[Int]:
+    """Decode key sequence after `:norm[al][!] `, translating `<Esc>`, `<CR>`, `<BS>`, `<Tab>`, `<C-x>`."""
+    var out = List[Int]()
+    var i = 1 if (len(raw) > 0 and raw[0] == 32) else 0
+    var n = len(raw)
+    while i < n:
+        var ch = raw[i]
+        if ch == 60:
+            var close = -1
+            var k = i + 1
+            while k < min(n, i + 10):
+                if raw[k] == 62:
+                    close = k
+                    break
+                k += 1
+            if close > i + 1:
+                var tag_cps = List[Int]()
+                for q in range(i + 1, close):
+                    tag_cps.append(lower(raw[q]))
+                var tag = to_str(tag_cps)
+                if tag == "esc":
+                    out.append(KEY_ESC)
+                    i = close + 1
+                    continue
+                if tag == "cr" or tag == "enter" or tag == "return":
+                    out.append(KEY_ENTER)
+                    i = close + 1
+                    continue
+                if tag == "bs" or tag == "backspace":
+                    out.append(KEY_BACKSPACE)
+                    i = close + 1
+                    continue
+                if tag == "tab":
+                    out.append(KEY_TAB)
+                    i = close + 1
+                    continue
+                if tag == "space":
+                    out.append(32)
+                    i = close + 1
+                    continue
+                if tag.byte_length() == 3 and tag.startswith("c-"):
+                    var cch = tag_cps[2]
+                    if cch >= 97 and cch <= 122:
+                        out.append(cch | MOD_CTRL)
+                        i = close + 1
+                        continue
+        if ch == 27:
+            out.append(KEY_ESC)
+        elif ch == 10 or ch == 13:
+            out.append(KEY_ENTER)
+        elif ch >= 1 and ch <= 26:
+            out.append((ch + 96) | MOD_CTRL)
+        else:
+            out.append(ch)
+        i += 1
     return out^
 
 
@@ -146,6 +205,7 @@ __extension App:
             var builtins = [
                 "write", "quit", "wq", "wall", "qall", "wqa", "edit", "split", "vsplit",
                 "bnext", "bprev", "bdelete", "nohlsearch", "substitute", "delete", "yank",
+                "set", "global", "vglobal", "normal", "vimgrep", "cdo", "cfdo",
             ]
             for b in builtins:
                 var bs = String(b)
@@ -446,7 +506,18 @@ __extension App:
         elif ex_is(name, "delete", 1) or ex_is(name, "yank", 1):
             self.vim_apply(t, OP_D if name.startswith("d") else OP_Y, VimSpan(True, r1, 0, r2, 0, True))
         elif ex_is(name, "set", 2):
-            self.say(":set is not in TurboMojo's vim: the settings are in Options and the config file")
+            self.vim_set(t, x.arg)
+        elif ex_is(name, "global", 1) or ex_is(name, "vglobal", 1):
+            var gr1 = x.r1 if x.has_range else 0
+            var gr2 = x.r2 if x.has_range else max(0, self.wins[t].buf.count() - 1)
+            var inv = x.bang or ex_is(name, "vglobal", 1)
+            self.vim_global(t, gr1, gr2, x.raw, inv)
+        elif ex_is(name, "normal", 4):
+            self.vim_normal_cmd(t, r1, r2, x.raw)
+        elif ex_is(name, "vimgrep", 3):
+            self.vim_vimgrep(t, x.raw)
+        elif name == "cdo" or ex_is(name, "cfdo", 3):
+            self.vim_cdo(x.arg, ex_is(name, "cfdo", 3))
         else:
             self.vim_turbo_command(name, x.arg)
         self.vim.changed = False                             # (. does not repeat : commands)
@@ -549,3 +620,321 @@ __extension App:
         self.wins[t].sync_want()
         self.vim_settle(t)
         self.say(String(count) + (" substitution" if count == 1 else " substitutions") + " on " + String(lines) + (" line" if lines == 1 else " lines"))
+
+    def vim_set(mut self, t: Int, arg: String):
+        """:set [option ...] - configure line numbers, wrap, ignorecase, whitespace, tabstop, shiftwidth."""
+        if String(arg.strip()).byte_length() == 0:
+            self.say(
+                ("nu " if self.line_numbers else "nonu ")
+                + ("rnu " if self.rel_numbers else "nornu ")
+                + ("wrap " if self.soft_wrap else "nowrap ")
+                + ("ic " if not self.find_case else "noic ")
+                + ("list " if self.show_ws else "nolist ")
+                + "ts=" + String(self.tab_width)
+                + " sw=" + String(self.indent_size)
+            )
+            return
+        var items = parse_set(arg)
+        for it in items:
+            if not it.ok:
+                self.say(it.error)
+                return
+            if it.key == "number":
+                var v = (not self.line_numbers) if it.toggle else it.bool_val
+                self.line_numbers = v
+                if not v:
+                    self.rel_numbers = False
+                for i in range(len(self.wins)):
+                    if self.wins[i].kind == WK_EDITOR:
+                        self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers)
+                        if not v:
+                            self.wins[i].rel_nums = False
+            elif it.key == "relativenumber":
+                var v = (not self.rel_numbers) if it.toggle else it.bool_val
+                self.rel_numbers = v
+                if v and not self.line_numbers:
+                    self.line_numbers = True
+                for i in range(len(self.wins)):
+                    if self.wins[i].kind == WK_EDITOR:
+                        self.wins[i].rel_nums = self.rel_numbers
+                        self.wins[i].gut = self.wins[i].gutter_for(self.line_numbers)
+            elif it.key == "wrap":
+                var v = (not self.soft_wrap) if it.toggle else it.bool_val
+                self.soft_wrap = v
+                for i in range(len(self.wins)):
+                    if self.wins[i].kind == WK_EDITOR:
+                        self.wins[i].set_wrap(v)
+            elif it.key == "ignorecase":
+                var v = self.find_case if it.toggle else it.bool_val
+                self.find_case = not v
+            elif it.key == "list":
+                var v = (not self.show_ws) if it.toggle else it.bool_val
+                self.show_ws = v
+            elif it.key == "tabstop":
+                self.tab_width = it.int_val
+                if t >= 0 and t < len(self.wins):
+                    self.wins[t].buf.tab_width = it.int_val
+            elif it.key == "shiftwidth":
+                self.indent_size = it.int_val
+                if t >= 0 and t < len(self.wins):
+                    self.wins[t].buf.indent_size = it.int_val
+
+    def vim_global(mut self, t: Int, r1: Int, r2: Int, raw: List[Int], invert: Bool) raises:
+        """:g/pat/cmd and :v/pat/cmd (:g!/pat/cmd) across rows r1..r2 under one undo group."""
+        var g = parse_global(raw, invert)
+        if not g.ok:
+            self.say(g.error)
+            return
+        var pat = g.pat.copy()
+        if len(pat) == 0:
+            pat = self.vim.s_pat.copy()
+        if len(pat) == 0:
+            self.say("E35: No previous regular expression")
+            return
+        self.vim.s_pat = pat.copy()
+        var vp = vim_pattern(pat)
+        var s = make_search(vp.pat, not vp.icase, False, True)
+        if not s.ok:
+            self.say("E: bad pattern " + to_str(pat) + ": " + s.error)
+            return
+        var rows = List[Int]()
+        var hi = min(r2, self.wins[t].buf.count() - 1)
+        for r in range(max(0, r1), hi + 1):
+            var hit = len(s.re.search(self.wins[t].buf.line(r), 0)) > 0
+            if (not hit) if g.invert else hit:
+                rows.append(r)
+        if len(rows) == 0:
+            if not g.invert:
+                self.say("Pattern not found: " + to_str(pat))
+            return
+        if g.cmd.byte_length() == 0 or g.cmd == "p" or g.cmd == "print":
+            var lr = rows[len(rows) - 1]
+            self.wins[t].cr = lr
+            self.wins[t].cc = first_nonblank(self.wins[t].buf.line(lr))
+            self.wins[t].sync_want()
+            self.vim_settle(t)
+            self.say(String(len(rows)) + (" line" if len(rows) == 1 else " lines"))
+            return
+        var prev_fg = self.wins[t].forced_group
+        if prev_fg == 0:
+            self.wins[t].forced_group = self.wins[t].new_group()
+        var cmd_cps = decode(g.cmd)
+        var idx = 0
+        while idx < len(rows):
+            var cur_r = rows[idx]
+            if cur_r >= 0 and cur_r < self.wins[t].buf.count():
+                var old_n = self.wins[t].buf.count()
+                self.wins[t].cr = cur_r
+                self.wins[t].cc = first_nonblank(self.wins[t].buf.line(cur_r))
+                self.wins[t].sync_want()
+                self.vim_ex(t, cmd_cps)
+                var delta = self.wins[t].buf.count() - old_n
+                if delta != 0:
+                    for j in range(idx + 1, len(rows)):
+                        rows[j] += delta
+            idx += 1
+        self.wins[t].forced_group = prev_fg
+        self.wins[t].break_group()
+        self.sync_shared_buffers(t)
+        self.vim_settle(t)
+
+    def vim_normal_cmd(mut self, t: Int, r1: Int, r2: Int, raw: List[Int]) raises:
+        """:[range]norm[al] <keys> - replay Normal-mode key sequence on each line in range."""
+        var kseq = _parse_norm_keys(raw)
+        if len(kseq) == 0:
+            return
+        var rows = List[Int]()
+        var hi = min(r2, self.wins[t].buf.count() - 1)
+        for r in range(max(0, r1), hi + 1):
+            rows.append(r)
+        var prev_fg = self.wins[t].forced_group
+        if prev_fg == 0:
+            self.wins[t].forced_group = self.wins[t].new_group()
+        var prev_rep = self.vim.replaying
+        self.vim.replaying = True
+        var idx = 0
+        while idx < len(rows):
+            var cur_r = rows[idx]
+            if cur_r >= 0 and cur_r < self.wins[t].buf.count():
+                var old_n = self.wins[t].buf.count()
+                self.wins[t].cr = cur_r
+                self.wins[t].cc = 0
+                self.wins[t].sync_want()
+                self.vim.mode = VM_NORMAL
+                self.vim_cancel()
+                for kv in kseq:
+                    self.handle_key(kv)
+                if self.vim.cl_on:
+                    self.handle_key(KEY_ENTER)
+                if self.vim.mode != VM_NORMAL:
+                    self.handle_key(KEY_ESC)
+                self.vim_cancel()
+                var delta = self.wins[t].buf.count() - old_n
+                if delta != 0:
+                    for j in range(idx + 1, len(rows)):
+                        rows[j] += delta
+            idx += 1
+        self.vim.replaying = prev_rep
+        self.wins[t].forced_group = prev_fg
+        self.wins[t].break_group()
+        self.sync_shared_buffers(t)
+        self.vim_settle(t)
+
+    def vim_vimgrep(mut self, t: Int, raw: List[Int]) raises:
+        """:vimgrep /pat/[g][j] [files...] - populate quickfix / Search panel (`self.errs`)."""
+        var vg = parse_vimgrep(raw)
+        if not vg.ok:
+            self.say(vg.error)
+            return
+        var vp = vim_pattern(vg.pat)
+        var s = make_search(vp.pat, not vp.icase, False, True)
+        if not s.ok:
+            self.say("E: bad pattern " + to_str(vg.pat) + ": " + s.error)
+            return
+        self.vim.s_pat = vg.pat.copy()
+        var root = String(self.cwd)
+        var cur_path = String(self.wins[t].path) if (t >= 0 and t < len(self.wins)) else String("")
+        var targets = List[String]()
+        var search_cur_unnamed = False
+        if len(vg.files) == 0:
+            if root.byte_length() > 0:
+                targets = collect_search_files(root, "")
+            elif cur_path.byte_length() > 0:
+                targets.append(cur_path)
+            else:
+                search_cur_unnamed = True
+        else:
+            for fp in vg.files:
+                if fp == "%":
+                    if cur_path.byte_length() > 0:
+                        if not (cur_path in targets):
+                            targets.append(cur_path)
+                    else:
+                        search_cur_unnamed = True
+                elif fp.find("*") >= 0 or fp.find("?") >= 0:
+                    var matched = collect_search_files(root, fp)
+                    for mp in matched:
+                        if not (mp in targets):
+                            targets.append(mp)
+                else:
+                    var ap = abs_path(root, fp)
+                    if path_exists(ap) and not (ap in targets):
+                        targets.append(ap)
+
+        var locs = List[ErrLoc]()
+        var text = decode("vimgrep /" + to_str(vg.pat) + "/")
+        text.append(10)
+        var msg_row = 1
+        var prefix = root + "/" if root.byte_length() > 0 else String("")
+
+        if search_cur_unnamed and t >= 0 and t < len(self.wins):
+            var n_ln = self.wins[t].buf.count()
+            for r in range(n_ln):
+                var ln = self.wins[t].buf.line(r)
+                var col = 0
+                while col <= len(ln):
+                    var m = s.caps_in(ln, col)
+                    if len(m) == 0:
+                        break
+                    var shown_ln = to_str(ln)
+                    var entry = self.wins[t].title + ":" + String(r + 1) + ":" + String(m[0] + 1) + ": " + shown_ln
+                    for c in decode(entry):
+                        text.append(c)
+                    text.append(10)
+                    locs.append(ErrLoc("", r + 1, m[0] + 1, msg_row))
+                    msg_row += 1
+                    if not vg.all:
+                        break
+                    col = m[1] if m[1] > m[0] else m[0] + 1
+
+        for p in targets:
+            var wi = self.find_editor(p)
+            var lines = List[List[Int]]()
+            if wi >= 0:
+                for r in range(self.wins[wi].buf.count()):
+                    lines.append(self.wins[wi].buf.line(r))
+            else:
+                var raw_b = read_file(p)
+                if len(raw_b) == 0 or len(raw_b) > MAX_FILE_BYTES or is_binary(raw_b):
+                    continue
+                var tmp_b = TextBuffer()
+                tmp_b.load_bytes(raw_b)
+                for r in range(tmp_b.count()):
+                    lines.append(tmp_b.line(r))
+            var shown_p = p
+            if prefix.byte_length() > 0 and shown_p.startswith(prefix):
+                var rel_p = String(shown_p[byte=prefix.byte_length():])
+                shown_p = rel_p^
+            for r in range(len(lines)):
+                var ln = lines[r].copy()
+                var col = 0
+                while col <= len(ln):
+                    var m = s.caps_in(ln, col)
+                    if len(m) == 0:
+                        break
+                    var entry = shown_p + ":" + String(r + 1) + ":" + String(m[0] + 1) + ": " + to_str(ln)
+                    for c in decode(entry):
+                        text.append(c)
+                    text.append(10)
+                    locs.append(ErrLoc(p, r + 1, m[0] + 1, msg_row))
+                    msg_row += 1
+                    if not vg.all:
+                        break
+                    col = m[1] if m[1] > m[0] else m[0] + 1
+
+        for c in decode(String(len(locs)) + (" match" if len(locs) == 1 else " matches")):
+            text.append(c)
+        self.panel_write(PG_SEARCH)
+        var mi = self.ensure_msg()
+        self.wins[mi].buf.load(text)
+        self.wins[mi].cr = 0
+        self.wins[mi].top = 0
+        self.errs = locs^
+        self.errs_from_search = True
+        self.err_idx = 0 if len(self.errs) > 0 else -1
+        if len(self.errs) == 0:
+            self.say("E480: No match: " + to_str(vg.pat))
+            return
+        if not vg.nojump:
+            var fp0 = String(self.errs[0].path)
+            var r0 = self.errs[0].row
+            var c0 = self.errs[0].col
+            if fp0.byte_length() > 0:
+                self.open_path(fp0)
+            var te = self.top_editor()
+            if te >= 0:
+                self.wins[te].cr = max(0, min(r0 - 1, self.wins[te].buf.count() - 1))
+                self.wins[te].cc = max(0, min(c0 - 1, self.wins[te].buf.llen(self.wins[te].cr)))
+                self.wins[te].sync_want()
+                self.vim_settle(te)
+        self.say("(" + ("1" if not vg.nojump else "0") + " of " + String(len(self.errs)) + ") vimgrep matches")
+
+    def vim_cdo(mut self, arg: String, per_file: Bool) raises:
+        """:cdo / :cfdo <cmd> - execute Ex command across every quickfix entry (or file) in `self.errs`."""
+        var locs = self.errs.copy()
+        if len(locs) == 0:
+            self.say("E42: No Errors")
+            return
+        if String(arg.strip()).byte_length() == 0:
+            self.say("E471: Argument required")
+            return
+        var cmd_cps = decode(arg)
+        var seen = List[String]()
+        var ran = 0
+        for i in range(len(locs)):
+            var p = String(locs[i].path)
+            if per_file:
+                if p in seen:
+                    continue
+                seen.append(p)
+            if p.byte_length() > 0:
+                self.open_path(p)
+            var te = self.top_editor()
+            if te < 0:
+                continue
+            self.wins[te].cr = max(0, min(locs[i].row - 1, self.wins[te].buf.count() - 1))
+            self.wins[te].cc = max(0, min(locs[i].col - 1, self.wins[te].buf.llen(self.wins[te].cr)))
+            self.wins[te].sync_want()
+            self.vim_ex(te, cmd_cps)
+            ran += 1
+        self.say(("cfdo: " if per_file else "cdo: ") + String(ran) + (" file" if per_file and ran == 1 else (" files" if per_file else (" entry" if ran == 1 else " entries"))))

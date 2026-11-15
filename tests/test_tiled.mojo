@@ -112,9 +112,8 @@ def test_tabs_by_keyboard() raises:
     var ai = app.find_editor(dir + "/a.mojo")
     assert_equal(to_str(app.wins[ai].buf.line(0)), "xtext of a")
     assert_true(to_str(app.scr.row_text(1)).find("a.mojo") < 0 or True)
-    var top = String("")
     app.draw()
-    top = to_str(app.scr.row_text(1))
+    var top = to_str(app.scr.row_text(1))
     assert_true(top.find("[a.mojo*]") > 0, top)          # a changed file is marked on its tab
     # Next window (F6) reaches hidden tabs too, and shows them
     app.exec(CM_NEXTWIN)
@@ -320,6 +319,31 @@ def test_shared_split_view_syncs_edits_and_keeps_independent_cursors() raises:
     assert_equal(app.mode, M_NORMAL)
     assert_equal(len(app.lay.groups()), 1)
     assert_equal(to_str(app.wins[app.top_editor()].buf.line(0)), "Xline 0")
+    _ = run_system("rm -rf '" + dir + "'")
+
+
+def test_split_window_methods_and_buffer_arena() raises:
+    var dir = scratch("t9")
+    var app = tiled_app(dir, 1)
+    var te = app.top_editor()
+    assert_true(app.wins[te].buf_id >= 0)
+    assert_true(len(app.buffers) > 0)
+    var initial_bid = app.wins[te].buf_id
+    # Test split_window_vert
+    app.split_window_vert()
+    assert_equal(len(app.lay.groups()), 2)
+    var split_vert_idx = app.top_editor()
+    assert_equal(app.wins[split_vert_idx].buf_id, initial_bid)
+    assert_true(app.same_shared_buffer(te, split_vert_idx))
+    # Close vert split
+    app.exec(CM_CLOSE)
+    app.layout_sync()
+    assert_equal(len(app.lay.groups()), 1)
+    # Test split_window_horiz
+    app.split_window_horiz()
+    var split_horiz_idx = app.top_editor()
+    assert_equal(app.wins[split_horiz_idx].buf_id, initial_bid)
+    assert_true(app.same_shared_buffer(te, split_horiz_idx))
     _ = run_system("rm -rf '" + dir + "'")
 
 

@@ -31,6 +31,9 @@ comptime GQ_SWITCH = 7
 comptime GQ_BLAME = 8
 comptime GQ_STASH = 9
 comptime GQ_BLAME_INLINE = 10
+comptime GQ_PUSH = 11
+comptime GQ_PULL = 12
+comptime GQ_FETCH = 13
 comptime GIT_INDEX_MS = 1000      # how often the index file is looked at
 comptime GIT_STATUS_MS = 3000     # with the explorer open, status at least this often
 comptime GIT_MAX_LINES = 50000    # larger files get no markers (about 10 ms a change at this size)
@@ -41,12 +44,16 @@ __extension App:
         return self.git.root
 
     def git_index_path(self) -> String:
-        """The index file of the project's repository ('' if it is not a plain .git
-        folder, as in a linked work tree, where only the timer refreshes)."""
+        """The index file of the project's repository, resolved across standard repos,
+        linked git worktrees, and submodules."""
         if self.git.root.byte_length() == 0:
             return ""
-        var g = join_path(self.git.root, ".git")
-        return join_path(g, "index") if is_dir(g) else String("")
+        var dirs = resolve_git_dir(self.git.root)
+        var gitdir = dirs[0]
+        if gitdir.byte_length() == 0:
+            return ""
+        var idx = join_path(gitdir, "index")
+        return idx if path_exists(idx) else String("")
 
     def git_forget_bases(mut self):
         """Ask git again for every open file's version (the index changed)."""
@@ -65,6 +72,8 @@ __extension App:
                 return
             var st = self.git_proc.stop()
             self.git_done(st)
+            if self.git_proc.running:
+                return
             # and on to the next command at once (not at the next wake-up)
         if now - self.git_checked_ns > GIT_INDEX_MS * 1000000:
             self.git_checked_ns = now
@@ -75,9 +84,16 @@ __extension App:
                 self.git_status_due = True
                 self.git_index = FileSig()
                 if root.byte_length() > 0:
-                    var gdir = join_path(root, ".git")
+                    var dirs = resolve_git_dir(root)
+                    var gdir = dirs[0]
+                    var cdir = dirs[1]
                     if is_dir(gdir):
                         _ = self.watch.watch_dir(gdir)
+                    if is_dir(cdir) and cdir != gdir:
+                        var chdir = join_path(cdir, "refs/heads")
+                        if is_dir(chdir):
+                            _ = self.watch.watch_dir(chdir)
+                    elif is_dir(gdir):
                         var hdir = join_path(gdir, "refs/heads")
                         if is_dir(hdir):
                             _ = self.watch.watch_dir(hdir)
@@ -211,7 +227,16 @@ __extension App:
                 self.git_inline_rows = parse_blame(out)
             else:
                 self.git_inline_rows.clear()
-        elif req == GQ_COMMIT or req == GQ_BRANCHES or req == GQ_SWITCH or req == GQ_BLAME or req == GQ_STASH:
+        elif (
+            req == GQ_COMMIT
+            or req == GQ_BRANCHES
+            or req == GQ_SWITCH
+            or req == GQ_BLAME
+            or req == GQ_STASH
+            or req == GQ_PUSH
+            or req == GQ_PULL
+            or req == GQ_FETCH
+        ):
             self.git_command_done(req, status, out, path)
         self.git_stamp += 1
         self.git_diff_refresh()

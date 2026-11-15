@@ -19,7 +19,12 @@ A failure that is not an assertion (an error raised) has no "At ..." line, only 
 message; the explorer then goes to the test's def.
 """
 from std.collections import List
-from util import basename
+from std.time import perf_counter_ns
+from platform import stat_size_mtime
+from util import (
+    path_exists, run_system, run_capture, shell_quote,
+    write_file, read_file, bytes_to_str, str_bytes,
+)
 
 comptime TS_UNKNOWN = 0      # not run yet
 comptime TS_RUNNING = 1
@@ -230,3 +235,198 @@ def state_mark(state: Int) -> String:
     if state == TS_RUNNING:
         return "…"
     return "·"
+
+
+def test_stem(src_path: String) -> String:
+    var slash = src_path.rfind("/")
+    var file_part: String
+    if slash >= 0:
+        file_part = String(src_path[byte=slash + 1:])
+    else:
+        file_part = src_path
+    var dot = file_part.find(".")
+    if dot >= 0:
+        return String(file_part[byte=0:dot])
+    return file_part
+
+
+def file_size(path: String) -> Int:
+    var st = stat_size_mtime(path)
+    if not st[0]:
+        return -1
+    return st[1]
+
+
+def file_mtime_ns(path: String) -> Int:
+    var st = stat_size_mtime(path)
+    if not st[0]:
+        return -1
+    return st[2] * 1000000000 + st[3]
+
+
+struct TestBinaryCache(Copyable, Movable):
+    var state_dir: String
+
+    def __init__(out self, state_dir: String):
+        self.state_dir = state_dir
+
+    def cache_dir(self) -> String:
+        return self.state_dir + "/testbin"
+
+    def binary_path(self, src_path: String) -> String:
+        return self.cache_dir() + "/bin_" + test_stem(src_path)
+
+    def sig_path(self, src_path: String) -> String:
+        return self.binary_path(src_path) + ".sig"
+
+    def is_valid_binary(self, bin_path: String) -> Bool:
+        if not path_exists(bin_path):
+            return False
+        var sz = file_size(bin_path)
+        return sz > 0
+
+    def binary_size(self, src_path: String) -> Int:
+        return file_size(self.binary_path(src_path))
+
+    def is_cache_valid(self, src_path: String) -> Bool:
+        var bp = self.binary_path(src_path)
+        if not self.is_valid_binary(bp):
+            return False
+        var sp = self.sig_path(src_path)
+        if not path_exists(sp):
+            return False
+        var saved_sig = bytes_to_str(read_file(sp)).strip()
+        var cur_mtime = String(file_mtime_ns(src_path))
+        return saved_sig == cur_mtime
+
+    def invalidate(self, src_path: String):
+        var bp = self.binary_path(src_path)
+        var sp = self.sig_path(src_path)
+        _ = run_system("rm -f " + shell_quote(bp) + " " + shell_quote(sp))
+
+    def build_cache(self, src_path: String) raises -> Tuple[Bool, String]:
+        _ = run_system("mkdir -p " + shell_quote(self.cache_dir()))
+        var bp = self.binary_path(src_path)
+        var sp = self.sig_path(src_path)
+
+        var cmd = "mojo build -o " + shell_quote(bp) + " " + shell_quote(src_path) + " 2>&1"
+        var res = run_capture(cmd)
+        var out_text = bytes_to_str(res.out)
+
+        if res.status != 0 or not self.is_valid_binary(bp):
+            self.invalidate(src_path)
+            return (False, out_text)
+
+        var cur_mtime = String(file_mtime_ns(src_path))
+        _ = write_file(sp, str_bytes(cur_mtime))
+        return (True, out_text)
+
+    def run_cached(self, src_path: String, only: String = "") raises -> Tuple[Int, String, Float64]:
+        if not self.is_cache_valid(src_path):
+            var built = self.build_cache(src_path)
+            if not built[0]:
+                return (-1, built[1], 0.0)
+
+        var bp = self.binary_path(src_path)
+        var cmd = shell_quote(bp)
+        if only.byte_length() > 0:
+            cmd += " --only " + shell_quote(only)
+        cmd += " 2>&1"
+
+        var t0 = perf_counter_ns()
+        var res = run_capture(cmd)
+        var t1 = perf_counter_ns()
+        var elapsed_ms = Float64(t1 - t0) / 1000000.0
+        return (res.status, bytes_to_str(res.out), elapsed_ms)
+
+
+struct WatchOnSaveManager(Copyable, Movable):
+    var enabled: Bool
+
+    def __init__(out self, enabled: Bool = False):
+        self.enabled = enabled
+
+    def toggle(mut self) -> Bool:
+        self.enabled = not self.enabled
+        return self.enabled
+
+    def should_trigger(self, path: String, is_modified: Bool, content: String = "") -> Bool:
+        if not self.enabled:
+            return False
+        if not is_modified:
+            return False
+        if not (path.endswith(".mojo") or path.endswith(".🔥")):
+            return False
+        if path.find("test") >= 0:
+            return True
+        if content.byte_length() > 0 and is_test_source(content):
+            return True
+        return False
+
+    def on_save(self, path: String, is_modified: Bool, content: String = "") -> List[String]:
+        var out = List[String]()
+        if self.should_trigger(path, is_modified, content):
+            out.append(path)
+        return out^
+
+
+struct ParallelJob(Copyable, Movable):
+    var shard_id: Int
+    var files: List[String]
+    var active: Bool
+    var cancelled: Bool
+
+    def __init__(out self, shard_id: Int, files: List[String]):
+        self.shard_id = shard_id
+        self.files = files.copy()
+        self.active = True
+        self.cancelled = False
+
+
+struct ParallelTestRunner(Copyable, Movable):
+    var max_pipes: Int
+
+    def __init__(out self, max_pipes: Int = 4):
+        self.max_pipes = max_pipes
+
+    def partition(self, files: List[String]) -> List[List[String]]:
+        var out = List[List[String]]()
+        var count = min(self.max_pipes, len(files))
+        if count <= 0:
+            return out^
+        for _ in range(count):
+            out.append(List[String]())
+        for i in range(len(files)):
+            out[i % count].append(files[i])
+        return out^
+
+    def cancel(self, mut jobs: List[ParallelJob]):
+        for i in range(len(jobs)):
+            jobs[i].active = False
+            jobs[i].cancelled = True
+
+
+def clamp_coverage_line(line: Int, total_lines: Int) -> Int:
+    """Clamps a 0-based coverage line within [0, total_lines - 1]. Returns -1 if invalid."""
+    if total_lines <= 0:
+        return -1
+    if line < 0:
+        return 0
+    if line >= total_lines:
+        return total_lines - 1
+    return line
+
+
+def render_coverage_gutter(total_lines: Int, covered_lines: List[Int]) -> List[String]:
+    """Renders gutter markers: '✓' for covered lines, '·' for uncovered lines."""
+    var out = List[String]()
+    if total_lines <= 0:
+        return out^
+    for r in range(total_lines):
+        var is_cov = False
+        for cl in covered_lines:
+            if clamp_coverage_line(cl, total_lines) == r:
+                is_cov = True
+                break
+        out.append("✓" if is_cov else "·")
+    return out^

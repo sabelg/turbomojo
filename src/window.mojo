@@ -3,7 +3,7 @@
 Search and bracket matching are in window_search.mojo, drawing in window_draw.mojo
 (both extend Window; import them with `from ... import *`)."""
 from std.collections import List
-from buffer import TextBuffer, Pos, TAB_WIDTH
+from buffer import TextBuffer, Pos, TAB_WIDTH, replace_all_text_diff
 from watch import FileSig
 from git import GB_KNOWN
 from outline import OutlineItem
@@ -39,6 +39,9 @@ comptime WK_DIFF = 8         # a file's changes against git's index (or the inde
 comptime WK_GIT = 14         # repository status panel: staged, modified, untracked, conflicted
 comptime WK_GPU = 15         # live GPU telemetry monitor
 comptime WK_CODEGEN = 16     # Mojo generated assembly / LLVM IR inspector
+comptime WK_HEX = 17         # virtualized hex editor
+comptime WK_MDPREVIEW = 18   # markdown preview pane
+comptime WK_GITLOG = 19      # git commit graph & history browser
 
 comptime ACT_NONE = 0
 comptime ACT_TYPE = 1
@@ -106,6 +109,8 @@ struct Window(Copyable, Movable):
     var scope_items: List[OutlineItem]  # the file's defs and structs (for crumbs, sticky)
     var wid: Int             # a lasting identity (the tiled layout keeps windows by it); 0 = none yet
     var hidden: Bool         # a tab that is not the one its pane shows: not drawn, not clickable
+    var pinned: Bool         # pinned tab: preserved from batch closing and shown first
+    var preview_peer_wid: Int # peer window id for linked WK_MDPREVIEW markdown preview
     var gseq: Int
     var cur_group: Int
     var last_act: Int
@@ -149,7 +154,17 @@ struct Window(Copyable, Movable):
     var clone_group: Int
     var sync_ver: Int
     var indent_guides: Bool
+    var rainbow_brackets: Bool
+    var read_only: Bool
+    var hex_bytes: List[UInt8]
+    var cell_badge_rows: List[Int]
+    var cell_badges: List[String]
+    var bench_badge_rows: List[Int]
+    var bench_badges: List[String]
+    var cov_rows: List[Int]
+    var cov_states: List[Int]
     var sel_hist: List[Range]
+    var buf_id: Int
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
         self.kind = kind
@@ -195,6 +210,8 @@ struct Window(Copyable, Movable):
         self.lsp_sent_version = -1
         self.wid = 0
         self.hidden = False
+        self.pinned = False
+        self.preview_peer_wid = -1
         self.sem_version = -1
         self.hint_version = -1
         self.lsp_seen_version = -1
@@ -234,7 +251,17 @@ struct Window(Copyable, Movable):
         self.clone_group = 0
         self.sync_ver = 0
         self.indent_guides = False
+        self.rainbow_brackets = False
+        self.read_only = False
+        self.hex_bytes = List[UInt8]()
+        self.cell_badge_rows = List[Int]()
+        self.cell_badges = List[String]()
+        self.bench_badge_rows = List[Int]()
+        self.bench_badges = List[String]()
+        self.cov_rows = List[Int]()
+        self.cov_states = List[Int]()
         self.sel_hist = List[Range]()
+        self.buf_id = -1
 
     # ------------------------------------------------------------ geometry
     def contains(self, px: Int, py: Int) -> Bool:
@@ -258,6 +285,32 @@ struct Window(Copyable, Movable):
         return max(d, 3) + 1 + (1 if self.buf.git_state == GB_KNOWN else 0)
 
     # ------------------------------------------------------ visual columns
+    def tab_title(self, duplicate: Bool = False) -> String:
+        """Returns the formatted tab label, with parent-dir disambiguation if duplicate is true,
+        and pinned indicator if pinned is true."""
+        var t = self.title
+        if duplicate and self.path.byte_length() > 0:
+            var p = decode(self.path)
+            var last_slash = -1
+            var prev_slash = -1
+            for i in range(len(p)):
+                if p[i] == 47:
+                    prev_slash = last_slash
+                    last_slash = i
+            if prev_slash >= 0 and last_slash > prev_slash + 1:
+                var parent = List[Int]()
+                for j in range(prev_slash + 1, last_slash):
+                    parent.append(p[j])
+                t = t + " — " + to_str(parent)
+            elif last_slash > 0:
+                var parent = List[Int]()
+                for j in range(0, last_slash):
+                    parent.append(p[j])
+                t = t + " — " + to_str(parent)
+        if self.pinned:
+            t = "📌 " + t
+        return t
+
     def adv(self, ch: Int, v: Int) -> Int:
         """Display columns taken by `ch` when it starts at visual column v."""
         if ch == 9:
@@ -586,9 +639,9 @@ struct Window(Copyable, Movable):
             var known = len(self.buf.lstate) - 1
             var stop = min(count - 1, max(want, known + 1))
             stop = min(stop, known + LEX_BLOCK)
-            var a = self.buf.rope.line_start(known)
-            var b = self.buf.rope.line_start(stop)      # rows known..stop-1 end with a newline
-            var block = self.buf.rope.slice_bytes(a, b)
+            var a = self.buf.core[].rope.line_start(known)
+            var b = self.buf.core[].rope.line_start(stop)      # rows known..stop-1 end with a newline
+            var block = self.buf.core[].rope.slice_bytes(a, b)
             _ = scan_states(block, Int(self.buf.lstate[known]), self.buf.lstate, lang)
             self.buf.lex_work += stop - known
             if len(self.buf.lstate) - 1 != stop:
@@ -1180,9 +1233,7 @@ struct Window(Copyable, Movable):
         """Replace the whole buffer as one undo step (used by the formatter)."""
         self.extra.clear()
         var g = self.new_group()
-        var last = self.buf.count() - 1
-        _ = self.buf.delete(0, 0, last, self.buf.llen(last), self.cr, self.cc, g)
-        _ = self.buf.insert(0, 0, cps, self.cr, self.cc, g)
+        _ = replace_all_text_diff(self.buf, cps, g)
         self.sel = False
         self.clamp()
         self.break_group()

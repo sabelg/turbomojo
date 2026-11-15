@@ -341,5 +341,19 @@ def test_large_file_limit_setting() raises:
     assert_equal(len(word.warnings), 1)
 
 
+def test_mcp_server_settings() raises:
+    var toml = "[mcp.turbomojo]\ncommand = \"tmide-mcp\"\nargs = [\"--stdio\"]\n[mcp.turbomojo.env]\nFOO = \"bar\"\n"
+    var s = load_settings(toml, "")
+    assert_equal(len(s.mcp_names), 1)
+    assert_equal(s.mcp_names[0], "turbomojo")
+    assert_equal(s.mcp_cmds[0], "tmide-mcp")
+    assert_equal(len(s.mcp_args[0]), 1)
+    assert_equal(s.mcp_args[0][0], "--stdio")
+    assert_equal(len(s.mcp_env_keys[0]), 1)
+    assert_equal(s.mcp_env_keys[0][0], "FOO")
+    assert_equal(s.mcp_env_vals[0][0], "bar")
+    assert_equal(len(s.warnings), 0)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

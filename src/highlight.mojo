@@ -41,7 +41,7 @@ def lang_for_path(path: String, title: String = "") -> Int:
         return HL_MOJO
     if low.endswith(".py") or low.endswith(".pyi") or low.endswith(".pyw"):
         return HL_PYTHON
-    for ext in [".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hxx", ".cu", ".cuh", ".rs", ".go", ".js", ".ts", ".jsx", ".tsx", ".java"]:
+    for ext in [".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hxx", ".cu", ".cuh", ".rs", ".go", ".js", ".ts", ".jsx", ".tsx", ".java", ".zig"]:
         if low.endswith(String(ext)):
             return HL_C_CUDA
     if low.endswith(".toml") or low.endswith(".ini") or low.endswith(".cfg") or low == ".editorconfig":

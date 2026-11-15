@@ -237,25 +237,55 @@ def close_of(k: Int) -> Int:
     return 62
 
 
+def is_code_mask(line: List[Int]) -> List[Bool]:
+    var n = len(line)
+    var is_code = List[Bool]()
+    for _ in range(n):
+        is_code.append(True)
+    var in_str = 0  # 34 for ", 39 for '
+    var i = 0
+    while i < n:
+        var ch = line[i]
+        if in_str != 0:
+            is_code[i] = False
+            if ch == 92 and i + 1 < n:  # escape \
+                i += 1
+                is_code[i] = False
+            elif ch == in_str:
+                in_str = 0
+        elif ch == 35:  # # comment
+            for j in range(i, n):
+                is_code[j] = False
+            break
+        elif ch == 34 or ch == 39:  # " or '
+            in_str = ch
+            is_code[i] = False
+        i += 1
+    return is_code^
+
+
 def match_fwd(buf: TextBuffer, r0: Int, c0: Int, op: Int, cl: Int) -> Pos:
     """The `cl` that closes the `op` at (r0, c0); Pos(-1, -1) if none."""
     var depth = 0
     var r = r0
     var c = c0
     var line = buf.line(r)
+    var mask = is_code_mask(line)
     while True:
         while c < len(line):
-            if line[c] == op:
-                depth += 1
-            elif line[c] == cl:
-                depth -= 1
-                if depth == 0:
-                    return Pos(r, c)
+            if c < len(mask) and mask[c]:
+                if line[c] == op:
+                    depth += 1
+                elif line[c] == cl:
+                    depth -= 1
+                    if depth == 0:
+                        return Pos(r, c)
             c += 1
         r += 1
         if r >= buf.count():
             return Pos(-1, -1)
         line = buf.line(r)
+        mask = is_code_mask(line)
         c = 0
 
 
@@ -266,22 +296,25 @@ def match_back(buf: TextBuffer, r0: Int, c0: Int, op: Int, cl: Int) -> Pos:
     var depth = 0
     var r = r0
     var line = buf.line(r)
+    var mask = is_code_mask(line)
     var c = min(c0, len(line) - 1)
     if c == c0 and c >= 0 and line[c] == cl:
         c -= 1
     while True:
         while c >= 0:
-            if line[c] == cl:
-                depth += 1
-            elif line[c] == op:
-                depth -= 1
-                if depth < 0:
-                    return Pos(r, c)
+            if c < len(mask) and mask[c]:
+                if line[c] == cl:
+                    depth += 1
+                elif line[c] == op:
+                    depth -= 1
+                    if depth < 0:
+                        return Pos(r, c)
             c -= 1
         r -= 1
         if r < 0:
             return Pos(-1, -1)
         line = buf.line(r)
+        mask = is_code_mask(line)
         c = len(line) - 1
 
 
@@ -556,6 +589,289 @@ def obj_para(buf: TextBuffer, r: Int, inner: Bool) -> VimSpan:
     return VimSpan(True, a, 0, b, 0, True)
 
 
+struct ScopeRange(Copyable, Movable):
+    var r1: Int
+    var r2: Int
+    var indent: Int
+
+    def __init__(out self, r1: Int, r2: Int, indent: Int):
+        self.r1 = r1
+        self.r2 = r2
+        self.indent = indent
+
+
+def active_scope_range(buf: TextBuffer, r: Int) -> ScopeRange:
+    """Finds the innermost scope block (def, struct, if, etc.) enclosing line r."""
+    if r < 0 or r >= buf.count():
+        return ScopeRange(-1, -1, 0)
+    var target_indent = indent_end(buf.line(r))
+    var hdr = -1
+    var hdr_indent = -1
+    for up in range(r, -1, -1):
+        var ln = buf.line(up)
+        if len(ln) == 0:
+            continue
+        var ind = indent_end(ln)
+        if ind < target_indent or (up < r and ind <= target_indent and len(ln) > ind):
+            var has_colon = False
+            for j in range(len(ln) - 1, -1, -1):
+                if ln[j] == 35:
+                    continue
+                if ln[j] == 32 or ln[j] == 9:
+                    continue
+                if ln[j] == 58:
+                    has_colon = True
+                break
+            if has_colon:
+                hdr = up
+                hdr_indent = ind
+                break
+    if hdr < 0:
+        return ScopeRange(-1, -1, 0)
+    var end_r = hdr
+    for down in range(hdr + 1, buf.count()):
+        var ln = buf.line(down)
+        if len(ln) == 0:
+            continue
+        var ind = indent_end(ln)
+        if ind <= hdr_indent:
+            break
+        end_r = down
+    return ScopeRange(hdr, end_r, hdr_indent)
+
+
+def _pos_lt(a: Pos, b: Pos) -> Bool:
+    return a.r < b.r or (a.r == b.r and a.c < b.c)
+
+
+def _pos_le(a: Pos, b: Pos) -> Bool:
+    return a.r < b.r or (a.r == b.r and a.c <= b.c)
+
+
+def _skip_arg_ws_fwd(buf: TextBuffer, p0: Pos, lim: Pos) -> Pos:
+    var p = p0.copy()
+    while _pos_lt(p, lim):
+        var ln = buf.line(p.r)
+        if p.c >= len(ln):
+            p = Pos(p.r + 1, 0)
+        elif ln[p.c] == 32 or ln[p.c] == 9:
+            p = Pos(p.r, p.c + 1)
+        elif ln[p.c] == 35:
+            var end_c = lim.c if p.r == lim.r else len(ln)
+            p = Pos(p.r, end_c)
+        else:
+            break
+    return p^
+
+
+def _skip_arg_ws_back(buf: TextBuffer, p0: Pos, lim: Pos) -> Pos:
+    var p = p0.copy()
+    while _pos_lt(lim, p):
+        if p.c == 0:
+            var pr = p.r - 1
+            p = Pos(pr, buf.llen(pr))
+        else:
+            var ch = buf.at(p.r, p.c - 1)
+            if ch == 32 or ch == 9:
+                p = Pos(p.r, p.c - 1)
+            else:
+                break
+    return p^
+
+
+def obj_arg(buf: TextBuffer, r: Int, c: Int, inner: Bool) -> VimSpan:
+    """ia aa: argument/parameter text object (single-line and multi-line `(` .. `)`)."""
+    if r < 0 or r >= buf.count():
+        return no_span()
+    var line = buf.line(r)
+    var mask0 = is_code_mask(line)
+    var op_pos: Pos
+    if c >= 0 and c < len(line) and c < len(mask0) and mask0[c] and line[c] == 40:
+        op_pos = Pos(r, c)
+    else:
+        op_pos = match_back(buf, r, c, 40, 41)
+    if op_pos.r < 0:
+        return no_span()
+    var cl_pos = match_fwd(buf, op_pos.r, op_pos.c, 40, 41)
+    if cl_pos.r < 0:
+        return no_span()
+
+    if op_pos.r == cl_pos.r:
+        var op = op_pos.c
+        var cl = cl_pos.c
+        var ln_s = buf.line(op_pos.r)
+        var ms_s = is_code_mask(ln_s)
+        var commas = List[Int]()
+        commas.append(op)
+        var depth = 0
+        for i in range(op + 1, cl):
+            if i < len(ms_s) and ms_s[i]:
+                var ch = ln_s[i]
+                if ch == 40 or ch == 91 or ch == 123:
+                    depth += 1
+                elif ch == 41 or ch == 93 or ch == 125:
+                    depth = max(0, depth - 1)
+                elif ch == 44 and depth == 0:
+                    commas.append(i)
+        commas.append(cl)
+
+        var seg_idx = 0
+        while seg_idx + 1 < len(commas):
+            if c >= commas[seg_idx] and c <= commas[seg_idx + 1]:
+                break
+            seg_idx += 1
+        if seg_idx + 1 >= len(commas):
+            return no_span()
+
+        var s = commas[seg_idx] + 1
+        var e = commas[seg_idx + 1]
+
+        if inner:
+            while s < e and (ln_s[s] == 32 or ln_s[s] == 9):
+                s += 1
+            while e > s and (ln_s[e - 1] == 32 or ln_s[e - 1] == 9):
+                e -= 1
+            if s >= e:
+                return no_span()
+            return VimSpan(True, r, s, r, e, False)
+        else:
+            if commas[seg_idx + 1] < cl:
+                e = commas[seg_idx + 1] + 1
+                while e < cl and (ln_s[e] == 32 or ln_s[e] == 9):
+                    e += 1
+                while s < e and (ln_s[s] == 32 or ln_s[s] == 9):
+                    s += 1
+            elif commas[seg_idx] > op:
+                s = commas[seg_idx]
+                while e > s and (ln_s[e - 1] == 32 or ln_s[e - 1] == 9):
+                    e -= 1
+            else:
+                while s < e and (ln_s[s] == 32 or ln_s[s] == 9):
+                    s += 1
+                while e > s and (ln_s[e - 1] == 32 or ln_s[e - 1] == 9):
+                    e -= 1
+            if s >= e:
+                return no_span()
+            return VimSpan(True, r, s, r, e, False)
+
+    # Multi-line `(` .. `)` parameter / argument list
+    var delims = List[Pos]()
+    delims.append(op_pos.copy())
+    var mdepth = 0
+    for rr in range(op_pos.r, cl_pos.r + 1):
+        var rln = buf.line(rr)
+        var rmask = is_code_mask(rln)
+        var c0 = op_pos.c + 1 if rr == op_pos.r else 0
+        var c1 = cl_pos.c if rr == cl_pos.r else len(rln)
+        for cc in range(c0, c1):
+            if cc < len(rmask) and rmask[cc]:
+                var ch = rln[cc]
+                if ch == 40 or ch == 91 or ch == 123:
+                    mdepth += 1
+                elif ch == 41 or ch == 93 or ch == 125:
+                    mdepth = max(0, mdepth - 1)
+                elif ch == 44 and mdepth == 0:
+                    delims.append(Pos(rr, cc))
+    delims.append(cl_pos.copy())
+
+    var has_trailing_comma = False
+    if len(delims) >= 3:
+        var after_last_comma = _skip_arg_ws_fwd(buf, Pos(delims[len(delims) - 2].r, delims[len(delims) - 2].c + 1), cl_pos)
+        if after_last_comma.r == cl_pos.r and after_last_comma.c == cl_pos.c:
+            has_trailing_comma = True
+
+    var cur_p = Pos(r, min(max(0, c), len(line)))
+    var mseg = 0
+    while mseg + 1 < len(delims):
+        if _pos_le(delims[mseg], cur_p) and _pos_le(cur_p, delims[mseg + 1]):
+            break
+        mseg += 1
+    if mseg + 1 >= len(delims):
+        return no_span()
+    if has_trailing_comma and mseg == len(delims) - 2:
+        mseg -= 1
+
+    var d0 = delims[mseg].copy()
+    var d1 = delims[mseg + 1].copy()
+    var raw_s = Pos(d0.r, d0.c + 1)
+    var s_trim = _skip_arg_ws_fwd(buf, raw_s, d1)
+    var e_trim = _skip_arg_ws_back(buf, d1, s_trim)
+    if not _pos_lt(s_trim, e_trim):
+        return no_span()
+
+    if inner:
+        return VimSpan(True, s_trim.r, s_trim.c, e_trim.r, e_trim.c, False)
+
+    # Outer (`aa`): include comma and surrounding whitespace cleanly across rows
+    if _pos_lt(d1, cl_pos):
+        var after_comma = Pos(d1.r, d1.c + 1)
+        var next_tok = _skip_arg_ws_fwd(buf, after_comma, cl_pos)
+        if _pos_lt(next_tok, cl_pos):
+            return VimSpan(True, s_trim.r, s_trim.c, next_tok.r, next_tok.c, False)
+        # Trailing comma before closing ')': include the comma + same-line blanks
+        var ln_d1 = buf.line(d1.r)
+        var ec = after_comma.c
+        var lim_c = cl_pos.c if d1.r == cl_pos.r else len(ln_d1)
+        while ec < lim_c and (ln_d1[ec] == 32 or ln_d1[ec] == 9):
+            ec += 1
+        if mseg > 0:
+            return VimSpan(True, d0.r, d0.c, d1.r, ec, False)
+        return VimSpan(True, s_trim.r, s_trim.c, d1.r, ec, False)
+    elif mseg > 0:
+        return VimSpan(True, d0.r, d0.c, e_trim.r, e_trim.c, False)
+    return VimSpan(True, s_trim.r, s_trim.c, e_trim.r, e_trim.c, False)
+
+
+def obj_func(buf: TextBuffer, r: Int, c: Int, inner: Bool) -> VimSpan:
+    """if af: enclosing function object."""
+    var def_r = -1
+    var def_ind = -1
+    for up in range(r, -1, -1):
+        var ln = buf.line(up)
+        var s = 0
+        while s < len(ln) and (ln[s] == 32 or ln[s] == 9):
+            s += 1
+        if s + 4 <= len(ln):
+            if (ln[s] == 100 and ln[s+1] == 101 and ln[s+2] == 102 and ln[s+3] == 32) or (ln[s] == 102 and ln[s+1] == 110 and ln[s+2] == 32):
+                def_r = up
+                def_ind = s
+                break
+    if def_r < 0:
+        return no_span()
+    var end_r = def_r
+    for down in range(def_r + 1, buf.count()):
+        var ln = buf.line(down)
+        if len(ln) == 0:
+            continue
+        var ind = indent_end(ln)
+        if ind <= def_ind:
+            break
+        end_r = down
+    if inner:
+        if def_r + 1 > end_r:
+            return no_span()
+        return VimSpan(True, def_r + 1, 0, end_r, 0, True)
+    else:
+        return VimSpan(True, def_r, 0, end_r, 0, True)
+
+
+def obj_indent(buf: TextBuffer, r: Int, inner: Bool) -> VimSpan:
+    """ii ai: indentation block text object."""
+    if r < 0 or r >= buf.count():
+        return no_span()
+    var target_indent = indent_end(buf.line(r))
+    var a = r
+    while a > 0 and (buf.llen(a - 1) == 0 or indent_end(buf.line(a - 1)) >= target_indent):
+        a -= 1
+    var b = r
+    var last = buf.count() - 1
+    while b < last and (buf.llen(b + 1) == 0 or indent_end(buf.line(b + 1)) >= target_indent):
+        b += 1
+    if not inner and a > 0:
+        a -= 1
+    return VimSpan(True, a, 0, b, 0, True)
+
+
 def vim_object(buf: TextBuffer, r: Int, c: Int, inner: Bool, ch: Int) -> VimSpan:
     """The text object `i`/`a` + `ch` at (r, c)."""
     var line = buf.line(r)
@@ -573,4 +889,10 @@ def vim_object(buf: TextBuffer, r: Int, c: Int, inner: Bool, ch: Int) -> VimSpan
         return obj_bracket(buf, r, c, inner, 3)
     if ch == 112:                                   # p
         return obj_para(buf, r, inner)
+    if ch == 97:                                    # a (argument)
+        return obj_arg(buf, r, c, inner)
+    if ch == 102:                                   # f (function)
+        return obj_func(buf, r, c, inner)
+    if ch == 105:                                   # i (indentation)
+        return obj_indent(buf, r, inner)
     return no_span()

@@ -16,15 +16,23 @@ from swap import write_bytes_atomic, delete_file
 from testexp import TestFile, parse_run, apply_report
 from util import (
     path_exists, read_file, bytes_to_str, str_bytes, abs_path, basename, dirname, shell_quote,
-    run_system, decode,
+    run_system, decode, to_str, run_capture, lower_str,
 )
 from app_files import *
 from app_jobs import *
 from app_lsp import *
+from app_lspextra import *
 from app_problems import *
 from app_layout import *
 from app_debug import *
 from app_tests import *
+from app_outline import *
+from app_gitdiff import *
+from app_git import *
+from lsp import path_to_uri, LSP_READY
+from outline import outline_tag
+from gitdiff import Side, side_hunks, unified
+from svgshot import screen_svg
 
 
 @fieldwise_init
@@ -445,6 +453,229 @@ __extension App:
             w.kv_int("passed", cnts[0])
             w.kv_int("failed", cnts[1])
             w.kv_int("skipped", cnts[2])
+            w.end_obj()
+            return w.text()
+        if op == "turbomojo_capture_screen" or op == "capture_screen":
+            var fmt = doc.str(doc.get(0, "format"), "text")
+            var w = JsonWriter()
+            w.begin_obj()
+            w.kv_str("id", req_id)
+            w.kv_bool("ok", True)
+            w.kv_int("cols", self.scr.w)
+            w.kv_int("rows", self.scr.h)
+            w.kv_str("format", fmt)
+            if fmt == "svg":
+                w.kv_str("svg", screen_svg(self.scr, self.pal.ed_fg, self.pal.desk_bg, "TurboMojo"))
+            else:
+                w.kv_str("text", to_str(self.scr.to_text()))
+            w.end_obj()
+            return w.text()
+        if op == "turbomojo_symbol_search" or op == "symbol_search":
+            var query = doc.str(doc.get(0, "query"), "")
+            var q_low = lower_str(query)
+            var limit = max(1, doc.int(doc.get(0, "limit"), 50))
+            var syms = self.wsymbol_items()
+            var w = JsonWriter()
+            w.begin_obj()
+            w.kv_str("id", req_id)
+            w.kv_bool("ok", True)
+            w.kv_str("query", query)
+            w.key("symbols")
+            w.begin_arr()
+            var count = 0
+            for s in syms:
+                if count >= limit:
+                    break
+                if q_low.byte_length() == 0 or lower_str(s.name).find(q_low) >= 0:
+                    w.begin_obj()
+                    w.kv_str("name", s.name)
+                    w.kv_str("kind", outline_tag(s.kind))
+                    w.kv_str("file", s.path)
+                    w.kv_int("line", s.row + 1)
+                    w.kv_int("col", s.col + 1)
+                    w.kv_str("owner", s.owner)
+                    w.end_obj()
+                    count += 1
+            w.end_arr()
+            w.kv_int("total", count)
+            w.end_obj()
+            return w.text()
+        if op == "turbomojo_git_diff" or op == "git_diff":
+            var p_raw = doc.str(doc.get(0, "path"), "")
+            var diff_txt = String("")
+            var hunks_count = 0
+            if p_raw.byte_length() > 0:
+                var p = abs_path(self.cwd, p_raw)
+                var ei = self.find_editor(p)
+                var old_side = Side.of("")
+                var new_side = Side.of("")
+                var buf_txt = doc.str(doc.get(0, "buffer_text"), "")
+                if buf_txt.byte_length() > 0:
+                    var disk_txt = bytes_to_str(read_file(p)) if path_exists(p) else String("")
+                    old_side = Side.of(disk_txt)
+                    new_side = Side.of(buf_txt)
+                elif ei >= 0:
+                    var sides = self.git_diff_sides(ei)
+                    old_side = sides[0].copy()
+                    new_side = sides[1].copy()
+                elif path_exists(p):
+                    var disk_txt = bytes_to_str(read_file(p))
+                    var where = self.git_where(p)
+                    var head_txt = String("")
+                    if where[0].byte_length() > 0:
+                        head_txt = bytes_to_str(run_capture("git -C " + shell_quote(where[0]) + " show :./" + shell_quote(where[1]) + " 2>/dev/null").out)
+                    old_side = Side.of(head_txt)
+                    new_side = Side.of(disk_txt)
+                var hunks = side_hunks(old_side, new_side)
+                hunks_count = len(hunks)
+                var diff_rows = unified(old_side, new_side, hunks)
+                for r in diff_rows:
+                    diff_txt += r.text + "\n"
+            else:
+                var root = self.symidx_root()
+                var r = run_capture("git -C " + shell_quote(root) + " diff 2>&1")
+                diff_txt = bytes_to_str(r.out)
+            var w = JsonWriter()
+            w.begin_obj()
+            w.kv_str("id", req_id)
+            w.kv_bool("ok", True)
+            w.kv_str("diff", diff_txt)
+            w.kv_int("hunks", hunks_count)
+            w.end_obj()
+            return w.text()
+        if op == "turbomojo_lsp_query" or op == "lsp_query":
+            var qtype = doc.str(doc.get(0, "query_type"), "definition")
+            var p_raw = doc.str(doc.get(0, "path"), "")
+            var line = max(1, doc.int(doc.get(0, "line"), 1))
+            var col = max(1, doc.int(doc.get(0, "col"), 1))
+            if p_raw.byte_length() == 0:
+                return ipc_error_json(req_id, "missing path")
+            var p = abs_path(self.cwd, p_raw)
+            var uri = path_to_uri(p)
+            var xk = self.extra_for(p)
+            if xk >= 0 and (not self.lsp.active() or self.lsp.find_doc(uri) < 0):
+                if not self.lsp_extra[xk].client.active() or self.lsp_extra[xk].client.state != LSP_READY:
+                    var w = JsonWriter()
+                    w.begin_obj()
+                    w.kv_str("id", req_id)
+                    w.kv_bool("ok", False)
+                    w.kv_str("error", "LSP server not running or not ready")
+                    w.kv_str("query_type", qtype)
+                    w.kv_str("path", p)
+                    w.end_obj()
+                    return w.text()
+                if self.lsp_extra[xk].client.find_doc(uri) < 0:
+                    var wi = self.find_editor(p)
+                    if wi < 0:
+                        try:
+                            self.open_path(p)
+                            wi = self.find_editor(p)
+                        except:
+                            pass
+                    if wi >= 0:
+                        self.extra_send_now(xk, wi)
+                var xseq: Int
+                var xnow = now_ns()
+                if qtype == "hover":
+                    xseq = self.lsp_extra[xk].client.request_hover(uri, line - 1, col - 1, xnow)
+                elif qtype == "references":
+                    xseq = self.lsp_extra[xk].client.request_references(uri, line - 1, col - 1, xnow)
+                else:
+                    xseq = self.lsp_extra[xk].client.request_definition(uri, line - 1, col - 1, xnow)
+                if xseq < 0:
+                    return ipc_error_json(req_id, "LSP server capability not available")
+                var xdeadline = Int(perf_counter_ns()) + 500_000_000
+                var xgot = False
+                var xres_json = String("")
+                while Int(perf_counter_ns()) < xdeadline and not xgot:
+                    self.lsp_extra[xk].client.poll()
+                    var xreps = self.lsp_extra[xk].client.take_replies()
+                    for r in xreps:
+                        if r.id == xseq:
+                            xgot = True
+                            var res_idx = r.result()
+                            if res_idx >= 0:
+                                xres_json = r.doc.dump(res_idx)
+                            break
+                        else:
+                            self.lsp_extra[xk].client.replies.append(r.copy())
+                    if not xgot:
+                        _ = external_call["usleep", Int32](Int32(5000))
+                var xw = JsonWriter()
+                xw.begin_obj()
+                xw.kv_str("id", req_id)
+                xw.kv_bool("ok", xgot)
+                xw.kv_str("query_type", qtype)
+                xw.kv_str("path", p)
+                xw.kv_int("line", line)
+                xw.kv_int("col", col)
+                if xgot:
+                    xw.key("result")
+                    xw.raw(xres_json if xres_json.byte_length() > 0 else "null")
+                else:
+                    xw.kv_str("error", "LSP query timed out")
+                xw.end_obj()
+                return xw.text()
+            if not self.lsp.active() or self.lsp.state != LSP_READY:
+                var w = JsonWriter()
+                w.begin_obj()
+                w.kv_str("id", req_id)
+                w.kv_bool("ok", False)
+                w.kv_str("error", "LSP server not running or not ready")
+                w.kv_str("query_type", qtype)
+                w.kv_str("path", p)
+                w.end_obj()
+                return w.text()
+            if self.lsp.find_doc(uri) < 0:
+                var wi = self.find_editor(p)
+                if wi < 0:
+                    try:
+                        self.open_path(p)
+                        wi = self.find_editor(p)
+                    except:
+                        pass
+                if wi >= 0:
+                    self.lsp_track(wi, now_ns())
+            var req_seq: Int
+            var now = now_ns()
+            if qtype == "hover":
+                req_seq = self.lsp.request_hover(uri, line - 1, col - 1, now)
+            elif qtype == "references":
+                req_seq = self.lsp.request_references(uri, line - 1, col - 1, now)
+            else:
+                req_seq = self.lsp.request_definition(uri, line - 1, col - 1, now)
+            if req_seq < 0:
+                return ipc_error_json(req_id, "LSP server capability not available")
+            var deadline = Int(perf_counter_ns()) + 500_000_000
+            var got_reply = False
+            var res_json = String("")
+            while Int(perf_counter_ns()) < deadline and not got_reply:
+                self.lsp.poll()
+                var reps = self.lsp.take_replies()
+                for r in reps:
+                    if r.id == req_seq:
+                        got_reply = True
+                        var res_idx = r.result()
+                        if res_idx >= 0:
+                            res_json = r.doc.dump(res_idx)
+                        break
+                    else:
+                        self.lsp.replies.append(r.copy())
+                if not got_reply:
+                    _ = external_call["usleep", Int32](Int32(5000))
+            var w = JsonWriter()
+            w.begin_obj()
+            w.kv_str("id", req_id)
+            w.kv_bool("ok", got_reply)
+            w.kv_str("query_type", qtype)
+            w.kv_str("path", p)
+            w.kv_int("line", line)
+            w.kv_int("col", col)
+            if got_reply:
+                w.key("result")
+                w.raw(res_json if res_json.byte_length() > 0 else "null")
+            else:
+                w.kv_str("error", "LSP query timed out")
             w.end_obj()
             return w.text()
         return ipc_error_json(req_id, "unknown op: " + op)

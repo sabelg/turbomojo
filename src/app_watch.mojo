@@ -108,5 +108,10 @@ __extension App:
         if not self.watch.active() and self.watch_enabled and now >= self.watch_due:
             due = True
             self.watch_due = now + WATCH_POLL_MS * 1000000
+        if woke:
+            var xi = self.explorer_index()
+            if xi >= 0:
+                var keep = self.ex.rows[self.wins[xi].cr].path if (self.wins[xi].cr >= 0 and self.wins[xi].cr < len(self.ex.rows)) else String("")
+                self.explorer_refresh(keep)
         if due and (self.mode == M_NORMAL or woke):
             self.check_external_changes()

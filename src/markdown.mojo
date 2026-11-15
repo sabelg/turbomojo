@@ -18,6 +18,7 @@ comptime MD_CODE = 3        # inline code
 comptime MD_HEAD = 4
 comptime MD_LINK = 5
 comptime MD_DIM = 6         # rules, quote bars, list bullets
+comptime MD_STRIKE = 7      # ~~strikethrough~~
 comptime MD_BLOCK = 16      # a code block line: MD_BLOCK + syntax class of the character
 
 
@@ -243,6 +244,16 @@ def md_inline_links(src: List[Int], base: Int, mut out: MdLine, mut links: List[
             out.add(c, base)
             i += 1
             continue
+        # strikethrough: ~~text~~
+        if c == 126 and i + 1 < n and src[i + 1] == 126 and i + 2 < n and not is_space(src[i + 2]) and src[i + 2] != 126:
+            var close = find_closing(src, i + 2, 126, 2)
+            if close > i + 2:
+                var inner = List[Int]()
+                for k in range(i + 2, close):
+                    inner.append(src[k])
+                md_inline_links(inner, MD_STRIKE if base == MD_TEXT else base, out, links)
+                i = close + 2
+                continue
         # bold: **text** or __text__
         if (c == 42 or c == 95) and i + 1 < n and src[i + 1] == c and i + 2 < n and not is_space(src[i + 2]) and (i == 0 or not is_word_char(src[i - 1])):
             var close = find_closing(src, i + 2, c, 2)
@@ -832,6 +843,21 @@ def md_render_rich(text: String, width: Int, hl: Highlighter, mut links: List[St
                 out.append(MdLine())
             last_kind = 6
             blank_seen = False
+            var task_glyph = 0
+            if (
+                bullet == 2
+                and len(body) >= 3
+                and body[0] == 91
+                and (body[1] == 32 or body[1] == 120 or body[1] == 88)
+                and body[2] == 93
+                and (len(body) == 3 or is_space(body[3]))
+            ):
+                task_glyph = 0x2610 if body[1] == 32 else 0x2611
+                var strip_n = 4 if len(body) > 3 and is_space(body[3]) else 3
+                var trimmed_body = List[Int]()
+                for z in range(strip_n, len(body)):
+                    trimmed_body.append(body[z])
+                body = trimmed_body^
             var item = MdLine()
             md_inline_links(body, MD_TEXT, item, links)
             var first = MdLine()
@@ -841,7 +867,7 @@ def md_render_rich(text: String, width: Int, hl: Highlighter, mut links: List[St
                 first.add(32, MD_TEXT)
                 rest.add(32, MD_TEXT)
             if bullet == 2:
-                first.add(0x2022, MD_DIM)
+                first.add(task_glyph if task_glyph != 0 else 0x2022, MD_DIM)
                 first.add(32, MD_DIM)
                 rest.add(32, MD_TEXT)
                 rest.add(32, MD_TEXT)

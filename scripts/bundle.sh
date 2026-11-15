@@ -26,7 +26,57 @@ done
 [ -x "$TMIDE" ] || { echo "bundle: no $TMIDE - build it first (pixi run build)" >&2; exit 1; }
 
 VERSION=$(sed -n 's/^comptime TURBOMOJO_VERSION = "\(.*\)".*/\1/p' src/version.mojo)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m)
+
+if [ "$OS" = "darwin" ]; then
+    NAME="turbomojo-$VERSION-osx-$ARCH"
+    mkdir -p "$OUT"
+    WORK=$(mktemp -d "${TMPDIR:-/tmp}/turbomojo-bundle.XXXXXX")
+    trap 'rm -rf "$WORK"' EXIT
+    mkdir -p "$WORK/$NAME/bin" "$WORK/$NAME/lib" "$WORK/$NAME/share/turbomojo/docs" "$WORK/$NAME/share/turbomojo/completions"
+    cp "$TMIDE" "$WORK/$NAME/bin/tmide"
+    if [ -f scripts/mcp_server.py ]; then
+        cp scripts/mcp_server.py "$WORK/$NAME/bin/tmide-mcp"
+        chmod +x "$WORK/$NAME/bin/tmide-mcp"
+    fi
+    cp docs/*.md "$WORK/$NAME/share/turbomojo/docs/" 2>/dev/null || true
+    cp README.md "$WORK/$NAME/share/turbomojo/" 2>/dev/null || true
+    "$TMIDE" --completions bash > "$WORK/$NAME/share/turbomojo/completions/tmide.bash" 2>/dev/null || true
+    "$TMIDE" --completions zsh > "$WORK/$NAME/share/turbomojo/completions/_tmide" 2>/dev/null || true
+    "$TMIDE" --completions fish > "$WORK/$NAME/share/turbomojo/completions/tmide.fish" 2>/dev/null || true
+
+    otool -L "$TMIDE" | awk '{print $1}' | grep -v '^build/' | while read -r lib; do
+        case "$lib" in
+            /usr/lib/*|/System/Library/*) ;;
+            *) cp -L "$lib" "$WORK/$NAME/lib/$(basename "$lib")" 2>/dev/null || true ;;
+        esac
+    done
+    for f in "$WORK/$NAME/lib/"*.dylib; do
+        [ -f "$f" ] || continue
+        install_name_tool -id "@rpath/$(basename "$f")" "$f" 2>/dev/null || true
+        install_name_tool -change "$f" "@executable_path/../lib/$(basename "$f")" "$WORK/$NAME/bin/tmide" 2>/dev/null || true
+    done
+    install_name_tool -add_rpath "@executable_path/../lib" "$WORK/$NAME/bin/tmide" 2>/dev/null || true
+    codesign -s - "$WORK/$NAME/bin/tmide" 2>/dev/null || true
+
+    cat > "$WORK/$NAME/README.txt" <<EOF
+TurboMojo $VERSION for macOS $ARCH - a terminal IDE for Mojo.
+
+Unpack anywhere and run bin/tmide (or put bin/ on your PATH). Nothing else is needed
+to start it: the libraries it uses are in lib/.
+
+To build and run Mojo programs, the machine needs Mojo itself (pixi, or the Modular
+conda channel); TurboMojo finds it on the PATH or as tools.compiler in
+~/.config/turbomojo/config.toml. tmide --caps shows what your terminal can do.
+EOF
+
+    TAR="$OUT/$NAME.tar.gz"
+    tar -C "$WORK" -czf "$TAR" "$NAME"
+    echo "bundle: $TAR ($(du -h "$TAR" | cut -f1))"
+    exit 0
+fi
+
 NAME="turbomojo-$VERSION-linux-$ARCH"
 mkdir -p "$OUT"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/turbomojo-bundle.XXXXXX")

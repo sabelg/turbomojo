@@ -9,6 +9,8 @@ from util import *
 from json import Json, JsonWriter, json_quote
 from rpc import RpcMessage, RPC_RESPONSE, RPC_ERROR, RPC_REQUEST, RPC_NOTIFICATION
 from plugins import *
+from buffer import Mark
+from dialog import Dialog, D_PLUGINS
 from notify import NL_INFO, NL_DONE, NL_WARN, NL_ERROR
 from window import Window, ACT_OTHER, WK_EDITOR, WK_PANEL
 from term import KEY_ENTER, KEY_ESC
@@ -124,6 +126,12 @@ __extension App:
     def plugin_ready(mut self, k: Int, m: RpcMessage):
         ref d = m.doc
         var r = m.result()
+        var api_node = d.get(r, "api")
+        if api_node >= 0:
+            var p_api = d.int(api_node, PLUGIN_API)
+            if p_api != 1 and p_api != 2:
+                self.plugin_dead(k, "unsupported plugin API version " + String(p_api))
+                return
         self.plugins[k].cmds.clear()
         self.plugins[k].events.clear()
         var cs = d.get(r, "commands")
@@ -180,6 +188,90 @@ __extension App:
             self.wins[te].insert_text(decode(d.str(d.get(p, "text"), "")), ACT_OTHER)
             if answer:
                 self.plugins[k].conn.respond(m.id_json, "null")
+        elif m.method == "editor/edit" or String(m.method) == "editor/apply_edits":
+            var p_raw = d.str(d.get(p, "path"), "")
+            var wi = self.find_editor(abs_path(self.cwd, p_raw)) if p_raw.byte_length() > 0 else self.top_editor()
+            if wi < 0:
+                if answer:
+                    self.plugins[k].conn.respond_error(m.id_json, -32000, "no editor is open")
+                return
+            var edits = parse_plugin_edits_json(d.dump(p))
+            for a in range(len(edits)):
+                for b in range(a + 1, len(edits)):
+                    var swap_em = False
+                    if edits[b].start_line > edits[a].start_line:
+                        swap_em = True
+                    elif edits[b].start_line == edits[a].start_line and edits[b].start_col > edits[a].start_col:
+                        swap_em = True
+                    if swap_em:
+                        var tmp = edits[a].copy()
+                        edits[a] = edits[b].copy()
+                        edits[b] = tmp^
+            var g = self.wins[wi].new_group()
+            var cr = self.wins[wi].cr
+            var cc = self.wins[wi].cc
+            for ed in edits:
+                var nlines = self.wins[wi].buf.count()
+                var r1 = min(max(0, ed.start_line - 1), nlines - 1)
+                var r2 = min(max(r1, ed.end_line - 1), nlines - 1)
+                var c1 = min(max(0, ed.start_col - 1), self.wins[wi].buf.llen(r1))
+                var c2 = min(max(0, ed.end_col - 1), self.wins[wi].buf.llen(r2))
+                if r1 == r2 and c2 < c1:
+                    c2 = c1
+                if r1 < r2 or c1 < c2:
+                    _ = self.wins[wi].buf.delete(r1, c1, r2, c2, cr, cc, g)
+                if ed.text.byte_length() > 0:
+                    var repl = List[Int]()
+                    for cp in decode(ed.text):
+                        if cp != 13:
+                            repl.append(cp)
+                    _ = self.wins[wi].buf.insert(r1, c1, repl, cr, cc, g)
+            self.wins[wi].sel = False
+            self.wins[wi].break_group()
+            self.wins[wi].clamp()
+            for j in range(len(self.wins)):
+                if j != wi and self.wins[j].kind == WK_EDITOR and self.wins[j].buf_id == self.wins[wi].buf_id:
+                    self.wins[j].buf = self.wins[wi].buf.copy()
+                    self.wins[j].clamp()
+            self.wins[wi].lsp_due = now_ns()
+            if answer:
+                self.plugins[k].conn.respond(m.id_json, "{\"applied\":" + String(len(edits)) + "}")
+        elif m.method == "diagnostics/set":
+            var p_raw = d.str(d.get(p, "path"), "")
+            var abs_p = abs_path(self.cwd, p_raw) if p_raw.byte_length() > 0 else String("")
+            var diags = d.get(p, "diagnostics")
+            var marks = List[Mark]()
+            for dn in d.children(diags):
+                var ln = max(1, d.int(d.get(dn, "line"), 1))
+                var cl = max(1, d.int(d.get(dn, "col"), d.int(d.get(dn, "column"), 1)))
+                var eln = max(ln, d.int(d.get(dn, "end_line"), ln))
+                var ecl = max(1, d.int(d.get(dn, "end_col"), cl + 1))
+                var sev_s = d.str(d.get(dn, "severity"), "")
+                var sev = 2
+                if sev_s == "error":
+                    sev = 1
+                elif sev_s == "warning" or sev_s == "warn":
+                    sev = 2
+                elif sev_s == "info" or sev_s == "information":
+                    sev = 3
+                elif sev_s == "hint":
+                    sev = 4
+                elif sev_s.byte_length() == 0:
+                    var s_int = d.int(d.get(dn, "severity"), 2)
+                    sev = min(4, max(1, s_int))
+                var msg = d.str(d.get(dn, "message"), "")
+                var full_msg = "[" + self.plugins[k].name + "] " + msg if msg.byte_length() > 0 else "[" + self.plugins[k].name + "]"
+                marks.append(Mark(ln - 1, cl - 1, eln - 1, ecl - 1, sev, full_msg))
+            if abs_p.byte_length() > 0:
+                for wi in range(len(self.wins)):
+                    if self.wins[wi].kind == WK_EDITOR and self.wins[wi].path == abs_p:
+                        self.wins[wi].buf.marks = marks.copy()
+            else:
+                var te = self.top_editor()
+                if te >= 0:
+                    self.wins[te].buf.marks = marks.copy()
+            if answer:
+                self.plugins[k].conn.respond(m.id_json, "{\"count\":" + String(len(marks)) + "}")
         elif m.method == "panel/open":
             self.panel_open(k, d.str(d.get(p, "id"), ""), d.str(d.get(p, "title"), ""), d.str(d.get(p, "kind"), "list") == "table", d, d.get(p, "columns"))
             if answer:
@@ -400,3 +492,69 @@ __extension App:
             self.plugins[pk].conn.notify("panel/select", w.text())
             return True
         return False
+
+    # ------------------------------------------------------- lifecycle dialog
+    def plugins_manager_open(mut self):
+        """Open the Plugins Manager dialog (D_PLUGINS) to inspect and toggle plugins."""
+        if len(self.plugins) == 0 and self.plugins_dir.byte_length() > 0:
+            var warn = List[String]()
+            self.plugins = find_plugins(self.plugins_dir, warn)
+        var d = Dialog(D_PLUGINS, "Plugins Manager", min(76, max(44, self.scr.w - 4)), min(18, max(10, self.desk_h())))
+        var items = List[String]()
+        var data = List[Int]()
+        if len(self.plugins) == 0:
+            items.append("  (no plugins installed in " + (self.plugins_dir if self.plugins_dir.byte_length() > 0 else String("~/.config/turbomojo/plugins")) + ")")
+            data.append(-1)
+        else:
+            for k in range(len(self.plugins)):
+                ref p = self.plugins[k]
+                var st = String("running")
+                if p.state == PL_STARTING:
+                    st = "starting"
+                elif p.state == PL_STOPPED:
+                    st = "stopped" + ((": " + p.why) if p.why.byte_length() > 0 else String(""))
+                var mark = "* " if p.state == PL_READY else "  "
+                var line = mark + p.name + "  [" + st + "]  (" + String(len(p.cmds)) + " cmd)  " + p.command
+                items.append(line)
+                data.append(k)
+        d.set_items(items^, data^)
+        d.list_sel = 0
+        d.focus = 0
+        d.buttons.append("~T~oggle")
+        d.buttons.append("~R~eload All")
+        d.buttons.append("~C~lose")
+        self.show(d^)
+
+    def plugin_toggle(mut self, idx: Int):
+        """Start a stopped plugin or stop a running plugin by index."""
+        if idx < 0 or idx >= len(self.plugins):
+            return
+        if self.plugins[idx].state != PL_STOPPED:
+            var was = self.plugins[idx].state
+            self.plugins[idx].conn.notify("shutdown", "")
+            _ = self.plugins[idx].conn.poll()
+            _ = self.plugins[idx].conn.stop()
+            self.plugins[idx].state = PL_STOPPED
+            self.plugins[idx].why = "disabled"
+            self.plugins[idx].status = ""
+            var pi = len(self.panels) - 1
+            while pi >= 0:
+                if self.panels[pi].plugin == idx:
+                    self.panel_remove(pi, False)
+                pi -= 1
+            if was == PL_READY:
+                self.rebuild_keys(False)
+            self.say("Stopped plugin " + self.plugins[idx].name)
+        else:
+            self.plugin_launch(idx)
+            self.say("Starting plugin " + self.plugins[idx].name + "...")
+
+    def plugins_dialog_button(mut self, b: Int, sel: Int):
+        """Handle button presses from D_PLUGINS (0=Toggle, 1=Reload All, 2=Close)."""
+        if b == 0:
+            self.plugin_toggle(sel)
+        elif b == 1:
+            self.plugins_stop()
+            self.plugins_on = True
+            self.plugins_start()
+            self.say("Reloading plugins...")

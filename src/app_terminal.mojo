@@ -68,6 +68,8 @@ from termkeys import encode_key, paste_bytes
 from window import WK_TERM
 from palette import Palette
 from term import Event, MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN, KEY_MASK
+from links import find_refs, parse_port_forward
+from app_links import *
 
 
 __extension App:
@@ -133,10 +135,103 @@ __extension App:
         var old = self.term_take(which)
         _ = old.pty.stop()
         self.term_put(which, s^)
-        self.wins[i].title = title
+        if which == TS_SHELL and len(self.tshells) > 1:
+            self.term_sync_shell_title()
+        else:
+            self.wins[i].title = title
         if not ok:
             self.say("The terminal could not be started")
         return ok
+
+    def term_tab_count(self) -> Int:
+        if len(self.tshells) > 0:
+            return len(self.tshells)
+        return 1 if self.tshell.started else 0
+
+    def term_sync_shell_title(mut self):
+        var ti = self.term_index(TS_SHELL)
+        if ti < 0:
+            return
+        var base = self.tshell.title if self.tshell.title.byte_length() > 0 else String("Terminal")
+        if len(self.tshells) > 1 and self.tshell_idx >= 0:
+            self.wins[ti].title = "[" + String(self.tshell_idx + 1) + "/" + String(len(self.tshells)) + "] " + base
+        else:
+            self.wins[ti].title = base
+
+    def term_new_tab(mut self):
+        """Open a new shell tab in the Terminal window (updating title with [k/N])."""
+        _ = self.term_open_window(TS_SHELL)
+        var sh = self.shell_program
+        if sh.byte_length() == 0 or not path_exists(sh):
+            sh = "/bin/sh"
+        var argv = List[String]()
+        argv.append(sh)
+        var here = self.cwd
+        var title = "Terminal - " + basename(sh)
+        if not self.tshell.started and len(self.tshells) == 0:
+            _ = self.term_start(TS_SHELL, argv, here, title)
+            return
+        if len(self.tshells) == 0:
+            var first = TermSession()
+            swap(first, self.tshell)
+            self.tshells.append(first^)
+        else:
+            swap(self.tshells[self.tshell_idx], self.tshell)
+        self.tshells.append(TermSession())
+        self.tshell_idx = len(self.tshells) - 1
+        _ = self.term_start(TS_SHELL, argv, here, title)
+        self.term_sync_shell_title()
+        self.say("Opened shell tab " + String(self.tshell_idx + 1) + " of " + String(len(self.tshells)))
+
+    def term_next_tab(mut self):
+        """Switch to the next shell tab in WK_TERM."""
+        if len(self.tshells) <= 1:
+            self.say("Only one shell tab is open")
+            return
+        swap(self.tshells[self.tshell_idx], self.tshell)
+        self.tshell_idx = (self.tshell_idx + 1) % len(self.tshells)
+        swap(self.tshells[self.tshell_idx], self.tshell)
+        self.tshell.dirty = True
+        var ti = self.term_open_window(TS_SHELL)
+        if ti >= 0:
+            self.term_sync_shell_title()
+
+    def term_prev_tab(mut self):
+        """Switch to the previous shell tab in WK_TERM."""
+        if len(self.tshells) <= 1:
+            self.say("Only one shell tab is open")
+            return
+        swap(self.tshells[self.tshell_idx], self.tshell)
+        self.tshell_idx = (self.tshell_idx + len(self.tshells) - 1) % len(self.tshells)
+        swap(self.tshells[self.tshell_idx], self.tshell)
+        self.tshell.dirty = True
+        var ti = self.term_open_window(TS_SHELL)
+        if ti >= 0:
+            self.term_sync_shell_title()
+
+    def term_close_tab(mut self):
+        """Close the active shell tab (or close the Terminal window when the last tab closes)."""
+        _ = self.tshell.pty.stop()
+        if len(self.tshells) <= 1:
+            self.tshells.clear()
+            self.tshell_idx = -1
+            self.tshell = TermSession()
+            var ti = self.term_index(TS_SHELL)
+            if ti >= 0:
+                self.term_close_window(ti)
+            return
+        _ = self.tshells.pop(self.tshell_idx)
+        self.tshell = TermSession()
+        if self.tshell_idx >= len(self.tshells):
+            self.tshell_idx = len(self.tshells) - 1
+        if len(self.tshells) == 1:
+            var remaining = self.tshells.pop(0)
+            swap(self.tshell, remaining)
+            self.tshell_idx = -1
+        else:
+            swap(self.tshells[self.tshell_idx], self.tshell)
+        self.tshell.dirty = True
+        self.term_sync_shell_title()
 
     def term_session_busy(self, which: Int) -> Bool:
         if which == TS_RUN:
@@ -164,6 +259,8 @@ __extension App:
             argv.append(sh)
             var here = self.cwd
             _ = self.term_start(TS_SHELL, argv, here, "Terminal - " + basename(sh))
+        else:
+            self.term_sync_shell_title()
         self.say("Terminal: keys go to the program; F6 or Alt-F11 back to the editor, Shift-PgUp scrolls back, Ctrl-Shift-Up goes to the last run")
 
     def term_close_window(mut self, i: Int):
@@ -177,6 +274,9 @@ __extension App:
         var out = List[Int]()
         if self.tshell.started and self.tshell.pty.fd() >= 0:
             out.append(self.tshell.pty.fd())
+        for k in range(len(self.tshells)):
+            if k != self.tshell_idx and self.tshells[k].started and self.tshells[k].pty.fd() >= 0:
+                out.append(self.tshells[k].pty.fd())
         if self.trun.started and self.trun.pty.fd() >= 0:
             out.append(self.trun.pty.fd())
         if self.trepl.started and self.trepl.pty.fd() >= 0:
@@ -195,8 +295,16 @@ __extension App:
             var status = exit_code(s.pty.status)
             var shown = s.vt.text() if ended else String("")
             self.term_put(which, s^)
+            if which == TS_SHELL and len(self.tshells) > 1:
+                self.term_sync_shell_title()
             if ended:
                 self.run_report(status, shown)
+        for k in range(len(self.tshells)):
+            if k != self.tshell_idx and self.tshells[k].started:
+                var bg = TermSession()
+                swap(bg, self.tshells[k])
+                self.term_pump(bg, replies, -1)
+                swap(bg, self.tshells[k])
 
     def term_take(mut self, which: Int) -> TermSession:
         """A session taken out of the App to work on it (put it back with term_put)."""
@@ -231,9 +339,11 @@ __extension App:
             if r.term == s.vt.term:
                 s.pty.write(r.data)
         s.pty.flush()
+        var got_bytes = False
         if s.pty.read_available() > 0:
             s.vt.write(s.pty.take())
             s.dirty = True
+            got_bytes = True
             s.last_output_ns = Int(perf_counter_ns())
         if len(s.pending) > 0:
             # code waiting for the REPL: it goes once the first prompt ("1> ") is shown
@@ -258,6 +368,23 @@ __extension App:
         if s.dirty:
             s.vt.update()
             s.dirty = False
+        if got_bytes and self.is_ssh() and s.vt.is_open():
+            var host = self.ssh_host()
+            for ry in range(s.vt.rows):
+                var ln = s.vt.row_text(ry)
+                var pf = parse_port_forward(ln, host, True)
+                if pf.byte_length() > 7:
+                    var rest = String(pf[byte=7:])
+                    var colon = rest.find(":")
+                    if colon > 0:
+                        var pnum = 0
+                        for bi in range(colon):
+                            var ch = Int(rest.as_bytes()[bi])
+                            if ch >= 48 and ch <= 57:
+                                pnum = pnum * 10 + (ch - 48)
+                        if pnum > 0 and pnum not in self.ssh_ports_toasted:
+                            self.ssh_ports_toasted.append(pnum)
+                            _ = self.port_forward_toast(ln)
 
     def term_draw(mut self, i: Int):
         """The emulator's screen in window i."""
@@ -266,6 +393,7 @@ __extension App:
         var s = self.term_take(which)
         self.term_paint(s, i, p)
         self.term_put(which, s^)
+        self.link_rows(i)
 
     def term_paint(mut self, mut s: TermSession, i: Int, p: Palette):
         var x0 = self.wins[i].x + 1
@@ -360,7 +488,10 @@ __extension App:
             if k == KEY_ENTER:
                 _ = self.term_start(which, argv, cwd, title)
             elif k == KEY_ESC:
-                self.term_close_window(self.top())
+                if which == TS_SHELL and len(self.tshells) > 1:
+                    self.term_close_tab()
+                else:
+                    self.term_close_window(self.top())
             return True
         self.term_send_key(s, k)
         self.term_put(which, s^)
@@ -405,9 +536,50 @@ __extension App:
         if not moved:
             self.say("No " + ("earlier" if d < 0 else "later") + " run marked here (the shell or program sends OSC 133 marks for this)")
 
+    def term_open_link_at(mut self, which: Int, x: Int, y: Int) -> Bool:
+        """Inspect terminal row `y` for file:line[:col] references and jump to the clicked link."""
+        var s = self.term_take(which)
+        var row_str = String("")
+        if s.vt.is_open() and y >= 0 and y < s.vt.rows:
+            row_str = s.vt.row_text(y)
+        self.term_put(which, s^)
+        if row_str.byte_length() == 0:
+            return False
+        var refs = find_refs(decode(row_str))
+        if len(refs) == 0:
+            return False
+        var hit = -1
+        for k in range(len(refs)):
+            if x >= refs[k].start and x <= refs[k].end and self.link_resolve(refs[k].path).byte_length() > 0:
+                hit = k
+                break
+        if hit < 0:
+            for k in range(len(refs)):
+                if self.link_resolve(refs[k].path).byte_length() > 0:
+                    hit = k
+                    break
+        if hit < 0:
+            return False
+        var resolved = self.link_resolve(refs[hit].path)
+        var ln = refs[hit].line
+        var cl = refs[hit].col
+        try:
+            self.open_path(resolved)
+        except:
+            return False
+        var ed = self.find_editor(resolved)
+        if ed >= 0:
+            self.focus(ed)
+            ed = self.find_editor(resolved)
+            if ed >= 0:
+                self.wins[ed].goto(max(0, ln - 1), max(0, cl - 1))
+                self.say("Opened " + basename(resolved) + ":" + String(ln))
+                return True
+        return False
+
     def term_mouse(mut self, i: Int, e: Event) -> Bool:
-        """Mouse in a terminal window: the wheel scrolls back; a drag selects, and the
-        selection is copied when the button is let go."""
+        """Mouse in a terminal window: the wheel scrolls back; Ctrl/Alt-click follows
+        file:line[:col] links; a drag selects, and the selection is copied on release."""
         var x = e.mx - self.wins[i].x - 1
         var y = e.my - self.wins[i].y - 1
         if x < 0 or y < 0 or x >= self.wins[i].w - 2 or y >= self.wins[i].h - 2:
@@ -418,6 +590,9 @@ __extension App:
             return True
         if e.button != MB_LEFT:
             return False
+        if e.pressed and not e.drag and (e.key & (MOD_CTRL | MOD_ALT)) != 0:
+            if self.term_open_link_at(which, x, y):
+                return True
         self.focus(i)
         var s = self.term_take(which)
         self.term_select(s, x, y, e)

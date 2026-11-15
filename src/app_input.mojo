@@ -13,7 +13,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -70,6 +70,7 @@ __extension App:
                 self.macro_cmd_start = at       # a new key, or the first key of a sequence
             self.macro.append(e.copy())
         self.macro_key_live = recording
+        var prev_until = self.status_until
         self.event_seq += 1
         self.handle_event(e)
         self.macro_key_live = False
@@ -77,6 +78,8 @@ __extension App:
         self.sig_follow()
         self.layout_sync()
         self.explain_fit()
+        if self.reader and self.mode == M_NORMAL and self.status_until == prev_until:
+            _ = self.announce_reader_context()
         if recording and self.mode == M_MENU and len(self.macro) > at:
             # the key opened a menu: what is chosen there is recorded as a command instead
             while len(self.macro) > at:
@@ -117,6 +120,10 @@ __extension App:
             if self.mode == M_NORMAL and self.agent_paste(e.text):
                 return
             self.mode = M_NORMAL
+            var t_paste = self.top()
+            if t_paste >= 0 and (self.wins[t_paste].read_only or self.wins[t_paste].kind == WK_HEX):
+                self.say("Buffer is read-only")
+                return
             var ai = self.active_editor()
             if ai >= 0:
                 self.wins[ai].paste_multi(e.text)
@@ -138,6 +145,9 @@ __extension App:
                 return
         if self.mode == M_HOVER:
             if self.hover_key(k):
+                return
+        if self.mode == M_PEEK:
+            if self.peek_key(k):
                 return
         if self.mode == M_NORMAL and self.chord == 0 and self.term_key(k):
             return                              # a terminal in front has the keyboard
@@ -207,6 +217,8 @@ __extension App:
 
     def message_key(mut self, k: Int) raises:
         var t = self.top()
+        if self.wins[t].kind == WK_GITLOG and self.git_log_key(k):
+            return
         if self.wins[t].kind == WK_TESTS and self.tests_key(k):
             return
         if self.wins[t].kind == WK_DIFF and self.git_diff_key(k):
@@ -245,10 +257,10 @@ __extension App:
         elif (k == KEY_LEFT or k == KEY_RIGHT) and self.wins[t].kind == WK_MESSAGE:
             self.panel_show((self.msg_page + (1 if k == KEY_RIGHT else PG_COUNT - 1)) % PG_COUNT)
             return
-        elif self.wins[t].kind == WK_CPU and (k == 103 or k == 71 or k == 118 or k == 86 or k == 43 or k == 45):
+        elif self.wins[t].kind == WK_CPU and (k == 103 or k == 71 or k == 118 or k == 86 or k == 43 or k == 45 or k == 91 or k == 93 or k == 98 or k == 66 or k == KEY_ENTER):
             self.cpuwin_key(k)
             return
-        elif self.wins[t].kind == WK_DEBUG and (k == KEY_ENTER or k == 32 or k == KEY_RIGHT or k == KEY_LEFT or k == 61 or k == KEY_DELETE):
+        elif self.wins[t].kind == WK_DEBUG and (k == KEY_ENTER or k == 32 or k == KEY_RIGHT or k == KEY_LEFT or k == 61 or k == KEY_DELETE or k == 119 or k == 87):
             self.debugwin_key(k, self.wins[t].cr)
             return
         elif (k == KEY_ENTER or k == 32) and self.wins[t].kind == WK_OUTLINE:
@@ -274,6 +286,17 @@ __extension App:
         self.typed_ns = now_ns()                # (toasts wait while the editor has the keys)
         self.tip_feed(self.tip_kind_of_key(k))
         var t = self.top()
+        if self.wins[t].read_only and (
+            k == KEY_ENTER
+            or k == KEY_BACKSPACE
+            or k == (KEY_BACKSPACE | MOD_CTRL)
+            or k == KEY_DELETE
+            or k == KEY_TAB
+            or k == (KEY_TAB | MOD_SHIFT)
+            or (k < K_BASE and k >= 32 and (k & (MOD_CTRL | MOD_ALT)) == 0)
+        ):
+            self.say("Buffer is read-only")
+            return
         var shift = (k & MOD_SHIFT) != 0
         var ctl = (k & MOD_CTRL) != 0
         var base = k & ~MOD_SHIFT

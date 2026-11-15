@@ -213,6 +213,51 @@ __extension App:
             only.append(best_name)
         self.tests_start(files, only, False)
 
+    def test_run_single(mut self, wi: Int, row: Int) raises:
+        """Run a single test defined at or enclosing line `row` in window `wi`."""
+        if wi < 0 or wi >= len(self.wins) or self.wins[wi].path.byte_length() == 0:
+            return
+        if not self.ensure_saved(wi):
+            return
+        var path = String(self.wins[wi].path)
+        var src = bytes_to_str(self.wins[wi].buf.text_bytes())
+        if not is_test_source(src):
+            return
+        var target_test = String("")
+        for tname in test_names(src):
+            var dl = def_line(src, tname) - 1
+            if dl == row:
+                target_test = tname
+                break
+        if target_test.byte_length() == 0:
+            # Fallback to closest preceding test definition
+            var best_dl = -1
+            for tname in test_names(src):
+                var dl = def_line(src, tname) - 1
+                if dl <= row and dl > best_dl:
+                    best_dl = dl
+                    target_test = tname
+        if target_test.byte_length() == 0:
+            return
+        var fi = -1
+        for k in range(len(self.test_files)):
+            if self.test_files[k].path == path:
+                fi = k
+                break
+        if fi < 0:
+            self.tests_scan()
+            for k in range(len(self.test_files)):
+                if self.test_files[k].path == path:
+                    fi = k
+                    break
+        if fi < 0:
+            return
+        var files = List[Int]()
+        files.append(fi)
+        var only = List[String]()
+        only.append(target_test)
+        self.tests_start(files, only, False)
+
     def tests_show(mut self):
         self.tests_sync_lens()
         var ti = self.tests_index()
@@ -314,7 +359,39 @@ __extension App:
             self.tests_scan()
             self.say("Looked for test files again: " + count_of(len(self.test_files), "file"))
             return True
+        if k == 119 or k == 87:             # W: toggle watch-on-save
+            self.tests_toggle_watch()
+            return True
         return False
+
+    def tests_toggle_watch(mut self):
+        """Toggle automatic test re-run on save."""
+        self.test_watch_on = not self.test_watch_on
+        self.say("Test watch on save: " + ("on" if self.test_watch_on else "off"))
+
+    def tests_on_save(mut self, path: String) raises:
+        """When watch-on-save is enabled, automatically re-run affected tests."""
+        if not self.test_watch_on or self.job_busy():
+            return
+        var content = read_text(path)
+        var wm = WatchOnSaveManager(self.test_watch_on)
+        if not wm.should_trigger(path, True, content):
+            return
+        var fi = -1
+        for k in range(len(self.test_files)):
+            if self.test_files[k].path == path:
+                fi = k
+                break
+        if fi < 0:
+            self.tests_scan()
+            for k in range(len(self.test_files)):
+                if self.test_files[k].path == path:
+                    fi = k
+                    break
+        if fi >= 0:
+            var files = List[Int]()
+            files.append(fi)
+            self.tests_start(files, List[String](), False)
 
     def tests_go(mut self, fi: Int, tk: Int) raises:
         """To a test: where it failed when that is known, else its def."""
@@ -348,9 +425,18 @@ __extension App:
         if t.state == TS_FAIL and len(t.message) > 0:
             self.say(t.name + ": " + String(t.message[0].strip()))
 
+    def tests_effective_cache_dir(self) -> String:
+        if self.test_cache_dir.byte_length() > 0:
+            return self.test_cache_dir
+        var sd = state_dir()
+        if sd.byte_length() > 0:
+            return sd + "/testbin"
+        return ""
+
     def tests_command(mut self, files: List[Int], only: List[String], list_only: Bool) -> String:
         """One shell command for several files, each marked "### <path>" in the output."""
         var cmd = String("")
+        var cdir = self.tests_effective_cache_dir()
         for fi in files:
             var p = String(self.test_files[fi].path)
             var flags = String("")
@@ -360,7 +446,32 @@ __extension App:
                 flags = " --only"
                 for n in only:
                     flags += " " + shell_quote(n)
-            var inner = "cd " + shell_quote(dirname(p)) + " && exec " + self.mojo_for(p) + " run" + self.include_flags() + " " + shell_quote(p) + flags
+            var fallback = "cd " + shell_quote(dirname(p)) + " && exec " + self.mojo_for(p) + " run" + self.include_flags() + " " + shell_quote(p) + flags
+            var inner = fallback
+            if not list_only and cdir.byte_length() > 0:
+                var st = test_stem(p)
+                var bin_p = cdir + "/bin_" + st
+                var sig_p = cdir + "/" + st + ".sig"
+                var bin_sig_p = bin_p + ".sig"
+                var cur_mtime = String(file_mtime_ns(p))
+                var hit = False
+                if path_exists(bin_p) and file_size(bin_p) > 0:
+                    if path_exists(sig_p) and String(bytes_to_str(read_file(sig_p)).strip()) == cur_mtime:
+                        hit = True
+                    elif path_exists(bin_sig_p) and String(bytes_to_str(read_file(bin_sig_p)).strip()) == cur_mtime:
+                        hit = True
+                if hit:
+                    inner = "cd " + shell_quote(dirname(p)) + " && exec " + shell_quote(bin_p) + flags
+                else:
+                    var build_and_run = (
+                        "rm -f " + shell_quote(bin_p) + " " + shell_quote(sig_p) + " " + shell_quote(bin_sig_p)
+                        + " && cd " + shell_quote(dirname(p))
+                        + " && " + self.mojo_for(p) + " build" + self.include_flags() + " " + shell_quote(p) + " -o " + shell_quote(bin_p)
+                        + " && printf '%s' " + shell_quote(cur_mtime) + " > " + shell_quote(sig_p)
+                        + " && printf '%s' " + shell_quote(cur_mtime) + " > " + shell_quote(bin_sig_p)
+                        + " && exec " + shell_quote(bin_p) + flags
+                    )
+                    inner = "if mkdir -p " + shell_quote(cdir) + " 2>/dev/null && [ -w " + shell_quote(cdir) + " ]; then " + build_and_run + "; else " + fallback + "; fi"
             cmd += "echo " + shell_quote("### " + p) + "; (" + self.with_env(p, inner) + ") 2>&1; "
         return cmd + "echo '### end'"
 

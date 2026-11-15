@@ -1231,7 +1231,7 @@ __extension App:
                     fg = p.doc_bold
                 elif st == MD_CODE:
                     fg = p.doc_code
-                elif st == MD_ITALIC or st == MD_DIM:
+                elif st == MD_ITALIC or st == MD_DIM or st == MD_STRIKE:
                     fg = p.doc_dim
                 if st < 0 and -st - 1 == self.doc_link:
                     fg = p.doc_bg
@@ -1241,6 +1241,13 @@ __extension App:
                     bg = p.match_bg
                 var at = xx
                 xx = self.scr.draw_cp(xx, 2 + r, line.cps[q], fg, bg)
+                if xx > at and not self.scr.plain:
+                    if st == MD_ITALIC:
+                        self.scr.italic(at, 2 + r, xx - at)
+                    elif st == MD_DIM:
+                        self.scr.dim(at, 2 + r, xx - at)
+                    elif st == MD_STRIKE:
+                        self.scr.strikethrough(at, 2 + r, xx - at)
                 if (st < 0 or st == MD_LINK) and xx > at:
                     self.scr.underline(at, 2 + r, False, fg)
         self.scr.no_clip()

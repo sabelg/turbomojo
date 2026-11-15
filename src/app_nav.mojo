@@ -13,6 +13,10 @@ from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter, lang_for_path, C_CMT, C_STR
 from snippets import synthesize_mojo_quickfixes
 from symindex import FileIndex, is_mojo_file
+from outline import scan_outline
+from linediff import Hunk
+from gitdiff import Side, side_hunks, hunk_at_line, unified
+from git import GB_KNOWN
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
@@ -1295,3 +1299,165 @@ __extension App:
             self.say("This is the " + noun)
         else:
             self.say(basename(locs[0].path) + ":" + String(locs[0].row + 1))
+
+    # ============================================================== inline peek
+    def peek_load_current(mut self):
+        """Populate `peek_lines` and `peek_title` for `peek_idx`."""
+        self.peek_lines.clear()
+        self.peek_scroll = 0
+        if self.peek_idx < 0 or self.peek_idx >= len(self.peek_paths):
+            return
+        var p = self.peek_paths[self.peek_idx]
+        var r = self.peek_rows[self.peek_idx]
+        var lines = List[List[Int]]()
+        if p.byte_length() == 0:
+            var ai = self.active_editor()
+            if ai >= 0:
+                for k in range(self.wins[ai].buf.count()):
+                    lines.append(self.wins[ai].buf.line(k))
+        else:
+            try:
+                lines = self.lines_of(p)
+            except _:
+                lines = List[List[Int]]()
+        var r0 = max(0, r - 2)
+        var r1 = min(len(lines), r + 10)
+        for lr in range(r0, r1):
+            var num = String(lr + 1)
+            while num.byte_length() < 4:
+                num = " " + num
+            var mark = " ► " if lr == r else "   "
+            self.peek_lines.append(num + mark + to_str(lines[lr]))
+        var label = basename(p) if p.byte_length() > 0 else "buffer"
+        var idx_tag = (" (" + String(self.peek_idx + 1) + "/" + String(len(self.peek_paths)) + ")") if len(self.peek_paths) > 1 else String("")
+        self.peek_title = "Peek: " + label + ":" + String(r + 1) + idx_tag
+
+    def peek_definition_open(mut self):
+        """Open inline PeekBox overlay anchored below cursor showing symbol definitions."""
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        var word = self.word_under(ai)
+        if word.byte_length() == 0:
+            self.say("There is no symbol at the cursor to peek")
+            return
+        self.peek_paths.clear()
+        self.peek_rows.clear()
+        self.peek_cols.clear()
+        self.peek_lines.clear()
+        self.peek_is_hunk = False
+        var cur_path = self.wins[ai].path
+        for it in scan_outline(self.wins[ai].buf):
+            if it.name == word:
+                self.peek_paths.append(cur_path)
+                self.peek_rows.append(it.row)
+                self.peek_cols.append(0)
+        for wi in range(len(self.wins)):
+            if wi != ai and self.wins[wi].kind == WK_EDITOR and self.wins[wi].path.byte_length() > 0:
+                for it in scan_outline(self.wins[wi].buf):
+                    if it.name == word:
+                        self.peek_paths.append(self.wins[wi].path)
+                        self.peek_rows.append(it.row)
+                        self.peek_cols.append(0)
+        for s in self.symidx.syms:
+            if s.name == word:
+                var dup = False
+                for k in range(len(self.peek_paths)):
+                    if self.peek_paths[k] == s.path and self.peek_rows[k] == s.row:
+                        dup = True
+                        break
+                if not dup:
+                    self.peek_paths.append(s.path)
+                    self.peek_rows.append(s.row)
+                    self.peek_cols.append(s.col)
+        if len(self.peek_paths) == 0:
+            self.definition_command()
+            return
+        self.peek_idx = 0
+        self.peek_load_current()
+        if len(self.peek_lines) > 0:
+            self.mode = M_PEEK
+            self.say(self.peek_title + " — Enter jumps, Esc closes")
+
+    def peek_hunk_open(mut self):
+        """Open inline Git hunk diff preview below cursor with S (stage) / R (revert) keys."""
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        if self.wins[ai].buf.git_state != GB_KNOWN:
+            self.say("No git diff baseline for this buffer")
+            return
+        var base = Side.of(self.wins[ai].buf.git_base_text)
+        var cur = Side.of(to_str(self.wins[ai].buf.all_text()))
+        var hunks = side_hunks(base, cur)
+        if len(hunks) == 0:
+            self.say("No unstaged git changes in this file")
+            return
+        var hi = hunk_at_line(hunks, self.wins[ai].cr)
+        if hi < 0:
+            self.say("No git hunk on this line")
+            return
+        var single = List[Hunk]()
+        single.append(hunks[hi].copy())
+        var rows = unified(base, cur, single, 2)
+        self.peek_paths.clear()
+        self.peek_rows.clear()
+        self.peek_cols.clear()
+        self.peek_lines.clear()
+        for dr in rows:
+            self.peek_lines.append(dr.text)
+        self.peek_paths.append(self.wins[ai].path)
+        self.peek_rows.append(max(0, hunks[hi].b))
+        self.peek_cols.append(0)
+        self.peek_idx = 0
+        self.peek_scroll = 0
+        self.peek_is_hunk = True
+        self.peek_title = "Git Hunk " + String(hi + 1) + "/" + String(len(hunks)) + "  [S: Stage  R: Revert  Esc: Close]"
+        self.mode = M_PEEK
+
+    def peek_key(mut self, k: Int) raises -> Bool:
+        """Handle keyboard navigation and actions inside the inline PeekBox overlay."""
+        if k == KEY_ESC:
+            self.mode = M_NORMAL
+            return True
+        var n = len(self.peek_lines)
+        if k == KEY_UP:
+            self.peek_scroll = max(0, self.peek_scroll - 1)
+            return True
+        if k == KEY_DOWN:
+            self.peek_scroll = min(max(0, n - 1), self.peek_scroll + 1)
+            return True
+        if k == KEY_PGUP:
+            self.peek_scroll = max(0, self.peek_scroll - 6)
+            return True
+        if k == KEY_PGDN:
+            self.peek_scroll = min(max(0, n - 1), self.peek_scroll + 6)
+            return True
+        if not self.peek_is_hunk and len(self.peek_paths) > 1 and (k == KEY_TAB or k == 110 or k == 112):
+            var d = -1 if k == 112 else 1
+            self.peek_idx = (self.peek_idx + d + len(self.peek_paths)) % len(self.peek_paths)
+            self.peek_load_current()
+            return True
+        if self.peek_is_hunk and (k == 115 or k == 83):
+            self.mode = M_NORMAL
+            self.exec(CM_GIT_STAGE)
+            return True
+        if self.peek_is_hunk and (k == 114 or k == 82):
+            self.mode = M_NORMAL
+            self.exec(CM_GIT_REVERT)
+            return True
+        if k == KEY_ENTER:
+            self.mode = M_NORMAL
+            if self.peek_idx >= 0 and self.peek_idx < len(self.peek_paths):
+                var tp = self.peek_paths[self.peek_idx]
+                var tr = self.peek_rows[self.peek_idx]
+                var tc = self.peek_cols[self.peek_idx]
+                self.jump_mark()
+                if tp.byte_length() > 0:
+                    self.open_path(tp)
+                var ti = self.top_editor()
+                if ti >= 0:
+                    self.wins[ti].goto(tr, tc)
+            return True
+        self.mode = M_NORMAL
+        return False

@@ -13,7 +13,8 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter, HL_PYTHON, lang_for_path
-from cells import parse_cells, cell_at_row, build_cell_runner_source
+from cells import parse_cells, cell_at_row, build_cell_runner_source, format_cell_divider_badge, CELL_SUCCESS, CELL_ERROR
+from symindex import is_mojo_file
 from signals import own_pid
 from swap import delete_file
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
@@ -397,6 +398,12 @@ __extension App:
             return "Cell [" + self.job.exe + "] in " + basename(self.job.path)
         if self.job.kind == JOB_DEBUG:
             return "Building " + self.job.path + " for debugging (no optimization, full debug information) ..."
+        if self.job.kind == JOB_BENCH:
+            return "Benchmarking " + self.job.path + " (-O3) ..."
+        if self.job.kind == JOB_ROOFLINE:
+            return "Profiling GPU roofline for " + self.job.path + " ..."
+        if self.job.kind == JOB_MAX_BENCH:
+            return "Running MAX benchmark " + self.job.exe + " ..."
         return "Formatting " + self.job.path + " ..."
 
     def poll_job(mut self) raises:
@@ -458,6 +465,12 @@ __extension App:
             self.finish_debug_build(st, secs)
         elif self.job.kind == JOB_TESTS:
             self.finish_tests(st, secs)
+        elif self.job.kind == JOB_BENCH:
+            self.finish_bench_job(st)
+        elif self.job.kind == JOB_ROOFLINE:
+            self.finish_gpu_roofline(st)
+        elif self.job.kind == JOB_MAX_BENCH:
+            self.finish_max_bench(st)
         else:
             self.finish_format(st)
 
@@ -497,6 +510,12 @@ __extension App:
             self.aux_job.active = False
             if self.aux_job.kind == JOB_CODEGEN:
                 self.finish_codegen(st)
+            elif self.aux_job.kind == JOB_DOCS:
+                self.finish_docs_job(st)
+            elif self.aux_job.kind == JOB_BENCH:
+                self.finish_bench_job(st)
+            elif self.aux_job.kind == JOB_ROOFLINE:
+                self.finish_gpu_roofline(st)
             else:
                 var p = String(self.aux_job.path)
                 var v = self.aux_job.version
@@ -612,9 +631,15 @@ __extension App:
 
     def format_file(mut self) raises:
         var i = self.top_editor()
-        if i < 0 or not self.ensure_saved(i):
+        if i < 0:
             return
         var path = String(self.wins[i].path)
+        if path.byte_length() > 0 and not is_mojo_file(path):
+            if self.lsp_format_request(i):
+                return
+        if not self.ensure_saved(i):
+            return
+        path = String(self.wins[i].path)
         var inner = "cd " + shell_quote(dirname(path)) + " && exec " + self.mojo_for(path) + " format -q " + shell_quote(path)
         var cmd = self.with_env(path, inner) + " 2>&1"
         if self.job.active:
@@ -859,4 +884,26 @@ __extension App:
             footer = "Cell [" + self.job.exe + "] failed (exit " + String(status >> 8) + ") in " + dur
         self.panel_write(PG_MESSAGE)
         _ = self.fill_messages("Cell [" + self.job.exe + "] in " + basename(self.job.path), self.job.data.copy(), footer)
+        var ei = self.find_editor(self.job.path)
+        if ei < 0:
+            for k in range(len(self.wins)):
+                if self.wins[k].kind == WK_EDITOR and self.wins[k].title == self.job.path:
+                    ei = k
+                    break
+        if ei >= 0 and not self.job.cancelled:
+            var cells = parse_cells(self.wins[ei].buf)
+            for c in cells:
+                if c.title == self.job.exe:
+                    var out_txt = String(bytes_to_str(self.job.data).strip())
+                    var badge = format_cell_divider_badge(CELL_SUCCESS if ok else CELL_ERROR, ms, out_txt if out_txt.byte_length() > 0 else ("ok" if ok else "error"))
+                    var updated = False
+                    for bi in range(len(self.wins[ei].cell_badge_rows)):
+                        if self.wins[ei].cell_badge_rows[bi] == c.header_row:
+                            self.wins[ei].cell_badges[bi] = badge
+                            updated = True
+                            break
+                    if not updated:
+                        self.wins[ei].cell_badge_rows.append(c.header_row)
+                        self.wins[ei].cell_badges.append(badge)
+                    break
         self.say(footer)

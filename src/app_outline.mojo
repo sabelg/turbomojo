@@ -7,7 +7,7 @@ from term import (
     Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE, K_BASE, KEY_ESC, KEY_ENTER, KEY_TAB,
     KEY_BACKSPACE, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_PGUP,
     KEY_PGDN, KEY_INSERT, KEY_DELETE, MOD_SHIFT, MOD_ALT, MOD_CTRL, KEY_MASK, fkey, ctrl, alt,
-    MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN,
+    MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN, wait_readable,
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
@@ -135,7 +135,13 @@ __extension App:
             return
         var key = self.wins[ti].path if self.wins[ti].path.byte_length() > 0 else "untitled:" + self.wins[ti].title
         var v = self.wins[ti].buf.version
-        var server = self.lsp.state == LSP_READY and self.wins[ti].path.byte_length() > 0 and self.lsp.find_doc(path_to_uri(self.wins[ti].path)) >= 0
+        var tpath = self.wins[ti].path
+        var xk = self.extra_for(tpath) if (tpath.byte_length() > 0 and not is_mojo_file(tpath)) else -1
+        var server: Bool
+        if xk >= 0:
+            server = self.lsp_extra[xk].client.state == LSP_READY and self.lsp_extra[xk].client.find_doc(path_to_uri(tpath)) >= 0
+        else:
+            server = self.lsp.state == LSP_READY and tpath.byte_length() > 0 and self.lsp.find_doc(path_to_uri(tpath)) >= 0
         if key != self.outline_key or v != self.outline_version:
             # while typing with a server at hand its (slightly old) list stays until the
             # new answer comes, so the list does not jump between the two sources
@@ -148,7 +154,11 @@ __extension App:
         if self.outline_req_id >= 0 and now - self.outline_req_ns > 5000000000:
             self.outline_req_id = -1            # never answered
         if server and self.outline_req_id < 0 and self.wins[ti].lsp_sent_version == v and (self.outline_asked_key != key or self.outline_asked_version != v):
-            var id = self.lsp.request_symbols(path_to_uri(self.wins[ti].path), now)
+            var id = (
+                self.lsp_extra[xk].client.request_symbols(path_to_uri(tpath), now)
+                if xk >= 0
+                else self.lsp.request_symbols(path_to_uri(tpath), now)
+            )
             if id >= 0:
                 self.outline_req_id = id
                 self.outline_req_ns = now
@@ -401,6 +411,16 @@ __extension App:
         var cmds = built[1].copy()
         var idx = max(0, min(preset_idx, len(cmds) - 1))
         var cmd = cmds[idx]
+        if cmd.find("max benchmark") >= 0:
+            var sdir = state_dir()
+            if sdir.byte_length() == 0:
+                sdir = env_or("TMPDIR", "/tmp")
+            if not path_exists(sdir):
+                _ = run_system("mkdir -p " + shell_quote(sdir))
+            var out_json = join_path(sdir, "max_bench_last.json")
+            self.max_bench_out_file = out_json
+            if cmd.find("--result-filename") < 0:
+                cmd += " --result-filename " + shell_quote(out_json)
         var sh = self.shell_program
         if sh.byte_length() == 0 or not path_exists(sh):
             sh = "/bin/sh"
@@ -558,6 +578,244 @@ __extension App:
             self.wins[t].goto(s.row, s.col)
             self.say(s.name)
 
+    def _hier_wait_reply(mut self, srv: Int, req_id: Int, budget_ms: Int = 150) -> Tuple[Bool, RpcMessage]:
+        """Wait briefly for a specific hierarchy RPC reply without disturbing other replies."""
+        if req_id < 0:
+            return (False, RpcMessage())
+        var deadline = Int(perf_counter_ns()) + budget_ms * 1000000
+        while Int(perf_counter_ns()) < deadline:
+            if srv >= 0 and srv < len(self.lsp_extra):
+                if not self.lsp_extra[srv].client.active():
+                    break
+                for ri in range(len(self.lsp_extra[srv].client.replies)):
+                    if self.lsp_extra[srv].client.replies[ri].id == req_id:
+                        return (True, self.lsp_extra[srv].client.replies.pop(ri))
+                var fds = List[Int]()
+                if self.lsp_extra[srv].client.conn.fd() >= 0:
+                    fds.append(self.lsp_extra[srv].client.conn.fd())
+                if len(fds) > 0:
+                    _ = wait_readable(fds, 10)
+                self.lsp_extra[srv].client.poll()
+            else:
+                if not self.lsp.active():
+                    break
+                for ri in range(len(self.lsp.replies)):
+                    if self.lsp.replies[ri].id == req_id:
+                        return (True, self.lsp.replies.pop(ri))
+                var fds = List[Int]()
+                if self.lsp.conn.fd() >= 0:
+                    fds.append(self.lsp.conn.fd())
+                if len(fds) > 0:
+                    _ = wait_readable(fds, 10)
+                self.lsp.poll()
+        if srv >= 0 and srv < len(self.lsp_extra):
+            for ri in range(len(self.lsp_extra[srv].client.replies)):
+                if self.lsp_extra[srv].client.replies[ri].id == req_id:
+                    return (True, self.lsp_extra[srv].client.replies.pop(ri))
+        else:
+            for ri in range(len(self.lsp.replies)):
+                if self.lsp.replies[ri].id == req_id:
+                    return (True, self.lsp.replies.pop(ri))
+        return (False, RpcMessage())
+
+    def _hier_col_of(self, path: String, row: Int, col16: Int) -> Int:
+        var wi = self.find_editor(path)
+        if wi >= 0 and row >= 0 and row < self.wins[wi].buf.count():
+            return utf16_to_col(self.wins[wi].buf.line(row), col16)
+        var data = read_file(path)
+        if len(data) > 0 and len(data) <= INDEX_MAX_BYTES:
+            var b = TextBuffer()
+            b.load_bytes(data)
+            if row >= 0 and row < b.count():
+                return utf16_to_col(b.line(row), col16)
+        return max(0, col16)
+
+    def _hier_append_entry(
+        mut self,
+        prefix_label: String,
+        sym_name: String,
+        sym_kind: Int,
+        sym_owner: String,
+        path: String,
+        row: Int,
+        col: Int,
+        root_prefix: String,
+        mut items: List[String],
+        mut data: List[Int],
+        mut keys: List[String],
+    ):
+        var shown = path
+        if shown.startswith(root_prefix):
+            shown = slice_str(decode(shown), cp_len(root_prefix), cp_len(shown))
+        var label = prefix_label + " " + outline_tag(sym_kind) + " " + sym_name
+        if sym_owner.byte_length() > 0:
+            label += " (" + sym_owner + ")"
+        var loc = (shown + ":" + String(row + 1)) if shown.byte_length() > 0 else String("")
+        var idx = len(self.hier_paths)
+        self.hier_paths.append(path)
+        self.hier_rows.append(max(0, row))
+        self.hier_cols.append(max(0, col))
+        items.append((pad_right(label, 42) + " " + loc) if loc.byte_length() > 0 else label)
+        data.append(idx)
+        keys.append(sym_name + " " + sym_owner + " " + prefix_label)
+
+    def hierarchy_open(mut self, is_type: Bool):
+        """Open `D_HIERARCHY` populated from LSP (when ready & supported) or `self.symidx` fallback."""
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open a file first")
+            return
+        var name = self.word_under(ai)
+        if name.byte_length() == 0:
+            self.say("Put the cursor on a symbol first")
+            return
+        var path = self.wins[ai].path
+        var root = self.symidx_root()
+        var root_prefix = root + "/"
+        self.hier_paths.clear()
+        self.hier_rows.clear()
+        self.hier_cols.clear()
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+
+        # Try LSP hierarchy first when an active server supports it
+        var used_lsp = False
+        if path.byte_length() > 0:
+            var uri = path_to_uri(path)
+            var cr = self.wins[ai].cr
+            var col16 = self.wins[ai].buf.utf16_col(cr, self.wins[ai].cc)
+            var xk = self.extra_for(path) if not is_mojo_file(path) else -1
+            var srv = xk if xk >= 0 else -1
+            var prep_id = -1
+            var now = now_ns()
+            if srv >= 0:
+                if self.lsp_extra[srv].client.state == LSP_READY and self.lsp_extra[srv].client.find_doc(uri) >= 0:
+                    self.extra_send_now(srv, ai)
+                    if is_type and self.lsp_extra[srv].client.table.type_hierarchy:
+                        prep_id = self.lsp_extra[srv].client.request_prepare_type_hierarchy(uri, cr, col16, now)
+                    elif not is_type and self.lsp_extra[srv].client.table.call_hierarchy:
+                        prep_id = self.lsp_extra[srv].client.request_prepare_call_hierarchy(uri, cr, col16, now)
+            else:
+                if self.lsp.state == LSP_READY and self.lsp.find_doc(uri) >= 0:
+                    self.lsp_send_changes(ai, now, False)
+                    if is_type and self.lsp.table.type_hierarchy:
+                        prep_id = self.lsp.request_prepare_type_hierarchy(uri, cr, col16, now)
+                    elif not is_type and self.lsp.table.call_hierarchy:
+                        prep_id = self.lsp.request_prepare_call_hierarchy(uri, cr, col16, now)
+            if prep_id >= 0:
+                var prep_got = self._hier_wait_reply(srv, prep_id)
+                if prep_got[0] and prep_got[1].kind == RPC_RESPONSE:
+                    if is_type:
+                        var titems = parse_type_hierarchy_items(prep_got[1].doc, prep_got[1].result())
+                        if len(titems) > 0:
+                            var raw0 = titems[0].raw
+                            var sup_id = (
+                                self.lsp_extra[srv].client.request_supertypes(raw0, now_ns())
+                                if srv >= 0
+                                else self.lsp.request_supertypes(raw0, now_ns())
+                            )
+                            var sub_id = (
+                                self.lsp_extra[srv].client.request_subtypes(raw0, now_ns())
+                                if srv >= 0
+                                else self.lsp.request_subtypes(raw0, now_ns())
+                            )
+                            var sup_got = self._hier_wait_reply(srv, sup_id)
+                            if sup_got[0] and sup_got[1].kind == RPC_RESPONSE:
+                                for st in parse_type_hierarchy_items(sup_got[1].doc, sup_got[1].result()):
+                                    var ccol = self._hier_col_of(st.path, st.row, st.col16)
+                                    self._hier_append_entry("↑ Supertype:", st.name, st.kind, st.detail, st.path, st.row, ccol, root_prefix, items, data, keys)
+                            var sub_got = self._hier_wait_reply(srv, sub_id)
+                            if sub_got[0] and sub_got[1].kind == RPC_RESPONSE:
+                                for sb in parse_type_hierarchy_items(sub_got[1].doc, sub_got[1].result()):
+                                    var ccol = self._hier_col_of(sb.path, sb.row, sb.col16)
+                                    self._hier_append_entry("↓ Subtype:  ", sb.name, sb.kind, sb.detail, sb.path, sb.row, ccol, root_prefix, items, data, keys)
+                            used_lsp = len(items) > 0
+                    else:
+                        var citems = parse_call_hierarchy_items(prep_got[1].doc, prep_got[1].result())
+                        if len(citems) > 0:
+                            var raw0 = citems[0].raw
+                            var inc_id = (
+                                self.lsp_extra[srv].client.request_incoming_calls(raw0, now_ns())
+                                if srv >= 0
+                                else self.lsp.request_incoming_calls(raw0, now_ns())
+                            )
+                            var out_id = (
+                                self.lsp_extra[srv].client.request_outgoing_calls(raw0, now_ns())
+                                if srv >= 0
+                                else self.lsp.request_outgoing_calls(raw0, now_ns())
+                            )
+                            var inc_got = self._hier_wait_reply(srv, inc_id)
+                            if inc_got[0] and inc_got[1].kind == RPC_RESPONSE:
+                                for ic in parse_incoming_calls(inc_got[1].doc, inc_got[1].result()):
+                                    var ccol = self._hier_col_of(ic.path, ic.row, ic.col16)
+                                    self._hier_append_entry("← Incoming:", ic.name, ic.kind, ic.detail, ic.path, ic.row, ccol, root_prefix, items, data, keys)
+                            var out_got = self._hier_wait_reply(srv, out_id)
+                            if out_got[0] and out_got[1].kind == RPC_RESPONSE:
+                                for oc in parse_outgoing_calls(out_got[1].doc, out_got[1].result()):
+                                    var ccol = self._hier_col_of(oc.path, oc.row, oc.col16)
+                                    self._hier_append_entry("→ Outgoing:", oc.name, oc.kind, oc.detail, oc.path, oc.row, ccol, root_prefix, items, data, keys)
+                            used_lsp = len(items) > 0
+
+        # Offline SymbolIndex fallback
+        if not used_lsp:
+            if not self.symidx.built or self.symidx.root != root:
+                if not self.symidx.building or self.symidx.root != root:
+                    self.symidx.start(root)
+            var guard = 0
+            while self.symidx.building and guard < 2000:
+                self.symidx.step(20)
+                guard += 1
+            for wi in range(len(self.wins)):
+                if self.wins[wi].kind == WK_EDITOR and is_mojo_file(self.wins[wi].path) and not self.wins[wi].buf.large:
+                    self.symidx.replace_file(self.wins[wi].path, scan_outline(self.wins[wi].buf))
+            if is_type:
+                for st in self.symidx.supertypes_of(name):
+                    self._hier_append_entry("↑ Supertype:", st.name, st.kind, st.owner, st.path, st.row, st.col, root_prefix, items, data, keys)
+                for sb in self.symidx.subtypes_of(name):
+                    self._hier_append_entry("↓ Subtype:  ", sb.name, sb.kind, sb.owner, sb.path, sb.row, sb.col, root_prefix, items, data, keys)
+            else:
+                for ic in self.symidx.incoming_calls_of(name):
+                    self._hier_append_entry("← Incoming:", ic.name, ic.kind, ic.owner, ic.path, ic.row, ic.col, root_prefix, items, data, keys)
+                for oc in self.symidx.outgoing_calls_of(path, name):
+                    self._hier_append_entry("→ Outgoing:", oc.name, oc.kind, oc.owner, oc.path, oc.row, oc.col, root_prefix, items, data, keys)
+
+        if len(items) == 0:
+            items.append("(no hierarchy items found for " + name + ")")
+            data.append(-1)
+            keys.append(name)
+
+        var title = ("Type Hierarchy: " if is_type else "Call Hierarchy: ") + name
+        var d = Dialog(D_HIERARCHY, title, min(78, self.scr.w - 4), min(22, max(10, len(items) + 7)))
+        d.fields.append(Field("~F~ilter", ""))
+        d.list_filter = True
+        d.keys = keys^
+        d.set_items(items^, data^)
+        d.buttons.append("~G~o")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def hierarchy_go(mut self, k: Int) raises:
+        """Jump to the selected item in `D_HIERARCHY`."""
+        if k < 0 or k >= len(self.dlg.item_data):
+            return
+        var idx = self.dlg.item_data[k]
+        if idx < 0 or idx >= len(self.hier_paths):
+            return
+        var target_path = String(self.hier_paths[idx])
+        var target_row = self.hier_rows[idx]
+        var target_col = self.hier_cols[idx]
+        if target_path.byte_length() == 0:
+            return
+        if not (self.find_editor(target_path) >= 0 or path_exists(target_path)):
+            self.say(basename(target_path) + " is no longer there")
+            return
+        self.jump_mark()
+        self.open_path(target_path)
+        var t = self.top()
+        if self.wins[t].kind == WK_EDITOR and self.wins[t].path == target_path:
+            self.wins[t].goto(target_row, target_col)
+
     # ====================================================== documentation
     def docs_files_for(mut self, name: String, wait: Bool) -> List[String]:
         """The files that define `name`: of the project (from the symbol index) and of
@@ -604,18 +862,13 @@ __extension App:
                 _ = self.doc_times.pop(k)
                 _ = self.doc_entries.pop(k)
                 break
-        var entries = List[DocEntry]()
-        var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
-        var res = run_capture("cd " + shell_quote(dirname(path)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(path) + " 2>/dev/null")
-        if res.status == 0 and len(res.out) > 0:
-            var doc = json_parse(bytes_to_str(res.out))
-            if doc.ok:
-                entries = parse_mojo_doc(doc)
-        self.doc_files.append(path)
-        self.doc_sizes.append(sig.size)
-        self.doc_times.append(stamp)
-        self.doc_entries.append(entries.copy())
-        return entries^
+        # Do not block main thread with synchronous run_capture; kick off non-blocking aux_job
+        if not self.aux_job.active and self.trust_ok():
+            var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
+            var cmd = "cd " + shell_quote(dirname(path)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(path) + " 2>/dev/null"
+            if self.start_aux_job(JOB_DOCS, cmd, path, ""):
+                self.say("Generating Mojo docs...")
+        return List[DocEntry]()
 
     def docs_at_cursor(mut self, asked: Bool) -> Bool:
         """Show the documentation of the name at the cursor in a window. `asked`
@@ -638,13 +891,34 @@ __extension App:
         var files = self.docs_files_for(name, asked)
         var md = String("")
         var n = 0
+        var started_async = False
         for f in files:
             if n >= DOCS_MAX_FILES:
                 break
             n += 1
-            var part = docs_for(self.docs_of_file(f), name)
-            if part.byte_length() > 0:
-                md += ("\n\n---\n\n" if md.byte_length() > 0 else "") + part
+            if self.docs_known(f):
+                var part = docs_for(self.docs_of_file(f), name)
+                if part.byte_length() > 0:
+                    md += ("\n\n---\n\n" if md.byte_length() > 0 else "") + part
+            elif not self.term_probed:
+                if not self.aux_job.active and self.trust_ok():
+                    var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
+                    var cmd = "cd " + shell_quote(dirname(f)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(f) + " 2>/dev/null"
+                    if self.start_aux_job(JOB_DOCS, cmd, f, ""):
+                        self.wait_docs_aux_job()
+                        if self.docs_known(f):
+                            var part = docs_for(self.docs_of_file(f), name)
+                            if part.byte_length() > 0:
+                                md += ("\n\n---\n\n" if md.byte_length() > 0 else "") + part
+            else:
+                if not self.aux_job.active and self.trust_ok():
+                    var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
+                    var cmd = "cd " + shell_quote(dirname(f)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(f) + " 2>/dev/null"
+                    if self.start_aux_job(JOB_DOCS, cmd, f, name):
+                        self.say("Generating Mojo docs...")
+                        started_async = True
+        if started_async:
+            return True
         if md.byte_length() == 0:
             # not in the project: a name of the standard library, if its reference is downloaded
             var owner_hint = String("")
@@ -667,6 +941,62 @@ __extension App:
         self.mode = M_HOVER
         self.say("")
         return True
+
+    def wait_docs_aux_job(mut self, timeout_ms: Int = 25000):
+        """Drain background `JOB_DOCS` pipe when called outside the interactive `run()` loop."""
+        var deadline = Int(perf_counter_ns()) + timeout_ms * 1000000
+        while self.aux_job.active and self.aux_job.kind == JOB_DOCS and Int(perf_counter_ns()) < deadline:
+            var fds = List[Int]()
+            fds.append(self.aux_job.fd)
+            _ = wait_readable(fds, 50)
+            try:
+                self.poll_aux_job()
+            except:
+                break
+
+    def finish_docs_job(mut self, status: Int):
+        """Called by poll_aux_job() when background `mojo doc` completes."""
+        var path = String(self.aux_job.path)
+        var target_name = String(self.aux_job.exe)
+        if self.aux_job.cancelled:
+            self.say("Documentation generation cancelled")
+            return
+        for k in range(len(self.doc_files)):
+            if self.doc_files[k] == path:
+                _ = self.doc_files.pop(k)
+                _ = self.doc_sizes.pop(k)
+                _ = self.doc_times.pop(k)
+                _ = self.doc_entries.pop(k)
+                break
+        if status != 0 or len(self.aux_job.data) == 0:
+            self.say("Documentation generation failed for " + basename(path))
+            return
+        var sig = file_sig(path)
+        var stamp = sig.mtime_s * 1000000000 + sig.mtime_ns
+        var entries = List[DocEntry]()
+        var doc = json_parse(bytes_to_str(self.aux_job.data))
+        if doc.ok:
+            entries = parse_mojo_doc(doc)
+        self.doc_files.append(path)
+        self.doc_sizes.append(sig.size)
+        self.doc_times.append(stamp)
+        self.doc_entries.append(entries.copy())
+
+        if target_name.byte_length() > 0:
+            var part = docs_for(entries, target_name)
+            if part.byte_length() > 0:
+                if self.docpane_index() >= 0:
+                    self.docpane_show("Docs: " + target_name, part)
+                else:
+                    self.hover_lines = md_render(part, max(20, min(76, self.scr.w - 6)), self.hl)
+                    if len(self.hover_lines) > 0:
+                        self.hover_scroll = 0
+                        self.mode = M_HOVER
+                self.say("")
+            else:
+                self.say("No documentation found for " + target_name)
+        else:
+            self.say("Documentation ready for " + basename(path))
 
     # ==================================================== run configurations
     def project_file(self) -> String:

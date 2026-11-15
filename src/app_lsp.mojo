@@ -175,7 +175,17 @@ __extension App:
 
     def lsp_note_saved(mut self, i: Int):
         """After a save: the server gets any pending edits first, then didSave."""
-        if not self.lsp.active() or self.wins[i].path.byte_length() == 0:
+        if self.wins[i].path.byte_length() == 0:
+            return
+        var xk = self.extra_for(self.wins[i].path)
+        if xk >= 0 and self.lsp_extra[xk].client.active():
+            var xuri = path_to_uri(self.wins[i].path)
+            if self.lsp_extra[xk].client.find_doc(xuri) >= 0:
+                self.extra_send_now(xk, i)
+                if self.lsp_extra[xk].client.table.sync_save:
+                    _ = self.lsp_extra[xk].client.did_save(xuri)
+            return
+        if not self.lsp.active():
             return
         var uri = path_to_uri(self.wins[i].path)
         if self.lsp.find_doc(uri) < 0:
@@ -201,9 +211,15 @@ __extension App:
                 self.wins[i].hint_end = -1
         if colours:
             self.lsp.cancel_request(self.sem_req_id)
+            for xk in range(len(self.lsp_extra)):
+                if self.lsp_extra[xk].client.active():
+                    self.lsp_extra[xk].client.cancel_request(self.sem_req_id)
             self.sem_req_id = -1
         if hints:
             self.lsp.cancel_request(self.hint_req_id)
+            for xk in range(len(self.lsp_extra)):
+                if self.lsp_extra[xk].client.active():
+                    self.lsp_extra[xk].client.cancel_request(self.hint_req_id)
             self.hint_req_id = -1
 
     def decor_tick(mut self, now: Int):
@@ -267,8 +283,13 @@ __extension App:
             return                              # the text moved on; decor_tick asks again
         var toks = parse_semantic(m.doc, m.result())
         var classes = List[Int]()
-        for name in self.lsp.table.token_types:
-            classes.append(semantic_class(name))
+        var xk = self.extra_for(self.sem_req_path)
+        if xk >= 0 and xk < len(self.lsp_extra):
+            for name in self.lsp_extra[xk].client.table.token_types:
+                classes.append(semantic_class(name))
+        else:
+            for name in self.lsp.table.token_types:
+                classes.append(semantic_class(name))
         var sem = List[Int]()
         var row = -1
         var line = List[Int]()
@@ -318,6 +339,86 @@ __extension App:
         for h in parse_inlay(m.doc, m.result()):
             if h.row < count:
                 self.wins[i].buf.hints.append(Hint(h.row, utf16_to_col(self.wins[i].buf.line(h.row), h.col16), h.label, h.kind))
+
+    def lsp_format_request(mut self, ai: Int) -> Bool:
+        """Request `textDocument/formatting` from the matching extra server or Mojo server."""
+        if ai < 0 or ai >= len(self.wins) or self.wins[ai].path.byte_length() == 0:
+            return False
+        var path = self.wins[ai].path
+        var uri = path_to_uri(path)
+        var tab_sz = max(1, self.wins[ai].buf.indent_size)
+        var ins_sp = not self.wins[ai].buf.use_tabs
+        var now = now_ns()
+        var xk = self.extra_for(path)
+        if xk >= 0:
+            if self.lsp_extra[xk].client.state != LSP_READY or not self.lsp_extra[xk].client.table.formatting:
+                return False
+            self.extra_send_now(xk, ai)
+            var xid = self.lsp_extra[xk].client.request_formatting(uri, tab_sz, ins_sp, now)
+            if xid < 0:
+                return False
+            self.fmt_req_id = xid
+            self.fmt_req_srv = xk
+            self.fmt_req_path = path
+            return True
+        if self.lsp.state != LSP_READY or not self.lsp.table.formatting:
+            return False
+        self.lsp_send_changes(ai, now, False)
+        var id = self.lsp.request_formatting(uri, tab_sz, ins_sp, now)
+        if id < 0:
+            return False
+        self.fmt_req_id = id
+        self.fmt_req_srv = -1
+        self.fmt_req_path = path
+        return True
+
+    def formatting_arrived(mut self, m: RpcMessage):
+        """Apply `TextEdit[]` returned by `textDocument/formatting`."""
+        self.fmt_req_id = -1
+        var path = String(self.fmt_req_path)
+        self.fmt_req_path = ""
+        self.fmt_req_srv = -1
+        if m.kind == RPC_ERROR:
+            self.say("Formatting failed: " + m.error_message())
+            return
+        if m.kind != RPC_RESPONSE:
+            return
+        var wi = self.find_editor(path)
+        if wi < 0:
+            return
+        var edits = parse_formatting_edits(m.doc, m.result())
+        if len(edits) == 0:
+            self.say("Already formatted")
+            return
+        # Sort reverse by (r1, c1) so earlier edits do not invalidate later line coordinates
+        for a in range(1, len(edits)):
+            var b = a
+            while b > 0 and (edits[b].r1 > edits[b - 1].r1 or (edits[b].r1 == edits[b - 1].r1 and edits[b].c1 > edits[b - 1].c1)):
+                var tmp = edits[b].copy()
+                edits[b] = edits[b - 1].copy()
+                edits[b - 1] = tmp^
+                b -= 1
+        var g = self.wins[wi].new_group()
+        for ed in edits:
+            var nlines = self.wins[wi].buf.count()
+            if nlines <= 0:
+                break
+            var r1 = max(0, min(ed.r1, nlines - 1))
+            var r2 = max(r1, min(ed.r2, nlines - 1))
+            var c1 = utf16_to_col(self.wins[wi].buf.line(r1), ed.c1) if ed.r1 < nlines else self.wins[wi].buf.llen(r1)
+            var c2 = utf16_to_col(self.wins[wi].buf.line(r2), ed.c2) if ed.r2 < nlines else self.wins[wi].buf.llen(r2)
+            var ins_cps = List[Int]()
+            for cp in decode(ed.text):
+                if cp != 13:
+                    ins_cps.append(cp)
+            if r1 != r2 or c1 != c2:
+                _ = self.wins[wi].buf.delete(r1, c1, r2, c2, self.wins[wi].cr, self.wins[wi].cc, g)
+            if len(ins_cps) > 0:
+                _ = self.wins[wi].buf.insert(r1, c1, ins_cps, self.wins[wi].cr, self.wins[wi].cc, g)
+        self.wins[wi].clamp()
+        self.wins[wi].sync_want()
+        self.wins[wi].break_group()
+        self.say("Formatted")
 
     def lsp_sync(mut self, now: Int):
         """Keep the server's set of documents equal to the open files, and send edits
@@ -452,6 +553,10 @@ __extension App:
             if prev_starts > self.lsp.starts:
                 self.lsp.starts = prev_starts
             self.lsp_env = target_key
+            # Re-sync and re-track across all open editor windows
+            for wi in range(len(self.wins)):
+                if self.wins[wi].kind == WK_EDITOR and self.lsp_wants(wi) and wi != ai:
+                    self.lsp_track(wi, now)
             self.lsp_track(ai, now)
             var mf = self.lsp_manifest(self.lsp_front)
             self.say("Language server: switched to warm server for " + (basename(dirname(mf)) + "'s environment" + env_tag if mf.byte_length() > 0 else String("this file")))
@@ -559,6 +664,8 @@ __extension App:
                 self.semantic_arrived(m, now)
             elif m.id == self.hint_req_id:
                 self.hints_arrived(m, now)
+            elif m.id == self.fmt_req_id and self.fmt_req_srv < 0:
+                self.formatting_arrived(m)
             elif m.id == self.act_req_id and self.act_srv < 0:
                 self.actions_reply(m)
             elif m.id == self.ren_req_id and self.ren_srv < 0:

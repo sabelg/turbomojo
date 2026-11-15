@@ -14,7 +14,10 @@ runs one (the app does, in the background). `git status --porcelain=v2 -z` lines
     ? build/            (a folder nothing in which is tracked)
 """
 from std.collections import List, Dict
-from util import join_path, dirname, path_exists, shell_quote, decode
+from util import (
+    join_path, dirname, path_exists, shell_quote, decode, is_dir, read_file,
+    bytes_to_str, normalize_path, run_system, run_capture,
+)
 
 comptime GS_NONE = 0
 comptime GS_UNTRACKED = 1
@@ -45,6 +48,47 @@ def find_repo(path: String) -> String:
             return ""
         d = up
     return ""
+
+
+def resolve_git_dir(root: String) -> Tuple[String, String]:
+    """Resolves (gitdir, commondir) for standard repos, linked worktrees, and submodules.
+    - Standard repo: (<root>/.git, <root>/.git)
+    - Worktree / Submodule: parses `gitdir:` and resolves `commondir`.
+    Returns ('', '') if no git metadata is present.
+    """
+    if root.byte_length() == 0:
+        return ("", "")
+    var g = join_path(root, ".git")
+    if is_dir(g):
+        return (g, g)
+    if not path_exists(g):
+        return ("", "")
+    # .git is a regular file
+    var bytes = read_file(g)
+    if len(bytes) == 0:
+        return ("", "")
+    var content = String(bytes_to_str(bytes).strip())
+    var gitdir = String("")
+    if content.startswith("gitdir:"):
+        var ptr = String(content[byte=7:].strip())
+        if ptr.startswith("/"):
+            gitdir = normalize_path(ptr)
+        else:
+            gitdir = normalize_path(join_path(root, ptr))
+    if gitdir.byte_length() == 0 or not is_dir(gitdir):
+        return ("", "")
+    var commondir = gitdir
+    var cfile = join_path(gitdir, "commondir")
+    if path_exists(cfile):
+        var cbytes = read_file(cfile)
+        if len(cbytes) > 0:
+            var cptr = String(bytes_to_str(cbytes).strip())
+            if cptr.byte_length() > 0:
+                if cptr.startswith("/"):
+                    commondir = normalize_path(cptr)
+                else:
+                    commondir = normalize_path(join_path(gitdir, cptr))
+    return (gitdir, commondir)
 
 
 def rel_to(root: String, path: String) -> String:
@@ -414,3 +458,260 @@ def ymd(t: Int) -> String:
     if m <= 2:
         y += 1
     return String(y) + "-" + ("0" if m < 10 else "") + String(m) + "-" + ("0" if d < 10 else "") + String(d)
+
+
+# ------------------------------------------------------- commit graph & history (F29)
+@fieldwise_init
+struct CommitGraphNode(Copyable, Movable):
+    var lane: String
+    var sha: String
+    var author: String
+    var timestamp: Int
+    var summary: String
+    var decoration: String
+
+    def is_merge(self) -> Bool:
+        return self.lane.find("/") >= 0 or self.lane.find("\\") >= 0
+
+
+def graph_log_command(root: String, file_path: String = "") -> String:
+    """Command for `git log --graph` with machine-parsable fields, optionally scoped to `file_path`."""
+    var cmd = (
+        "git -C "
+        + shell_quote(root)
+        + " --no-optional-locks log --graph -n 300 --format='%h%x09%an%x09%at%x09%s%d'"
+    )
+    if file_path.byte_length() > 0:
+        var rel = rel_to(root, file_path)
+        var target = rel if rel.byte_length() > 0 else file_path
+        cmd += " -- " + shell_quote(target)
+    return cmd
+
+
+def parse_graph_log(raw_output: String) -> List[CommitGraphNode]:
+    """Parses `git log --graph --format="%h%x09%an%x09%at%x09%s%d"` output."""
+    var nodes = List[CommitGraphNode]()
+    if raw_output.byte_length() == 0:
+        return nodes^
+
+    for line in raw_output.split("\n"):
+        var l = String(String(line).rstrip("\r"))
+        if l.byte_length() == 0:
+            continue
+
+        var tab_idx = l.find("\t")
+        if tab_idx < 0:
+            nodes.append(CommitGraphNode(l, "", "", 0, "", ""))
+            continue
+
+        var prefix = String(l[byte=0:tab_idx])
+        var rest = String(l[byte=tab_idx + 1:])
+
+        var last_space = prefix.rfind(" ")
+        var lane: String
+        var sha: String
+        if last_space >= 0:
+            lane = String(String(prefix[byte=0:last_space]).strip())
+            sha = String(String(prefix[byte=last_space + 1:]).strip())
+        else:
+            lane = ""
+            sha = String(prefix.strip())
+
+        var parts = rest.split("\t")
+        var author = String(parts[0]) if len(parts) > 0 else String("")
+        var ts_str = String(parts[1]) if len(parts) > 1 else String("0")
+        var ts = 0
+        try:
+            ts = atol(ts_str)
+        except:
+            pass
+
+        var summary_deco = String(parts[2]) if len(parts) > 2 else String("")
+        var summary = summary_deco
+        var deco = String("")
+
+        var deco_start = summary_deco.rfind(" (")
+        if deco_start >= 0 and summary_deco.endswith(")"):
+            summary = String(summary_deco[byte=0:deco_start])
+            deco = String(summary_deco[byte=deco_start + 1:])
+
+        nodes.append(CommitGraphNode(lane, sha, author, ts, summary, deco))
+    return nodes^
+
+
+def commit_diff(root: String, sha: String) -> String:
+    var cap = run_capture("git -C " + shell_quote(root) + " --no-optional-locks show --patch --stat " + shell_quote(sha))
+    return String(bytes_to_str(cap.out).strip())
+
+
+def cherry_pick(root: String, sha: String) -> Int:
+    return run_system(
+        "git -C "
+        + shell_quote(root)
+        + " -c user.name='TurboMojo' -c user.email='git@turbomojo.local' cherry-pick "
+        + shell_quote(sha)
+        + " >/dev/null 2>&1"
+    )
+
+
+def revert_commit(root: String, sha: String) -> Int:
+    return run_system(
+        "git -C "
+        + shell_quote(root)
+        + " -c user.name='TurboMojo' -c user.email='git@turbomojo.local' revert --no-edit "
+        + shell_quote(sha)
+        + " >/dev/null 2>&1"
+    )
+
+
+# ------------------------------------------------------ remote sync & stashes (F31)
+@fieldwise_init
+struct StashEntry(Copyable, Movable):
+    var index: Int
+    var stash_ref: String
+    var branch: String
+    var message: String
+
+
+def parse_stash_list(raw_output: String) -> List[StashEntry]:
+    """Parses standard `git stash list` output lines into structured entries."""
+    var entries = List[StashEntry]()
+    if raw_output.byte_length() == 0:
+        return entries^
+
+    for line in raw_output.split("\n"):
+        var l = String(String(String(line).rstrip("\r")).strip())
+        if l.byte_length() == 0:
+            continue
+
+        var colon1 = l.find(":")
+        if colon1 < 0:
+            continue
+        var stash_ref = String(String(l[byte=0:colon1]).strip())
+        var rest = String(String(l[byte=colon1 + 1:]).strip())
+
+        var idx = 0
+        var brace_open = stash_ref.find("{")
+        var brace_close = stash_ref.find("}")
+        if brace_open >= 0 and brace_close > brace_open:
+            var num_str = String(stash_ref[byte=brace_open + 1:brace_close])
+            try:
+                idx = atol(num_str)
+            except:
+                pass
+
+        var colon2 = rest.find(":")
+        var branch: String
+        var message: String
+        if colon2 >= 0:
+            branch = String(String(rest[byte=0:colon2]).strip())
+            message = String(String(rest[byte=colon2 + 1:]).strip())
+        else:
+            branch = rest
+            message = rest
+
+        entries.append(StashEntry(idx, stash_ref, branch, message))
+    return entries^
+
+
+def remote_sync_script(root: String, op: String, remote: String = "origin", branch: String = "") -> String:
+    """Builds shell command string for Push (P), Pull --rebase (p), or Fetch --prune (F)."""
+    var base = "cd " + shell_quote(root) + " && "
+    if op == "push" or op == "P":
+        var b = (" " + shell_quote(branch)) if branch.byte_length() > 0 else String("")
+        return base + "git push " + shell_quote(remote) + b
+    elif op == "pull_rebase" or op == "p":
+        var b = (" " + shell_quote(branch)) if branch.byte_length() > 0 else String("")
+        return base + "git pull --rebase " + shell_quote(remote) + b
+    elif op == "fetch_prune" or op == "F":
+        return base + "git fetch --prune " + shell_quote(remote)
+    return base + "true"
+
+
+def stash_push_script(root: String, msg: String = "", untracked: Bool = True) -> String:
+    var u = " -u" if untracked else ""
+    var m = (" -m " + shell_quote(msg)) if msg.byte_length() > 0 else String("")
+    return "cd " + shell_quote(root) + " && git stash push" + u + m
+
+
+def stash_apply_script(root: String, idx: Int = 0) -> String:
+    return "cd " + shell_quote(root) + " && git stash apply stash@{" + String(idx) + "}"
+
+
+def stash_pop_script(root: String, idx: Int = 0) -> String:
+    return "cd " + shell_quote(root) + " && git stash pop stash@{" + String(idx) + "}"
+
+
+def stash_drop_script(root: String, idx: Int = 0) -> String:
+    return "cd " + shell_quote(root) + " && git stash drop stash@{" + String(idx) + "}"
+
+
+def stash_preview(root: String, idx: Int = 0) -> String:
+    var cap = run_capture("git -C " + shell_quote(root) + " --no-optional-locks stash show -p stash@{" + String(idx) + "}")
+    return String(bytes_to_str(cap.out).strip())
+
+
+# ------------------------------------------------------------ worktree manager (F32)
+@fieldwise_init
+struct WorktreeRecord(Copyable, Movable):
+    var path: String
+    var head: String
+    var branch: String
+    var bare: Bool
+    var detached: Bool
+
+
+def parse_worktree_list(raw_output: String) -> List[WorktreeRecord]:
+    """Parses `git worktree list --porcelain` into structured WorktreeRecord objects."""
+    var records = List[WorktreeRecord]()
+    if raw_output.byte_length() == 0:
+        return records^
+
+    var cur_path = String("")
+    var cur_head = String("")
+    var cur_branch = String("")
+    var cur_bare = False
+    var cur_detached = False
+
+    for line in raw_output.split("\n"):
+        var l = String(String(String(line).rstrip("\r")).strip())
+        if l.byte_length() == 0:
+            if cur_path.byte_length() > 0:
+                records.append(WorktreeRecord(cur_path, cur_head, cur_branch, cur_bare, cur_detached))
+                cur_path = ""
+                cur_head = ""
+                cur_branch = ""
+                cur_bare = False
+                cur_detached = False
+            continue
+
+        if l.startswith("worktree "):
+            cur_path = String(l[byte=9:].strip())
+        elif l.startswith("HEAD "):
+            cur_head = String(l[byte=5:].strip())
+        elif l.startswith("branch "):
+            var full_ref = String(l[byte=7:].strip())
+            if full_ref.startswith("refs/heads/"):
+                cur_branch = String(full_ref[byte=11:])
+            else:
+                cur_branch = full_ref
+        elif l == "bare":
+            cur_bare = True
+        elif l == "detached":
+            cur_detached = True
+
+    if cur_path.byte_length() > 0:
+        records.append(WorktreeRecord(cur_path, cur_head, cur_branch, cur_bare, cur_detached))
+
+    return records^
+
+
+def worktree_add(root: String, wt_path: String, branch: String = "", new_branch: Bool = False) -> Int:
+    var b = String("")
+    if branch.byte_length() > 0:
+        b = (" -b " if new_branch else " ") + shell_quote(branch)
+    return run_system("git -C " + shell_quote(root) + " worktree add " + shell_quote(wt_path) + b + " >/dev/null 2>&1")
+
+
+def worktree_prune(root: String) -> Int:
+    return run_system("git -C " + shell_quote(root) + " worktree prune --expire now >/dev/null 2>&1")

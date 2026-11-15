@@ -8,14 +8,16 @@ struct of `appstate.mojo`, one area each.
 | File | What it is |
 |---|---|
 | `src/acp.mojo` | A client of the Agent Client Protocol (ACP, protocol version 1): a coding agent runs as a child process and speaks JSON-RPC 2.0 over its stdin/stdout, one message per line (https://agentclientprotocol.com/protocol/transports). |
+| `src/agent_diff.mojo` | Agent proposal queue, multi-file navigation, and turn review checkpoints. |
 | `src/agentchat.mojo` | The agent panel's model: the conversation with a coding agent as entries (what you said, what the agent answered as it streams in, its thinking, tool calls, plans, notes) turned into Markdown for the panel; and the mentions in a prompt. |
 | `src/agentexplain.mojo` | Grounded "explain" prompts for the coding agent: what TurboMojo knows locally (the code with its line numbers, the compiler's message, the built-in explanation of that message, the downloaded documentation of the names involved) is put into the prompt, with the request to answer from it and to name the pages used. |
+| `src/agentprompt.mojo` | Agent prompt composer and slash-command parser for ACP coding agent panel. |
 | `src/agentsvc.mojo` | What the editor does for a coding agent (ACP): its terminals (`terminal/*`: a command on a pty, its output kept for the agent) and the files it proposes to write (`fs/write_text_file`: a proposal the user accepts or rejects in the diff view). |
 | `src/app.mojo` | TurboMojo application entry: the event loop. |
 | `src/app_agent.mojo` | The agent panel: a coding agent (ACP, src/acp.mojo) in a window at the right edge. |
 | `src/app_agentexplain.mojo` | Help > Ask agent about this error / this code: the agent panel gets a grounded prompt (src/agentexplain.mojo) - the code with line numbers, the message, TurboMojo's explanation of it, and the downloaded documentation of the names involved - and is asked to answer from it and name the pages. |
 | `src/app_agentsvc.mojo` | The editor's services to a coding agent (ACP): reading files through the editor, proposed writes to accept or reject, and terminals for its commands. |
-| `src/app_codegen.mojo` | Codegen & kernel inspector (`Compile > Inspect generated code`, WK_CODEGEN) and GPU kernel profiler (`Compile > Profile GPU kernels`): emits assembly or LLVM IR asynchronously via `aux_job` (`mojo build --emit=asm\|llvm`) and wraps `nsys` / `rocprofv3` profiling. |
+| `src/app_codegen.mojo` | Codegen & kernel inspector (`Compile > Inspect generated code`, WK_CODEGEN), benchmark runner (`std.benchmark` & `max benchmark`), and GPU kernel profiler (`nsys`, `ncu`, `rocprofv3`). |
 | `src/app_debug.mojo` | Debugging: building a program with debug information, running it under Mojo's debug adapter and showing what happens (see dap.mojo). |
 | `src/app_dialogs.mojo` | Dialog flow: opening dialogs and acting on their buttons and keys. |
 | `src/app_docpane.mojo` | Help > Docs pane: the documentation of the name at the cursor in a window at the right edge, beside the code, kept up to date as the cursor moves - looked up when the cursor has rested on a name for a moment, never while typing. |
@@ -61,6 +63,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_vimcmd.mojo` | The vim interface's command line (P12-03; see vim_cmd.mojo): / and ? search, n N * #, and `:` commands - :w :q :wq :x :e :N :s :%s :d :y :noh and the rest, and TurboMojo's own commands by name (`:build`, `:run`, `:file.save`). |
 | `src/app_watch.mojo` | Reacting to files that were changed by another program while open in the IDE. |
 | `src/appstate.mojo` | Application state: the App struct, its fields and small shared helpers. |
+| `src/bench.mojo` | Mojo `std.benchmark` runner, baseline regression tracker, and structured `max benchmark` JSON diffing. |
 | `src/breakpoints.mojo` | Breakpoints: where the debugger is to stop. |
 | `src/buffer.mojo` | Text buffer: a rope of UTF-8 text addressed by (row, column in codepoints), with grouped undo/redo and the per-file settings (line endings, indentation, final newline). |
 | `src/caps.mojo` | Terminal capabilities: what the terminal says it supports, and colour-depth handling. |
@@ -93,6 +96,7 @@ struct of `appstate.mojo`, one area each.
 | `src/grapheme.mojo` | Grapheme clusters: what a user perceives as one character. |
 | `src/grep.mojo` | Find in files: walks a folder and searches every text file, a little at a time so the editor stays responsive (call `step` from the event loop until `done`). |
 | `src/helpbook.mojo` | TurboMojo's own help: the "TurboMojo" book of the documentation viewer (the guide, the cheat sheet, the keyboard reference, what's new) and the tutorial file. |
+| `src/hexview.mojo` | Virtualized 16-byte/row Hex + ASCII Inspector (WK_HEX) and Binary File Safety Guard. |
 | `src/highlight.mojo` | Polyglot syntax highlighter (Mojo, Python, C/C++/CUDA, TOML, JSON, Shell/YAML, Markdown). |
 | `src/inflate.mojo` | Inflate: the zlib / DEFLATE decompressor (RFC 1950, 1951), for PNG pictures. |
 | `src/ipc.mojo` | Portable file-queue IPC between CLI (`tmide --reuse`), MCP (`tmide-mcp`), and a live IDE. |

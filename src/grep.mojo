@@ -11,12 +11,71 @@ from std.os import listdir
 from std.os.path import isdir, islink
 from std.time import perf_counter_ns
 from search import Search
-from util import decode, decode_list, to_str, read_file, join_path, slice_str, basename
+from util import decode, decode_list, to_str, read_file, join_path, slice_str, basename, path_exists, bytes_to_str
 
 comptime MAX_HITS = 5000
 comptime MAX_FILE_BYTES = 5 * 1024 * 1024
 comptime MAX_DEPTH = 40
 comptime MAX_TEXT = 200          # characters of a matching line kept for display
+
+
+@fieldwise_init
+struct IgnoreRule(Copyable, Movable):
+    var base_dir: String
+    var pattern: String
+    var negated: Bool
+    var dir_only: Bool
+    var anchored: Bool
+
+
+def trim_gitignore_line(raw: String) -> String:
+    var s = raw
+    if s.endswith("\r"):
+        var trimmed_cr = String(s[byte=0:s.byte_length() - 1])
+        s = trimmed_cr
+    var n = s.byte_length()
+    var bytes = s.as_bytes()
+    while n > 0 and Int(bytes[n - 1]) == 32:
+        if n >= 2 and Int(bytes[n - 2]) == 92:
+            return String(s[byte=0:n - 2]) + " "
+        n -= 1
+    return String(s[byte=0:n])
+
+
+def parse_gitignore_rules(base_dir: String, text: String, mut out: List[IgnoreRule]):
+    """Parse `.gitignore` lines (supporting `*`, `**`, `?`, nested `/` paths, trailing `/`, and `!` negations)."""
+    for raw_part in text.split("\n"):
+        var line = trim_gitignore_line(String(raw_part))
+        if line.byte_length() == 0 or line.startswith("#"):
+            continue
+        var negated = False
+        if line.startswith("!"):
+            negated = True
+            var after_bang = String(line[byte=1:])
+            line = after_bang
+        elif line.startswith("\\#") or line.startswith("\\!"):
+            var unesc = String(line[byte=1:])
+            line = unesc
+        if line.byte_length() == 0:
+            continue
+        var dir_only = False
+        if line.endswith("/"):
+            dir_only = True
+            while line.endswith("/"):
+                var no_trail = String(line[byte=0:line.byte_length() - 1])
+                line = no_trail
+        if line.byte_length() == 0:
+            continue
+        var had_lead = False
+        if line.startswith("/"):
+            had_lead = True
+            while line.startswith("/"):
+                var no_lead = String(line[byte=1:])
+                line = no_lead
+        if line.byte_length() == 0:
+            continue
+        var anchored = had_lead or (line.find("/") >= 0)
+        out.append(IgnoreRule(base_dir, line, negated, dir_only, anchored))
 
 
 def glob_match_from(pat: List[Int], pi_in: Int, text: List[Int], ti_in: Int, slash_stops: Bool) -> Bool:
@@ -35,11 +94,18 @@ def glob_match_from(pat: List[Int], pi_in: Int, text: List[Int], ti_in: Int, sla
                 if pi + 1 < pn and pat[pi + 1] == 42:
                     cross = True
                 pi += 1
-            if cross and pi < pn and pat[pi] == 47 and glob_match_from(pat, pi + 1, text, ti, slash_stops):
-                return True
+            if cross:
+                if pi < pn and pat[pi] == 47 and glob_match_from(pat, pi + 1, text, ti, slash_stops):
+                    return True
+                var k = ti
+                while k <= tn:
+                    if glob_match_from(pat, pi, text, k, slash_stops):
+                        return True
+                    k += 1
+                return False
             star_pi = pi
             star_ti = ti
-            star_cross_slash = cross or not slash_stops
+            star_cross_slash = not slash_stops
             continue
         if pi < pn and ((pat[pi] == 63 and (not slash_stops or text[ti] != 47)) or pat[pi] == text[ti]):
             pi += 1
@@ -54,6 +120,33 @@ def glob_match_from(pat: List[Int], pi_in: Int, text: List[Int], ti_in: Int, sla
     while pi < pn and pat[pi] == 42:
         pi += 1
     return pi == pn
+
+
+def rule_matches_rel(rule: IgnoreRule, rel: String, is_dir: Bool) -> Bool:
+    if not rule.dir_only or is_dir:
+        if rule.anchored:
+            if glob_match(rule.pattern, rel):
+                return True
+        else:
+            var base = basename(rel)
+            if glob_match(rule.pattern, base) or glob_match(rule.pattern, rel):
+                return True
+    if not rule.negated and rel.find("/") >= 0:
+        var pos = 0
+        var n = rel.byte_length()
+        while pos < n:
+            var sl = rel.find("/", pos)
+            if sl < 0:
+                break
+            var anc = String(rel[byte=0:sl])
+            if rule.anchored:
+                if glob_match(rule.pattern, anc):
+                    return True
+            else:
+                if glob_match(rule.pattern, basename(anc)) or glob_match(rule.pattern, anc):
+                    return True
+            pos = sl + 1
+    return False
 
 
 def glob_match(pat: String, text: String) -> Bool:
@@ -166,6 +259,9 @@ struct FileSearch(Movable):
     var files_skipped: Int
     var ignore_names: List[String]
     var ignore_exts: List[String]
+    var ignore_root: String
+    var ignore_rules: List[IgnoreRule]
+    var loaded_gitignores: List[String]
     var overlay_paths: List[String]
     var overlay_bytes: List[List[UInt8]]
 
@@ -185,6 +281,9 @@ struct FileSearch(Movable):
         self.files_skipped = 0
         self.ignore_names = List[String]()
         self.ignore_exts = List[String]()
+        self.ignore_root = ""
+        self.ignore_rules = List[IgnoreRule]()
+        self.loaded_gitignores = List[String]()
         self.overlay_paths = List[String]()
         self.overlay_bytes = List[List[UInt8]]()
 
@@ -200,55 +299,67 @@ struct FileSearch(Movable):
         self.overlay_paths.append(path)
         self.overlay_bytes.append(data^)
 
+    def load_subdir_gitignore(mut self, dir: String):
+        """Load `<dir>/.gitignore` once if present, appending scoped rules for `dir`."""
+        if dir.byte_length() == 0 or dir in self.loaded_gitignores:
+            return
+        self.loaded_gitignores.append(dir)
+        var gi_path = join_path(dir, ".gitignore")
+        if not path_exists(gi_path):
+            return
+        var txt = bytes_to_str(read_file(gi_path))
+        parse_gitignore_rules(dir, txt, self.ignore_rules)
+
     def load_gitignore(mut self, root: String):
-        """Take the simple entries of root/.gitignore; anything with other wildcards,
-        nested paths or negation is left out (those files are then searched)."""
+        """Reset and load root `.gitignore` rules (wildcards, nested paths, `!` negations)."""
         self.ignore_names.clear()
         self.ignore_exts.clear()
         self.ignore_names.append("node_modules")
         self.ignore_names.append("__pycache__")
-        var data = decode_list(read_file(join_path(root, ".gitignore")))
-        data.append(10)
-        var cur = List[Int]()
-        for c in data:
-            if c != 10:
-                if c != 13:
-                    cur.append(c)
-                continue
-            var a = 0
-            var b = len(cur)
-            while b > a and cur[b - 1] == 32:
-                b -= 1
-            if b > a and cur[a] == 47:
-                a += 1
-            if b > a and cur[b - 1] == 47:
-                b -= 1
-            var ok = b > a and cur[a] != 35 and cur[a] != 33
-            var ext = False
-            if ok and b - a > 2 and cur[a] == 42 and cur[a + 1] == 46:
-                ext = True
-                a += 1                      # keep ".ext"
-            if ok:
-                for k in range(a, b):
-                    if cur[k] == 47 or cur[k] == 42 or cur[k] == 63 or cur[k] == 91:
-                        ok = False
-            if ok:
-                if ext:
-                    self.ignore_exts.append(slice_str(cur, a, b))
-                else:
-                    self.ignore_names.append(slice_str(cur, a, b))
-            cur.clear()
+        self.ignore_root = root
+        self.ignore_rules.clear()
+        self.loaded_gitignores.clear()
+        self.load_subdir_gitignore(root)
 
-    def ignored(self, name: String) -> Bool:
-        if name.startswith("."):
+    def ignored_path(self, full_path: String, is_dir: Bool) -> Bool:
+        var name = basename(full_path)
+        if name == ".git":
             return True
+        var matched = name.startswith(".")
         for n in self.ignore_names:
             if n == name:
-                return True
+                matched = True
         for e in self.ignore_exts:
             if name.endswith(e):
-                return True
-        return False
+                matched = True
+        var root_base = self.ignore_root if self.ignore_root.byte_length() > 0 else self.root
+        if root_base.byte_length() > 0 and full_path.startswith(root_base + "/"):
+            var rel_root = String(full_path[byte=root_base.byte_length() + 1:])
+            for seg_slice in rel_root.split("/"):
+                var seg = String(seg_slice)
+                if seg == ".git":
+                    return True
+                if seg.startswith(".") or seg == "node_modules" or seg == "__pycache__":
+                    matched = True
+        for i in range(len(self.ignore_rules)):
+            ref rule = self.ignore_rules[i]
+            var rel = full_path
+            if rule.base_dir.byte_length() > 0:
+                var prefix = rule.base_dir + "/"
+                if not full_path.startswith(prefix):
+                    continue
+                rel = String(full_path[byte=prefix.byte_length():])
+            if rule_matches_rel(rule, rel, is_dir):
+                matched = not rule.negated
+        return matched
+
+    def ignored(self, name: String) -> Bool:
+        if name == ".git":
+            return True
+        var root_base = self.ignore_root if self.ignore_root.byte_length() > 0 else self.root
+        if root_base.byte_length() > 0 and not name.startswith("/"):
+            return self.ignored_path(join_path(root_base, name), True)
+        return self.ignored_path(name, True)
 
     def start(mut self, root: String, s: Search, filter_glob: String = ""):
         self.s = s.copy()
@@ -280,6 +391,8 @@ struct FileSearch(Movable):
     def list_next_dir(mut self):
         var dir = self.dirs.pop()
         var depth = self.depths.pop()
+        if dir != self.root:
+            self.load_subdir_gitignore(dir)
         var names = List[String]()
         try:
             for n in listdir(dir):
@@ -290,10 +403,11 @@ struct FileSearch(Movable):
         var subdirs = List[String]()
         var files = List[String]()
         for n in names:
-            if self.ignored(n):
-                continue
             var p = join_path(dir, n)
-            if isdir(p):
+            var is_d = isdir(p)
+            if self.ignored_path(p, is_d):
+                continue
+            if is_d:
                 if not islink(p) and depth < MAX_DEPTH:
                     subdirs.append(p)
             else:

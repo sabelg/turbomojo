@@ -13,7 +13,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, WK_AGENT, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, WK_AGENT, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -66,6 +66,17 @@ __extension App:
                 return i
         return -1
 
+    def is_pane_win(self, kind: Int) -> Bool:
+        return kind == WK_EDITOR or kind == WK_HEX or kind == WK_MDPREVIEW
+
+    def top_pane(self) -> Int:
+        var i = len(self.wins) - 1
+        while i >= 0:
+            if self.is_pane_win(self.wins[i].kind):
+                return i
+            i -= 1
+        return -1
+
     def layout_sync(mut self):
         """Bring the layout tree and the windows into step (tiled layout only): windows
         that went leave the tree, new ones become tabs of the current pane, the editor
@@ -75,7 +86,7 @@ __extension App:
             return
         var ids = List[Int]()
         for i in range(len(self.wins)):
-            if self.wins[i].kind == WK_EDITOR:
+            if self.is_pane_win(self.wins[i].kind):
                 if self.wins[i].wid == 0:
                     self.wins[i].wid = self.next_wid
                     self.next_wid += 1
@@ -86,7 +97,7 @@ __extension App:
         for id in ids:
             if self.lay.group_of(id) < 0:
                 self.lay.add(id)
-        var te = self.top_editor()
+        var te = self.top_pane()
         if te >= 0:
             self.lay.activate(self.wins[te].wid)
         # the room the panes share: the desktop less the Message and Outline windows
@@ -306,7 +317,7 @@ __extension App:
 
     def layout_command(mut self, cmd: Int):
         var t0 = self.top()
-        if t0 >= 0 and self.wins[t0].kind != WK_EDITOR and (cmd == CM_PANE_GROW or cmd == CM_PANE_SHRINK or cmd == CM_NEXT_TAB or cmd == CM_PREV_TAB):
+        if t0 >= 0 and not self.is_pane_win(self.wins[t0].kind) and (cmd == CM_PANE_GROW or cmd == CM_PANE_SHRINK or cmd == CM_NEXT_TAB or cmd == CM_PREV_TAB):
             self.panel_command(cmd)             # the bottom panel or the Outline window has the keyboard
             return
         if cmd == CM_TILED:
@@ -314,7 +325,7 @@ __extension App:
             self.lay = Layout()
             for i in range(len(self.wins)):
                 self.wins[i].hidden = False
-                if self.wins[i].kind == WK_EDITOR:
+                if self.is_pane_win(self.wins[i].kind):
                     self.wins[i].zoomed = False
                     self.wins[i].half = False
             if self.tiled:
@@ -328,10 +339,10 @@ __extension App:
             self.say("This needs the tiled layout (Window > Tiled layout)")
             return
         self.layout_sync()
-        if self.top_editor() < 0:
+        if self.top_pane() < 0:
             return
-        if self.top() != self.top_editor():
-            self.focus(self.top_editor())       # from the Message or Outline window: back to the panes
+        if self.top() != self.top_pane():
+            self.focus(self.top_pane())         # from the Message or Outline window: back to the panes
         if cmd == CM_SPLIT_RIGHT or cmd == CM_SPLIT_DOWN:
             var why = self.lay.split(cmd == CM_SPLIT_RIGHT)
             if why.byte_length() > 0:
@@ -357,6 +368,101 @@ __extension App:
                 self.say("The pane cannot be made " + ("larger" if cmd == CM_PANE_GROW else "smaller"))
             self.layout_sync()
 
+    def toggle_pin_tab(mut self):
+        """Pin or unpin the active tab so batch close preserves it and it stays leftmost."""
+        var t = self.top()
+        if t < 0:
+            return
+        self.wins[t].pinned = not self.wins[t].pinned
+        if self.tiled and self.wins[t].pinned and self.wins[t].wid > 0:
+            var g = self.lay.group_of(self.wins[t].wid)
+            if g >= 0:
+                var old_idx = -1
+                var dst_idx = 0
+                for k in range(len(self.lay.tabs[g])):
+                    var id = self.lay.tabs[g][k]
+                    if id == self.wins[t].wid:
+                        old_idx = k
+                    else:
+                        var wi = self.win_by_wid(id)
+                        if wi >= 0 and self.wins[wi].pinned and old_idx < 0:
+                            dst_idx = k + 1
+                if old_idx > dst_idx:
+                    var moved = self.lay.tabs[g].pop(old_idx)
+                    self.lay.tabs[g].insert(dst_idx, moved)
+                    self.lay.active[g] = dst_idx
+        self.say("Tab " + ("pinned: " if self.wins[t].pinned else "unpinned: ") + self.wins[t].title)
+
+    def toggle_md_preview(mut self):
+        """Open or close a side-by-side scroll-synchronized Markdown preview (`WK_MDPREVIEW`)."""
+        var t = self.top()
+        if t >= 0 and self.wins[t].kind == WK_MDPREVIEW:
+            self.remove_window(t)
+            self.layout_sync()
+            self.say("Closed Markdown preview")
+            return
+        var ti = self.top_editor()
+        if ti < 0:
+            self.say("Open a Markdown file first")
+            return
+        if self.wins[ti].wid == 0:
+            self.wins[ti].wid = self.next_wid
+            self.next_wid += 1
+        var peer_wid = self.wins[ti].wid
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_MDPREVIEW and self.wins[k].preview_peer_wid == peer_wid:
+                self.remove_window(k)
+                self.layout_sync()
+                self.say("Closed Markdown preview")
+                return
+        var dh = self.desk_h()
+        var mi = self.msg_index()
+        if mi >= 0:
+            dh = max(6, self.wins[mi].y - 1)
+        var win = Window(
+            WK_MDPREVIEW,
+            "Preview: " + self.wins[ti].title,
+            self.wins[ti].path,
+            self.scr.w // 2,
+            1,
+            self.scr.w - self.scr.w // 2,
+            dh,
+            self.free_number(),
+        )
+        win.wid = self.next_wid
+        self.next_wid += 1
+        win.preview_peer_wid = peer_wid
+        win.read_only = True
+        win.gut = 0
+        win.buf.core = self.wins[ti].buf.core
+        win.buf.version = self.wins[ti].buf.version
+        self.wins.append(win^)
+        var pvi = len(self.wins) - 1
+        if self.tiled:
+            self.focus(pvi)
+            self.layout_sync()
+            _ = self.lay.split(True)
+            var back = self.win_by_wid(peer_wid)
+            if back >= 0:
+                self.focus(back)
+            self.layout_sync()
+        else:
+            var rx = self.wins[ti].x
+            var ry = self.wins[ti].y
+            var rw = self.wins[ti].w
+            var rh = self.wins[ti].h
+            if rw >= 32:
+                var hw = rw // 2
+                self.wins[ti].w = rw - hw
+                self.wins[pvi].x = rx + rw - hw
+                self.wins[pvi].y = ry
+                self.wins[pvi].w = hw
+                self.wins[pvi].h = rh
+            self.focus(ti)
+            self.fit_windows()
+        self.sync_shared_buffers(ti)
+        self.say("Markdown preview: " + self.wins[ti].title)
+
     def draw_tabs(mut self, i: Int, active: Bool):
         """A pane with several files: their names in its top border, the shown one
         picked out. Where they stand is remembered for the mouse."""
@@ -374,8 +480,18 @@ __extension App:
         var labels = List[String]()
         for id in self.lay.tabs[g]:
             var wi = self.win_by_wid(id)
-            var t = self.wins[wi].title if wi >= 0 else String("?")
-            if wi >= 0 and self.wins[wi].buf.modified:
+            if wi < 0:
+                labels.append(" ? ")
+                continue
+            var is_dup = False
+            for other_id in self.lay.tabs[g]:
+                if other_id != id:
+                    var owi = self.win_by_wid(other_id)
+                    if owi >= 0 and self.wins[owi].title == self.wins[wi].title:
+                        is_dup = True
+                        break
+            var t = self.wins[wi].tab_title(is_dup)
+            if self.wins[wi].buf.modified:
                 t += "*"
             # the shown tab in [brackets] as well as in other colours (not colour alone)
             labels.append(("[" + t + "]") if len(labels) == self.lay.active[g] else (" " + t + " "))

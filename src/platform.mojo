@@ -70,6 +70,22 @@ comptime ICANON = 0x100 if IS_MACOS else 0x2
 comptime ISIG = 0x80 if IS_MACOS else 0x1
 comptime IEXTEN = 0x400 if IS_MACOS else 0x8000
 
+# ----------------------------------------------------------- struct sigaction
+# Linux: sa_handler 8B @ 0, sa_mask 128B @ 8, sa_flags 4B @ 136 (or 152B total).
+# macOS (arm64): sa_handler 8B @ 0, sa_mask 4B @ 8, sa_flags 4B @ 12 (16B total).
+comptime SIGACTION_SIZE = 16 if IS_MACOS else 152
+comptime SA_FLAGS_OFFSET = 12 if IS_MACOS else 136
+
+
+def init_sigaction(handler: Int, flags: Int = 0) -> List[UInt8]:
+    var b = List[UInt8](length=SIGACTION_SIZE, fill=0)
+    for i in range(8):
+        b[i] = UInt8((handler >> (8 * i)) & 0xFF)
+    for i in range(4):
+        b[SA_FLAGS_OFFSET + i] = UInt8((flags >> (8 * i)) & 0xFF)
+    return b^
+
+
 # ------------------------------------------------- Linux-only facilities
 # Where these are missing TurboMojo falls back: the window size is polled instead of
 # signalfd/eventfd waking the loop, files are checked by time and size instead of

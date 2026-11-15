@@ -17,7 +17,13 @@ from app import *
 from commands import CM_BUILD
 from app_notify import spoken_notice
 from term import key_event, wait_readable, KEY_ENTER
-from util import to_str, decode, basename, run_system
+from util import to_str, decode, basename, run_system, run_capture, bytes_to_str, shell_quote, path_exists, read_file
+from cells import parse_cells, cell_at_row
+from snippets import synthesize_mojo_quickfixes
+from docs import docs_for
+from doclib import find_help, parse_query, path_markdown
+from docpane import md_section
+from outline import scan_outline, scope_path, outline_tag
 
 comptime LINE_PROMPT = "tm> "
 
@@ -31,9 +37,14 @@ comptime LINE_HELP = """Commands (one per line; N and M are line numbers):
   set N TEXT       replace line N with TEXT
   insert N TEXT    a new line N (TEXT; what was there moves down)
   append TEXT      a new line after the last
+  replace [N] A B  replace text A with B on current line or line N
   delete N[-M]     remove lines
-  undo             take back the last change
+  undo, redo       take back or redo changes
   save             write the current file
+  doc SYMBOL       show documentation for symbol
+  cell [next|prev] list or navigate code cells
+  fix              apply quickfix to current line
+  git [status|diff] show git status or diff
   build            compile it; the messages and the result
   errors           the compiler's messages with places
   next, prev       the next (previous) message: where, and the line
@@ -349,6 +360,169 @@ __extension App:
             self.wins[i].undo()
             out.append("undone; at " + self.numbered_line(i, self.wins[i].cr))
             return out^
+        if cmd == "redo" or cmd == "r":
+            if len(self.wins[i].buf.redos) == 0:
+                out.append("nothing to redo")
+                return out^
+            self.wins[i].redo()
+            out.append("redone; at " + self.numbered_line(i, self.wins[i].cr))
+            return out^
+        if cmd == "replace":
+            var p = split_first(arg)
+            var target_r = self.wins[i].cr
+            var old_str: String
+            var new_str: String
+            if is_number(p[0]):
+                try:
+                    target_r = atol(p[0]) - 1
+                except:
+                    target_r = -1
+                var p2 = split_first(p[1])
+                old_str = p2[0]
+                new_str = p2[1]
+            else:
+                old_str = p[0]
+                new_str = p[1]
+            if target_r < 0 or target_r >= count:
+                out.append("no line " + p[0] + " (the file has " + String(count) + ")")
+                return out^
+            if old_str.byte_length() == 0:
+                out.append("replace OLD NEW or replace N OLD NEW")
+                return out^
+            var cur_line = to_str(self.wins[i].buf.line(target_r))
+            var byte_idx = cur_line.find(old_str)
+            if byte_idx < 0:
+                out.append("not found on line " + String(target_r + 1) + ": " + old_str)
+                return out^
+            var cp_idx = len(decode(String(cur_line[byte=0:byte_idx])))
+            var old_cp_len = len(decode(old_str))
+            var g = self.wins[i].new_group()
+            var cr = self.wins[i].cr
+            var cc = self.wins[i].cc
+            _ = self.wins[i].buf.delete(target_r, cp_idx, target_r, cp_idx + old_cp_len, cr, cc, g)
+            _ = self.wins[i].buf.insert(target_r, cp_idx, decode(new_str), cr, cc, g)
+            self.wins[i].break_group()
+            self.wins[i].goto(target_r, cp_idx)
+            out.append(self.numbered_line(i, target_r))
+            return out^
+        if cmd == "cell":
+            var cells = parse_cells(self.wins[i].buf)
+            if len(cells) == 0:
+                out.append("no code cells (# %%) in file")
+                return out^
+            var sub = split_first(arg)[0]
+            var cur_idx = cell_at_row(cells, self.wins[i].cr)
+            if sub == "next":
+                var nxt = cur_idx + 1 if cur_idx + 1 < len(cells) else 0
+                var tr = max(cells[nxt].header_row, cells[nxt].start_row)
+                self.wins[i].goto(tr, 0)
+                out.append("cell " + String(nxt + 1) + "/" + String(len(cells)) + ": " + cells[nxt].title)
+                out.append(self.numbered_line(i, tr))
+                return out^
+            elif sub == "prev":
+                var prv = cur_idx - 1 if cur_idx - 1 >= 0 else (len(cells) - 1)
+                var tr = max(cells[prv].header_row, cells[prv].start_row)
+                self.wins[i].goto(tr, 0)
+                out.append("cell " + String(prv + 1) + "/" + String(len(cells)) + ": " + cells[prv].title)
+                out.append(self.numbered_line(i, tr))
+                return out^
+            else:
+                for c in cells:
+                    out.append("cell " + String(c.index + 1) + ": " + c.title + " (lines " + String(c.start_row + 1) + "-" + String(c.end_row + 1) + ")")
+                return out^
+        if cmd == "fix" or cmd == "quickfix":
+            var cr = self.wins[i].cr
+            var cc = self.wins[i].cc
+            var fixes = synthesize_mojo_quickfixes(self.wins[i].buf, cr, cc, List[String](), List[Int](), List[Int]())
+            if len(fixes) == 0:
+                out.append("no quickfix available at line " + String(cr + 1))
+                return out^
+            var qf = fixes[0].copy()
+            var g = self.wins[i].new_group()
+            _ = self.wins[i].buf.delete(qf.r1, qf.c1, qf.r2, qf.c2, cr, cc, g)
+            _ = self.wins[i].buf.insert(qf.r1, qf.c1, decode(qf.new_text), cr, cc, g)
+            self.wins[i].break_group()
+            out.append("fixed: " + qf.title)
+            out.append(self.numbered_line(i, qf.r1))
+            return out^
+        if cmd == "git":
+            var sub = split_first(arg)[0]
+            var git_cmd = "git status --porcelain"
+            if sub == "diff":
+                git_cmd = "git diff"
+            elif arg.byte_length() > 0:
+                git_cmd = "git " + arg
+            var res = run_capture("cd " + shell_quote(self.cwd) + " && " + git_cmd + " 2>&1")
+            var txt = bytes_to_str(res.out)
+            if txt.strip().byte_length() == 0:
+                out.append("git: clean")
+            else:
+                for l in txt.split("\n"):
+                    if String(l.strip()).byte_length() > 0:
+                        out.append(String(l))
+            return out^
+        if cmd == "doc":
+            if arg.byte_length() == 0:
+                out.append("doc SYMBOL")
+                return out^
+            var doc_path = self.wins[i].path
+            var doc_text = docs_for(self.docs_of_file(doc_path), arg)
+            if doc_text.byte_length() == 0:
+                for k in range(len(self.doc_entries)):
+                    var extra = docs_for(self.doc_entries[k], arg)
+                    if extra.byte_length() > 0:
+                        doc_text = extra
+                        break
+            if doc_text.byte_length() == 0:
+                if not self.doc_index.built and self.doc_home.byte_length() > 0 and path_exists(self.doc_home):
+                    self.docs_index_ready()
+                if self.doc_index.built:
+                    var api_e = -1
+                    if len(self.doc_lib.pages) > 0:
+                        api_e = self.docpane_api_entry(arg)
+                        if api_e < 0:
+                            var hits = find_help(self.doc_index, self.doc_lib, parse_query(arg), 3)
+                            if len(hits) > 0:
+                                api_e = hits[0].entry
+                    else:
+                        var low_arg = arg.lower()
+                        for ei in range(len(self.doc_index.entries)):
+                            if self.doc_index.entries[ei].low.find(low_arg) >= 0:
+                                api_e = ei
+                                break
+                    if api_e >= 0:
+                        ref ent = self.doc_index.entries[api_e]
+                        if ent.page >= 0 and ent.page < len(self.doc_lib.pages):
+                            var ppath = self.doc_lib.pages[ent.page].path
+                            if ppath.byte_length() > 0 and path_exists(ppath):
+                                doc_text = md_section(path_markdown(ppath), ent.text, ent.nth)
+                        if doc_text.byte_length() == 0:
+                            doc_text = ent.text
+            if doc_text.byte_length() == 0:
+                for k in range(len(self.symidx.syms)):
+                    if self.symidx.syms[k].name == arg:
+                        var spath = self.symidx.syms[k].path
+                        var sname = self.symidx.syms[k].name
+                        var skind = self.symidx.syms[k].kind
+                        var sowner = self.symidx.syms[k].owner
+                        var srow = self.symidx.syms[k].row
+                        var file_doc = docs_for(self.docs_of_file(spath), arg)
+                        if file_doc.byte_length() > 0:
+                            doc_text = file_doc
+                            break
+                        var owner_part = " (in " + sowner + ")" if sowner.byte_length() > 0 else String("")
+                        var header = outline_tag(skind) + " " + sname + owner_part + " — " + spath + ":" + String(srow + 1)
+                        var src_lines = bytes_to_str(read_file(spath)).split("\n")
+                        if srow >= 0 and srow < len(src_lines):
+                            header += "\n" + String(src_lines[srow])
+                        doc_text = header
+                        break
+            if doc_text.byte_length() > 0:
+                for l in doc_text.split("\n"):
+                    out.append(String(l))
+            else:
+                out.append("no documentation found for " + arg)
+            return out^
         if cmd == "save" or cmd == "w":
             if self.ensure_saved(i) and self.mode != M_DIALOG:
                 out.append("saved " + self.wins[i].path)
@@ -433,3 +607,7 @@ __extension App:
                 self.line_print(self.line_command(got[0]))
             except e:
                 print("error: " + String(e))
+
+def announce_reader_context(mut app: App) -> String:
+    """Announce window focus, scope, fold, and diagnostic changes when `app.reader` is True."""
+    return app.announce_reader_context()

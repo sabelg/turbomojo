@@ -4,6 +4,19 @@ What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.
 day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.2.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
+## 2.4: Mojo 1.2 & GPU developer milestone - 2026-11-15
+
+- Async `mojo doc` (`aux_job` pipe), warm 2-server `lsp_pool`, Mojo 1.2 quick fixes (`Alt-Enter`), multi-tabstop snippets, and full polyglot extra-server LSP parity (`F01`–`F06`, `F17`, `F20`) (P13-01)
+- `std.benchmark` runner with JSON baseline regression deltas and inline ns/op badges, PTX/AMDGCN/ASM/LLVM codegen inspector with live cursor sync, GPU monitor & roofline profiler, and MAX serve / benchmark launcher (`F07`–`F10`) (P13-02)
+- Test Explorer watch-on-save, line coverage gutter, one-key failed-test debugging, and `# %%` Mojo/Python interactive code cells with execution badges and kernel reset (`F11`–`F12`) (P13-03)
+- DAP live attach to PID, `coredumpctl` post-mortem core dumps, conditional/hit-count/logpoint breakpoints, inline variable ghosts, GPU lane/block focus, and CPU SIMD/FP16/BF16 lane inspector (`F13`–`F16`) (P13-04)
+- Workspace call & type hierarchy (`CM_CALL_HIERARCHY` / `CM_TYPE_HIERARCHY`) and inline cursor-anchored PeekBox (`Alt-Shift-F12`) with Git hunk preview (`S` stage / `R` revert) (`F18`–`F19`) (P13-05)
+- Branching undo tree (`D_UNDO_TREE`, `g-`/`g+`), auto-detected read-only hex viewer (`WK_HEX`), structural selection & multi-cursor editing, regex streaming Replace in Files with atomic multi-file undo, and rainbow brackets (`F21`–`F25`) (P13-06)
+- Interactive minimap & scrollbar scrubbing, overview ruler ticks, draggable tiled splitters, disambiguated & pinned tabs (`CM_PIN_TAB`), middle-click tab close, and scroll-synced GFM Markdown preview (`WK_MDPREVIEW`) (`F26`–`F27`) (P13-07)
+- Complete Vim polish: `:set` option bridging, `:marks`/`:registers`, `gn`/`gN`, `g;`/`g,`, `gv`, `q:`/`q/` history window, and uppercase file marks (`F28`) (P13-08)
+- Interactive Git commit graph (`WK_GITLOG`), side-by-side split diff & 3-way conflict resolution, async push/pull/fetch & stash picker, MRU project switcher, and Git worktree manager (`F29`–`F32`) (P13-09)
+- Multi-hunk agent diff review, `@doc`/`@symbol` prompt grounding, IPC/MCP co-debugging, Plugin API v2 (`editor/edit`, `diagnostics/set`, manager dialog), multi-tab terminal, SSH/tmux clipboard & port-forward toasts, `.gitignore` explorer/watcher, and extended `--lines` & screen-reader context cues (`F33`–`F40`) (P13-10)
+
 ## 2.3: A vim interface - 2026-11-14
 
 - Modal editing core: `ui.keymap = "vim"` (and Options > Keys); Normal, Insert and Visual (characters and lines) modes; the mode in the status line; the cursor a block in Normal and a bar in Insert (DECSCUSR, where the terminal has it); Esc and i a I A o O v V (P12-01)

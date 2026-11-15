@@ -85,7 +85,17 @@ __extension App:
         if self.job.active:
             out.append(self.job_header() + "  (" + String((now - self.job.t0) // 1000000000) + " s)")
         if self.aux_job.active:
-            var aux_lbl = ("Emitting codegen for " if self.aux_job.kind == JOB_CODEGEN else "Formatting ") + self.aux_job.path
+            var aux_lbl = String("Formatting ") + self.aux_job.path
+            if self.aux_job.kind == JOB_DOCS:
+                aux_lbl = "Generating Mojo docs..."
+            elif self.aux_job.kind == JOB_CODEGEN:
+                aux_lbl = "Emitting codegen for " + self.aux_job.path
+            elif self.aux_job.kind == JOB_BENCH:
+                aux_lbl = "Benchmarking " + self.aux_job.path
+            elif self.aux_job.kind == JOB_ROOFLINE:
+                aux_lbl = "Profiling GPU roofline for " + self.aux_job.path
+            elif self.aux_job.kind == JOB_MAX_BENCH:
+                aux_lbl = "Running MAX serve benchmark"
             out.append(aux_lbl + "  (" + String((now - self.aux_job.t0) // 1000000000) + " s)")
         if self.git_proc.running and self.git_req >= 5:       # commit, branches, switch, blame
             out.append("git: " + ["", "", "", "", "", "commit", "listing branches", "switching branch", "blame"][self.git_req])

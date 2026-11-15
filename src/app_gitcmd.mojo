@@ -5,13 +5,16 @@ trusted folder. What git prints (also its errors, and hooks' output) is shown wh
 command fails.
 """
 from std.collections import List
+from std.ffi import external_call
 from appstate import *
 from app_notify import *
 from util import *
 from dialog import *
-from window import Window, WK_EDITOR, WK_BLAME, WK_GIT
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_BLAME, WK_GIT, WK_GITLOG
 from term import KEY_ENTER, KEY_ESC
 from git import *
+from project import find_up, ProjectMRU, parse_mru_toml
+from symindex import SymbolIndex, FileIndex
 from signals import own_pid
 from app_git import *
 from app_gitdiff import *
@@ -297,6 +300,429 @@ __extension App:
                 self.watch_recheck = True
             else:
                 self.git_info("Stash", "git stash failed:", text)
+        elif req == GQ_PUSH or req == GQ_PULL or req == GQ_FETCH:
+            var label = "Push" if req == GQ_PUSH else ("Pull (--rebase)" if req == GQ_PULL else "Fetch (--prune)")
+            self.watch_recheck = True
+            if status == 0:
+                var done_msg = String(text.split("\n")[0]) if text.byte_length() > 0 else (label + " complete")
+                self.say("Git " + label + ": " + done_msg)
+                self.notify_as("git", NL_DONE, "Git " + label, done_msg, True)
+            else:
+                var err_line = String(text.split("\n")[len(text.split("\n")) - 1]) if text.byte_length() > 0 else (label + " failed")
+                self.git_info("Git " + label, "git " + label.lower() + " failed:", text)
+                self.notify_as("git", NL_ERROR, "Git " + label + " failed", err_line, True)
+
+    # ------------------------------------------------- commit graph & history (F29)
+    def git_log_index(self) -> Int:
+        for i in range(len(self.wins)):
+            if self.wins[i].kind == WK_GITLOG:
+                return i
+        return -1
+
+    def git_log_open(mut self, file_path: String = ""):
+        if not self.git_repo_ready():
+            return
+        var cap = run_capture(graph_log_command(self.git.root, file_path) + " 2>/dev/null")
+        var nodes = parse_graph_log(bytes_to_str(cap.out))
+        self.git_log_shas.clear()
+        self.git_log_file = file_path
+        var lines = List[String]()
+        var first_commit_row = 0
+        var found_first = False
+        for k in range(len(nodes)):
+            ref n = nodes[k]
+            if n.sha.byte_length() == 0:
+                lines.append(n.lane)
+                self.git_log_shas.append("")
+                continue
+            if not found_first:
+                first_commit_row = k
+                found_first = True
+            var dt = ymd(n.timestamp) if n.timestamp > 0 else String("          ")
+            var who = n.author
+            if cp_len(who) > 14:
+                who = slice_str(decode(who), 0, 14)
+            else:
+                who = pad_right(who, 14)
+            var deco = (" " + n.decoration) if n.decoration.byte_length() > 0 else String("")
+            var lane_part = (n.lane + " ") if n.lane.byte_length() > 0 else String("* ")
+            lines.append(lane_part + n.sha + "  " + dt + "  " + who + "  " + n.summary + deco)
+            self.git_log_shas.append(n.sha)
+        if len(lines) == 0:
+            lines.append("(no commits in repository)")
+            self.git_log_shas.append("")
+        var text = List[Int]()
+        for k in range(len(lines)):
+            if k > 0:
+                text.append(10)
+            for c in decode(lines[k]):
+                text.append(c)
+        var li = self.git_log_index()
+        var ei = self.top_editor()
+        if li < 0:
+            var x = self.wins[ei].x if ei >= 0 else 0
+            var y = self.wins[ei].y if ei >= 0 else 1
+            var w = self.wins[ei].w if ei >= 0 else self.scr.w
+            var h = self.wins[ei].h if ei >= 0 else self.desk_h()
+            var win = Window(WK_GITLOG, "Git Log", "gitlog:" + file_path, x, y, w, h, self.free_number())
+            self.wins.append(win^)
+            li = len(self.wins) - 1
+        else:
+            self.focus(li)
+            li = self.top()
+        var scope_label = basename(file_path) if file_path.byte_length() > 0 else (self.git.branch if self.git.branch.byte_length() > 0 else String("HEAD"))
+        self.wins[li].title = "Git Log: " + scope_label
+        self.wins[li].path = "gitlog:" + file_path
+        self.wins[li].buf.load(text)
+        self.wins[li].buf.modified = False
+        self.wins[li].cr = min(first_commit_row, self.wins[li].buf.count() - 1)
+        self.wins[li].top = 0
+        self.wins[li].follow = True
+        self.say("Git Log: Enter/d diff, y copy SHA, C cherry-pick, R revert, f file filter, q/Esc close")
+
+    def git_log_key(mut self, k: Int) raises -> Bool:
+        var t = self.top()
+        var row = self.wins[t].cr
+        var sha = self.git_log_shas[row] if row >= 0 and row < len(self.git_log_shas) else String("")
+        if k == KEY_ESC or k == 113:  # Esc / q
+            _ = self.wins.pop(t)
+            var gi = self.git_status_index()
+            if gi >= 0:
+                self.focus(gi)
+            else:
+                var ei = self.top_editor()
+                if ei >= 0:
+                    self.focus(ei)
+            return True
+        if k == KEY_ENTER or k == 100:  # Enter / d: view commit diff
+            if sha.byte_length() == 0:
+                self.say("Move cursor onto a commit row")
+                return True
+            var diff_text = commit_diff(self.git.root, sha)
+            self.panel_write(PG_MESSAGE)
+            var mi = self.ensure_msg()
+            self.wins[mi].buf.load(decode(diff_text if diff_text.byte_length() > 0 else ("Commit " + sha)))
+            self.wins[mi].buf.modified = False
+            self.wins[mi].cr = 0
+            self.wins[mi].top = 0
+            self.say("Commit " + sha + " diff opened in Message panel")
+            return True
+        if k == 121:  # y: copy SHA to clipboard via OSC 52
+            if sha.byte_length() == 0:
+                self.say("No commit SHA on this row")
+                return True
+            self.clipboard = decode(sha)
+            self.osc52(self.clipboard.copy())
+            self.say("Copied commit SHA " + sha)
+            return True
+        if k == 67:  # C: cherry-pick
+            if sha.byte_length() == 0:
+                return True
+            var rc = cherry_pick(self.git.root, sha)
+            self.git_status_due = True
+            self.git_forget_bases()
+            self.watch_recheck = True
+            if rc == 0:
+                var keep_file = self.git_log_file
+                self.git_log_open(keep_file)
+                self.say("Cherry-picked " + sha)
+            else:
+                self.say("Cherry-pick conflict on " + sha + " — resolve conflicts or abort")
+            return True
+        if k == 82:  # R: revert commit
+            if sha.byte_length() == 0:
+                return True
+            var rc = revert_commit(self.git.root, sha)
+            self.git_status_due = True
+            self.git_forget_bases()
+            self.watch_recheck = True
+            if rc == 0:
+                var keep_file = self.git_log_file
+                self.git_log_open(keep_file)
+                self.say("Reverted commit " + sha)
+            else:
+                self.say("Revert failed or conflicted on " + sha)
+            return True
+        if k == 102:  # f: toggle file-scoped log
+            if self.git_log_file.byte_length() > 0:
+                self.git_log_open("")
+            else:
+                var ei = self.top_editor()
+                if ei >= 0 and self.wins[ei].path.byte_length() > 0:
+                    var fp = String(self.wins[ei].path)
+                    self.git_log_open(fp)
+                else:
+                    self.say("No open editor file to filter history")
+            return True
+        return False
+
+    # ----------------------------------------------- remote sync & stash picker (F31)
+    def git_remote_sync(mut self, op: String):
+        if not self.git_repo_ready():
+            return
+        var req = GQ_FETCH
+        var verb = String("Fetching (--prune)...")
+        if op == "P" or op == "push":
+            req = GQ_PUSH
+            verb = "Pushing to origin..."
+        elif op == "p" or op == "pull" or op == "pull_rebase":
+            req = GQ_PULL
+            verb = "Pulling (--rebase) from origin..."
+        var branch = String("")
+        if (req == GQ_PUSH or req == GQ_PULL) and self.git.branch.byte_length() > 0 and not self.git.branch.startswith("("):
+            branch = self.git.branch
+        var script = remote_sync_script(self.git.root, op, "origin", branch)
+        self.git_queue(req, sh_script(script + " </dev/null 2>&1"), "")
+        self.say(verb)
+
+    def git_stash_list_open(mut self):
+        if not self.git_repo_ready():
+            return
+        var cap = run_capture("git -C " + shell_quote(self.git.root) + " --no-optional-locks stash list 2>/dev/null")
+        var entries = parse_stash_list(bytes_to_str(cap.out))
+        self.git_stash_refs.clear()
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        for k in range(len(entries)):
+            ref e = entries[k]
+            self.git_stash_refs.append(e.index)
+            var label = e.stash_ref + ": " + e.message
+            items.append(label)
+            keys.append(label)
+            data.append(k)
+        var d = Dialog(D_GIT_STASH, "Git Stashes", min(74, self.scr.w - 4), min(20, max(14, len(items) + 9)))
+        d.fields.append(Field("~M~essage", ""))
+        d.list_filter = True
+        d.keys = keys^
+        d.set_items(items^, data^)
+        d.lines.append("Select a stash to Apply/Pop/Drop/View, or enter a message to Push new.")
+        d.buttons.append("~A~pply")
+        d.buttons.append("~P~op")
+        d.buttons.append("~D~rop")
+        d.buttons.append("P~u~sh new")
+        d.buttons.append("~V~iew diff")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def git_stash_action(mut self, action: String, sel: Int = 0, msg: String = ""):
+        if not self.git_repo_ready():
+            return
+        var act = action.lower()
+        if act == "push" or act == "new":
+            var script = stash_push_script(self.git.root, String(msg.strip()), True)
+            self.git_queue(GQ_STASH, sh_script(script + " </dev/null 2>&1"), "")
+            self.say("Stashing changes...")
+            return
+        if len(self.git_stash_refs) == 0:
+            self.say("No stashes in repository")
+            return
+        var idx_pos = max(0, min(sel, len(self.git_stash_refs) - 1))
+        var stash_idx = self.git_stash_refs[idx_pos]
+        if act == "apply":
+            self.git_queue(GQ_STASH, sh_script(stash_apply_script(self.git.root, stash_idx) + " </dev/null 2>&1"), "")
+            self.say("Applying stash@{" + String(stash_idx) + "}...")
+        elif act == "pop":
+            self.git_queue(GQ_STASH, sh_script(stash_pop_script(self.git.root, stash_idx) + " </dev/null 2>&1"), "")
+            self.say("Popping stash@{" + String(stash_idx) + "}...")
+        elif act == "drop":
+            self.git_queue(GQ_STASH, sh_script(stash_drop_script(self.git.root, stash_idx) + " </dev/null 2>&1"), "")
+            self.say("Dropping stash@{" + String(stash_idx) + "}...")
+        elif act == "preview" or act == "view":
+            var diff_out = stash_preview(self.git.root, stash_idx)
+            self.panel_write(PG_MESSAGE)
+            var mi = self.ensure_msg()
+            self.wins[mi].buf.load(decode(diff_out if diff_out.byte_length() > 0 else ("(stash@{" + String(stash_idx) + "} is empty)")))
+            self.wins[mi].buf.modified = False
+            self.wins[mi].cr = 0
+            self.wins[mi].top = 0
+            self.say("Showing stash@{" + String(stash_idx) + "} in Message panel")
+
+    def git_stash_button(mut self, b: Int, sel: Int, msg: String):
+        if b == 0:
+            self.git_stash_action("apply", sel, msg)
+        elif b == 1:
+            self.git_stash_action("pop", sel, msg)
+        elif b == 2:
+            self.git_stash_action("drop", sel, msg)
+        elif b == 3:
+            self.git_stash_action("push", sel, msg)
+        elif b == 4:
+            self.git_stash_action("preview", sel, msg)
+
+    # ------------------------------------ project switcher & worktrees (F32)
+    def mru_projects_path(self) -> String:
+        var sd = state_dir()
+        if sd.byte_length() == 0:
+            return ""
+        return sd + "/projects.toml"
+
+    def mru_sync_load(mut self):
+        var p = self.mru_projects_path()
+        var mru = ProjectMRU(12)
+        var existing = List[String]()
+        if p.byte_length() > 0 and path_exists(p):
+            existing = parse_mru_toml(read_text(p))
+        var i = len(existing) - 1
+        while i >= 0:
+            mru.record_visit(existing[i])
+            i -= 1
+        var j = len(self.mru_paths) - 1
+        while j >= 0:
+            mru.record_visit(self.mru_paths[j])
+            j -= 1
+        if self.cwd.byte_length() > 0:
+            mru.record_visit(self.cwd)
+        self.mru_paths = mru.entries.copy()
+
+    def mru_record_project(mut self, target: String):
+        self.mru_sync_load()
+        var mru = ProjectMRU(12)
+        var i = len(self.mru_paths) - 1
+        while i >= 0:
+            mru.record_visit(self.mru_paths[i])
+            i -= 1
+        mru.record_visit(target)
+        self.mru_paths = mru.entries.copy()
+        var p = self.mru_projects_path()
+        if p.byte_length() > 0:
+            var dir = dirname(p)
+            if not path_exists(dir):
+                _ = run_system("mkdir -p " + shell_quote(dir))
+            _ = write_file(p, str_bytes(mru.to_toml()))
+
+    def switch_project_open(mut self):
+        self.mru_sync_load()
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        for k in range(len(self.mru_paths)):
+            var p = self.mru_paths[k]
+            var mark = "* " if p == self.cwd else "  "
+            items.append(mark + p)
+            keys.append(p)
+            data.append(k)
+        var d = Dialog(D_SWITCH_PROJECT, "Switch Project", min(76, self.scr.w - 4), min(20, max(13, len(items) + 8)))
+        d.fields.append(Field("~P~roject path", ""))
+        d.list_filter = True
+        d.keys = keys^
+        d.set_items(items^, data^)
+        d.lines.append("Choose a recent project or type a folder path.")
+        d.buttons.append("~S~witch")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def switch_project_to(mut self, dir: String) raises:
+        var raw = String(dir.strip())
+        if raw.byte_length() == 0:
+            self.say("Project path is empty")
+            return
+        var target = normalize_path(abs_path(self.cwd, raw))
+        if not path_exists(target) or not is_dir(target):
+            self.say("Project folder does not exist: " + target)
+            return
+        self.session_save()
+        var cpath = target.copy()
+        _ = external_call["chdir", Int32](cpath.as_c_string_span())
+        self.cwd = target
+        var proj_cfg = find_up(target, ".turbomojo.toml")
+        self.project_dir = proj_cfg
+        if self.config_path.byte_length() > 0:
+            self.load_config()
+        if self.project_dir.byte_length() == 0:
+            self.project_dir = find_up(target, "pixi.toml")
+        self.pixi_for = "\x01"
+        self.pixi_found = ""
+        self.tasks.clear()
+        self.ex.set_root(target)
+        self.explorer_show()
+        self.fidx = FileIndex()
+        self.symidx = SymbolIndex()
+        self.git = GitStatus()
+        self.git_checked_ns = 0
+        self.git_status_due = True
+        self.git_forget_bases()
+        self.git_tick(now_ns())
+        self.mru_record_project(target)
+        self.say("Switched project to " + target)
+
+    def switch_project_button(mut self, b: Int, sel: Int, typed: String) raises:
+        if b != 0:
+            return
+        var chosen = String(typed.strip())
+        if chosen.byte_length() == 0 and sel >= 0 and sel < len(self.mru_paths):
+            chosen = self.mru_paths[sel]
+        if chosen.byte_length() > 0:
+            self.switch_project_to(chosen)
+
+    def git_worktree_open(mut self):
+        if not self.git_repo_ready():
+            return
+        var cap = run_capture("git -C " + shell_quote(self.git.root) + " --no-optional-locks worktree list --porcelain 2>/dev/null")
+        var records = parse_worktree_list(bytes_to_str(cap.out))
+        self.git_wt_paths.clear()
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        for k in range(len(records)):
+            ref r = records[k]
+            self.git_wt_paths.append(r.path)
+            var mark = "* " if r.path == self.git.root or r.path == self.cwd else "  "
+            var tag = ("[" + r.branch + "]") if r.branch.byte_length() > 0 else ("(bare)" if r.bare else "(detached)")
+            var label = mark + r.path + "  " + tag
+            items.append(label)
+            keys.append(r.path + " " + r.branch)
+            data.append(k)
+        var d = Dialog(D_GIT_WORKTREE, "Git Worktrees", min(78, self.scr.w - 4), min(20, max(14, len(items) + 9)))
+        d.fields.append(Field("~P~ath [branch]", ""))
+        d.list_filter = True
+        d.keys = keys^
+        d.set_items(items^, data^)
+        d.lines.append("Switch to a worktree, Add (<path> [branch]), or Prune stale metadata.")
+        d.buttons.append("~S~witch")
+        d.buttons.append("~A~dd")
+        d.buttons.append("~P~rune")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def git_worktree_button(mut self, b: Int, sel: Int, typed: String) raises:
+        if b == 0:  # Switch
+            var target = String("")
+            if sel >= 0 and sel < len(self.git_wt_paths):
+                target = self.git_wt_paths[sel]
+            elif String(typed.strip()).byte_length() > 0:
+                target = String(typed.strip())
+            if target.byte_length() > 0:
+                self.switch_project_to(target)
+        elif b == 1:  # Add
+            if not self.git_repo_ready():
+                return
+            var spec = String(typed.strip())
+            if spec.byte_length() == 0:
+                self.say("Specify a worktree folder path (and optional branch)")
+                return
+            var wt_path = spec
+            var br = String("")
+            var sp = spec.find(" ")
+            if sp > 0:
+                wt_path = String(spec[byte=0:sp].strip())
+                br = String(spec[byte=sp + 1:].strip())
+            wt_path = normalize_path(abs_path(self.cwd, wt_path))
+            var new_br = False
+            if br.byte_length() > 0:
+                var check_rc = run_system("git -C " + shell_quote(self.git.root) + " show-ref --verify --quiet " + shell_quote("refs/heads/" + br))
+                new_br = check_rc != 0
+            if worktree_add(self.git.root, wt_path, br, new_br) == 0:
+                self.switch_project_to(wt_path)
+            else:
+                self.say("git worktree add failed for " + wt_path)
+        elif b == 2:  # Prune
+            if not self.git_repo_ready():
+                return
+            if worktree_prune(self.git.root) == 0:
+                self.say("Pruned stale git worktrees")
+            else:
+                self.say("git worktree prune failed")
 
     # ----------------------------------------------------------- stash & status
     def git_stash(mut self, pop: Bool):
@@ -480,18 +906,32 @@ __extension App:
             if sel_path.byte_length() > 0 and not is_dir(sel_path):
                 self.open_path(sel_path)
             return True
-        if k == 100 or k == 68:  # d / D: diff of selected file
+        if k == 100 or k == 68:  # d / D: diff of selected file (editor-free)
             if sel_path.byte_length() > 0 and not is_dir(sel_path):
-                self.open_path(sel_path)
-                self.git_diff_open(sel_staged)
+                self.git_diff_open_path(sel_path, sel_staged)
             return True
-        if k == 32 or k == 115 or k == 83 or k == 117 or k == 85:  # Space / s / u: stage or unstage file
+        if k == 32 or k == 115 or k == 117 or k == 85:  # Space / s / u / U: stage or unstage file
             if sel_path.byte_length() > 0 and self.git.root.byte_length() > 0:
                 var rel = rel_to(self.git.root, sel_path)
                 if rel.byte_length() > 0:
                     var unstage = sel_staged or k == 117 or k == 85
                     self.git_queue(GQ_WRITE, stage_file_script(self.git.root, rel, unstage), sel_path)
                     self.say(("Unstaging " if unstage else "Staging ") + basename(sel_path) + "...")
+            return True
+        if k == 83:              # S: stash list picker
+            self.git_stash_list_open()
+            return True
+        if k == 76:              # L: commit graph & history browser
+            self.git_log_open()
+            return True
+        if k == 80:              # P: push
+            self.git_remote_sync("P")
+            return True
+        if k == 112:             # p: pull --rebase
+            self.git_remote_sync("p")
+            return True
+        if k == 70:              # F: fetch --prune
+            self.git_remote_sync("F")
             return True
         if k == 99 or k == 67:   # c: commit
             self.git_commit_dialog(False)

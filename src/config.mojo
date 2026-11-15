@@ -162,6 +162,11 @@ struct Settings(Copyable, Movable):
     var lsp_cmds: List[String]          #   their command
     var lsp_exts: List[List[String]]    #   the file endings they are for (".py")
     var lsp_langs: List[String]         #   the languageId they are told (default: the name)
+    var mcp_names: List[String]         # [mcp.<name>]: external MCP servers
+    var mcp_cmds: List[String]          #   their command
+    var mcp_args: List[List[String]]    #   their command-line arguments
+    var mcp_env_keys: List[List[String]]#   environment variable keys
+    var mcp_env_vals: List[List[String]]#   environment variable values
     var reduced_motion: Int     # ui.reduced_motion: -1 auto (the desktop's setting), 0 off, 1 on
     var keymap: Int      # 0 modern, 1 turbo, 2 emacs
     var tiled: Bool      # ui.layout = "tiled"
@@ -191,6 +196,8 @@ struct Settings(Copyable, Movable):
     var highlight_word: Bool
     var relative_numbers: Bool
     var indent_guides: Bool
+    var rainbow_brackets: Bool
+    var test_watch: Bool
     var persistent_undo: Bool
     var trim_trailing: Bool
     var rulers: List[Int]
@@ -229,6 +236,11 @@ struct Settings(Copyable, Movable):
         self.lsp_cmds = List[String]()
         self.lsp_exts = List[List[String]]()
         self.lsp_langs = List[String]()
+        self.mcp_names = List[String]()
+        self.mcp_cmds = List[String]()
+        self.mcp_args = List[List[String]]()
+        self.mcp_env_keys = List[List[String]]()
+        self.mcp_env_vals = List[List[String]]()
         self.reduced_motion = -1
         self.keymap = 0
         self.tiled = False
@@ -258,6 +270,8 @@ struct Settings(Copyable, Movable):
         self.highlight_word = True
         self.relative_numbers = False
         self.indent_guides = False
+        self.rainbow_brackets = False
+        self.test_watch = False
         self.persistent_undo = True
         self.trim_trailing = False
         self.rulers = List[Int]()
@@ -342,6 +356,8 @@ struct Settings(Copyable, Movable):
         self.highlight_word = self.take_bool(doc, "editor.highlight_word", self.highlight_word)
         self.relative_numbers = self.take_bool(doc, "editor.relative_numbers", self.relative_numbers)
         self.indent_guides = self.take_bool(doc, "editor.indent_guides", self.indent_guides)
+        self.rainbow_brackets = self.take_bool(doc, "editor.rainbow_brackets", self.rainbow_brackets)
+        self.test_watch = self.take_bool(doc, "tools.test_watch", self.test_watch)
         self.persistent_undo = self.take_bool(doc, "editor.persistent_undo", self.persistent_undo)
         self.trim_trailing = self.take_bool(doc, "editor.trim_trailing_whitespace", self.trim_trailing)
         self.format_on_save = self.take_bool(doc, "editor.format_on_save", self.format_on_save)
@@ -525,12 +541,51 @@ struct Settings(Copyable, Movable):
                 self.lsp_cmds.append(cmd)
                 self.lsp_exts.append(exts.copy())
                 self.lsp_langs.append(lang)
+        # [mcp.<name>]: MCP servers for ACP coding agents
+        var seen_mcp = List[String]()
+        for key in doc.keys_in("mcp"):
+            var dot = key.find(".")
+            if dot <= 0:
+                self.warnings.append("mcp." + key + ": an MCP server is a table, [mcp." + key + "]")
+                continue
+            var name = String(key[byte=0:dot])
+            var field = String(key[byte=dot + 1:])
+            if field != "command" and field != "args" and not field.startswith("env.") and field != "env":
+                self.warnings.append("unknown setting mcp." + key + " (an MCP server has command, args and env)")
+            if name in seen_mcp:
+                continue
+            seen_mcp.append(name)
+            var cmd = doc.get_str("mcp." + name + ".command", "")
+            var args = doc.get_list("mcp." + name + ".args")
+            if cmd.byte_length() == 0:
+                self.warnings.append("mcp." + name + " needs a command")
+                continue
+            var env_k = List[String]()
+            var env_v = List[String]()
+            for ek in doc.keys_in("mcp." + name + ".env"):
+                env_k.append(ek)
+                env_v.append(doc.get_str("mcp." + name + ".env." + ek, ""))
+            var mcp_idx = -1
+            for j in range(len(self.mcp_names)):
+                if self.mcp_names[j] == name:
+                    mcp_idx = j
+            if mcp_idx >= 0:                 # (the project's file overrides the user's)
+                self.mcp_cmds[mcp_idx] = cmd
+                self.mcp_args[mcp_idx] = args.copy()
+                self.mcp_env_keys[mcp_idx] = env_k^
+                self.mcp_env_vals[mcp_idx] = env_v^
+            else:
+                self.mcp_names.append(name)
+                self.mcp_cmds.append(cmd)
+                self.mcp_args.append(args.copy())
+                self.mcp_env_keys.append(env_k^)
+                self.mcp_env_vals.append(env_v^)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_blame", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.indent_guides", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.format_on_save", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.lsp_auto_start", "tools.pixi_env", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_blame", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.indent_guides", "editor.rainbow_brackets", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.format_on_save", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.lsp_auto_start", "tools.pixi_env", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.test_watch", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
             known.append(String(k))
         for k in doc.keys:
-            if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp."):
+            if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp.") or k.startswith("mcp."):
                 continue                # [run.<name>] tables are the run configurations
             if not (k in known):
                 var msg = "unknown setting " + k

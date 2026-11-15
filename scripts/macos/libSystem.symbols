@@ -46,7 +46,9 @@ _getpid
 _grantpt
 _ioctl
 _isatty
+_kevent
 _kill
+_kqueue
 _localtime_r
 _log
 _logf

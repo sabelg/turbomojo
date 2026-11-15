@@ -13,7 +13,11 @@ from pathlib import Path
 _IPC_SEQ = 0
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-STATE_FILE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "turbomojo" / "ide-state.json"
+_state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+if (_state_home / "ide-state.json").is_file() or _state_home.name == "turbomojo":
+    STATE_FILE = _state_home / "ide-state.json"
+else:
+    STATE_FILE = _state_home / "turbomojo" / "ide-state.json"
 DOCS_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "turbomojo" / "docs"
 ERRHELP_DIR = (
     REPO_ROOT / "help" / "errors"
@@ -182,6 +186,53 @@ TOOLS = [
                     "description": "Optional extra -I include directories.",
                 },
                 "timeout_sec": {"type": "integer", "description": "Execution timeout in seconds (default 90)."},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "turbomojo_capture_screen",
+        "description": "Capture the current live TUI frame of TurboMojo in plain text or SVG vector format.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "format": {"type": "string", "enum": ["text", "svg"], "description": "Output format: 'text' (default) or 'svg'."},
+            },
+        },
+    },
+    {
+        "name": "turbomojo_symbol_search",
+        "description": "Search workspace symbols (functions, structs, traits, variables) in TurboMojo's fast symbol index.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Symbol name or substring filter."},
+                "limit": {"type": "integer", "description": "Maximum symbols to return (default 50)."},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "turbomojo_git_diff",
+        "description": "Return buffer-aware unified git diff including unsaved in-memory edits from TurboMojo editor buffers.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Optional file path to limit diff to."},
+                "buffer_text": {"type": "string", "description": "Optional in-memory buffer text override."},
+            },
+        },
+    },
+    {
+        "name": "turbomojo_lsp_query",
+        "description": "Query the live LSP server inside TurboMojo for hover documentation, symbol definition, or references.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File path to query."},
+                "line": {"type": "integer", "description": "1-based line number."},
+                "col": {"type": "integer", "description": "1-based column number."},
+                "query_type": {"type": "string", "enum": ["definition", "references", "hover"], "description": "LSP query type (default 'definition')."},
             },
             "required": ["path"],
         },
@@ -713,6 +764,87 @@ def handle_call(name: str, args: dict) -> dict:
         incs = (args or {}).get("include_paths") or []
         tsec = int((args or {}).get("timeout_sec", 90) or 90)
         return run_mojo_test_file(fp, tname, incs, tsec)
+    if name == "turbomojo_capture_screen":
+        fmt = (args or {}).get("format", "text")
+        rep = send_ide_ipc("turbomojo_capture_screen", {"format": fmt})
+        if rep is not None:
+            return rep
+        return {"ok": False, "live": False, "note": "No live TurboMojo TUI session is currently running."}
+    if name == "turbomojo_symbol_search":
+        q = (args or {}).get("query", "")
+        lim = int((args or {}).get("limit", 50) or 50)
+        rep = send_ide_ipc("turbomojo_symbol_search", {"query": q, "limit": lim})
+        if rep is not None:
+            return rep
+        # Offline fallback: scan files in workspace matching query
+        state = read_ide_state()
+        cwd = (state.get("project_dir") if isinstance(state, dict) else None) or str(REPO_ROOT)
+        matches = []
+        try:
+            for root, dirs, files in os.walk(cwd):
+                dirs[:] = [d for d in dirs if not d.startswith(".") and d != "build"]
+                for f in files:
+                    if f.endswith(".mojo") or f.endswith(".🔥"):
+                        fp = os.path.join(root, f)
+                        try:
+                            with open(fp, "r", encoding="utf-8", errors="ignore") as fh:
+                                for lno, line in enumerate(fh, 1):
+                                    m = re.search(r'\b(def|struct|trait)\s+([A-Za-z0-9_]+)', line)
+                                    if m and q.lower() in m.group(2).lower():
+                                        matches.append({
+                                            "name": m.group(2),
+                                            "kind": m.group(1),
+                                            "file": fp,
+                                            "line": lno,
+                                            "col": m.start(2) + 1,
+                                            "owner": "",
+                                        })
+                                        if len(matches) >= lim:
+                                            break
+                        except Exception:
+                            pass
+                if len(matches) >= lim:
+                    break
+        except Exception:
+            pass
+        return {"ok": True, "live": False, "query": q, "symbols": matches, "total": len(matches)}
+    if name == "turbomojo_git_diff":
+        p = str((args or {}).get("path", "") or "")
+        buf_txt = (args or {}).get("buffer_text", "")
+        rep = send_ide_ipc("turbomojo_git_diff", {"path": p, "buffer_text": buf_txt})
+        if rep is not None:
+            return rep
+        # Fallback to git diff on disk
+        state = read_ide_state()
+        cwd = (state.get("project_dir") if isinstance(state, dict) else None) or str(REPO_ROOT)
+        if buf_txt and p:
+            p_full = Path(p).expanduser().resolve() if not os.path.isabs(p) else Path(p)
+            disk_txt = p_full.read_text(encoding="utf-8", errors="replace") if p_full.is_file() else ""
+            import difflib
+            diff_lines = list(difflib.unified_diff(
+                disk_txt.splitlines(keepends=True),
+                buf_txt.splitlines(keepends=True),
+                fromfile=f"a/{p}",
+                tofile=f"b/{p}",
+            ))
+            return {"ok": True, "live": False, "diff": "".join(diff_lines), "hunks": 1 if diff_lines else 0}
+        cmd = ["git", "diff"]
+        if p:
+            cmd.append(p)
+        try:
+            res = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=10)
+            return {"ok": res.returncode == 0, "live": False, "diff": res.stdout, "hunks": res.stdout.count("@@")}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+    if name == "turbomojo_lsp_query":
+        p = str((args or {}).get("path", "") or "")
+        line = max(1, int((args or {}).get("line", 1) or 1))
+        col = max(1, int((args or {}).get("col", 1) or 1))
+        qtype = str((args or {}).get("query_type", "definition") or "definition")
+        rep = send_ide_ipc("turbomojo_lsp_query", {"path": p, "line": line, "col": col, "query_type": qtype})
+        if rep is not None:
+            return rep
+        return {"ok": False, "live": False, "note": "No live TurboMojo TUI session is currently running.", "path": p}
     raise ValueError(f"Unknown tool: {name}")
 
 

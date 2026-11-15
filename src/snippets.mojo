@@ -6,7 +6,9 @@ quick fixes for removed syntax, argument conventions, missing `var`, missing `ra
 and explicit `.copy()` / `^` ownership transfers."""
 from std.collections import List
 from buffer import TextBuffer, Pos
-from util import decode, to_str, is_ident, is_alpha, lower_str, slice_str
+from util import decode, to_str, is_ident, is_alpha, lower_str, slice_str, path_exists, read_file, bytes_to_str, stem
+from toml import toml_parse
+from json import json_parse, J_OBJ, J_STR, J_ARR
 
 
 @fieldwise_init
@@ -109,6 +111,31 @@ def expand_snippet_full(raw: String, line_indent: String = "") -> SnippetExpansi
                         num = num * 10 + (cps[j] - 48)
                         j += 1
                 var st = len(out)
+                if j < n and cps[j] == 124:
+                    j += 1
+                    var choice_first = List[Int]()
+                    while j < n and cps[j] != 124 and cps[j] != 44 and cps[j] != 125:
+                        if cps[j] == 92 and j + 1 < n:
+                            choice_first.append(cps[j + 1])
+                            j += 2
+                            continue
+                        choice_first.append(cps[j])
+                        j += 1
+                    while j < n and not (cps[j] == 124 and j + 1 < n and cps[j + 1] == 125) and cps[j] != 125:
+                        if cps[j] == 92 and j + 1 < n:
+                            j += 2
+                            continue
+                        j += 1
+                    if j + 1 < n and cps[j] == 124 and cps[j + 1] == 125:
+                        j += 2
+                    elif j < n and cps[j] == 125:
+                        j += 1
+                    for ch in choice_first:
+                        out.append(ch)
+                    if num >= 0:
+                        raw_stops.append(SnippetStop(num, st, len(out)))
+                    i = j
+                    continue
                 if j < n and cps[j] == 58:
                     j += 1
                     var depth = 1
@@ -141,16 +168,9 @@ def expand_snippet_full(raw: String, line_indent: String = "") -> SnippetExpansi
         out.append(c)
         i += 1
 
-    # Keep the first occurrence of each numbered stop, sorted 1..N then 0
+    # Retain all tabstops (including mirrored $N occurrences), ordered by rank
     var ordered = List[SnippetStop]()
     for s in raw_stops:
-        var exists = False
-        for o in ordered:
-            if o.num == s.num:
-                exists = True
-                break
-        if exists:
-            continue
         var at = len(ordered)
         for k in range(len(ordered)):
             if stop_rank(s.num) < stop_rank(ordered[k].num):
@@ -229,6 +249,13 @@ def mojo_snippets() -> List[SnippetTemplate]:
         "def write_to(self, mut writer: Some[Writer]):",
         "def write_to(self, mut writer: Some[Writer]):\n    writer.write(${0:self.value})",
         "Mojo 1.2 `Writable` formatting method (`write_to` replaces `__str__`).",
+    ))
+    out.append(SnippetTemplate(
+        "bench",
+        "bench (snippet)",
+        "std.benchmark Bencher",
+        "from std.benchmark import run, Bencher, BenchmarkConfig\n\n\ndef bench_${1:name}(mut b: Bencher) raises:\n    ${0:pass}\n\n\ndef main() raises:\n    var report = run[bench_${1:name}](BenchmarkConfig())\n    report.print()",
+        "Mojo 1.2 microbenchmark scaffold using `std.benchmark.run` and `Bencher`.",
     ))
     return out^
 
@@ -502,3 +529,206 @@ def synthesize_mojo_quickfixes(
             out.append(QuickFixEdit("Replace len(" + inner + ") with " + inner + ".byte_length() (Mojo 1.2 UTF-8)", cr, c_len, cr, p + 1, inner + ".byte_length()", True))
 
     return out^
+
+
+def load_toml_snippets(path: String) raises -> List[SnippetTemplate]:
+    """Load snippet templates from a TOML configuration file."""
+    var out = List[SnippetTemplate]()
+    if not path_exists(path):
+        return out^
+    var raw_bytes = read_file(path)
+    if len(raw_bytes) == 0:
+        return out^
+    var text = bytes_to_str(raw_bytes)
+    var doc = toml_parse(text)
+    # Collect unique table names
+    var tables = List[String]()
+    for k in doc.keys:
+        var dot = k.find(".")
+        if dot > 0:
+            var tbl = String(k[byte=0:dot])
+            var found = False
+            for t in tables:
+                if t == tbl:
+                    found = True
+                    break
+            if not found:
+                tables.append(tbl)
+
+    for tbl in tables:
+        var trigger = String("")
+        var label = tbl
+        var detail = String("")
+        var body = String("")
+        var doc_text = String("")
+
+        var i_trig = doc.find(tbl + ".trigger")
+        if i_trig >= 0:
+            trigger = doc.vals[i_trig].s
+        var i_lbl = doc.find(tbl + ".label")
+        if i_lbl >= 0:
+            label = doc.vals[i_lbl].s
+        var i_det = doc.find(tbl + ".detail")
+        if i_det >= 0:
+            detail = doc.vals[i_det].s
+        var i_body = doc.find(tbl + ".body")
+        if i_body >= 0:
+            body = doc.vals[i_body].s
+        var i_doc = doc.find(tbl + ".doc")
+        if i_doc >= 0:
+            doc_text = doc.vals[i_doc].s
+
+        if trigger.byte_length() > 0 or body.byte_length() > 0:
+            out.append(SnippetTemplate(
+                trigger if trigger.byte_length() > 0 else tbl,
+                label,
+                detail,
+                body,
+                doc_text
+            ))
+    return out^
+
+
+def load_vscode_snippets(path: String) raises -> List[SnippetTemplate]:
+    """Load snippet templates from a VSCode .code-snippets JSON file."""
+    var out = List[SnippetTemplate]()
+    if not path_exists(path):
+        return out^
+    var raw_bytes = read_file(path)
+    if len(raw_bytes) == 0:
+        return out^
+    var text = bytes_to_str(raw_bytes)
+    var doc = json_parse(text)
+    if not doc.ok or len(doc.kinds) == 0:
+        return out^
+
+    # Root must be object
+    if doc.kinds[0] != J_OBJ:
+        return out^
+
+    var child = doc.first[0]
+    while child >= 0:
+        var name = doc.keys[child]
+        var prefix = String("")
+        var body = String("")
+        var desc = String("")
+
+        var pref_idx = doc.path(child, "prefix")
+        if pref_idx >= 0 and doc.kinds[pref_idx] == J_STR:
+            prefix = doc.strs[pref_idx]
+
+        var desc_idx = doc.path(child, "description")
+        if desc_idx >= 0 and doc.kinds[desc_idx] == J_STR:
+            desc = doc.strs[desc_idx]
+
+        var body_idx = doc.path(child, "body")
+        if body_idx >= 0:
+            if doc.kinds[body_idx] == J_STR:
+                body = doc.strs[body_idx]
+            elif doc.kinds[body_idx] == J_ARR:
+                var line_idx = doc.first[body_idx]
+                var first_line = True
+                while line_idx >= 0:
+                    if doc.kinds[line_idx] == J_STR:
+                        if not first_line:
+                            body += "\n"
+                        body += doc.strs[line_idx]
+                        first_line = False
+                    line_idx = doc.next[line_idx]
+
+        if prefix.byte_length() > 0 or body.byte_length() > 0:
+            out.append(SnippetTemplate(
+                prefix if prefix.byte_length() > 0 else name,
+                name,
+                desc,
+                body,
+                desc
+            ))
+        child = doc.next[child]
+    return out^
+
+
+def expand_variables(
+    raw: String,
+    filename: String,
+    filename_base: String,
+    line_number: Int,
+    line_index: Int,
+    selected_text: String,
+    clipboard: String,
+) -> String:
+    """Expand $TM_* and $CLIPBOARD variables in snippet text with explicit editor context."""
+    var cps = decode(raw)
+    var out = List[Int]()
+    var n = len(cps)
+    var i = 0
+    while i < n:
+        if cps[i] == 92 and i + 1 < n and cps[i + 1] == 36:
+            var esc_rest = slice_str(cps, i + 1, n)
+            if esc_rest.startswith("$TM_") or esc_rest.startswith("$CLIPBOARD"):
+                out.append(36)
+            else:
+                out.append(92)
+                out.append(36)
+            i += 2
+            continue
+        if cps[i] == 36 and i + 1 < n:
+            var rest = slice_str(cps, i, n)
+            if rest.startswith("$TM_FILENAME_BASE"):
+                for c in decode(filename_base):
+                    out.append(c)
+                i += 17
+                continue
+            if rest.startswith("$TM_FILENAME"):
+                for c in decode(filename):
+                    out.append(c)
+                i += 12
+                continue
+            if rest.startswith("$TM_LINE_NUMBER"):
+                for c in decode(String(line_number)):
+                    out.append(c)
+                i += 15
+                continue
+            if rest.startswith("$TM_LINE_INDEX"):
+                for c in decode(String(max(0, line_index))):
+                    out.append(c)
+                i += 14
+                continue
+            if rest.startswith("$TM_SELECTED_TEXT"):
+                for c in decode(selected_text):
+                    out.append(c)
+                i += 17
+                continue
+            if rest.startswith("$CLIPBOARD"):
+                for c in decode(clipboard):
+                    out.append(c)
+                i += 10
+                continue
+        out.append(cps[i])
+        i += 1
+    return to_str(out)
+
+
+def expand_variables(
+    raw: String,
+    filename: String = "",
+    line_number: Int = 1,
+    selected_text: String = "",
+    clipboard: String = "",
+) -> String:
+    """Expand $TM_* and $CLIPBOARD variables in snippet text."""
+    var base = stem(filename) if filename.byte_length() > 0 else String("")
+    return expand_variables(
+        raw,
+        filename,
+        base,
+        line_number,
+        max(0, line_number - 1),
+        selected_text,
+        clipboard,
+    )
+
+
+def expand_choice_and_tabstops(raw: String, line_indent: String = "") -> SnippetExpansion:
+    """Expand choice tabstops ${1|opt1,opt2|} and standard tabstops (preserving mirrored $N stops)."""
+    return expand_snippet_full(raw, line_indent)

@@ -200,7 +200,87 @@ def without_hunk(old: Side, new: Side, h: Hunk) -> Side:
     for k in range(h.b + h.lb, len(new.lines)):
         lines.append(new.lines[k])
     var eol = old.eol if h.b + h.lb >= len(new.lines) else new.eol
-    return Side(lines^, eol)
+    return Side(lines^, eol or len(lines) == 0)
+
+
+def with_hunk_lines(base: Side, cur: Side, h: Hunk, selected_rows: List[Int]) -> Side:
+    """Apply only the selected changed lines (`0 .. h.la - 1` for removed base lines,
+    `h.la .. h.la + h.lb - 1` for added cur lines) of hunk `h` onto `base`."""
+    var lines = List[String]()
+    for k in range(h.a):
+        lines.append(base.lines[k])
+    for k in range(h.la):
+        if not (k in selected_rows):
+            lines.append(base.lines[h.a + k])
+    for k in range(h.lb):
+        if (h.la + k) in selected_rows:
+            lines.append(cur.lines[h.b + k])
+    for k in range(h.a + h.la, len(base.lines)):
+        lines.append(base.lines[k])
+    var all_sel = True
+    for k in range(h.la + h.lb):
+        if not (k in selected_rows):
+            all_sel = False
+            break
+    var eol = cur.eol if (all_sel and h.a + h.la >= len(base.lines)) else base.eol
+    return Side(lines^, eol or len(lines) == 0)
+
+
+def without_hunk_lines(base: Side, cur: Side, h: Hunk, selected_rows: List[Int]) -> Side:
+    """Undo only the selected changed lines (`0 .. h.la - 1` for removed base lines,
+    `h.la .. h.la + h.lb - 1` for added cur lines) of hunk `h` from `cur` toward `base`."""
+    var lines = List[String]()
+    for k in range(h.b):
+        lines.append(cur.lines[k])
+    for k in range(h.la):
+        if k in selected_rows:
+            lines.append(base.lines[h.a + k])
+    for k in range(h.lb):
+        if not ((h.la + k) in selected_rows):
+            lines.append(cur.lines[h.b + k])
+    for k in range(h.b + h.lb, len(cur.lines)):
+        lines.append(cur.lines[k])
+    var all_sel = True
+    for k in range(h.la + h.lb):
+        if not (k in selected_rows):
+            all_sel = False
+            break
+    var eol = base.eol if (all_sel and h.b + h.lb >= len(cur.lines)) else cur.eol
+    return Side(lines^, eol or len(lines) == 0)
+
+
+def hunk_selected_rows(rows: List[DiffRow], h: Hunk, hi: Int, r1: Int, r2: Int) -> List[Int]:
+    """Map diff view row range `[r1, r2]` within hunk `hi` to hunk-local changed indices
+    (`0 .. h.la - 1` for old lines, `h.la .. h.la + h.lb - 1` for new lines)."""
+    var out = List[Int]()
+    var old_ord = 0
+    var new_ord = 0
+    var split_ord = 0
+    for idx in range(len(rows)):
+        if rows[idx].hunk != hi:
+            continue
+        var kd = rows[idx].kind
+        var in_sel = idx >= r1 and idx <= r2
+        if kd == DR_SPLIT_CHG:
+            if in_sel:
+                if split_ord < h.la and not (split_ord in out):
+                    out.append(split_ord)
+                if split_ord < h.lb and not ((h.la + split_ord) in out):
+                    out.append(h.la + split_ord)
+            split_ord += 1
+            old_ord += 1
+            new_ord += 1
+        elif kd == DR_OLD:
+            if in_sel and old_ord < h.la and not (old_ord in out):
+                out.append(old_ord)
+            old_ord += 1
+            split_ord += 1
+        elif kd == DR_NEW:
+            if in_sel and new_ord < h.lb and not ((h.la + new_ord) in out):
+                out.append(h.la + new_ord)
+            new_ord += 1
+            split_ord += 1
+    return out^
 
 
 def hunk_at_line(hunks: List[Hunk], row: Int) -> Int:

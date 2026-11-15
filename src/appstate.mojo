@@ -2,7 +2,7 @@
 
 Behaviour lives in the app_*.mojo modules, which extend App."""
 from glyphs import glyphs_of
-from kittygfx import GFX_FIRST_ID
+from kittygfx import GFX_FIRST_ID, wrap_for_tmux
 from progress import QUIET_MS
 from version import TURBOMOJO_VERSION
 from vim import VimState, VM_NORMAL, VM_INSERT, VM_VISUAL, VM_VLINE, KEYMAP_VIM
@@ -21,13 +21,15 @@ from themes import ThemeSet, scheme_from, animations_off
 from caps import OSC11_QUERY
 from contrast import quiet_syntax
 from strings import apply_strings, language_from
-from notify import NotifyCenter, TYPING_PAUSE_MS
+from notify import NotifyCenter, TYPING_PAUSE_MS, NL_INFO
+from links import parse_ssh_host, format_ssh_pill, parse_port_forward, host_name
 from tips import TipRules
 from plugins import Plugin, PluginPanel, register_plugins
 from lspextra import ExtraServer, configure_servers
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, WK_GPU, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DOCPANE, WK_GPU, WK_HEX, WK_MDPREVIEW, WK_GITLOG, ACT_OTHER, ACT_TYPE
+from snippets import SnippetTemplate
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -55,7 +57,7 @@ from dbgview import DebugView
 from cpuview import CpuView
 from termsession import TermSession
 from testexp import TestFile
-from git import GitStatus, BlameLine
+from git import GitStatus, BlameLine, resolve_git_dir
 from gitdiff import DiffRow
 from problems import Problem, ProblemFilter
 from acp import AcpClient
@@ -87,6 +89,7 @@ comptime PG_PROBLEMS = 2                # what the language server reports
 comptime PG_COUNT = 3
 comptime M_DOCS = 5                     # the documentation reader fills the screen
 comptime M_HOVER = 4                    # a hover window is open over the editor
+comptime M_PEEK = 6                     # inline PeekBox / hunk preview overlay over the editor
 
 comptime VERSION = TURBOMOJO_VERSION       # (src/version.mojo)
 
@@ -117,6 +120,9 @@ comptime JOB_DEBUG = 5                   # building a program to debug it
 comptime JOB_TESTS = 6                   # running (or listing) tests for the test explorer
 comptime JOB_CODEGEN = 7                 # emitting assembly / LLVM IR for the codegen inspector
 comptime JOB_CELL = 8                    # running an interactive # %% code cell
+comptime JOB_BENCH = 9                   # running Mojo std.benchmark with -O3
+comptime JOB_ROOFLINE = 10               # profiling single-kernel GPU roofline (ncu / rocprofv3)
+comptime JOB_MAX_BENCH = 11              # running structured max benchmark JSON capture
 comptime JOB_TASK = 3                    # a pixi task of the project
 comptime SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -266,6 +272,7 @@ struct App(Movable):
     var reduced_motion_cfg: Int # ui.reduced_motion: -1 auto, 0 off, 1 on
     var hl: Highlighter
     var wins: List[Window]
+    var buffers: List[TextBuffer]
     var reg: Registry
     var vim: VimState          # the vim keymap's mode and what is being typed (Phase 12)
     var keymap: Int            # 0 modern, 1 turbo / WordStar, 2 emacs
@@ -279,6 +286,7 @@ struct App(Movable):
     var typed_ns: Int          # the last key the editor had (toasts that come while typing wait)
     var link_format: String    # ui.hyperlink_format
     var link_host: String      # this machine's name, for file:// links
+    var last_osc52: String
     var plugin_asked: Int      # the plugin whose command the user ran last, and when (its panel
     var plugin_asked_ns: Int   # may come to the front as the answer)
     var plugin_focused_path: String # last editor path announced to plugins via "focus"
@@ -398,6 +406,11 @@ struct App(Movable):
     var out_full: List[String]      # the Message page's lines before filtering
     var agent_command: String       # tools.agent: the ACP agent to run ('' = none)
     var agent_mode: String          # tools.agent_mode
+    var mcp_names: List[String]
+    var mcp_cmds: List[String]
+    var mcp_args: List[List[String]]
+    var mcp_env_keys: List[List[String]]
+    var mcp_env_vals: List[List[String]]
     var agent: AcpClient            # the coding agent (File > Agent panel)
     var chat: AgentChat             # the conversation with it
     var agent_input: List[Int]      # the prompt being written
@@ -728,6 +741,7 @@ struct App(Movable):
     var snip_rows: List[Int]
     var snip_c1: List[Int]
     var snip_c2: List[Int]
+    var snip_nums: List[Int]
     var snip_idx: Int
     var comp_srv_extra: Int
     var def_srv: Int
@@ -739,6 +753,48 @@ struct App(Movable):
     var gd_side_by_side: Bool
     var cell_advance: Bool
     var cell_tmp_path: String
+    var codegen_line_map: List[Int]
+    var bench_baseline_json: String
+    var max_bench_out_file: String
+    var max_baseline_json: String
+    var test_watch_on: Bool
+    var test_cache_dir: String
+    var dbg_post_mortem: Bool
+    var dbg_attached_pid: Int
+    var dbg_core_entries: List[String]
+    var peek_title: String
+    var peek_lines: List[String]
+    var peek_paths: List[String]
+    var peek_rows: List[Int]
+    var peek_cols: List[Int]
+    var peek_idx: Int
+    var peek_scroll: Int
+    var peek_is_hunk: Bool
+    var user_snippets: List[SnippetTemplate]
+    var user_snippets_loaded: Bool
+    var rainbow_brackets: Bool
+    var drag_split_node: Int
+    var drag_split_col: Bool
+    var drag_scroll_wi: Int
+    var drag_minimap_wi: Int
+    var git_log_shas: List[String]
+    var git_log_file: String
+    var git_stash_refs: List[Int]
+    var git_wt_paths: List[String]
+    var mru_paths: List[String]
+    var agent_slash_open: Bool
+    var agent_slash_sel: Int
+    var tshells: List[TermSession]
+    var tshell_idx: Int
+    var ssh_ports_toasted: List[Int]
+    var hier_paths: List[String]
+    var hier_rows: List[Int]
+    var hier_cols: List[Int]
+    var fmt_req_id: Int
+    var fmt_req_srv: Int
+    var fmt_req_path: String
+    var reader_last_scope: String
+    var reader_last_wid: Int
 
     def __init__(out self):
         self.term = Terminal()
@@ -832,6 +888,7 @@ struct App(Movable):
         self.plugin_focused_path = ""
         self.link_format = "file://{host}{path}"
         self.link_host = ""
+        self.last_osc52 = ""
         self.plugin_asked_ns = 0
         self.chord_box = False
         self.key_uses = Dict[String, Int]()
@@ -841,6 +898,7 @@ struct App(Movable):
         self.pal = theme(0)
         self.hl = Highlighter()
         self.wins = List[Window]()
+        self.buffers = List[TextBuffer]()
         self.reg = build_registry()
         self.vim = VimState()
         self.keymap = 0
@@ -966,6 +1024,11 @@ struct App(Movable):
         self.out_full = List[String]()
         self.agent_command = env_or("TURBOMOJO_AGENT", "")
         self.agent_mode = "ask"
+        self.mcp_names = List[String]()
+        self.mcp_cmds = List[String]()
+        self.mcp_args = List[List[String]]()
+        self.mcp_env_keys = List[List[String]]()
+        self.mcp_env_vals = List[List[String]]()
         self.agent = AcpClient()
         self.chat = AgentChat()
         self.agent_input = List[Int]()
@@ -1300,6 +1363,7 @@ struct App(Movable):
         self.snip_rows = List[Int]()
         self.snip_c1 = List[Int]()
         self.snip_c2 = List[Int]()
+        self.snip_nums = List[Int]()
         self.snip_idx = 0
         self.comp_srv_extra = -1
         self.def_srv = -1
@@ -1311,6 +1375,48 @@ struct App(Movable):
         self.gd_side_by_side = False
         self.cell_advance = False
         self.cell_tmp_path = ""
+        self.codegen_line_map = List[Int]()
+        self.bench_baseline_json = ""
+        self.max_bench_out_file = ""
+        self.max_baseline_json = ""
+        self.test_watch_on = False
+        self.test_cache_dir = ""
+        self.dbg_post_mortem = False
+        self.dbg_attached_pid = 0
+        self.dbg_core_entries = List[String]()
+        self.peek_title = ""
+        self.peek_lines = List[String]()
+        self.peek_paths = List[String]()
+        self.peek_rows = List[Int]()
+        self.peek_cols = List[Int]()
+        self.peek_idx = 0
+        self.peek_scroll = 0
+        self.peek_is_hunk = False
+        self.user_snippets = List[SnippetTemplate]()
+        self.user_snippets_loaded = False
+        self.rainbow_brackets = False
+        self.drag_split_node = -1
+        self.drag_split_col = False
+        self.drag_scroll_wi = -1
+        self.drag_minimap_wi = -1
+        self.git_log_shas = List[String]()
+        self.git_log_file = ""
+        self.git_stash_refs = List[Int]()
+        self.git_wt_paths = List[String]()
+        self.mru_paths = List[String]()
+        self.agent_slash_open = False
+        self.agent_slash_sel = 0
+        self.tshells = List[TermSession]()
+        self.tshell_idx = -1
+        self.ssh_ports_toasted = List[Int]()
+        self.hier_paths = List[String]()
+        self.hier_rows = List[Int]()
+        self.hier_cols = List[Int]()
+        self.fmt_req_id = -1
+        self.fmt_req_srv = -1
+        self.fmt_req_path = ""
+        self.reader_last_scope = ""
+        self.reader_last_wid = -1
 
     # =================================================================== utils
     def desk_h(self) -> Int:
@@ -1416,6 +1522,13 @@ struct App(Movable):
         if scheme != self.scheme_seen:
             self.theme_apply()
 
+    def git_watched(self) -> Bool:
+        if not self.watch.active() or self.git.root.byte_length() == 0:
+            return False
+        var dirs = resolve_git_dir(self.git.root)
+        var gdir = dirs[0]
+        return gdir.byte_length() > 0 and (gdir in self.watch.dirs)
+
     def next_timeout_ms(self, now: Int, input_pending: Bool, secs_to_minute: Int) -> Int:
         """How long the event loop may sleep before something on screen must change."""
         # With signals on a descriptor a resize wakes the loop by itself; without it
@@ -1460,7 +1573,7 @@ struct App(Movable):
         if self.git.root.byte_length() > 0:
             if self.git_status_due or len(self.git_q_req) > 0:
                 t = min(t, 20)
-            elif not (self.watch.active() and (join_path(self.git.root, ".git") in self.watch.dirs)):
+            elif not self.git_watched():
                 t = min(t, 2000)        # look at git's index now and then when not watched by inotify
         if self.scopes_stale:
             t = min(t, 500)
@@ -1557,9 +1670,12 @@ struct App(Movable):
         self.hints_on = s.inlay_hints
         self.auto_pairs = s.auto_pairs
         self.word_hl = s.highlight_word
+        self.rainbow_brackets = s.rainbow_brackets
+        self.test_watch_on = s.test_watch
         for i in range(len(self.wins)):
             self.wins[i].word_hl = self.word_hl
             self.wins[i].indent_guides = self.indent_guides
+            self.wins[i].rainbow_brackets = self.rainbow_brackets
         self.persistent_undo = s.persistent_undo
         self.trim_trailing = s.trim_trailing
         self.format_on_save = s.format_on_save
@@ -1579,6 +1695,20 @@ struct App(Movable):
         self.debug_adapter = env_or("TURBOMOJO_DAP", s.debug_adapter)
         self.agent_command = env_or("TURBOMOJO_AGENT", s.agent)
         self.agent_mode = s.agent_mode
+        self.mcp_names = s.mcp_names.copy()
+        self.mcp_cmds = s.mcp_cmds.copy()
+        var m_args = List[List[String]]()
+        for a in s.mcp_args:
+            m_args.append(a.copy())
+        self.mcp_args = m_args^
+        var m_ek = List[List[String]]()
+        for ek in s.mcp_env_keys:
+            m_ek.append(ek.copy())
+        self.mcp_env_keys = m_ek^
+        var m_ev = List[List[String]]()
+        for ev in s.mcp_env_vals:
+            m_ev.append(ev.copy())
+        self.mcp_env_vals = m_ev^
         # relative include folders belong to the project file's folder (or where we run)
         self.docs_paths = List[String]()
         self.doc_idx = List[SymbolIndex]()
@@ -1663,6 +1793,11 @@ struct App(Movable):
                 for li in range(len(settings.lsp_names)):
                     if settings.lsp_names[li] != own.lsp_names[li] or settings.lsp_cmds[li] != own.lsp_cmds[li]:
                         lsp_diff = True
+            var mcp_diff = len(settings.mcp_names) != len(own.mcp_names)
+            if not mcp_diff:
+                for mi in range(len(settings.mcp_names)):
+                    if settings.mcp_names[mi] != own.mcp_names[mi] or settings.mcp_cmds[mi] != own.mcp_cmds[mi]:
+                        mcp_diff = True
             if (
                 settings.compiler != own.compiler
                 or settings.lsp_server != own.lsp_server
@@ -1670,6 +1805,7 @@ struct App(Movable):
                 or settings.agent != own.agent
                 or settings.plugins != own.plugins
                 or lsp_diff
+                or mcp_diff
             ):
                 settings.compiler = own.compiler
                 settings.lsp_server = own.lsp_server
@@ -1683,6 +1819,20 @@ struct App(Movable):
                     exts_copy.append(ex.copy())
                 settings.lsp_exts = exts_copy^
                 settings.lsp_langs = own.lsp_langs.copy()
+                settings.mcp_names = own.mcp_names.copy()
+                settings.mcp_cmds = own.mcp_cmds.copy()
+                var m_args_c = List[List[String]]()
+                for ma in own.mcp_args:
+                    m_args_c.append(ma.copy())
+                settings.mcp_args = m_args_c^
+                var m_ek_c = List[List[String]]()
+                for mek in own.mcp_env_keys:
+                    m_ek_c.append(mek.copy())
+                settings.mcp_env_keys = m_ek_c^
+                var m_ev_c = List[List[String]]()
+                for mev in own.mcp_env_vals:
+                    m_ev_c.append(mev.copy())
+                settings.mcp_env_vals = m_ev_c^
                 settings.warnings.append("this folder is not trusted: its tool, agent and language server commands are not used (Options > Folder trust)")
                 self.trust_held = True
         self.apply_settings(settings)
@@ -1743,6 +1893,8 @@ struct App(Movable):
         self.next_wid += 1
         win.buf.tab_width = self.tab_width
         win.buf.indent_size = self.indent_size
+        win.buf_id = len(self.buffers)
+        self.buffers.append(win.buf.copy())
         win.wrap = self.soft_wrap
         win.auto_pairs = self.auto_pairs
         win.word_hl = self.word_hl
@@ -1818,8 +1970,42 @@ struct App(Movable):
                 self.wins[i].y = max(1, min(self.wins[i].y, 1 + dh - self.wins[i].h))
 
     def osc52(mut self, text: List[Int]):
-        """Copy to the terminal's clipboard with OSC 52 - the only way TurboMojo copies, so
-        it works the same over SSH and with no X11 or Wayland (inside tmux: set-clipboard
-        on)."""
-        append_str(self.term.out, osc52_seq(text))
+        """Copy to the terminal's clipboard with OSC 52, wrapped in DCS passthrough when inside tmux."""
+        var raw = osc52_seq(text)
+        if self.gfx_tmux or env_or("TMUX", "").byte_length() > 0:
+            var wrapped = wrap_for_tmux(raw)
+            self.last_osc52 = wrapped
+            append_str(self.term.out, raw + wrapped)
+        else:
+            self.last_osc52 = raw
+            append_str(self.term.out, raw)
         self.term.flush()
+
+    def is_ssh(self) -> Bool:
+        return (
+            env_or("SSH_CONNECTION", "").byte_length() > 0
+            or env_or("SSH_CLIENT", "").byte_length() > 0
+            or env_or("SSH_TTY", "").byte_length() > 0
+        )
+
+    def ssh_host(self) -> String:
+        var conn = env_or("SSH_CONNECTION", "")
+        if conn.byte_length() > 0:
+            return parse_ssh_host(conn)
+        if self.is_ssh():
+            return host_name()
+        return ""
+
+    def ssh_pill(self) -> String:
+        var h = self.ssh_host()
+        if h.byte_length() == 0:
+            return ""
+        return format_ssh_pill(h)
+
+    def port_forward_toast(mut self, line: String) -> String:
+        """Detects port binds from terminal output lines and triggers a toast when running over SSH."""
+        var cmd = parse_port_forward(line, self.ssh_host(), self.is_ssh())
+        if cmd.byte_length() > 0:
+            var now = now_ns()
+            self.notes.add_held(NL_INFO, "Port Forward", "Forward port with: " + cmd, now, clock_hm(), False, False)
+        return cmd

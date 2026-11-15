@@ -10,7 +10,15 @@ the 32-bit views w0..w28, values like "0x0000ffffffffde5c" (sometimes followed b
 symbol). `readMemory` answers base64 data, or `unreadableBytes`.
 """
 from std.collections import List
+from std.memory import bitcast
+from std.math import isnan, isinf
 from util import basename
+
+comptime SIMD_HEX32 = 0
+comptime SIMD_F32 = 1
+comptime SIMD_I32 = 2
+comptime SIMD_F16 = 3
+comptime SIMD_BF16 = 4
 
 
 def address_value(text: String) -> Int:
@@ -189,9 +197,38 @@ def u32_to_f32_str(u: Int) -> String:
     return s
 
 
+def format_simd_half_lanes(bs: List[UInt8], mode: Int) -> Tuple[String, Int]:
+    """Format 16-byte raw SIMD vector into 8 half-precision lanes (f16 or bf16)."""
+    var total_lanes = len(bs) // 2
+    var lanes = List[String]()
+    var n_lanes = min(total_lanes, 8)
+
+    for i in range(n_lanes):
+        var b0 = UInt16(bs[i * 2])
+        var b1 = UInt16(bs[i * 2 + 1])
+        var u16 = b0 | (b1 << 8)
+        if mode == SIMD_BF16:
+            var bf = bitcast[DType.bfloat16](u16)
+            lanes.append(String(bf))
+        else:
+            var hf = bitcast[DType.float16](u16)
+            lanes.append(String(hf))
+
+    return ("[" + ", ".join(lanes) + "]", n_lanes)
+
+
 def format_simd_lanes(value: String, simd_mode: Int) -> String:
-    """Format a vector register as 32-bit lanes (`hex`, `f32`, or `i32`)."""
+    """Format a vector register as 32-bit or 16-bit lanes (`hex`, `f32`, `i32`, `f16`, or `bf16`)."""
     var bs = parse_vector_bytes(value)
+    if simd_mode == SIMD_F16 or simd_mode == SIMD_BF16:
+        if len(bs) < 2:
+            return value
+        var half_res = format_simd_half_lanes(bs, simd_mode)
+        var total_half = len(bs) // 2
+        if total_half > half_res[1]:
+            var inner = String(half_res[0][byte=1 : half_res[0].byte_length() - 1])
+            return "[" + inner + " …+" + String(total_half - half_res[1]) + "]"
+        return half_res[0]
     if len(bs) < 4:
         return value
     var lanes = List[String]()
@@ -203,9 +240,9 @@ def format_simd_lanes(value: String, simd_mode: Int) -> String:
         var b2 = Int(bs[i * 4 + 2])
         var b3 = Int(bs[i * 4 + 3])
         var u = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
-        if simd_mode == 1:
+        if simd_mode == SIMD_F32:
             lanes.append(u32_to_f32_str(u))
-        elif simd_mode == 2:
+        elif simd_mode == SIMD_I32:
             lanes.append(u32_to_i32_str(u))
         else:
             var hx = String("0x")
@@ -232,27 +269,139 @@ struct Reg(Copyable, Movable):
     var changed: Bool
 
 
+struct InstructionBreakpoint(Copyable, Movable):
+    var address: String
+    var verified: Bool
+    var id: Int
+
+    def __init__(out self, address: String, verified: Bool = False, id: Int = -1):
+        self.address = address
+        self.verified = verified
+        self.id = id
+
+
+struct JumpTarget(Copyable, Movable):
+    var ok: Bool
+    var path: String
+    var line: Int
+    var editor_row: Int
+    var error_message: String
+
+    def __init__(out self, ok: Bool, path: String, line: Int, editor_row: Int, error_message: String = ""):
+        self.ok = ok
+        self.path = path
+        self.line = line
+        self.editor_row = editor_row
+        self.error_message = error_message
+
+
+struct SourceMap(Copyable, Movable):
+    var keys: List[String]
+    var vals: List[String]
+
+    def __init__(out self):
+        self.keys = List[String]()
+        self.vals = List[String]()
+
+    def clear(mut self):
+        self.keys.clear()
+        self.vals.clear()
+
+    def put(mut self, key: String, val: String):
+        for i in range(len(self.keys)):
+            if self.keys[i] == key:
+                self.vals[i] = val
+                return
+        self.keys.append(key)
+        self.vals.append(val)
+
+    def get(self, key: String) -> String:
+        for i in range(len(self.keys)):
+            if self.keys[i] == key:
+                return self.vals[i]
+        return ""
+
+
+def toggle_instruction_breakpoint(mut ibps: List[InstructionBreakpoint], address: String) -> Bool:
+    """Toggle instruction breakpoint on address. True if added, False if removed."""
+    for i in range(len(ibps)):
+        if ibps[i].address == address:
+            _ = ibps.pop(i)
+            return False
+    ibps.append(InstructionBreakpoint(address, True, 100 + len(ibps)))
+    return True
+
+
+def handle_enter_key_on_instruction(ins: Instr) -> JumpTarget:
+    """Handle KEY_ENTER on instruction row: resolve jump target or report no source."""
+    if ins.path.byte_length() > 0 and ins.line > 0:
+        return JumpTarget(True, ins.path, ins.line, max(0, ins.line - 1), "")
+    return JumpTarget(False, "", 0, 0, "No source line for this instruction")
+
+
+def render_interleaved_cpu_lines(
+    code: List[Instr],
+    ip: String,
+    ibps: List[InstructionBreakpoint],
+    src_map: SourceMap,
+) -> List[String]:
+    """Render CPU window disassembly lines interleaved with source code."""
+    var out = List[String]()
+    var last_path = String("")
+    var last_line = -1
+
+    for i in range(len(code)):
+        var ins = code[i].copy()
+        if ins.line > 0 and (ins.line != last_line or ins.path != last_path):
+            var base_label = (basename(ins.path) if ins.path.byte_length() > 0 else String("?")) + ":" + String(ins.line)
+            var key = ins.path + ":" + String(ins.line)
+            var src_text = src_map.get(key)
+            if src_text.byte_length() > 0:
+                out.append("    " + base_label + ": " + src_text)
+            else:
+                out.append("    " + base_label)
+            last_path = ins.path
+            last_line = ins.line
+
+        var marker = "  "
+        if ins.address == ip:
+            marker = "► "
+        else:
+            for b_idx in range(len(ibps)):
+                if ibps[b_idx].address == ins.address and ibps[b_idx].verified:
+                    marker = "● "
+                    break
+
+        out.append(marker + ins.address + "  " + String(ins.text.strip()))
+
+    return out^
+
+
 struct CpuView(Copyable, Movable):
     var ip: String
     var code: List[Instr]
     var regs: List[Reg]
     var vregs: List[Reg]
-    var simd_mode: Int          # 0 hex32, 1 f32, 2 i32 (cycled with V)
+    var simd_mode: Int          # 0 hex32, 1 f32, 2 i32, 3 f16, 4 bf16 (cycled with V)
     var mem_address: Int        # the first byte shown (-1: none chosen)
     var mem: List[UInt8]
     var mem_known: Int          # how many of those bytes could be read
     var note: String
+    var ibps: List[InstructionBreakpoint]
+    var src_map: SourceMap
 
     def __init__(out self):
         self.ip = ""
         self.code = List[Instr]()
         self.regs = List[Reg]()
         self.vregs = List[Reg]()
-        self.simd_mode = 1
+        self.simd_mode = SIMD_F32
         self.mem_address = -1
         self.mem = List[UInt8]()
         self.mem_known = 0
         self.note = "(no program is stopped)"
+        self.ibps = List[InstructionBreakpoint]()
+        self.src_map = SourceMap()
 
     def set_regs(mut self, names: List[String], values: List[String]):
         """New register values; those that differ from the last stop are marked."""
@@ -294,11 +443,26 @@ struct CpuView(Copyable, Movable):
                 break
 
     def cycle_simd_mode(mut self) -> String:
-        self.simd_mode = (self.simd_mode + 1) % 3
-        if self.simd_mode == 1:
+        self.simd_mode = (self.simd_mode + 1) % 5
+        if self.simd_mode == SIMD_F32:
             return "f32"
-        if self.simd_mode == 2:
+        if self.simd_mode == SIMD_I32:
             return "i32"
+        if self.simd_mode == SIMD_F16:
+            return "f16"
+        if self.simd_mode == SIMD_BF16:
+            return "bf16"
+        return "hex32"
+
+    def simd_mode_name(self) -> String:
+        if self.simd_mode == SIMD_F32:
+            return "f32"
+        if self.simd_mode == SIMD_I32:
+            return "i32"
+        if self.simd_mode == SIMD_F16:
+            return "f16"
+        if self.simd_mode == SIMD_BF16:
+            return "bf16"
         return "hex32"
 
     def register(self, name: String) -> Int:
@@ -306,6 +470,31 @@ struct CpuView(Copyable, Movable):
         for r in self.regs:
             if r.name == name:
                 return address_value(String(r.value.split(" ")[0]))
+        return -1
+
+    def instr_at_row(self, row: Int) -> Int:
+        """Return index into `self.code` for 0-based row in `lines()`, or -1."""
+        if row <= 0 or len(self.code) == 0:
+            return -1
+        var cur = 1
+        var last_path = String("")
+        var last_line = -1
+        for i in range(len(self.code)):
+            var ins = self.code[i].copy()
+            if ins.line > 0 and (ins.line != last_line or ins.path != last_path):
+                var src_text = self.src_map.get(ins.path + ":" + String(ins.line))
+                if src_text.byte_length() > 0:
+                    if cur == row:
+                        return i
+                    cur += 1
+                if cur == row:
+                    return i
+                cur += 1
+                last_path = ins.path
+                last_line = ins.line
+            if cur == row:
+                return i
+            cur += 1
         return -1
 
     def lines(self) -> List[String]:
@@ -317,10 +506,21 @@ struct CpuView(Copyable, Movable):
         var last_line = -1
         for ins in self.code:
             if ins.line > 0 and (ins.line != last_line or ins.path != last_path):
+                var src_text = self.src_map.get(ins.path + ":" + String(ins.line))
+                if src_text.byte_length() > 0:
+                    out.append("      ; " + src_text)
                 out.append("    " + (basename(ins.path) if ins.path.byte_length() > 0 else String("?")) + ":" + String(ins.line))
                 last_path = ins.path
                 last_line = ins.line
-            out.append(("► " if ins.address == self.ip else "  ") + ins.address + "  " + String(ins.text.strip()))
+            var marker = "  "
+            if ins.address == self.ip:
+                marker = "► "
+            else:
+                for b_idx in range(len(self.ibps)):
+                    if self.ibps[b_idx].address == ins.address and self.ibps[b_idx].verified:
+                        marker = "● "
+                        break
+            out.append(marker + ins.address + "  " + String(ins.text.strip()))
         out.append("")
         out.append("Registers   (* changed since the last stop)")
         if len(self.regs) == 0:
@@ -340,9 +540,9 @@ struct CpuView(Copyable, Movable):
         if row.byte_length() > 0:
             out.append(" " + String(row.rstrip()))
         if len(self.vregs) > 0:
-            var mname = "f32" if self.simd_mode == 1 else ("i32" if self.simd_mode == 2 else "hex32")
+            var mname = self.simd_mode_name()
             out.append("")
-            out.append("Vector / SIMD Registers   (lanes as " + mname + "; V: cycle f32 / i32 / hex32)")
+            out.append("Vector / SIMD Registers   (lanes as " + mname + "; V: cycle f32 / i32 / f16 / bf16 / hex32)")
             for vr in self.vregs:
                 var tag = ("*" if vr.changed else " ") + vr.name
                 while tag.byte_length() < 7:
@@ -373,3 +573,121 @@ struct CpuView(Copyable, Movable):
             out.append(s + " " + asc)
             k += 16
         return out^
+
+
+def render_tensor_2d_slice(
+    data: List[Float32],
+    stride: Int,
+    rows: Int,
+    start_offset: Int = 0,
+) -> List[String]:
+    """Format a 2D matrix slice with configurable row stride."""
+    var out = List[String]()
+    for r in range(rows):
+        var line = "[" + String(r) + ", :]  "
+        var row_items = List[String]()
+        for c in range(stride):
+            var idx = start_offset + r * stride + c
+            if idx < len(data):
+                var val_str = String(data[idx])
+                while val_str.byte_length() < 6:
+                    val_str = " " + val_str
+                row_items.append(val_str)
+            else:
+                row_items.append("   ?.? ")
+        line += " ".join(row_items)
+        out.append(line)
+    return out^
+
+
+struct SliceStats(Copyable, Movable):
+    var min_val: Float64
+    var max_val: Float64
+    var mean_val: Float64
+    var nan_count: Int
+    var inf_count: Int
+    var valid_count: Int
+
+    def __init__(out self):
+        self.min_val = 0.0
+        self.max_val = 0.0
+        self.mean_val = 0.0
+        self.nan_count = 0
+        self.inf_count = 0
+        self.valid_count = 0
+
+
+def calculate_slice_stats_f32(raw_floats: List[Float32]) -> SliceStats:
+    """Calculate min, max, mean (excluding NaNs and Infs), and counts of NaNs/Infs."""
+    var stats = SliceStats()
+    var sum_val = 0.0
+
+    for i in range(len(raw_floats)):
+        var val = raw_floats[i]
+        if isnan(val):
+            stats.nan_count += 1
+        elif isinf(val):
+            stats.inf_count += 1
+        else:
+            var d = Float64(val)
+            sum_val += d
+            stats.valid_count += 1
+            if stats.valid_count == 1:
+                stats.min_val = d
+                stats.max_val = d
+            else:
+                if d < stats.min_val:
+                    stats.min_val = d
+                if d > stats.max_val:
+                    stats.max_val = d
+
+    if stats.valid_count > 0:
+        stats.mean_val = sum_val / Float64(stats.valid_count)
+    return stats^
+
+
+struct TensorSliceNavigator(Copyable, Movable):
+    var mem_address: Int
+    var page_size: Int
+
+    def __init__(out self, mem_address: Int, page_size: Int = 256):
+        self.mem_address = max(0, mem_address)
+        self.page_size = page_size
+
+    def next_page(mut self):
+        self.mem_address += self.page_size
+
+    def prev_page(mut self):
+        self.mem_address = max(0, self.mem_address - self.page_size)
+
+
+def render_unaligned_memory_slice(
+    base_addr: Int,
+    bytes_data: List[UInt8],
+    readable_count: Int,
+) -> List[String]:
+    """Render memory buffer respecting unaligned base address and unreadable byte threshold."""
+    var out = List[String]()
+    var n = len(bytes_data)
+    var k = 0
+    while k < n:
+        var line = "  " + hex_text(base_addr + k, 16) + "  "
+        var items = List[String]()
+        for j in range(4):
+            var off = k + j * 4
+            if off + 4 <= readable_count:
+                var b0 = UInt32(bytes_data[off])
+                var b1 = UInt32(bytes_data[off + 1])
+                var b2 = UInt32(bytes_data[off + 2])
+                var b3 = UInt32(bytes_data[off + 3])
+                var u32 = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+                var f = bitcast[DType.float32](u32)
+                items.append(String(f))
+            elif off < n:
+                items.append("??")
+            else:
+                break
+        line += " ".join(items)
+        out.append(line)
+        k += 16
+    return out^

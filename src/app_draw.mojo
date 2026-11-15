@@ -15,7 +15,7 @@ from palette import Palette, theme, THEME_COUNT
 from contrast import text_muted, text_disabled, dimmed
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -135,6 +135,9 @@ __extension App:
                 right += gb + "  "
             if self.pixi_env.byte_length() > 0 and self.pixi_env != "default" and self.scr.w >= 96:
                 right += "env:" + self.pixi_env + "  "
+            var sp = self.ssh_pill()
+            if sp.byte_length() > 0 and self.scr.w >= 96:
+                right += sp + "  "
             if self.lsp.active() or self.extra_active():
                 right += "LSP  "
             if self.dbg.active():
@@ -253,7 +256,7 @@ __extension App:
                 self.docpane_draw(i)
             if self.wins[i].kind == WK_EXPLAIN and not self.reader:
                 self.explain_draw(i)
-            if self.tiled and self.wins[i].kind == WK_EDITOR:
+            if self.tiled and (self.wins[i].kind == WK_EDITOR or self.wins[i].kind == WK_HEX or self.wins[i].kind == WK_MDPREVIEW):
                 self.draw_tabs(i, i == n - 1)
                 continue                        # panes lie side by side: no shadow
             if i == n - 1 and self.wins[i].w < self.scr.w:
@@ -284,6 +287,21 @@ __extension App:
         elif self.mode == M_HOVER:
             items.append("~↑↓~ Scroll")
             cmds.append(CM_NONE)
+            items.append("~Esc~ Close")
+            cmds.append(CM_NONE)
+        elif self.mode == M_PEEK:
+            items.append("~Enter~ Jump")
+            cmds.append(CM_NONE)
+            items.append("~↑↓~ Scroll")
+            cmds.append(CM_NONE)
+            if self.peek_is_hunk:
+                items.append("~S~ Stage")
+                cmds.append(CM_NONE)
+                items.append("~R~ Revert")
+                cmds.append(CM_NONE)
+            elif len(self.peek_paths) > 1:
+                items.append("~Tab~ Next ref")
+                cmds.append(CM_NONE)
             items.append("~Esc~ Close")
             cmds.append(CM_NONE)
         elif self.mode == M_COMPLETE:
@@ -332,8 +350,12 @@ __extension App:
                 for h in ["~Enter~ Go to", "~Esc~ Close", self.git_blame_summary()]:
                     items.append(h)
                     cmds.append(CM_NONE)
+            if t >= 0 and self.wins[t].kind == WK_GITLOG:
+                for h in ["~Enter~ Inspect commit", "~Y~ Copy SHA", "~/~ Search", "~B~ Checkout", "~Esc~ Close"]:
+                    items.append(h)
+                    cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_GIT:
-                for h in ["~Enter~ Open", "~Space~ Stage/unstage", "~D~ Diff", "~C~ Commit", "~A~ Amend", "~B~ Branch", "~Z~ Stash", "~Esc~ Close"]:
+                for h in ["~Enter~ Open", "~Space~ Stage/unstage", "~D~ Diff", "~C~ Commit", "~L~ Log", "~P~/~p~/~F~ Push/Pull/Fetch", "~Z~ Stash", "~Esc~ Close"]:
                     items.append(h)
                     cmds.append(CM_NONE)
             if t >= 0 and self.wins[t].kind == WK_DIFF:
@@ -387,7 +409,7 @@ __extension App:
             draw_dropdown(self.scr, p, self.menus[self.menu_idx], self.menu_item, self.checked(), self.unavailable_cmds(), self.reader)
         # cursor
         var t = self.top()
-        if (self.mode == M_NORMAL or self.mode == M_COMPLETE or self.mode == M_HOVER) and t >= 0 and self.wins[t].kind == WK_EDITOR:
+        if (self.mode == M_NORMAL or self.mode == M_COMPLETE or self.mode == M_HOVER or self.mode == M_PEEK) and t >= 0 and self.wins[t].kind == WK_EDITOR:
             var cell = self.wins[t].cursor_cell()
             var cx = cell.c
             var cy = cell.r
@@ -400,12 +422,14 @@ __extension App:
                 if self.keymap == KEYMAP_VIM:
                     self.scr.cblock = self.vim.mode != VM_INSERT
                     self.scr.cbar = self.vim.mode == VM_INSERT
-            if self.sig_on and self.mode != M_HOVER and self.wins[t].path == self.sig_path:
+            if self.sig_on and self.mode != M_HOVER and self.mode != M_PEEK and self.wins[t].path == self.sig_path:
                 self.draw_signature(cx, cy)
             if self.mode == M_COMPLETE:
                 self.draw_completion(cx, cy)
             if self.mode == M_HOVER:
                 self.draw_hover(cx, cy)
+            if self.mode == M_PEEK:
+                self.draw_peek(cx, cy)
         if self.keymap == KEYMAP_VIM and self.vim.cl_on and self.mode == M_NORMAL:
             self.vim_draw_cmdline()                 # vim's command line over the status row
         if self.mode == M_NORMAL and t >= 0 and self.wins[t].kind == WK_AGENT:
@@ -517,6 +541,7 @@ __extension App:
         var p = self.pal.copy()
         self.wins[i].rel_nums = self.rel_numbers
         self.wins[i].indent_guides = self.indent_guides
+        self.wins[i].rainbow_brackets = self.rainbow_brackets
         self.wins[i].draw(self.scr, p, self.hl, active, self.hl_line, self.insert_mode, self.show_ws)
 
     def draw_completion(mut self, cx: Int, cy: Int):
@@ -622,10 +647,17 @@ __extension App:
                     fg = p.doc_bold
                 elif st == MD_CODE:
                     fg = p.doc_code
-                elif st == MD_ITALIC or st == MD_DIM:
+                elif st == MD_ITALIC or st == MD_DIM or st == MD_STRIKE:
                     fg = p.doc_dim
                 var at = xx
                 xx = self.scr.draw_cp(xx, y + r, lines[k].cps[q], fg, bg)
+                if xx > at and not self.scr.plain:
+                    if st == MD_ITALIC:
+                        self.scr.italic(at, y + r, xx - at)
+                    elif st == MD_DIM:
+                        self.scr.dim(at, y + r, xx - at)
+                    elif st == MD_STRIKE:
+                        self.scr.strikethrough(at, y + r, xx - at)
                 if (st == MD_LINK or st < 0) and xx > at:
                     self.scr.underline(at, y + r, False, p.doc_fg)
         self.scr.no_clip()
@@ -717,3 +749,108 @@ __extension App:
         if self.hover_scroll > 0:
             self.scr.put(x + w - 2, y, 0x25B2, p.doc_bold, p.doc_bg)
         self.scr.shadow(x, y, w, h, p.shadow_fg, p.shadow_bg)
+
+    def draw_peek(mut self, cx: Int, cy: Int):
+        """Inline PeekBox overlay anchored strictly below cursor (or above near bottom edge)."""
+        var p = self.pal.copy()
+        var n = len(self.peek_lines)
+        if n == 0:
+            return
+        var w = max(28, cp_len(self.peek_title) + 4)
+        for ln in self.peek_lines:
+            w = max(w, cp_len(ln) + 4)
+        w = min(w, max(24, self.scr.w - 4))
+        var body_h = min(n, max(3, min(10, self.scr.h - 6)))
+        var h = body_h + 2
+        var x = max(1, min(cx - 1, self.scr.w - w - 2))
+        var y = cy + 1
+        if y + h > self.scr.h - 1:
+            y = max(1, cy - h)
+        self.peek_scroll = max(0, min(self.peek_scroll, max(0, n - body_h)))
+        self.scr.fill(x, y, w, h, 32, p.ed_fg, p.ed_bg)
+        self.scr.frame(x, y, w, h, True, p.frame_act, p.ed_bg)
+        self.scr.clip(x + 2, y, max(1, w - 4), 1)
+        _ = self.scr.text(x + 2, y, " " + self.peek_title + " ", p.title_fg, p.ed_bg)
+        self.scr.no_clip()
+        self.scr.clip(x + 1, y + 1, max(1, w - 2), body_h)
+        for r in range(body_h):
+            var li = self.peek_scroll + r
+            if li >= n:
+                break
+            var txt = self.peek_lines[li]
+            var fg = p.ed_fg
+            var bg = p.ed_bg
+            if self.peek_is_hunk:
+                if txt.startswith("+"):
+                    fg = p.msg_ok
+                elif txt.startswith("-"):
+                    fg = p.msg_err
+                elif txt.startswith("@@"):
+                    fg = p.msg_note
+            elif str_contains(txt, " ► "):
+                bg = p.curline_bg
+                self.scr.fill(x + 1, y + 1 + r, w - 2, 1, 32, fg, bg)
+            _ = self.scr.text(x + 2, y + 1 + r, txt, fg, bg)
+        self.scr.no_clip()
+        self.scr.shadow(x, y, w, h, p.shadow_fg, p.shadow_bg)
+
+    def announce_reader_context(mut self) -> String:
+        """Announce window focus, scope, fold, and diagnostic changes when `self.reader` is True."""
+        if not self.reader or len(self.wins) == 0:
+            return String("")
+        var t = self.top()
+        if t < 0 or t >= len(self.wins):
+            return String("")
+        var cues = List[String]()
+        var wid = self.wins[t].wid if self.wins[t].wid != 0 else (t + 1)
+        var win_changed = wid != self.reader_last_wid
+        if win_changed:
+            self.reader_last_wid = wid
+            cues.append("window: " + self.wins[t].title)
+        var sp = String("")
+        if self.wins[t].kind == WK_EDITOR:
+            var items = self.wins[t].scope_items.copy() if len(self.wins[t].scope_items) > 0 else scan_outline(self.wins[t].buf)
+            var sidxs = scope_path(items, self.wins[t].cr)
+            var names = List[String]()
+            for si in sidxs:
+                names.append(items[si].name)
+            sp = " › ".join(names)
+        var fold_cue = String("")
+        var row = self.wins[t].cr
+        for fi in range(len(self.wins[t].buf.folds)):
+            if self.wins[t].buf.folds[fi] == row:
+                var end_r = self.wins[t].buf.fold_ends[fi] if fi < len(self.wins[t].buf.fold_ends) else row
+                fold_cue = "folded (" + String(max(1, end_r - row)) + " lines hidden)"
+                break
+        var diag_cue = String("")
+        var best_sev = 99
+        for mi in range(len(self.wins[t].buf.marks)):
+            ref m = self.wins[t].buf.marks[mi]
+            if m.l1 <= row and row <= m.l2 and m.severity < best_sev:
+                best_sev = m.severity
+                var sev_lbl = "error" if m.severity == 1 else ("warning" if m.severity == 2 else "note")
+                diag_cue = sev_lbl + ": " + m.message
+        var prev_sp = String("")
+        var prev_fold = String("")
+        var prev_diag = String("")
+        if not win_changed and self.reader_last_scope.byte_length() > 0:
+            var t1 = self.reader_last_scope.find("\t")
+            var t2 = self.reader_last_scope.find("\t", t1 + 1) if t1 >= 0 else -1
+            if t1 >= 0 and t2 >= 0:
+                prev_sp = String(self.reader_last_scope[byte=0:t1])
+                prev_fold = String(self.reader_last_scope[byte=t1 + 1:t2])
+                prev_diag = String(self.reader_last_scope[byte=t2 + 1:])
+        var next_sig = sp + "\t" + fold_cue + "\t" + diag_cue
+        if win_changed or next_sig != self.reader_last_scope:
+            if sp != prev_sp and sp.byte_length() > 0:
+                cues.append("in " + sp)
+            if fold_cue != prev_fold and fold_cue.byte_length() > 0:
+                cues.append(fold_cue)
+            if diag_cue != prev_diag and diag_cue.byte_length() > 0:
+                cues.append(diag_cue)
+            self.reader_last_scope = next_sig
+        if len(cues) == 0:
+            return String("")
+        var msg = "; ".join(cues)
+        self.say(msg)
+        return msg

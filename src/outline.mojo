@@ -4,7 +4,7 @@ needs no server."""
 from std.collections import List
 from buffer import TextBuffer
 from json import Json
-from util import decode, to_str, is_ident
+from util import decode, to_str, is_ident, slice_str
 
 
 # LSP SymbolKind values used here
@@ -18,6 +18,7 @@ comptime SK_FUNCTION = 12
 comptime SK_VARIABLE = 13
 comptime SK_CONSTANT = 14
 comptime SK_STRUCT = 23
+comptime SK_CELL = 26
 
 
 @fieldwise_init
@@ -27,6 +28,103 @@ struct OutlineItem(Copyable, Movable):
     var row: Int            # where the name is (0-based row, character column)
     var col: Int
     var depth: Int          # nesting: 0 = top level
+    var traits: List[String]
+
+    def __init__(out self, name: String, kind: Int, row: Int, col: Int, depth: Int):
+        self.name = name
+        self.kind = kind
+        self.row = row
+        self.col = col
+        self.depth = depth
+        self.traits = List[String]()
+
+
+def parse_struct_traits(line: String) -> List[String]:
+    """Extract trait conformance names from `struct Foo(TraitA, TraitB):` or `struct Foo[T: AnyType](TraitA):`."""
+    var out = List[String]()
+    var cps = decode(line)
+    var n = len(cps)
+    var i = 0
+    while i < n and (cps[i] == 32 or cps[i] == 9):
+        i += 1
+    var rest = slice_str(cps, i, n)
+    if not rest.startswith("struct "):
+        return out^
+    i += 7
+    while i < n and cps[i] == 32:
+        i += 1
+    while i < n and is_ident(cps[i]):
+        i += 1
+    while i < n and cps[i] == 32:
+        i += 1
+    # Skip optional compile-time parameter list `[...]`
+    if i < n and cps[i] == 91:
+        var bdepth = 1
+        i += 1
+        while i < n and bdepth > 0:
+            if cps[i] == 91:
+                bdepth += 1
+            elif cps[i] == 93:
+                bdepth -= 1
+            i += 1
+    while i < n and cps[i] == 32:
+        i += 1
+    if i >= n or cps[i] != 40:
+        return out^
+    var p_start = i + 1
+    var pdepth = 1
+    var j = p_start
+    var in_str = 0
+    while j < n and pdepth > 0:
+        var c = cps[j]
+        if in_str == 0 and c == 35:
+            break
+        if (c == 34 or c == 39) and (j == 0 or cps[j - 1] != 92):
+            if in_str == 0:
+                in_str = c
+            elif in_str == c:
+                in_str = 0
+        elif in_str == 0:
+            if c == 40:
+                pdepth += 1
+            elif c == 41:
+                pdepth -= 1
+                if pdepth == 0:
+                    break
+        j += 1
+    if pdepth != 0:
+        return out^
+    # Split `[p_start, j)` by top-level commas
+    var seg_start = p_start
+    var depth_inner = 0
+    for k in range(p_start, j + 1):
+        var at_end = k == j
+        var ch = 0 if at_end else cps[k]
+        if not at_end:
+            if ch == 91 or ch == 40:
+                depth_inner += 1
+            elif ch == 93 or ch == 41:
+                depth_inner = max(0, depth_inner - 1)
+        if at_end or (ch == 44 and depth_inner == 0):
+            var raw_tok = String(slice_str(cps, seg_start, k).strip())
+            var brk = raw_tok.find("[")
+            if brk > 0:
+                var trimmed_brk = String(raw_tok[byte=0:brk].strip())
+                raw_tok = trimmed_brk
+            var dot = raw_tok.rfind(".")
+            if dot >= 0 and dot + 1 < raw_tok.byte_length():
+                var trimmed_dot = String(raw_tok[byte=dot + 1:].strip())
+                raw_tok = trimmed_dot
+            var tcps = decode(raw_tok)
+            var valid = len(tcps) > 0
+            for tc in tcps:
+                if not is_ident(tc):
+                    valid = False
+                    break
+            if valid and not (raw_tok in out):
+                out.append(raw_tok)
+            seg_start = k + 1
+    return out^
 
 
 def outline_tag(kind: Int) -> String:
@@ -43,6 +141,8 @@ def outline_tag(kind: Int) -> String:
         return "·"
     if kind == SK_MODULE or kind == 3 or kind == 4:                  # namespace, package
         return "▪"
+    if kind == SK_CELL:
+        return "⊞"
     return "•"
 
 
@@ -70,6 +170,7 @@ def scan_outline(buf: TextBuffer) -> List[OutlineItem]:
     var items = List[OutlineItem]()
     var indents = List[Int]()           # indentation of the open items, outermost first
     var in_doc = 0                      # inside a triple-quoted string: its quote character
+    var cell_num = 0
     for r in range(buf.count()):
         var line = buf.line(r)
         var n = len(line)
@@ -87,7 +188,27 @@ def scan_outline(buf: TextBuffer) -> List[OutlineItem]:
                 q += 1
         if started_inside:
             continue
-        if ind >= n or line[ind] == 35:
+        if ind >= n:
+            continue
+        if line[ind] == 35:
+            var cmt = slice_str(line, ind, n)
+            if (
+                cmt == "# %%"
+                or cmt.startswith("# %% ")
+                or cmt.startswith("# %%\t")
+                or cmt == "#%%"
+                or cmt.startswith("#%% ")
+                or cmt.startswith("#%%\t")
+            ):
+                cell_num += 1
+                var title = String("")
+                if cmt.startswith("# %%"):
+                    title = String(cmt[byte=4:].strip())
+                elif cmt.startswith("#%%"):
+                    title = String(cmt[byte=3:].strip())
+                if title.byte_length() == 0:
+                    title = "Cell " + String(cell_num)
+                items.append(OutlineItem(title, SK_CELL, r, ind, 0))
             continue
         var rest = List[Int]()
         for k in range(ind, n):
@@ -136,7 +257,8 @@ def scan_outline(buf: TextBuffer) -> List[OutlineItem]:
         var name = List[Int]()
         for k in range(s0, e):
             name.append(line[k])
-        items.append(OutlineItem(to_str(name), kind, r, s0, depth))
+        var st_traits = parse_struct_traits(text) if text.startswith("struct ") else List[String]()
+        items.append(OutlineItem(to_str(name), kind, r, s0, depth, st_traits^))
         indents.append(ind)
     return items^
 

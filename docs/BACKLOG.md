@@ -232,3 +232,18 @@ The Turbo, Modern and Emacs keymaps stay as they are.
 - [x] P12-03 Search and commands: / ? n N * #; `:w :q :wq :x :q! :e FILE :N :s/a/b/g :%s/a/b/g`, and `:` with TurboMojo's own commands (`:build`, `:run`, the command palette's names)
 - [x] P12-04 Registers and the clipboard: the unnamed register, "a-"z, "0, and "+ / "* through the clipboard TurboMojo already uses (OSC 52 over SSH)
 - [x] P12-05 A "Vim" preset (Options > Presets, and the first-run question): the Modern look, the vim keys, relative line numbers (`editor.relative_numbers`, new); the menu bar still reachable with F10 and Alt
+
+## Phase 13: Mojo 1.2 & GPU developer milestone (v2.4)
+
+40-feature end-to-end IDE milestone (`F01`–`F40`), verified by `tests/e2e/test_f01_*.mojo` through `tests/e2e/test_f40_*.mojo` in the sharded `scripts/check.sh` gate.
+
+- [x] P13-01 Async `mojo doc` (`aux_job` pipe), warm 2-server `lsp_pool`, Mojo 1.2 quick fixes (`Alt-Enter`), multi-tabstop snippets, and full polyglot extra-server LSP parity (`F01`–`F06`, `F17`, `F20`)
+- [x] P13-02 `std.benchmark` runner with JSON baseline regression deltas and inline ns/op badges, PTX/AMDGCN/ASM/LLVM codegen inspector with live cursor sync, GPU monitor & roofline profiler, and MAX serve / benchmark launcher (`F07`–`F10`)
+- [x] P13-03 Test Explorer watch-on-save, line coverage gutter, one-key failed-test debugging, and `# %%` Mojo/Python interactive code cells with execution badges and kernel reset (`F11`–`F12`)
+- [x] P13-04 DAP live attach to PID, `coredumpctl` post-mortem core dumps, conditional/hit-count/logpoint breakpoints, inline variable ghosts, GPU lane/block focus, and CPU SIMD/FP16/BF16 lane inspector (`F13`–`F16`)
+- [x] P13-05 Workspace call & type hierarchy (`CM_CALL_HIERARCHY` / `CM_TYPE_HIERARCHY`) and inline cursor-anchored PeekBox (`Alt-Shift-F12`) with Git hunk preview (`S` stage / `R` revert) (`F18`–`F19`)
+- [x] P13-06 Branching undo tree (`D_UNDO_TREE`, `g-`/`g+`), auto-detected read-only hex viewer (`WK_HEX`), structural selection & multi-cursor editing, regex streaming Replace in Files with atomic multi-file undo, and rainbow brackets (`F21`–`F25`)
+- [x] P13-07 Interactive minimap & scrollbar scrubbing, overview ruler ticks, draggable tiled splitters, disambiguated & pinned tabs (`CM_PIN_TAB`), middle-click tab close, and scroll-synced GFM Markdown preview (`WK_MDPREVIEW`) (`F26`–`F27`)
+- [x] P13-08 Complete Vim polish: `:set` option bridging, `:marks`/`:registers`, `gn`/`gN`, `g;`/`g,`, `gv`, `q:`/`q/` history window, and uppercase file marks (`F28`)
+- [x] P13-09 Interactive Git commit graph (`WK_GITLOG`), side-by-side split diff & 3-way conflict resolution, async push/pull/fetch & stash picker, MRU project switcher, and Git worktree manager (`F29`–`F32`)
+- [x] P13-10 Multi-hunk agent diff review, `@doc`/`@symbol` prompt grounding, IPC/MCP co-debugging, Plugin API v2 (`editor/edit`, `diagnostics/set`, manager dialog), multi-tab terminal, SSH/tmux clipboard & port-forward toasts, `.gitignore` explorer/watcher, and extended `--lines` & screen-reader context cues (`F33`–`F40`)

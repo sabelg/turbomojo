@@ -22,8 +22,13 @@ elif [ -n "${TM_MANIFEST:-}" ]; then
 fi
 
 # the environment's mojo and standard library, asked once (not a `pixi run` per file)
-if [ -z "${TM_ENV:-}" ] && [ -z "${TM_MANIFEST:-}" ] && ! $PIXI_RUN which mojo >/dev/null 2>&1 && command -v mojo >/dev/null 2>&1 && [ -f .pixi/envs/default/lib/libghostty-vt.a ]; then
-  MOJO="$(command -v mojo)"
+if [ -z "${TM_ENV:-}" ] && [ -z "${TM_MANIFEST:-}" ] && ! $PIXI_RUN which mojo >/dev/null 2>&1 && { command -v mojo >/dev/null 2>&1 || [ -x .pixi/envs/default/bin/mojo ]; } && [ -f .pixi/envs/default/lib/libghostty-vt.a ]; then
+  if command -v mojo >/dev/null 2>&1; then
+    MOJO="$(command -v mojo)"
+  else
+    MOJO="$(pwd)/.pixi/envs/default/bin/mojo"
+  fi
+  export PATH="$(dirname "$MOJO"):$PATH"
   if [ -z "${MODULAR_HOME:-}" ] && [ -d .pixi/envs/default/share/max ]; then
     export MODULAR_HOME="$(pwd)/.pixi/envs/default/share/max"
   fi
@@ -49,8 +54,9 @@ fi
 
 JOBS="${TM_JOBS:-$(( $(nproc) / 2 ))}"
 [ "$JOBS" -ge 1 ] || JOBS=1
-SRC_SIG="$({ "$MOJO" --version; sha256sum src/*.mojo; } | sha256sum | awk '{print $1}')"
-export SRC_SIG
+MOJO_VER="$("$MOJO" --version)"
+SRC_SIG="$({ printf '%s\n' "$MOJO_VER"; sha256sum src/*.mojo; } | sha256sum | awk '{print $1}')"
+export MOJO_VER SRC_SIG
 rm -f build/tests/*.log
 
 if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
@@ -63,7 +69,7 @@ if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
       echo "cached $t"
       return 0
     fi
-    if "$MOJO" build -I src "$t" -o "build/tests/$name" $VT_LINK > "build/tests/$name.log" 2>&1; then
+    if "$MOJO" build -I src -I tests -I tests/e2e "$t" -o "build/tests/$name" $VT_LINK > "build/tests/$name.log" 2>&1; then
       if grep -q "warning:" "build/tests/$name.log"; then
         rm -f "build/tests/$name.sha256"
         echo "WARNED: $t"
@@ -77,7 +83,7 @@ if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
     fi
   }
   export -f compile_one
-  ls tests/test_*.mojo | xargs -P "$JOBS" -I{} bash -c 'compile_one "$@"' _ {} | sort > build/tests/compile.txt
+  ls tests/test_*.mojo tests/e2e/test_*.mojo 2>/dev/null | xargs -P "$JOBS" -I{} bash -c 'compile_one "$@"' _ {} | sort > build/tests/compile.txt
   if grep -q -E "DID NOT BUILD|WARNED" build/tests/compile.txt; then
     for t in $(grep -E "DID NOT BUILD|WARNED" build/tests/compile.txt | sed -E 's/(DID NOT BUILD|WARNED): //'); do
       echo "FAILED: $t (compile/warnings)"
@@ -86,7 +92,7 @@ if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
     exit 1
   fi
 else
-  python3 scripts/gen_test_runner.py --out build/tests --app-shards "${TM_TEST_SHARDS:-8}" --src-sig "$SRC_SIG"
+  python3 scripts/gen_test_runner.py --out build/tests --app-shards "${TM_TEST_SHARDS:-8}" --src-sig "$MOJO_VER"
   SHARD_COUNT="$(wc -l < build/tests/shards.txt | tr -d ' ')"
   echo "== compiling $SHARD_COUNT test shard(s) ($JOBS at a time)"
   compile_shard() {
@@ -96,7 +102,7 @@ else
       echo "cached $s"
       return 0
     fi
-    if "$MOJO" build -I src -I tests "build/tests/$s.mojo" -o "build/tests/$s" $VT_LINK > "build/tests/$s.log" 2>&1; then
+    if "$MOJO" build -I src -I tests -I tests/e2e "build/tests/$s.mojo" -o "build/tests/$s" $VT_LINK > "build/tests/$s.log" 2>&1; then
       if grep -q "warning:" "build/tests/$s.log"; then
         rm -f "build/tests/$s.sha256"
         echo "WARNED: $s"
@@ -133,7 +139,7 @@ fi
 unset TURBOMOJO_SCREEN_READER NO_COLOR
 count=0
 if [ "${TM_SINGLE_TESTS:-0}" = "1" ]; then
-  for t in tests/test_*.mojo; do
+  for t in tests/test_*.mojo tests/e2e/test_*.mojo; do
     [ -e "$t" ] || continue
     echo "-- $t"
     "build/tests/$(basename "$t" .mojo)" | grep -v "    PASS" || { echo "FAILED: $t"; exit 1; }

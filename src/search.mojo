@@ -2,7 +2,7 @@
 Matching works on one line at a time (a list of codepoints)."""
 from std.collections import List
 from regex import Regex, regex_compile, fold
-from util import is_ident
+from util import is_ident, decode
 
 
 struct Search(Copyable, Movable):
@@ -82,6 +82,23 @@ struct Search(Copyable, Movable):
             c = m[1]
         return out^
 
+    def is_multiline(self) -> Bool:
+        """Does the search pattern span multiple lines (literal newline or regex `\\n`)?"""
+        var n = len(self.pat)
+        for i in range(n):
+            if self.pat[i] == 10:
+                return True
+        if self.use_regex:
+            var k = 0
+            while k < n:
+                if self.pat[k] == 92 and k + 1 < n:
+                    if self.pat[k + 1] == 110:
+                        return True
+                    k += 2
+                    continue
+                k += 1
+        return False
+
     def replacement(self, rep: List[Int], ln: List[Int], caps: List[Int]) -> List[Int]:
         """The text that replaces a match: in regular-expression mode $1, ${1}, $0, $&, $$,
         \\n and \\t are expanded, otherwise `rep` is taken as it is."""
@@ -107,3 +124,183 @@ def make_search(pat: List[Int], case_sensitive: Bool, whole_word: Bool, use_rege
         s.folded.append(c if case_sensitive else fold(c))
     s.ok = True
     return s^
+
+
+@fieldwise_init
+struct MatchSpan(Copyable, Movable):
+    """Represents a match span from (r1, c1) to (r2, c2) in line and codepoint coordinates."""
+    var r1: Int
+    var c1: Int
+    var r2: Int
+    var c2: Int
+
+
+def offset_to_span(cps: List[Int], start_off: Int, end_off: Int) -> MatchSpan:
+    """Map linear codepoint offsets [start_off, end_off) to line and column coordinates."""
+    var r1 = 0
+    var c1 = 0
+    var r2 = 0
+    var c2 = 0
+    var row = 0
+    var col = 0
+    var limit = min(len(cps), max(start_off, end_off))
+    for i in range(limit):
+        if i == start_off:
+            r1 = row
+            c1 = col
+        if i == end_off:
+            r2 = row
+            c2 = col
+            break
+        if cps[i] == 10:
+            row += 1
+            col = 0
+        else:
+            col += 1
+
+    if limit == start_off:
+        r1 = row
+        c1 = col
+    if limit == end_off:
+        r2 = row
+        c2 = col
+
+    return MatchSpan(r1, c1, r2, c2)
+
+
+def search_multiline_literal(cps: List[Int], pat_s: String, ignore_case: Bool = False) -> List[MatchSpan]:
+    """Search for multi-line literal pattern and return MatchSpans."""
+    var out = List[MatchSpan]()
+    var pat = decode(pat_s)
+    var m = len(pat)
+    var n = len(cps)
+    if m == 0 or n < m:
+        return out^
+
+    if ignore_case:
+        for k in range(m):
+            pat[k] = fold(pat[k])
+
+    var i = 0
+    while i <= n - m:
+        var matched = True
+        for j in range(m):
+            var c = fold(cps[i + j]) if ignore_case else cps[i + j]
+            if c != pat[j]:
+                matched = False
+                break
+        if matched:
+            out.append(offset_to_span(cps, i, i + m))
+            i += m  # Advance past non-overlapping match
+        else:
+            i += 1
+    return out^
+
+
+def search_multiline_regex(cps: List[Int], pattern: String, ignore_case: Bool = False) -> List[MatchSpan]:
+    """Search for multi-line regular expression across codepoints producing MatchSpans."""
+    var out = List[MatchSpan]()
+    var pat_cps = decode(pattern)
+    if len(pat_cps) == 0:
+        return out^
+    var rx = regex_compile(pat_cps, ignore_case)
+    if not rx.ok:
+        return out^
+    var n = len(cps)
+    var i = 0
+    while i <= n:
+        var m = rx.search(cps, i)
+        if len(m) < 2:
+            break
+        var start_off = m[0]
+        var end_off = m[1]
+        if start_off < 0 or end_off <= start_off:
+            i = max(i + 1, start_off + 1)
+            continue
+        out.append(offset_to_span(cps, start_off, end_off))
+        i = end_off  # Advance past match
+    return out^
+
+
+struct ChunkMatchCache(Copyable, Movable):
+    var chunk_keys: List[String]
+    var chunk_versions: List[Int]
+    var chunk_counts: List[Int]
+    var chunk_pats: List[String]
+    var chunk_regex: List[Bool]
+    var chunk_icase: List[Bool]
+    var chunk_spans: List[List[MatchSpan]]
+    var hits: Int
+    var misses: Int
+
+    def __init__(out self):
+        self.chunk_keys = List[String]()
+        self.chunk_versions = List[Int]()
+        self.chunk_counts = List[Int]()
+        self.chunk_pats = List[String]()
+        self.chunk_regex = List[Bool]()
+        self.chunk_icase = List[Bool]()
+        self.chunk_spans = List[List[MatchSpan]]()
+        self.hits = 0
+        self.misses = 0
+
+    def update_and_search(
+        mut self,
+        chunk_key: String,
+        version: Int,
+        chunk_text: List[Int],
+        pat: String,
+        use_regex: Bool = False,
+        ignore_case: Bool = False,
+    ) -> List[MatchSpan]:
+        """Lookup cached MatchSpans for chunk, computing and caching literal or regex matches on miss."""
+        for i in range(len(self.chunk_keys)):
+            if self.chunk_keys[i] == chunk_key:
+                if (
+                    self.chunk_versions[i] == version
+                    and self.chunk_pats[i] == pat
+                    and self.chunk_regex[i] == use_regex
+                    and self.chunk_icase[i] == ignore_case
+                ):
+                    self.hits += 1
+                    return self.chunk_spans[i].copy()
+                else:
+                    self.misses += 1
+                    var matches = (
+                        search_multiline_regex(chunk_text, pat, ignore_case)
+                        if use_regex
+                        else search_multiline_literal(chunk_text, pat, ignore_case)
+                    )
+                    self.chunk_versions[i] = version
+                    self.chunk_counts[i] = len(matches)
+                    self.chunk_pats[i] = pat
+                    self.chunk_regex[i] = use_regex
+                    self.chunk_icase[i] = ignore_case
+                    self.chunk_spans[i] = matches.copy()
+                    return matches^
+        self.misses += 1
+        var matches = (
+            search_multiline_regex(chunk_text, pat, ignore_case)
+            if use_regex
+            else search_multiline_literal(chunk_text, pat, ignore_case)
+        )
+        self.chunk_keys.append(chunk_key)
+        self.chunk_versions.append(version)
+        self.chunk_counts.append(len(matches))
+        self.chunk_pats.append(pat)
+        self.chunk_regex.append(use_regex)
+        self.chunk_icase.append(ignore_case)
+        self.chunk_spans.append(matches.copy())
+        return matches^
+
+    def get_count(
+        mut self,
+        chunk_key: String,
+        version: Int,
+        chunk_text: List[Int],
+        pat: String,
+        use_regex: Bool = False,
+        ignore_case: Bool = False,
+    ) -> Int:
+        """Lookup cached match count for chunk, computing and caching if missing or modified."""
+        return len(self.update_and_search(chunk_key, version, chunk_text, pat, use_regex, ignore_case))

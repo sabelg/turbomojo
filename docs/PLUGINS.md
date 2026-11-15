@@ -175,6 +175,26 @@ No editor: the error -32000.
 {"jsonrpc": "2.0", "id": 102, "method": "editor/insert", "params": {"text": "2026-11-12"}}
 ```
 
+### editor/edit
+
+Apply one or more 1-based range edits to an open editor (`path` optional; defaults to the
+editor in front) as a single Undo step. No editor: the error -32000.
+
+```json
+{"jsonrpc": "2.0", "id": 104, "method": "editor/edit", "params": {"path": "/home/me/project/main.mojo", "edits": [
+  {"start_line": 2, "start_col": 5, "end_line": 2, "end_col": 9, "text": "return"}]}}
+```
+
+### diagnostics/set
+
+Replace the plugin's diagnostic marks on an open editor (`path` optional; defaults to the
+editor in front). `severity` is `error`, `warning`, `info` or `hint` (or `1`..`4`).
+
+```json
+{"jsonrpc": "2.0", "id": 105, "method": "diagnostics/set", "params": {"path": "/home/me/project/main.mojo", "diagnostics": [
+  {"line": 2, "col": 5, "end_line": 2, "end_col": 9, "severity": "warning", "message": "empty body"}]}}
+```
+
 ### ui/message
 
 A message on the status line, for a few seconds.

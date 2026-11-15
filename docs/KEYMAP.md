@@ -180,6 +180,7 @@ This file is made by `tmide --keys` (TurboMojo 2.2.0).
 | Send to REPL | Ctrl-F10 | Ctrl-F10 | Ctrl-F10 |
 | Mention in agent prompt | Shift-F11 | Shift-F11 | Shift-F11 |
 | Run code cell and advance (# %%) | Ctrl-Shift-Enter | Ctrl-Shift-Enter | Ctrl-Shift-Enter |
+| Peek definition | Alt-Shift-F12 | Alt-Shift-F12 | Alt-Shift-F12 |
 
 ## Always
 

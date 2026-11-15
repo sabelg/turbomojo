@@ -192,7 +192,17 @@ __extension App:
             n += 1
             if not asked and not self.docs_known(f):
                 continue
-            var part = docs_for(self.docs_of_file(f), name)
+            var entries = self.docs_of_file(f)
+            if len(entries) == 0 and self.aux_job.active and self.aux_job.kind == JOB_DOCS:
+                if not self.term_probed:
+                    self.wait_docs_aux_job()
+                    if self.docs_known(f):
+                        entries = self.docs_of_file(f)
+                else:
+                    self.aux_job.exe = name
+                    self.docpane_show("Docs: " + name, "Generating Mojo docs for `" + name + "`...")
+                    return
+            var part = docs_for(entries, name)
             if part.byte_length() > 0:
                 md += ("\n\n---\n\n" if md.byte_length() > 0 else "") + part
         if md.byte_length() == 0:

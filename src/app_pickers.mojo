@@ -11,9 +11,13 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter, lang_for_path, HL_MOJO
-from snippets import mojo_snippets, expand_snippet_full, pos_after_offset
+from snippets import (
+    mojo_snippets, expand_snippet_full, pos_after_offset,
+    load_toml_snippets, load_vscode_snippets, expand_variables,
+)
+from config import config_home
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE, Cur
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -466,56 +470,194 @@ __extension App:
                     out.append(w)
         return out^
 
+    def ensure_user_snippets(mut self):
+        """Lazily load `<config_home>/snippets.toml` and `<project_or_cwd>/.vscode/*.code-snippets`."""
+        if self.user_snippets_loaded:
+            return
+        self.user_snippets_loaded = True
+        self.user_snippets.clear()
+        var ch = config_home()
+        if ch.byte_length() > 0:
+            var toml_p = join_path(ch, "snippets.toml")
+            if path_exists(toml_p):
+                try:
+                    for sn in load_toml_snippets(toml_p):
+                        self.user_snippets.append(sn.copy())
+                except:
+                    pass
+        var roots = List[String]()
+        var sr = self.symidx_root()
+        if sr.byte_length() > 0:
+            roots.append(sr)
+        if self.cwd.byte_length() > 0 and not (self.cwd in roots):
+            roots.append(self.cwd)
+        for rt in roots:
+            var vs_dir = join_path(rt, ".vscode")
+            if path_exists(vs_dir):
+                for ent in list_dir(vs_dir):
+                    if not ent.endswith("/") and ent.endswith(".code-snippets"):
+                        try:
+                            for sn in load_vscode_snippets(join_path(vs_dir, ent)):
+                                self.user_snippets.append(sn.copy())
+                        except:
+                            pass
+
     def snip_clear(mut self):
         self.snip_wid = -1
         self.snip_rows.clear()
         self.snip_c1.clear()
         self.snip_c2.clear()
+        self.snip_nums.clear()
         self.snip_idx = 0
+
+    def snip_adjust_after_edit(mut self, ai_in: Int = -1):
+        """Update active tabstop span(s) and shift later tabstops on the same row by the edit delta."""
+        var ai = ai_in if ai_in >= 0 else self.active_editor()
+        if ai < 0 or self.snip_wid != self.wins[ai].wid or len(self.snip_rows) == 0:
+            return
+        var distinct = List[Int]()
+        for num in self.snip_nums:
+            var seen = False
+            for d in distinct:
+                if d == num:
+                    seen = True
+                    break
+            if not seen:
+                distinct.append(num)
+        if self.snip_idx < 0 or self.snip_idx >= len(distinct):
+            return
+        var active_num = distinct[self.snip_idx]
+
+        # Collect all current cursor end-columns per row (main + multi-cursors)
+        var cur_rows = List[Int]()
+        var cur_ends = List[Int]()
+        cur_rows.append(self.wins[ai].cr)
+        cur_ends.append(max(self.wins[ai].cc, self.wins[ai].ac) if (self.wins[ai].sel and self.wins[ai].ar == self.wins[ai].cr) else self.wins[ai].cc)
+        for ex in self.wins[ai].extra:
+            cur_rows.append(ex.r)
+            cur_ends.append(max(ex.c, ex.ac) if (ex.sel and ex.ar == ex.r) else ex.c)
+
+        # Sort cursors by (row, end_col) so mirrored stops on the same row match left-to-right
+        for a in range(1, len(cur_rows)):
+            var b = a
+            while b > 0 and (cur_rows[b] < cur_rows[b - 1] or (cur_rows[b] == cur_rows[b - 1] and cur_ends[b] < cur_ends[b - 1])):
+                var tr = cur_rows[b]
+                var te = cur_ends[b]
+                cur_rows[b] = cur_rows[b - 1]
+                cur_ends[b] = cur_ends[b - 1]
+                cur_rows[b - 1] = tr
+                cur_ends[b - 1] = te
+                b -= 1
+
+        # Gather active stop indices sorted by (row, c1)
+        var act_q = List[Int]()
+        for q in range(len(self.snip_rows)):
+            if self.snip_nums[q] == active_num:
+                act_q.append(q)
+        for a in range(1, len(act_q)):
+            var b = a
+            while b > 0 and (
+                self.snip_rows[act_q[b]] < self.snip_rows[act_q[b - 1]]
+                or (
+                    self.snip_rows[act_q[b]] == self.snip_rows[act_q[b - 1]]
+                    and self.snip_c1[act_q[b]] < self.snip_c1[act_q[b - 1]]
+                )
+            ):
+                var tq = act_q[b]
+                act_q[b] = act_q[b - 1]
+                act_q[b - 1] = tq
+                b -= 1
+
+        var cur_used = List[Bool]()
+        for _ in range(len(cur_rows)):
+            cur_used.append(False)
+
+        for qi in range(len(act_q)):
+            var q = act_q[qi]
+            var r = self.snip_rows[q]
+            var old_c1 = self.snip_c1[q]
+            var old_c2 = self.snip_c2[q]
+            var matched = -1
+            for ci in range(len(cur_rows)):
+                if not cur_used[ci] and cur_rows[ci] == r and cur_ends[ci] >= old_c1:
+                    matched = ci
+                    break
+            if matched < 0:
+                continue
+            cur_used[matched] = True
+            var new_c2 = cur_ends[matched]
+            var delta = new_c2 - old_c2
+            if delta == 0:
+                continue
+            self.snip_c2[q] = new_c2
+            for p in range(len(self.snip_rows)):
+                if p != q and self.snip_rows[p] == r and self.snip_c1[p] >= old_c2:
+                    self.snip_c1[p] = max(new_c2, self.snip_c1[p] + delta)
+                    self.snip_c2[p] = max(self.snip_c1[p], self.snip_c2[p] + delta)
 
     def snip_jump(mut self, ai: Int, back: Bool) -> Bool:
         """Advance (or step back) between active snippet tabstops on Tab / Shift-Tab."""
         if ai < 0 or self.snip_wid != self.wins[ai].wid or len(self.snip_rows) == 0:
             return False
-        if self.snip_idx >= 0 and self.snip_idx < len(self.snip_rows):
-            var prev_r = self.snip_rows[self.snip_idx]
-            var old_c2 = self.snip_c2[self.snip_idx]
-            if self.wins[ai].cr == prev_r and not self.wins[ai].has_sel():
-                var delta = self.wins[ai].cc - old_c2
-                if delta != 0:
-                    self.snip_c2[self.snip_idx] = max(self.snip_c1[self.snip_idx], self.wins[ai].cc)
-                    for q in range(len(self.snip_rows)):
-                        if q != self.snip_idx and self.snip_rows[q] == prev_r and self.snip_c1[q] >= old_c2:
-                            self.snip_c1[q] = max(0, self.snip_c1[q] + delta)
-                            self.snip_c2[q] = max(self.snip_c1[q], self.snip_c2[q] + delta)
+
+        # Build unique ordered tabstop numbers
+        var distinct = List[Int]()
+        for num in self.snip_nums:
+            var seen = False
+            for d in distinct:
+                if d == num:
+                    seen = True
+                    break
+            if not seen:
+                distinct.append(num)
+
+        if len(distinct) == 0:
+            self.snip_clear()
+            return False
+
+        # Adjust same-line tabstop columns for any edit made at the current stop before collapsing cursors
+        self.snip_adjust_after_edit(ai)
+
+        # Collapse multi-cursors back to main before jumping
+        self.wins[ai].collapse()
+
         var nxt = self.snip_idx - 1 if back else self.snip_idx + 1
         if nxt < 0:
             return True
-        if nxt >= len(self.snip_rows):
+        if nxt >= len(distinct):
             self.snip_clear()
             return False
+
         self.snip_idx = nxt
-        var r = max(0, min(self.snip_rows[nxt], self.wins[ai].buf.count() - 1))
-        var llen = self.wins[ai].buf.llen(r)
-        var c1 = max(0, min(self.snip_c1[nxt], llen))
-        var c2 = max(c1, min(self.snip_c2[nxt], llen))
-        if c2 > c1:
-            self.wins[ai].sel = True
-            self.wins[ai].ar = r
-            self.wins[ai].ac = c1
-            self.wins[ai].cr = r
-            self.wins[ai].cc = c2
-        else:
-            self.wins[ai].sel = False
-            self.wins[ai].cr = r
-            self.wins[ai].cc = c1
-        self.wins[ai].sync_want()
-        self.wins[ai].follow = True
-        if nxt == len(self.snip_rows) - 1 and c2 == c1:
-            self.snip_clear()
+        var target_num = distinct[nxt]
+
+        # Collect all matching stops for target_num
+        var cs = List[Cur]()
+        for q in range(len(self.snip_rows)):
+            if self.snip_nums[q] == target_num:
+                var r = max(0, min(self.snip_rows[q], self.wins[ai].buf.count() - 1))
+                var llen = self.wins[ai].buf.llen(r)
+                var c1 = max(0, min(self.snip_c1[q], llen))
+                var c2 = max(c1, min(self.snip_c2[q], llen))
+                if c2 > c1:
+                    cs.append(Cur(r, c2, True, r, c1, self.wins[ai].vcol(r, c2)))
+                else:
+                    cs.append(Cur(r, c1, False, r, c1, self.wins[ai].vcol(r, c1)))
+
+        if len(cs) > 0:
+            self.wins[ai].set_cursors(cs^, 0)
+            self.wins[ai].sync_want()
+            self.wins[ai].follow = True
+
         return True
 
-    def comp_rebuild(mut self, prefix: String, words: List[String], mojo_snips: Bool = False):
+    def comp_rebuild(
+        mut self,
+        prefix: String,
+        words: List[String],
+        mojo_snips: Bool = False,
+        user_snips: Bool = True,
+    ):
         """Fill the popup's lists: the server's items that fit what is typed (exact prefix
         first, falling back to case-insensitive prefix or fuzzy subsequence when no exact
         prefix fits), followed by words from the text that the server did not offer."""
@@ -569,6 +711,18 @@ __extension App:
             self.comp_doc.append("")
             self.comp_raw.append("")
             self.comp_srv_idx.append(-1)
+        if user_snips and prefix.byte_length() > 0:
+            self.ensure_user_snippets()
+            for sn in self.user_snippets:
+                if sn.trigger.startswith(prefix) and sn.label not in seen:
+                    seen[sn.label] = 1
+                    self.comp_items.append(sn.label)
+                    self.comp_insert.append(sn.body)
+                    self.comp_kind.append(15)
+                    self.comp_detail.append(sn.detail)
+                    self.comp_doc.append(sn.doc)
+                    self.comp_raw.append("")
+                    self.comp_srv_idx.append(-1)
         if mojo_snips and prefix.byte_length() > 0:
             for sn in mojo_snippets():
                 if sn.trigger.startswith(prefix) and sn.label not in seen:
@@ -662,7 +816,7 @@ __extension App:
         if prefix.byte_length() > 0 and not (member and same and len(self.comp_srv) > 0):
             words = self.collect_completions(ai, prefix)
         var want_snips = not member and lang_for_path(self.wins[ai].path, self.wins[ai].title) == HL_MOJO
-        self.comp_rebuild(prefix, words, want_snips)
+        self.comp_rebuild(prefix, words, want_snips, not member)
         self.comp_waiting = False
         if len(self.comp_items) == 0:
             self.mode = M_NORMAL
@@ -730,7 +884,7 @@ __extension App:
             # after "x." the server's members are the answer; keywords would be noise
             words = self.collect_completions(ai, prefix)
         var want_snips = not member and lang_for_path(self.wins[ai].path, self.wins[ai].title) == HL_MOJO
-        self.comp_rebuild(prefix, words, want_snips)
+        self.comp_rebuild(prefix, words, want_snips, not member)
         if len(self.comp_items) == 0:
             if waiting:
                 self.say("No completions here")
@@ -794,6 +948,21 @@ __extension App:
         var raw_ins = String(self.comp_insert[k])
         var is_snip = (k < len(self.comp_kind) and self.comp_kind[k] == 15) or (sidx >= 0 and (self.comp_srv[sidx].insert_format == 2 or self.comp_srv[sidx].kind == 15))
         self.snip_clear()
+        if is_snip:
+            var wpath = self.wins[ai].path
+            var fname = basename(wpath) if wpath.byte_length() > 0 else self.wins[ai].title
+            var fstem = stem(fname)
+            var sel_txt = to_str(self.wins[ai].selected_text()) if self.wins[ai].has_sel() else String("")
+            var clip_txt = to_str(self.clipboard)
+            raw_ins = expand_variables(
+                raw_ins,
+                fname,
+                fstem,
+                self.wins[ai].cr + 1,
+                self.wins[ai].cr,
+                sel_txt,
+                clip_txt,
+            )
         var line_indent = String("")
         if is_snip and sidx < 0 and raw_ins.find("\n") >= 0:
             var cur_ln = self.wins[ai].buf.line(self.wins[ai].cr)
@@ -858,6 +1027,7 @@ __extension App:
                 self.snip_rows.append(p1.r)
                 self.snip_c1.append(p1.c)
                 self.snip_c2.append(p2.c if p2.r == p1.r else p1.c)
+                self.snip_nums.append(sn_exp.stops[si].num)
             self.snip_wid = self.wins[ai].wid
             self.snip_idx = -1
             _ = self.snip_jump(ai, False)

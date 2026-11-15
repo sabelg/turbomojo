@@ -249,8 +249,12 @@ def test_the_line() raises:
     assert_true(row.endswith("yz") and not row.startswith(":"), row)   # the end of a long line
     assert_equal(app.scr.cx, 79)
     keys(app, "~")
+    keys(app, ":set nonu|")
+    assert_false(app.line_numbers)
     keys(app, ":set nu|")
-    assert_true(app.status.startswith(":set is not"), app.status)
+    assert_true(app.line_numbers)
+    keys(app, ":set xyzzy|")
+    assert_true(app.status.startswith("E518"), app.status)
 
 
 def test_substitute() raises:

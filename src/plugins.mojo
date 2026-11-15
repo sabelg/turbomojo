@@ -24,6 +24,7 @@ The conversation (docs/PLUGINS.md has the whole API):
 from std.collections import List
 from rpc import RpcConn
 from toml import toml_parse
+from json import json_parse, J_ARR
 from commands import Registry, Placement, parse_key, CM_NONE
 from util import path_exists, run_capture, shell_quote, bytes_to_str
 from config import read_text
@@ -32,10 +33,37 @@ comptime PL_STARTING = 1
 comptime PL_READY = 2
 comptime PL_STOPPED = 3
 
-comptime PLUGIN_API = 1
+comptime PLUGIN_API = 2
 comptime CM_PLUGIN0 = 10000         # plugin commands: CM_PLUGIN0 + 100 * plugin + command
 comptime PLUGIN_CMDS_MAX = 100
 comptime PLUGIN_INIT_MS = 10000     # a plugin that has not answered initialize by then is stopped
+
+
+@fieldwise_init
+struct PluginRangeEdit(Copyable, Movable):
+    var start_line: Int
+    var start_col: Int
+    var end_line: Int
+    var end_col: Int
+    var text: String
+
+
+def parse_plugin_edits_json(json_str: String) -> List[PluginRangeEdit]:
+    var out = List[PluginRangeEdit]()
+    var doc = json_parse(json_str)
+    if not doc.ok:
+        return out^
+    var arr = doc.get(0, "edits")
+    if doc.kind(arr) != J_ARR:
+        return out^
+    for enode in doc.children(arr):
+        var sl = doc.int(doc.get(enode, "start_line"), 1)
+        var sc = doc.int(doc.get(enode, "start_col"), 1)
+        var el = doc.int(doc.get(enode, "end_line"), sl)
+        var ec = doc.int(doc.get(enode, "end_col"), sc)
+        var txt = doc.str(doc.get(enode, "text"), "")
+        out.append(PluginRangeEdit(sl, sc, el, ec, txt))
+    return out^
 
 
 struct PluginCmd(Copyable, Movable):

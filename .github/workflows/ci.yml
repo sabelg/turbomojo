@@ -72,11 +72,13 @@ jobs:
     continue-on-error: true
     env:
       TM_JOBS: "4"
-      SKIP_SMOKE: "1"
+      SKIP_SMOKE: "0"
       SKIP_PERF: "1"
       SKIP_SOAK: "1"
     steps:
       - uses: actions/checkout@v4
+      - name: Install tmux (TUI smoke test)
+        run: brew install tmux
       - uses: prefix-dev/setup-pixi@v0.8.8
         with:
           cache: true

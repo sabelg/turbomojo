@@ -700,11 +700,11 @@ struct Regex(Copyable, Movable):
                 cp[self.a[pc]] = at
                 pc += 1
             elif o == I_BOL:
-                if at != 0:
+                if at != 0 and (at < 1 or at - 1 >= len(text) or text[at - 1] != 10):
                     return
                 pc += 1
             elif o == I_EOL:
-                if at != len(text):
+                if at != len(text) and (at < 0 or at >= len(text) or text[at] != 10):
                     return
                 pc += 1
             elif o == I_WORDB or o == I_NWORDB:
@@ -738,23 +738,35 @@ struct Regex(Copyable, Movable):
         var at = start
         var gen = 0
         while True:
-            if not matched and (at == start or not (anchored or self.anchored)):
+            var can_start = not matched
+            if can_start:
+                if anchored:
+                    can_start = at == start
+                elif self.anchored:
+                    can_start = at == 0 or (at > 0 and at <= n and text[at - 1] == 10)
+            if can_start:
                 # a new attempt starting here, behind every thread that started earlier
                 var go = True
                 if self.first >= 0 and len(pcs) == 0:
-                    # nothing in flight: jump ahead to the next possible first character
-                    while at < n and text[at] != self.first:
-                        if anchored or self.anchored:
-                            break
-                        at += 1
-                    go = at < n and text[at] == self.first
+                    if anchored or self.anchored:
+                        go = at < n and text[at] == self.first
+                    else:
+                        # nothing in flight: jump ahead to the next possible first character
+                        while at < n and text[at] != self.first:
+                            at += 1
+                        go = at < n and text[at] == self.first
                 if go:
                     var caps = blank.copy()
                     caps[0] = at
                     self.add_thread(0, caps, text, at, gen, mark, pcs, slots)
             if len(pcs) == 0:
-                if matched or anchored or self.anchored or at >= n:
+                if matched or anchored or at >= n:
                     break
+                if self.anchored:
+                    while at < n and text[at] != 10:
+                        at += 1
+                    if at >= n:
+                        break
                 at += 1
                 gen += 1            # the marks belong to one text position
                 continue

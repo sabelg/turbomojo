@@ -9,6 +9,12 @@ from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_wid
 from grapheme import cluster_end
 from git import GB_KNOWN, GS_NONE, GS_CONFLICT, GS_DELETED, GS_UNTRACKED, GS_ADDED
 from linediff import LM_NONE, LM_ADDED, LM_CHANGED, LM_DELETED_ABOVE
+from hexview import render_hex_rows
+from markdown import (
+    md_render, MdLine, MD_TEXT, MD_BOLD, MD_ITALIC, MD_CODE, MD_HEAD, MD_LINK, MD_DIM, MD_STRIKE, MD_BLOCK,
+)
+from vim_motion import is_code_mask, active_scope_range, ScopeRange
+from search import MatchSpan
 from window import *
 from window_search import *
 from window_multi import *
@@ -192,11 +198,205 @@ __extension Window:
                             bits |= braille_dot(dx, dy)
                 scr.put(x0 + cx, self.y + 1 + cy, braille(bits) if bits != 0 else 32, pal.gutter_fg, bg)
 
+    def draw_hex(self, mut scr: Screen, pal: Palette, active: Bool):
+        """Render virtualized 16-byte/row hex + ASCII inspector (`WK_HEX`)."""
+        var rws = self.rows()
+        var bg = pal.ed_bg
+        scr.fill(self.x + 1, self.y + 1, self.w - 2, self.h - 2, 32, pal.ed_fg, bg)
+        var lines = List[String]()
+        var total_rows = 0
+        if len(self.hex_bytes) > 0:
+            total_rows = (len(self.hex_bytes) + 15) // 16
+            lines = render_hex_rows(self.hex_bytes, self.top, rws)
+        else:
+            var raw = self.buf.lsp_bytes()
+            var looks_formatted = (
+                self.buf.llen(0) >= 10 and self.buf.at(0, 8) == 32 and self.buf.at(0, 9) == 32
+            )
+            if looks_formatted:
+                total_rows = self.buf.count()
+                var r0 = max(0, self.top)
+                var r1 = min(total_rows, r0 + rws)
+                for rr in range(r0, r1):
+                    lines.append(to_str(self.buf.line(rr)))
+            elif len(raw) > 0:
+                total_rows = (len(raw) + 15) // 16
+                lines = render_hex_rows(raw, self.top, rws)
+        scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
+        for i in range(len(lines)):
+            var r = self.top + i
+            var yy = self.y + 1 + i
+            var rbg = pal.curline_bg if r == self.cr and active else (mix(pal.curline_bg, bg, 50) if r == self.cr else bg)
+            if r == self.cr:
+                scr.fill(self.x + 1, yy, self.w - 2, 1, 32, pal.ed_fg, rbg)
+            var cps = decode(lines[i])
+            var xx = self.x + 2
+            for k in range(len(cps)):
+                if xx >= self.x + self.w - 1:
+                    break
+                var ch = cps[k]
+                var cfg = pal.ed_fg
+                if k < 10:
+                    cfg = pal.gutter_fg
+                elif k >= 60:
+                    cfg = pal.gutter_fg if ch == 124 else pal.msg_note
+                xx = scr.draw_cp(xx, yy, ch, cfg, rbg)
+        scr.no_clip()
+        if self.w > 20:
+            _ = scr.text(self.x + 2, self.y + self.h - 1, " [HEX READ-ONLY] ", pal.msg_warn, bg)
+        if active and self.h > 4 and not scr.plain:
+            var sx = self.x + self.w - 1
+            var y0 = self.y + 1
+            var y1 = self.y + self.h - 2
+            scr.put(sx, y0, 0x25B2, pal.scroll_fg, pal.scroll_bg)
+            scr.put(sx, y1, 0x25BC, pal.scroll_fg, pal.scroll_bg)
+            for yy in range(y0 + 1, y1):
+                scr.put(sx, yy, 0x2592, pal.scroll_fg, pal.scroll_bg)
+            var span = y1 - y0 - 1
+            if span > 0:
+                var tot = max(1, total_rows - 1)
+                var ty = y0 + 1 + (min(self.cr, tot) * (span - 1)) // tot
+                scr.put(sx, ty, 0x25A0, pal.scroll_fg, pal.scroll_bg)
+
+    def draw_mdpreview(self, mut scr: Screen, pal: Palette, hl: Highlighter, active: Bool):
+        """Render live Markdown preview (`WK_MDPREVIEW`) with SGR styling and code blocks."""
+        var rws = self.rows()
+        var bg = pal.ed_bg
+        scr.fill(self.x + 1, self.y + 1, self.w - 2, self.h - 2, 32, pal.ed_fg, bg)
+        var md_w = max(8, self.w - 4)
+        var lines = md_render(to_str(self.buf.all_text()), md_w, hl)
+        var total_rows = len(lines)
+        var r0 = max(0, min(self.top, max(0, total_rows - 1)))
+        scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
+        var show_n = min(rws, max(0, total_rows - r0))
+        for i in range(show_n):
+            var yy = self.y + 1 + i
+            var xx = self.x + 2
+            var n_cp = len(lines[r0 + i].cps)
+            for k in range(n_cp):
+                if xx >= self.x + self.w - 1:
+                    break
+                var cp = lines[r0 + i].cps[k]
+                var st = lines[r0 + i].st[k]
+                var cfg = pal.ed_fg
+                var cbg = bg
+                if st == MD_HEAD:
+                    cfg = pal.syn[C_DEF]
+                elif st == MD_CODE:
+                    cfg = pal.syn[4]
+                    cbg = pal.curline_bg
+                elif st == MD_LINK:
+                    cfg = pal.frame_act
+                elif st == MD_DIM or st == MD_STRIKE:
+                    cfg = pal.gutter_fg
+                elif st >= MD_BLOCK:
+                    var sc = min(st - MD_BLOCK, len(pal.syn) - 1)
+                    cfg = pal.syn[sc]
+                    cbg = pal.curline_bg
+                var nx = scr.draw_cp(xx, yy, cp, cfg, cbg)
+                var wcell = max(1, nx - xx)
+                if st == MD_BOLD or st == MD_HEAD:
+                    scr.bold(xx, yy, wcell)
+                elif st == MD_ITALIC:
+                    scr.italic(xx, yy, wcell)
+                elif st == MD_DIM:
+                    scr.dim(xx, yy, wcell)
+                elif st == MD_STRIKE:
+                    scr.strikethrough(xx, yy, wcell)
+                elif st == MD_LINK:
+                    scr.underline(xx, yy, False, pal.frame_act)
+                xx = nx
+        scr.no_clip()
+        if active and self.h > 4 and not scr.plain:
+            var sx = self.x + self.w - 1
+            var y0 = self.y + 1
+            var y1 = self.y + self.h - 2
+            scr.put(sx, y0, 0x25B2, pal.scroll_fg, pal.scroll_bg)
+            scr.put(sx, y1, 0x25BC, pal.scroll_fg, pal.scroll_bg)
+            for yy in range(y0 + 1, y1):
+                scr.put(sx, yy, 0x2592, pal.scroll_fg, pal.scroll_bg)
+            var span = y1 - y0 - 1
+            if span > 0:
+                var tot = max(1, total_rows - 1)
+                var ty = y0 + 1 + (min(r0, tot) * (span - 1)) // tot
+                scr.put(sx, ty, 0x25A0, pal.scroll_fg, pal.scroll_bg)
+
+    def draw_overview_ruler(
+        self, mut scr: Screen, pal: Palette, sx: Int, y0: Int, y1: Int, ty: Int, ml_spans: List[MatchSpan]
+    ):
+        """Draw overview ruler ticks on vertical scrollbar for diagnostics, search hits, Git hunks, and extra cursors."""
+        var span = y1 - y0 - 1
+        if span <= 0:
+            return
+        var has_any = (
+            len(self.buf.marks) > 0
+            or self.hs_on
+            or len(self.buf.git_marks) > 0
+            or len(self.extra) > 0
+        )
+        if not has_any:
+            return
+        var tot = max(1, self.buf.count() - 1)
+        var tick_pri = List[Int](length=span, fill=0)
+        var tick_col = List[Int](length=span, fill=0)
+
+        # 1. Extra cursors
+        for ec in self.extra:
+            var idx = (max(0, min(ec.r, tot)) * (span - 1)) // tot
+            if tick_pri[idx] < 1:
+                tick_pri[idx] = 1
+                tick_col[idx] = pal.frame_act
+
+        # 2. Git changed / added lines
+        var gm_lim = min(len(self.buf.git_marks), self.buf.count())
+        for gr in range(gm_lim):
+            var gm = Int(self.buf.git_marks[gr])
+            if gm != LM_NONE:
+                var idx = (min(gr, tot) * (span - 1)) // tot
+                if tick_pri[idx] < 2:
+                    tick_pri[idx] = 2
+                    tick_col[idx] = pal.git_add if gm == LM_ADDED else pal.git_mod
+
+        # 3. Search hits
+        if self.hs_on and self.hs.ok:
+            var scol = pal.match_bg if pal.match_bg != pal.scroll_bg else pal.match_fg
+            if self.hs.is_multiline():
+                for sp in ml_spans:
+                    var idx = (max(0, min(sp.r1, tot)) * (span - 1)) // tot
+                    if tick_pri[idx] < 3:
+                        tick_pri[idx] = 3
+                        tick_col[idx] = scol
+            elif self.buf.count() <= 5000:
+                for sr_r in range(self.buf.count()):
+                    var ln_s = self.buf.line(sr_r)
+                    if len(ln_s) > 0 and len(ln_s) <= 4000 and len(self.hs.caps_in(ln_s, 0)) > 0:
+                        var idx = (min(sr_r, tot) * (span - 1)) // tot
+                        if tick_pri[idx] < 3:
+                            tick_pri[idx] = 3
+                            tick_col[idx] = scol
+
+        # 4 & 5. Diagnostic warnings & errors
+        for m in self.buf.marks:
+            var pri = 5 if m.severity == 1 else (4 if m.severity == 2 else 0)
+            if pri > 0:
+                var idx = (max(0, min(m.l1, tot)) * (span - 1)) // tot
+                if tick_pri[idx] < pri:
+                    tick_pri[idx] = pri
+                    tick_col[idx] = pal.diag_err if m.severity == 1 else pal.diag_warn
+
+        var tick_ch = 61 if scr.glyphs == GLYPHS_ASCII else 0x25AC
+        for k in range(span):
+            if tick_pri[k] > 0:
+                var yy = y0 + 1 + k
+                var g = 0x25A0 if yy == ty else tick_ch
+                scr.put(sx, yy, g, tick_col[k], pal.scroll_bg)
+
     # --------------------------------------------------------------- draw
     def draw(
         self, mut scr: Screen, pal: Palette, hl: Highlighter, active: Bool, hl_line: Bool, insert_mode: Bool, show_ws: Bool
     ):
-        var is_msg = self.kind != WK_EDITOR       # the Message and Outline windows are lists
+        var is_special_ed = self.kind == WK_HEX or self.kind == WK_MDPREVIEW
+        var is_msg = self.kind != WK_EDITOR and not is_special_ed       # the Message and Outline windows are lists
         var plain = is_msg or self.buf.large      # no syntax colours
         var bg = pal.msg_bg if is_msg else pal.ed_bg
         var fg = pal.msg_fg if is_msg else pal.ed_fg
@@ -204,7 +404,8 @@ __extension Window:
         scr.fill(self.x, self.y, self.w, self.h, 32, fg, bg)
         scr.frame(self.x, self.y, self.w, self.h, active, ffg, bg)
         # title
-        var t = " " + self.title + self.crumbs + (" (large file) " if self.buf.large else " ")
+        var ro_tag = String(" [HEX READ-ONLY] ") if self.kind == WK_HEX else (String(" [READ-ONLY] ") if self.read_only else String(""))
+        var t = " " + self.title + self.crumbs + ro_tag + (" (large file) " if self.buf.large else (" " if ro_tag.byte_length() == 0 else ""))
         var tl = cp_len(t)
         var tx = self.x + max(1, (self.w - tl) // 2)
         if self.w > 12:
@@ -238,6 +439,13 @@ __extension Window:
         if self.number > 0 and self.number < 10 and self.w > 12:
             _ = scr.text(self.x + self.w - 7, self.y, String(self.number), ffg, bg)
 
+        if self.kind == WK_HEX:
+            self.draw_hex(scr, pal, active)
+            return
+        if self.kind == WK_MDPREVIEW:
+            self.draw_mdpreview(scr, pal, hl, active)
+            return
+
         var rws = self.rows()
         var cls = self.cols()
         var cx0 = self.x + 1 + self.gut
@@ -255,6 +463,31 @@ __extension Window:
         if active and not is_msg and self.word_hl and not self.hs_on and not has_sel and n_extra == 0 and not self.buf.large:
             wword = word_at(self.buf.line(self.cr), self.cc)
         var sr = self.sel_range()
+        var hs_ml = self.hs_on and not is_msg and self.hs.is_multiline() and not self.buf.large
+        var ml_spans = List[MatchSpan]()
+        if hs_ml:
+            ml_spans = self._multiline_spans(self.hs)
+        var ascope = ScopeRange(-1, -1, -1)
+        var ascope_vcol = -1
+        if self.indent_guides and not is_msg and not plain and not scr.plain:
+            ascope = active_scope_range(self.buf, self.cr)
+            if ascope.r1 >= 0:
+                ascope_vcol = self._indent_vcol_row(ascope.r1)
+        var rb_on = self.rainbow_brackets and not is_msg and not plain and not scr.plain
+        var rb_depth = 0
+        if rb_on:
+            var scan_start = max(0, self.top - 300)
+            for rr in range(scan_start, min(self.top, self.buf.count())):
+                var rln = self.buf.line(rr)
+                var rmask = is_code_mask(rln)
+                for rc in range(len(rln)):
+                    if rc < len(rmask) and rmask[rc]:
+                        var rch = rln[rc]
+                        if rch == 40 or rch == 91 or rch == 123:
+                            rb_depth += 1
+                        elif rch == 41 or rch == 93 or rch == 125:
+                            rb_depth = max(0, rb_depth - 1)
+        var rb_colors = List[Int]()
         # find highlighter state at the first visible line
         var lang = lang_for_path(self.path, self.title)
         var st = self.lex_state_at(self.top)
@@ -278,6 +511,22 @@ __extension Window:
                     st = hl.line(ln, st, classes, lang)
                     if len(self.buf.sem) > 0:
                         self.buf.sem_apply(r, classes)
+                rb_colors.clear()
+                if rb_on:
+                    var rmask = is_code_mask(ln)
+                    for rc in range(len(ln)):
+                        if rc < len(rmask) and rmask[rc]:
+                            var rch = ln[rc]
+                            if rch == 40 or rch == 91 or rch == 123:
+                                rb_colors.append(pal.rainbow_color(rb_depth))
+                                rb_depth += 1
+                            elif rch == 41 or rch == 93 or rch == 125:
+                                rb_depth = max(0, rb_depth - 1)
+                                rb_colors.append(pal.rainbow_color(rb_depth))
+                            else:
+                                rb_colors.append(-1)
+                        else:
+                            rb_colors.append(-1)
                 loaded = r
                 seg = min(seg, len(starts) - 1)
             var s0 = starts[seg]
@@ -368,6 +617,14 @@ __extension Window:
                             var tfg = pal.msg_ok if ts == 2 else (pal.diag_err if ts == 3 else pal.gutter_fg)
                             scr.put(self.x + 1, yy, tch, tfg, pal.gutter_bg)
                             break
+                elif seg == 0 and not is_msg and pad >= 1 and len(self.cov_rows) > 0:
+                    for cvi in range(len(self.cov_rows)):
+                        if self.cov_rows[cvi] == r:
+                            var cs = self.cov_states[cvi] if cvi < len(self.cov_states) else 0
+                            var cch = 0x2713 if cs > 0 else 0x00B7
+                            var cfg_cov = pal.msg_ok if cs > 0 else pal.diag_err
+                            scr.put(self.x + 1, yy, cch, cfg_cov, pal.gutter_bg)
+                            break
                 if seg == 0 and not is_msg and len(self.buf.bps) > 0:
                     var look = self.buf.bp_look(r)
                     if look == 1 or look == 3:
@@ -399,7 +656,18 @@ __extension Window:
             # other matches of the current search on this row (skipped for huge lines)
             var ms = List[Int]()
             var mi = 0
-            if self.hs_on and not is_msg and n > 0 and n <= 20000:
+            var ml_eol_hit = False
+            if hs_ml:
+                for sp in ml_spans:
+                    if r >= sp.r1 and r <= sp.r2:
+                        var mc1 = sp.c1 if r == sp.r1 else 0
+                        var mc2 = sp.c2 if r == sp.r2 else n
+                        if mc2 > mc1:
+                            ms.append(mc1)
+                            ms.append(mc2)
+                        if r < sp.r2:
+                            ml_eol_hit = True
+            elif self.hs_on and not is_msg and n > 0 and n <= 20000:
                 var mcols = self.scope_cols(r, n)
                 ms = self.hs.all_in(ln, mcols.c1, mcols.c2)
             var ws = List[Int]()
@@ -442,6 +710,8 @@ __extension Window:
                             cfg = pal.msg_ok
                 if not plain:
                     cfg = pal.syn[classes[c]]
+                    if c < len(rb_colors) and rb_colors[c] >= 0:
+                        cfg = rb_colors[c]
                 while wi + 1 < len(ws) and c >= ws[wi + 1]:
                     wi += 2
                 if wi < len(ws) and c >= ws[wi]:
@@ -482,7 +752,12 @@ __extension Window:
                     if gv >= off and gv < lim:
                         var gx = cx0 + gv - off
                         if scr.bg_at(gx, yy) == rowbg:
-                            scr.put(gx, yy, gch, pal.gutter_fg, rowbg)
+                            var gfg_ind = (
+                                pal.frame_act
+                                if ascope.r1 >= 0 and r >= ascope.r1 and r <= ascope.r2 and gv == ascope_vcol
+                                else pal.gutter_fg
+                            )
+                            scr.put(gx, yy, gch, gfg_ind, rowbg)
                     gv += step
             # the additional cursors: the terminal has one real cursor, these are drawn
             for e in self.extra:
@@ -497,6 +772,8 @@ __extension Window:
             # selection past end of line shows the newline
             if has_sel and sr.r1 <= r and r < sr.r2 and s1 == n and v >= off and v < lim:
                 scr.put(cx0 + v - off, yy, 32, pal.sel_fg, pal.sel_bg)
+            elif ml_eol_hit and s1 == n and v >= off and v < lim:
+                scr.put(cx0 + v - off, yy, 32, pal.match_fg, pal.match_bg)
             # problems reported for this line: underline the range (at least one cell)
             for m in self.buf.marks:
                 if r < m.l1 or r > m.l2 or is_msg:
@@ -514,6 +791,8 @@ __extension Window:
                 var ukind = UL_CURLY if m.severity == 1 else (UL_DASHED if m.severity == 2 else UL_DOTTED)
                 for uv in range(max(va, off), min(vb, lim)):
                     scr.underline_kind(cx0 + uv - off, yy, ukind, ucol)
+                    if m.deprecated and not scr.plain:
+                        scr.strikethrough(cx0 + uv - off, yy, 1)
             # column guides: only where nothing else colours the cell
             if not is_msg and not self.wrap:
                 for rc in self.rulers:
@@ -531,22 +810,62 @@ __extension Window:
                     # inlay hints are shown after the end of the line, not inside it
                     var note = self.buf.hints_text(r)
                     if note.byte_length() > 0:
+                        var hx0 = eol_x
                         eol_x = scr.text(eol_x, yy, "◂ " + note + "  ", pal.syn[3], rowbg)
+                        if not scr.plain and eol_x > hx0:
+                            scr.italic(hx0, yy, eol_x - hx0)
+                            scr.dim(hx0, yy, eol_x - hx0)
                 if len(self.dbg_inline_rows) > 0 and eol_x + 4 < cx0 + cls:
                     for dli in range(len(self.dbg_inline_rows)):
                         if self.dbg_inline_rows[dli] == r:
                             eol_x = scr.text(eol_x, yy, "⟨" + self.dbg_inline_vals[dli] + "⟩  ", pal.msg_note, rowbg)
                             break
-                if (lang == HL_MOJO or lang == HL_PYTHON) and len(ln) >= 4 and ln[0] == 35 and ln[1] == 32 and ln[2] == 37 and ln[3] == 37 and not scr.plain and eol_x + 18 < cx0 + cls:
+                var drew_cell = False
+                if len(self.cell_badge_rows) > 0 and not scr.plain and eol_x + 8 < cx0 + cls:
+                    for cbi in range(len(self.cell_badge_rows)):
+                        if self.cell_badge_rows[cbi] == r and cbi < len(self.cell_badges):
+                            var cb = String(self.cell_badges[cbi])
+                            if cb.byte_length() > 0:
+                                var cbfg = (
+                                    pal.msg_ok
+                                    if str_contains(cb, "✓")
+                                    else (pal.diag_err if str_contains(cb, "✗") else pal.msg_note)
+                                )
+                                eol_x = scr.text(eol_x, yy, "  " + cb, cbfg, rowbg)
+                                drew_cell = True
+                            break
+                if not drew_cell and (lang == HL_MOJO or lang == HL_PYTHON) and len(ln) >= 4 and ln[0] == 35 and ln[1] == 32 and ln[2] == 37 and ln[3] == 37 and not scr.plain and eol_x + 18 < cx0 + cls:
                     eol_x = scr.text(eol_x, yy, "  [Ctrl-Enter: Run Cell]", pal.msg_note, rowbg)
+                if len(self.bench_badge_rows) > 0 and not scr.plain and eol_x + 8 < cx0 + cls:
+                    for bbi in range(len(self.bench_badge_rows)):
+                        if self.bench_badge_rows[bbi] == r and bbi < len(self.bench_badges):
+                            var bb = String(self.bench_badges[bbi])
+                            if bb.byte_length() > 0:
+                                eol_x = scr.text(eol_x, yy, "  " + bb, pal.msg_ok, rowbg)
+                            break
                 if active and r == self.cr and r == self.inline_blame_row and self.inline_blame.byte_length() > 0 and not scr.plain and eol_x + 4 < cx0 + cls:
-                    _ = scr.text(eol_x, yy, "  " + self.inline_blame, pal.gutter_fg, rowbg)
+                    var bx0 = eol_x
+                    var bend = scr.text(eol_x, yy, "  " + self.inline_blame, pal.gutter_fg, rowbg)
+                    if bend > bx0:
+                        scr.italic(bx0, yy, bend - bx0)
+                        scr.dim(bx0, yy, bend - bx0)
             scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
             seg += 1
             if seg >= len(starts):
                 var nr = self.buf.next_row(r)
                 if nr != r + 1 and nr < self.buf.count():
                     st = self.lex_state_at(nr)      # lines were skipped: pick up the state there
+                    if rb_on:
+                        for srr in range(r + 1, min(nr, r + 300)):
+                            var sln = self.buf.line(srr)
+                            var smask = is_code_mask(sln)
+                            for src in range(len(sln)):
+                                if src < len(smask) and smask[src]:
+                                    var sch = sln[src]
+                                    if sch == 40 or sch == 91 or sch == 123:
+                                        rb_depth += 1
+                                    elif sch == 41 or sch == 93 or sch == 125:
+                                        rb_depth = max(0, rb_depth - 1)
                 r = nr
                 seg = 0
         scr.no_clip()
@@ -579,10 +898,13 @@ __extension Window:
             for yy in range(y0 + 1, y1):
                 scr.put(sx, yy, 0x2592, pal.scroll_fg, pal.scroll_bg)
             var span = y1 - y0 - 1
+            var ty = -1
             if span > 0:
                 var tot = max(1, self.buf.count() - 1)
-                var ty = y0 + 1 + (min(self.cr, tot) * (span - 1)) // tot
+                ty = y0 + 1 + (min(self.cr, tot) * (span - 1)) // tot
                 scr.put(sx, ty, 0x25A0, pal.scroll_fg, pal.scroll_bg)
+            if not is_msg:
+                self.draw_overview_ruler(scr, pal, sx, y0, y1, ty, ml_spans)
             if not is_msg and self.w > 30:
                 # horizontal scrollbar
                 var hx0 = self.x + 18
@@ -599,6 +921,8 @@ __extension Window:
                         maxw = max(maxw, self.buf.llen(r))
                     var tx2 = hx0 + 1 + (min(self.vcol(self.cr, self.cc), maxw) * (hs - 1)) // maxw
                     scr.put(tx2, by, 0x25A0, pal.scroll_fg, pal.scroll_bg)
+        elif not active and self.minimap and not is_msg and self.h > 4 and not scr.plain:
+            self.draw_overview_ruler(scr, pal, self.x + self.w - 1, self.y + 1, self.y + self.h - 2, -1, ml_spans)
 
     def is_bracket(self, ch: Int) -> Bool:
         return ch == 40 or ch == 41 or ch == 91 or ch == 93 or ch == 123 or ch == 125

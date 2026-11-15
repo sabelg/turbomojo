@@ -6353,3 +6353,37 @@ TurboMojo's way of changing settings; Options is).
 - .github/workflows/ci.yml: `timeout-minutes` 180 for the check and canary jobs.
 - Not verified: that linux-64 finishes within 180 (it needs a push and a CI run - the
   user's word).
+
+## 2026-11-15 · P13-01 P13-02 P13-03 P13-04 P13-05 P13-06 P13-07 P13-08 P13-09 P13-10 · 40-feature Mojo 1.2 & GPU IDE milestone · done
+
+- Implemented and wired all 40 milestone features (`F01`–`F40`) across `src/*.mojo` and
+  integrated all 40 E2E suites (`tests/e2e/test_f01_*.mojo` through
+  `tests/e2e/test_f40_*.mojo`) into the sharded test runner (`scripts/gen_test_runner.py`
+  and `scripts/check.sh`).
+- Highlights:
+  - Toolchain, Benchmarking, Codegen & GPU (`F01`–`F10`): non-blocking `mojo doc` via
+    `aux_job`, warm `lsp_pool`, `src/bench.mojo` (`std.benchmark` runner, JSON baseline
+    comparison, inline `[ns/op]` gutter/EOL badges), PTX/AMDGCN/ASM/LLVM codegen
+    inspector with live cursor sync, GPU monitor + Nsight Compute / `rocprofv3` roofline
+    profiler, and `max serve` / `max benchmark` integration.
+  - Testing, Cells & Debugging (`F11`–`F16`): Test Explorer watch-on-save (`w`), line
+    coverage gutter, `d` to debug a failed test in `mojo-lldb-dap`, `# %%` code cell
+    execution timing badges + `CM_CELL_RESTART`, DAP live PID attach & `coredumpctl`
+    post-mortem inspection (`D_DEBUG_ATTACH`), inline variable ghosts, GPU lane focus,
+    and CPU SIMD/FP16/BF16 lane formatting (`[`, `]`, `b`, `B`).
+  - LSP, Navigation & Editor Core (`F17`–`F28`): workspace call & type hierarchy
+    (`D_HIERARCHY`), cursor-anchored `M_PEEK` overlay (`Alt-Shift-F12`) and inline Git
+    hunk preview (`S` stage / `R` revert), branching undo tree (`D_UNDO_TREE`, `g-`/`g+`),
+    auto-detected read-only binary hex viewer (`WK_HEX`), rainbow brackets, interactive
+    minimap/scrollbar scrubbing + overview ruler ticks, mouse-draggable tiled splitters,
+    pinned tabs + middle-click close, scroll-synced `WK_MDPREVIEW`, and Vim `:set`,
+    `:marks`, `:registers`, `gn`/`gN`, `g;`/`g,`, `gv`, `q:`/`q/`.
+  - Git, Agent, Plugins, Terminal, Remote & Accessibility (`F29`–`F40`): `WK_GITLOG`
+    commit graph (`d`, `y`, `C`, `R`, `f`), async push/pull/fetch, `D_GIT_STASH`,
+    `D_SWITCH_PROJECT`, `D_GIT_WORKTREE`, per-hunk agent diff review, `@doc:`/`@symbol:`
+    prompt grounding, Plugin API v2 (`editor/edit`, `diagnostics/set`, `D_PLUGINS`),
+    multi-tab terminal (`CM_TERM_NEW`/`NEXT`/`PREV`), SSH `[ssh:host]` status pill +
+    `ssh -L` port-forward toasts + tmux OSC 52 clipboard + DCS passthrough, and extended
+    `tmide --lines` + TUI screen-reader context cues (`announce_reader_context`).
+- Verified: zero compiler warnings on `build/tmide` and all 9 test shards; all unit + E2E
+  suites, `gen_docs.py --check`, and `docs/KEYMAP.md` verified through `scripts/check.sh`.

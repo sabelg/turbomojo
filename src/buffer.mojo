@@ -5,6 +5,7 @@ The text itself lives in `Rope` (src/rope.mojo), so loading, editing and line lo
 fast on very large files. Line endings are normalised to "\n" in memory; `crlf` remembers
 that the file used CR LF and `to_bytes` writes it back that way."""
 from std.collections import List
+from std.memory import ArcPointer
 from util import encode_cp, decode_list, decode, to_str
 from rope import Rope
 
@@ -46,7 +47,6 @@ struct DocChange(Copyable, Movable):
     var text: List[Int]
 
 
-@fieldwise_init
 struct Mark(Copyable, Movable):
     """A problem reported for a range of the text (lines and character columns)."""
     var l1: Int
@@ -55,6 +55,25 @@ struct Mark(Copyable, Movable):
     var c2: Int
     var severity: Int      # 1 error, 2 warning, 3 information, 4 hint
     var message: String
+    var deprecated: Bool
+
+    def __init__(
+        out self,
+        l1: Int,
+        c1: Int,
+        l2: Int,
+        c2: Int,
+        severity: Int,
+        message: String,
+        deprecated: Bool = False,
+    ):
+        self.l1 = l1
+        self.c1 = c1
+        self.l2 = l2
+        self.c2 = c2
+        self.severity = severity
+        self.message = message
+        self.deprecated = deprecated
 
 
 @fieldwise_init
@@ -75,8 +94,46 @@ comptime ENC_UTF8 = 0
 comptime ENC_LATIN1 = 1
 
 
-struct TextBuffer(Copyable, Movable):
+@fieldwise_init
+struct UndoDeltaNode(Copyable, Movable):
+    var id: Int
+    var parent: Int
+    var children: List[Int]
+    var seq: Int
+    var group: Int
+    var recs: List[UndoRec]
+    var before_pos: Pos
+    var after_pos: Pos
+    var desc: String
+
+
+@fieldwise_init
+struct BufferCore(Copyable, Movable):
     var rope: Rope
+    var utree_nodes: List[UndoDeltaNode]
+    var utree_active: Int
+    var utree_next_seq: Int
+
+    def __init__(out self):
+        self.rope = Rope()
+        self.utree_nodes = List[UndoDeltaNode]()
+        self.utree_nodes.append(
+            UndoDeltaNode(0, -1, List[Int](), 0, 0, List[UndoRec](), Pos(0, 0), Pos(0, 0), "root")
+        )
+        self.utree_active = 0
+        self.utree_next_seq = 0
+
+    def reset_undo_tree(mut self):
+        self.utree_nodes.clear()
+        self.utree_nodes.append(
+            UndoDeltaNode(0, -1, List[Int](), 0, 0, List[UndoRec](), Pos(0, 0), Pos(0, 0), "root")
+        )
+        self.utree_active = 0
+        self.utree_next_seq = 0
+
+
+struct TextBuffer(Copyable, Movable):
+    var core: ArcPointer[BufferCore]
     var undos: List[UndoRec]
     var redos: List[UndoRec]
     var modified: Bool
@@ -120,7 +177,7 @@ struct TextBuffer(Copyable, Movable):
     var lex_work: Int       # lines scanned so far (for tests and profiling)
 
     def __init__(out self):
-        self.rope = Rope()
+        self.core = ArcPointer(BufferCore())
         self.undos = List[UndoRec]()
         self.redos = List[UndoRec]()
         self.modified = False
@@ -197,7 +254,7 @@ struct TextBuffer(Copyable, Movable):
         self.bom = False
         self.encoding = ENC_UTF8
         self.use_tabs = tabs > spaces
-        self.rope.load_cps(clean)
+        self.core[].rope.load_cps(clean)
         self.after_load()
 
     def load_bytes(mut self, bytes: List[UInt8]):
@@ -280,13 +337,13 @@ struct TextBuffer(Copyable, Movable):
         self.bom = has_bom
         self.encoding = ENC_UTF8
         self.use_tabs = tabs > spaces
-        self.rope.load_bytes(clean)
+        self.core[].rope.load_bytes(clean)
         self.after_load()
 
     def utf16_col(self, r: Int, c: Int) -> Int:
         """Column c of line r counted in UTF-16 code units."""
-        var start = self.rope.line_start(r)
-        return self.rope.to_utf16(self.rope.offset(r, c)) - self.rope.to_utf16(start)
+        var start = self.core[].rope.line_start(r)
+        return self.core[].rope.to_utf16(self.core[].rope.offset(r, c)) - self.core[].rope.to_utf16(start)
 
     def note_change(mut self, sl: Int, sc: Int, el: Int, ec: Int, text: List[Int]):
         if not self.track or self.changes_lost:
@@ -362,10 +419,26 @@ struct TextBuffer(Copyable, Movable):
         self.ldirty_to = -1
         self.undos.clear()
         self.redos.clear()
+        self.core[].reset_undo_tree()
         self.modified = False
         self.version += 1
 
     # ------------------------------------------------------------ folding
+    def is_cell_header(self, r: Int) -> Bool:
+        """Does line r start a `# %%` code cell?"""
+        if r < 0 or r >= self.core[].rope.line_count():
+            return False
+        var b = self.line_bytes(r)
+        var i = 0
+        var n = len(b)
+        while i < n and (b[i] == 32 or b[i] == 9):
+            i += 1
+        if i + 4 <= n and b[i] == 35 and b[i + 1] == 32 and b[i + 2] == 37 and b[i + 3] == 37:
+            return i + 4 == n or b[i + 4] == 32 or b[i + 4] == 9
+        if i + 3 <= n and b[i] == 35 and b[i + 1] == 37 and b[i + 2] == 37:
+            return i + 3 == n or b[i + 3] == 32 or b[i + 3] == 9
+        return False
+
     def indent_cols(self, r: Int) -> Int:
         """Screen columns of the leading blanks of line r; -1 for a blank line."""
         var b = self.line_bytes(r)
@@ -381,12 +454,18 @@ struct TextBuffer(Copyable, Movable):
 
     def block_end(self, r: Int) -> Int:
         """Last line of the block that belongs to line r: the following lines indented
-        deeper than r (blank lines between them included). r itself if there is none."""
+        deeper than r (blank lines between them included), or for `# %%` cells up to the
+        line before the next `# %%` (or count() - 1). r itself if there is none."""
+        var count = self.core[].rope.line_count()
+        if self.is_cell_header(r):
+            var jc = r + 1
+            while jc < count and not self.is_cell_header(jc):
+                jc += 1
+            return jc - 1
         var base = self.indent_cols(r)
         if base < 0:
             return r
         var end = r
-        var count = self.rope.line_count()
         var j = r + 1
         while j < count:
             var ind = self.indent_cols(j)
@@ -399,11 +478,13 @@ struct TextBuffer(Copyable, Movable):
 
     def foldable(self, r: Int) -> Bool:
         """Does line r start a block? (Looks at most 200 lines ahead for the next line
-        that is not blank.)"""
+        that is not blank, or checks `# %%` cell span.)"""
+        if self.is_cell_header(r):
+            return self.block_end(r) > r
         var base = self.indent_cols(r)
         if base < 0:
             return False
-        var count = self.rope.line_count()
+        var count = self.core[].rope.line_count()
         var j = r + 1
         while j < count and j <= r + 200:
             var ind = self.indent_cols(j)
@@ -419,7 +500,7 @@ struct TextBuffer(Copyable, Movable):
             return
         var kept = List[Int]()
         var ends = List[Int]()
-        var count = self.rope.line_count()
+        var count = self.core[].rope.line_count()
         for f in self.folds:
             if f < 0 or f >= count or (len(kept) > 0 and kept[len(kept) - 1] >= f):
                 continue
@@ -500,10 +581,15 @@ struct TextBuffer(Copyable, Movable):
     def fold_all(mut self) -> Int:
         """Fold every block. Returns how many there are."""
         self.folds.clear()
-        var count = self.rope.line_count()
+        var count = self.core[].rope.line_count()
         var prev = -1          # the last line that was not blank
         var prev_ind = 0
         for r in range(count):
+            if self.is_cell_header(r):
+                if self.block_end(r) > r:
+                    self.folds.append(r)
+                prev = -1
+                continue
             var ind = self.indent_cols(r)
             if ind < 0:
                 continue
@@ -522,11 +608,11 @@ struct TextBuffer(Copyable, Movable):
 
     def all_text(self) -> List[Int]:
         """The whole text as codepoints, lines separated by "\n"."""
-        return self.rope.to_cps()
+        return self.core[].rope.to_cps()
 
     def latin1_ok(self) -> Bool:
         """Can every character be written as one Latin-1 byte (nothing above U+00FF)?"""
-        for b in self.rope.to_bytes():
+        for b in self.core[].rope.to_bytes():
             if b >= 0xC4:
                 return False
         return True
@@ -564,13 +650,13 @@ struct TextBuffer(Copyable, Movable):
         """The text exactly as the editor holds it: UTF-8, "\n" between lines, nothing
         added. This is the document a language server is given, so that its line and
         column numbers are the editor's."""
-        return self.rope.to_bytes()
+        return self.core[].rope.to_bytes()
 
     def text_bytes(self) -> List[UInt8]:
         """The text as UTF-8 with the file's line endings and final newline: what tools
         that take UTF-8 (the language server) are given."""
-        var raw = self.rope.to_bytes()
-        var need_final = self.eol_at_eof and self.rope.line_len(self.rope.line_count() - 1) > 0
+        var raw = self.core[].rope.to_bytes()
+        var need_final = self.eol_at_eof and self.core[].rope.line_len(self.core[].rope.line_count() - 1) > 0
         if not self.crlf:
             if need_final:
                 raw.append(10)
@@ -587,25 +673,25 @@ struct TextBuffer(Copyable, Movable):
 
     def count(self) -> Int:
         """Number of lines (at least 1)."""
-        return self.rope.line_count()
+        return self.core[].rope.line_count()
 
     def llen(self, r: Int) -> Int:
         """Characters in line r, without its newline."""
-        return self.rope.line_len(r)
+        return self.core[].rope.line_len(r)
 
     def line(self, r: Int) -> List[Int]:
         """Codepoints of line r (a copy; empty for a row that does not exist). Fetch a
         line once and index the result rather than calling `at` for every character."""
-        return self.rope.line(r)
+        return self.core[].rope.line(r)
 
     def at(self, r: Int, c: Int) -> Int:
         """Codepoint at (r, c), or -1 outside the text (including at the line's end)."""
-        if r < 0 or r >= self.rope.line_count() or c < 0:
+        if r < 0 or r >= self.core[].rope.line_count() or c < 0:
             return -1
-        var start = self.rope.line_start(r)
-        if c >= self.rope.line_end(r) - start:
+        var start = self.core[].rope.line_start(r)
+        if c >= self.core[].rope.line_end(r) - start:
             return -1
-        return self.rope.char_at(start + c)
+        return self.core[].rope.char_at(start + c)
 
     def end_of(self, r: Int, c: Int, text: List[Int]) -> Pos:
         var rr = r
@@ -620,15 +706,15 @@ struct TextBuffer(Copyable, Movable):
 
     def get_text(self, r1: Int, c1: Int, r2: Int, c2: Int) -> List[Int]:
         """Text from (r1, c1) up to (r2, c2); columns past a line's end are clamped."""
-        var a = self.rope.offset(r1, c1)
-        var b = self.rope.offset(r2, c2)
+        var a = self.core[].rope.offset(r1, c1)
+        var b = self.core[].rope.offset(r2, c2)
         if b <= a:
             return List[Int]()
-        return self.rope.slice(a, b)
+        return self.core[].rope.slice(a, b)
 
     def line_bytes(self, r: Int) -> List[UInt8]:
         """UTF-8 bytes of line r without its newline."""
-        return self.rope.slice_bytes(self.rope.line_start(r), self.rope.line_end(r))
+        return self.core[].rope.slice_bytes(self.core[].rope.line_start(r), self.core[].rope.line_end(r))
 
     def note_edit(mut self, r: Int, old_extra: Int, new_extra: Int):
         """Keep the state cache aligned with an edit that started on row r, removed
@@ -811,12 +897,12 @@ struct TextBuffer(Copyable, Movable):
     # --------------------------------------------------------- raw edits
     def insert_raw(mut self, r: Int, c: Int, text: List[Int]) -> Pos:
         # clamp like the rope does, so the returned end position matches what happened
-        var rr = max(0, min(r, self.rope.line_count() - 1))
-        var cc = max(0, min(c, self.rope.line_len(rr)))
+        var rr = max(0, min(r, self.core[].rope.line_count() - 1))
+        var cc = max(0, min(c, self.core[].rope.line_len(rr)))
         if self.track and len(text) > 0:
             var u = self.utf16_col(rr, cc)
             self.note_change(rr, u, rr, u, text)
-        self.rope.insert(self.rope.offset(rr, cc), text)
+        self.core[].rope.insert(self.core[].rope.offset(rr, cc), text)
         var breaks = 0
         for ch in text:
             if ch == 10:
@@ -852,19 +938,19 @@ struct TextBuffer(Copyable, Movable):
         return self.end_of(rr, cc, text)
 
     def delete_raw(mut self, r1: Int, c1: Int, r2: Int, c2: Int) -> List[Int]:
-        var a = self.rope.offset(r1, c1)
-        var b = self.rope.offset(r2, c2)
+        var a = self.core[].rope.offset(r1, c1)
+        var b = self.core[].rope.offset(r2, c2)
         var out = List[Int]()
         if b > a:
-            var first = self.rope.line_of(a)
-            var breaks = self.rope.line_of(b) - first
+            var first = self.core[].rope.line_of(a)
+            var breaks = self.core[].rope.line_of(b) - first
             if self.track:
                 var last = first + breaks
-                var su = self.rope.to_utf16(a) - self.rope.to_utf16(self.rope.line_start(first))
-                var eu = self.rope.to_utf16(b) - self.rope.to_utf16(self.rope.line_start(last))
+                var su = self.core[].rope.to_utf16(a) - self.core[].rope.to_utf16(self.core[].rope.line_start(first))
+                var eu = self.core[].rope.to_utf16(b) - self.core[].rope.to_utf16(self.core[].rope.line_start(last))
                 self.note_change(first, su, last, eu, List[Int]())
-            out = self.rope.slice(a, b)
-            self.rope.delete(a, b)
+            out = self.core[].rope.slice(a, b)
+            self.core[].rope.delete(a, b)
             self.note_edit(first, breaks, 0)
             if len(self.sem) > 0:
                 self.sem_deleted(first, c1, first + breaks, c2)
@@ -880,7 +966,7 @@ struct TextBuffer(Copyable, Movable):
                     if m.l1 <= first:
                         left.append(m.copy())
                     elif m.l1 > first + breaks:
-                        left.append(Mark(m.l1 - breaks, m.c1, m.l2 - breaks, m.c2, m.severity, m.message))
+                        left.append(Mark(m.l1 - breaks, m.c1, m.l2 - breaks, m.c2, m.severity, m.message, m.deprecated))
                 self.marks = left^
             if breaks > 0 and len(self.bps) > 0:
                 # breakpoints of removed lines gather on the line that is left
@@ -906,22 +992,69 @@ struct TextBuffer(Copyable, Movable):
     # ----------------------------------------------------- recorded edits
     def insert(mut self, r: Int, c: Int, text: List[Int], cr: Int, cc: Int, group: Int) -> Pos:
         var p = self.insert_raw(r, c, text)
+        var act = self.core[].utree_active
+        var can_merge = len(self.redos) == 0 and len(self.core[].utree_nodes[act].children) == 0
+        var eff_group = group
+        if not can_merge and group != 0 and act > 0 and self.core[].utree_nodes[act].group == group:
+            eff_group = -group - 1000000
         var merged = False
         var n = len(self.undos)
-        if group != 0 and n > 0 and self.undos[n - 1].group == group and self.undos[n - 1].kind == UNDO_INSERT:
+        if can_merge and eff_group != 0 and n > 0 and self.undos[n - 1].group == eff_group and self.undos[n - 1].kind == UNDO_INSERT:
             var e = self.end_of(self.undos[n - 1].r, self.undos[n - 1].c, self.undos[n - 1].text)
             if e.r == r and e.c == c:
                 for t in text:
                     self.undos[n - 1].text.append(t)
+                if act > 0 and len(self.core[].utree_nodes[act].recs) > 0:
+                    var nr = len(self.core[].utree_nodes[act].recs) - 1
+                    for t2 in text:
+                        self.core[].utree_nodes[act].recs[nr].text.append(t2)
+                    self.core[].utree_nodes[act].after_pos = p.copy()
                 merged = True
         if not merged:
-            self.undos.append(UndoRec(UNDO_INSERT, r, c, text.copy(), cr, cc, group))
+            var rec = UndoRec(UNDO_INSERT, r, c, text.copy(), cr, cc, eff_group)
+            self.undos.append(rec.copy())
+            if can_merge and eff_group != 0 and act > 0 and self.core[].utree_nodes[act].group == eff_group:
+                self.core[].utree_nodes[act].recs.append(rec^)
+                self.core[].utree_nodes[act].after_pos = p.copy()
+            else:
+                self.core[].utree_next_seq += 1
+                var seq = self.core[].utree_next_seq
+                var nid = len(self.core[].utree_nodes)
+                var recs = List[UndoRec]()
+                recs.append(rec^)
+                var node = UndoDeltaNode(
+                    nid, act, List[Int](), seq, eff_group, recs^, Pos(cr, cc), p.copy(), "insert"
+                )
+                self.core[].utree_nodes.append(node^)
+                self.core[].utree_nodes[act].children.append(nid)
+                self.core[].utree_active = nid
         self.redos.clear()
         return p^
 
     def delete(mut self, r1: Int, c1: Int, r2: Int, c2: Int, cr: Int, cc: Int, group: Int) -> List[Int]:
         var t = self.delete_raw(r1, c1, r2, c2)
-        self.undos.append(UndoRec(UNDO_DELETE, r1, c1, t.copy(), cr, cc, group))
+        var act = self.core[].utree_active
+        var can_merge = len(self.redos) == 0 and len(self.core[].utree_nodes[act].children) == 0
+        var eff_group = group
+        if not can_merge and group != 0 and act > 0 and self.core[].utree_nodes[act].group == group:
+            eff_group = -group - 1000000
+        var rec = UndoRec(UNDO_DELETE, r1, c1, t.copy(), cr, cc, eff_group)
+        self.undos.append(rec.copy())
+        if can_merge and eff_group != 0 and act > 0 and self.core[].utree_nodes[act].group == eff_group:
+            self.core[].utree_nodes[act].recs.append(rec^)
+            self.core[].utree_nodes[act].after_pos = Pos(r1, c1)
+        else:
+            self.core[].utree_next_seq += 1
+            var seq = self.core[].utree_next_seq
+            var nid = len(self.core[].utree_nodes)
+            var recs = List[UndoRec]()
+            recs.append(rec^)
+            var node = UndoDeltaNode(
+                nid, act, List[Int](), seq, eff_group, recs^, Pos(cr, cc), Pos(r1, c1), "delete"
+            )
+            self.core[].utree_nodes.append(node^)
+            self.core[].utree_nodes[act].children.append(nid)
+            self.core[].utree_active = nid
         self.redos.clear()
         return t^
 
@@ -941,6 +1074,9 @@ struct TextBuffer(Copyable, Movable):
             self.redos.append(u^)
             if g == 0 or len(self.undos) == 0 or self.undos[len(self.undos) - 1].group != g:
                 break
+        var act = self.core[].utree_active
+        if act > 0 and self.core[].utree_nodes[act].parent >= 0:
+            self.core[].utree_active = self.core[].utree_nodes[act].parent
         return pos^
 
     def redo(mut self) -> Pos:
@@ -959,4 +1095,324 @@ struct TextBuffer(Copyable, Movable):
             self.undos.append(u^)
             if g == 0 or len(self.redos) == 0 or self.redos[len(self.redos) - 1].group != g:
                 break
+        var act = self.core[].utree_active
+        var n_ch = len(self.core[].utree_nodes[act].children)
+        if n_ch > 0:
+            self.core[].utree_active = self.core[].utree_nodes[act].children[n_ch - 1]
         return pos^
+
+    def _sync_linear_from_utree(mut self, target_id: Int):
+        """Rebuild linear `undos` / `redos` stacks to align with `target_id` in the undo tree."""
+        self.undos.clear()
+        self.redos.clear()
+        var path = List[Int]()
+        var cur = target_id
+        while cur > 0:
+            path.append(cur)
+            cur = self.core[].utree_nodes[cur].parent
+        var k = len(path) - 1
+        while k >= 0:
+            var nid = path[k]
+            for j in range(len(self.core[].utree_nodes[nid].recs)):
+                self.undos.append(self.core[].utree_nodes[nid].recs[j].copy())
+            k -= 1
+        var fwd = List[Int]()
+        var ch_cur = target_id
+        while True:
+            var n_ch = len(self.core[].utree_nodes[ch_cur].children)
+            if n_ch == 0:
+                break
+            ch_cur = self.core[].utree_nodes[ch_cur].children[n_ch - 1]
+            fwd.append(ch_cur)
+        var fk = len(fwd) - 1
+        while fk >= 0:
+            var fnid = fwd[fk]
+            var rj = len(self.core[].utree_nodes[fnid].recs) - 1
+            while rj >= 0:
+                self.redos.append(self.core[].utree_nodes[fnid].recs[rj].copy())
+                rj -= 1
+            fk -= 1
+
+    def undo_jump_to(mut self, target_id: Int) -> Tuple[Bool, Pos]:
+        """Jump directly to node `target_id` in the non-linear undo tree."""
+        var total = len(self.core[].utree_nodes)
+        if target_id < 0 or target_id >= total:
+            return (False, Pos(-1, -1))
+        var cur = self.core[].utree_active
+        if target_id == cur:
+            return (True, self.core[].utree_nodes[cur].after_pos.copy())
+        var anc_cur = List[Int]()
+        var x = cur
+        while x >= 0:
+            anc_cur.append(x)
+            x = self.core[].utree_nodes[x].parent
+        var anc_tgt = List[Int]()
+        var y = target_id
+        while y >= 0:
+            anc_tgt.append(y)
+            y = self.core[].utree_nodes[y].parent
+        var ic = len(anc_cur) - 1
+        var it = len(anc_tgt) - 1
+        while ic > 0 and it > 0 and anc_cur[ic - 1] == anc_tgt[it - 1]:
+            ic -= 1
+            it -= 1
+        var pos = Pos(0, 0)
+        # Walk up from `cur` to LCA (`anc_cur[ic]`)
+        for ui in range(ic):
+            var nid = anc_cur[ui]
+            var recs = self.core[].utree_nodes[nid].recs.copy()
+            var rk = len(recs) - 1
+            while rk >= 0:
+                var u = recs[rk].copy()
+                if u.kind == UNDO_INSERT:
+                    var e = self.end_of(u.r, u.c, u.text)
+                    _ = self.delete_raw(u.r, u.c, e.r, e.c)
+                else:
+                    _ = self.insert_raw(u.r, u.c, u.text)
+                pos = Pos(u.cr, u.cc)
+                rk -= 1
+        # Walk down from LCA (`anc_tgt[it]`) to `target_id`
+        var di = it - 1
+        while di >= 0:
+            var nid2 = anc_tgt[di]
+            var recs2 = self.core[].utree_nodes[nid2].recs.copy()
+            for rj in range(len(recs2)):
+                var u2 = recs2[rj].copy()
+                if u2.kind == UNDO_INSERT:
+                    pos = self.insert_raw(u2.r, u2.c, u2.text)
+                else:
+                    var e2 = self.end_of(u2.r, u2.c, u2.text)
+                    _ = self.delete_raw(u2.r, u2.c, e2.r, e2.c)
+                    pos = Pos(u2.r, u2.c)
+            di -= 1
+        self.core[].utree_active = target_id
+        self._sync_linear_from_utree(target_id)
+        return (True, pos^)
+
+    def undo_earlier(mut self) -> Tuple[Bool, Pos]:
+        """Step backward chronologically (`g-`) across any undo branch."""
+        var cur = self.core[].utree_active
+        var cur_seq = self.core[].utree_nodes[cur].seq
+        var best_id = -1
+        var best_seq = -1
+        for i in range(len(self.core[].utree_nodes)):
+            var s = self.core[].utree_nodes[i].seq
+            if s < cur_seq and s > best_seq:
+                best_seq = s
+                best_id = i
+        if best_id < 0:
+            return (False, Pos(-1, -1))
+        return self.undo_jump_to(best_id)
+
+    def undo_later(mut self) -> Tuple[Bool, Pos]:
+        """Step forward chronologically (`g+`) across any undo branch."""
+        var cur = self.core[].utree_active
+        var cur_seq = self.core[].utree_nodes[cur].seq
+        var best_id = -1
+        var best_seq = 1000000000
+        for i in range(len(self.core[].utree_nodes)):
+            var s = self.core[].utree_nodes[i].seq
+            if s > cur_seq and s < best_seq:
+                best_seq = s
+                best_id = i
+        if best_id < 0:
+            return (False, Pos(-1, -1))
+        return self.undo_jump_to(best_id)
+
+    def undo_tree_lines(self) -> List[String]:
+        """Render lines of the buffer's non-linear undo tree for inspection/picker."""
+        var out = List[String]()
+        var act = self.core[].utree_active
+        for i in range(len(self.core[].utree_nodes)):
+            var prefix = "* " if i == act else "  "
+            var line = (
+                prefix
+                + "["
+                + String(self.core[].utree_nodes[i].id)
+                + "] (seq "
+                + String(self.core[].utree_nodes[i].seq)
+                + "): "
+                + self.core[].utree_nodes[i].desc
+            )
+            if self.core[].utree_nodes[i].parent >= 0:
+                line += " <- [" + String(self.core[].utree_nodes[i].parent) + "]"
+            var n_ch = len(self.core[].utree_nodes[i].children)
+            if n_ch > 1:
+                line += " [branch " + String(n_ch) + "]"
+            out.append(line)
+        return out^
+
+
+@fieldwise_init
+struct DiffSpan(Copyable, Movable):
+    var prefix_len: Int
+    var suffix_len: Int
+    var del_text: List[Int]
+    var ins_text: List[Int]
+
+
+def compute_diff_span(old_text: List[Int], new_text: List[Int]) -> DiffSpan:
+    """Find maximal common prefix and suffix, producing minimal replacement delta."""
+    var n = len(old_text)
+    var m = len(new_text)
+    var p = 0
+    while p < n and p < m and old_text[p] == new_text[p]:
+        p += 1
+    var s = 0
+    while s < (n - p) and s < (m - p) and old_text[n - 1 - s] == new_text[m - 1 - s]:
+        s += 1
+
+    var del_slice = List[Int]()
+    for i in range(p, n - s):
+        del_slice.append(old_text[i])
+
+    var ins_slice = List[Int]()
+    for j in range(p, m - s):
+        ins_slice.append(new_text[j])
+
+    return DiffSpan(p, s, del_slice^, ins_slice^)
+
+
+def replace_all_text_diff(mut b: TextBuffer, new_cps: List[Int], group: Int = 0) -> DiffSpan:
+    """Replace buffer content with minimal diff span and compact undo record."""
+    var cur = b.all_text()
+    var diff = compute_diff_span(cur, new_cps)
+    if len(diff.del_text) == 0 and len(diff.ins_text) == 0:
+        return diff^
+
+    # Map codepoint offset `p` to buffer row and col
+    var r1 = 0
+    var c1 = 0
+    var r2 = 0
+    var c2 = 0
+    var row = 0
+    var col = 0
+    var limit = len(cur) - diff.suffix_len
+    for k in range(limit + 1):
+        if k == diff.prefix_len:
+            r1 = row
+            c1 = col
+        if k == limit:
+            r2 = row
+            c2 = col
+            break
+        if k < len(cur):
+            if cur[k] == 10:
+                row += 1
+                col = 0
+            else:
+                col += 1
+
+    var grp = group if group != 0 else 10001
+    if len(diff.del_text) > 0:
+        _ = b.delete(r1, c1, r2, c2, r1, c1, grp)
+    if len(diff.ins_text) > 0:
+        _ = b.insert(r1, c1, diff.ins_text.copy(), r1, c1, grp)
+
+    return diff^
+
+
+@fieldwise_init
+struct UndoNode(Copyable, Movable):
+    var id: Int
+    var parent: Int
+    var children: List[Int]
+    var seq: Int              # Chronological sequence number
+    var text_snapshot: List[Int]
+    var desc: String
+
+
+struct UndoTreeArena(Copyable, Movable):
+    var nodes: List[UndoNode]
+    var active: Int
+    var next_seq: Int
+
+    def __init__(out self, initial_text: List[Int] = List[Int]()):
+        self.nodes = List[UndoNode]()
+        self.active = 0
+        self.next_seq = 0
+        var root = UndoNode(0, -1, List[Int](), 0, initial_text.copy(), "root")
+        self.nodes.append(root^)
+
+    def record_state(mut self, text: List[Int], desc: String) -> Int:
+        """Create a new state node attached to current active state (branching if active has children)."""
+        self.next_seq += 1
+        var new_id = len(self.nodes)
+        var node = UndoNode(new_id, self.active, List[Int](), self.next_seq, text.copy(), desc)
+        self.nodes.append(node^)
+        self.nodes[self.active].children.append(new_id)
+        self.active = new_id
+        return new_id
+
+    def undo_branch(mut self, mut b: TextBuffer) -> Bool:
+        """Move up to parent node in active branch."""
+        if self.nodes[self.active].parent < 0:
+            return False
+        self.active = self.nodes[self.active].parent
+        b.load(self.nodes[self.active].text_snapshot.copy())
+        return True
+
+    def redo_branch(mut self, mut b: TextBuffer, child_idx: Int = -1) -> Bool:
+        """Move down to child node in active branch (defaults to latest child)."""
+        var n_children = len(self.nodes[self.active].children)
+        if n_children == 0:
+            return False
+        var target_child = self.nodes[self.active].children[n_children - 1]
+        if child_idx >= 0 and child_idx < n_children:
+            target_child = self.nodes[self.active].children[child_idx]
+        self.active = target_child
+        b.load(self.nodes[self.active].text_snapshot.copy())
+        return True
+
+    def vim_g_minus(mut self, mut b: TextBuffer) -> Bool:
+        """Step back chronologically (by sequence number) across any branch."""
+        var cur_seq = self.nodes[self.active].seq
+        var target_id = -1
+        var best_seq = -1
+        for i in range(len(self.nodes)):
+            var s = self.nodes[i].seq
+            if s < cur_seq and s > best_seq:
+                best_seq = s
+                target_id = i
+        if target_id >= 0:
+            self.active = target_id
+            b.load(self.nodes[target_id].text_snapshot.copy())
+            return True
+        return False
+
+    def vim_g_plus(mut self, mut b: TextBuffer) -> Bool:
+        """Step forward chronologically (by sequence number) across any branch."""
+        var cur_seq = self.nodes[self.active].seq
+        var target_id = -1
+        var best_seq = 1000000000
+        for i in range(len(self.nodes)):
+            var s = self.nodes[i].seq
+            if s > cur_seq and s < best_seq:
+                best_seq = s
+                target_id = i
+        if target_id >= 0:
+            self.active = target_id
+            b.load(self.nodes[target_id].text_snapshot.copy())
+            return True
+        return False
+
+    def render_visual_picker(self) -> String:
+        """Render ASCII representation of the undo tree for interactive visual picker."""
+        var out = String("")
+        for i in range(len(self.nodes)):
+            var prefix = "  "
+            if i == self.active:
+                prefix = "* "
+            out += prefix + "[" + String(self.nodes[i].id) + "] (seq " + String(self.nodes[i].seq) + "): " + self.nodes[i].desc
+            if len(self.nodes[i].children) > 1:
+                out += " [branch " + String(len(self.nodes[i].children)) + "]"
+            out += "\n"
+        return out
+
+    def jump_to_node(mut self, target_id: Int, mut b: TextBuffer) -> Bool:
+        """Jump directly to any node in the arena."""
+        if target_id < 0 or target_id >= len(self.nodes):
+            return False
+        self.active = target_id
+        b.load(self.nodes[target_id].text_snapshot.copy())
+        return True

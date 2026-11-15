@@ -13,6 +13,10 @@ comptime LINK_MAX = 4096  # links interned before the pool starts over
 
 comptime BOLD_BIT = 1 << 30        # in a cell's underline word: the character is bold
 comptime UL_DEF_BIT = 1 << 29      # underline uses default foreground colour (no SGR 58)
+comptime ITALIC_BIT = 1 << 28      # SGR 3: italic
+comptime DIM_BIT = 1 << 27         # SGR 2: dim
+comptime STRIKE_BIT = 1 << 31      # SGR 9: strikethrough
+comptime ATTR_MASK = BOLD_BIT | ITALIC_BIT | DIM_BIT | STRIKE_BIT
 comptime UL_STRAIGHT = 1           # underline styles (SGR 4:n)
 comptime UL_CURLY = 3
 comptime UL_DOTTED = 4
@@ -336,7 +340,7 @@ struct Screen(Movable):
             def_bit = UL_DEF_BIT
         elif rgb >= ANSI_BASE and rgb < ANSI_BASE + 256:
             col = x256_rgb(rgb - ANSI_BASE)
-        self.ul[k] = (self.ul[k] & BOLD_BIT) | def_bit | ((kind & 7) << 24) | (col & 0xFFFFFF)
+        self.ul[k] = (self.ul[k] & ATTR_MASK) | def_bit | ((kind & 7) << 24) | (col & 0xFFFFFF)
 
     def ul_at(self, x: Int, y: Int) -> Int:
         """0 = not underlined, else UL_* (1 straight, 3 curly, 4 dotted, 5 dashed)."""
@@ -371,6 +375,36 @@ struct Screen(Movable):
 
     def is_bold(self, x: Int, y: Int) -> Bool:
         return (self.ul[self.head_of(y * self.w + x)] & BOLD_BIT) != 0
+
+    def italic(mut self, x: Int, y: Int, n: Int = 1):
+        for j in range(n):
+            if x + j < self.cx0 or x + j >= self.cx1 or y < self.cy0 or y >= self.cy1:
+                continue
+            var k = self.head_of(y * self.w + x + j)
+            self.ul[k] |= ITALIC_BIT
+
+    def is_italic(self, x: Int, y: Int) -> Bool:
+        return (self.ul[self.head_of(y * self.w + x)] & ITALIC_BIT) != 0
+
+    def dim(mut self, x: Int, y: Int, n: Int = 1):
+        for j in range(n):
+            if x + j < self.cx0 or x + j >= self.cx1 or y < self.cy0 or y >= self.cy1:
+                continue
+            var k = self.head_of(y * self.w + x + j)
+            self.ul[k] |= DIM_BIT
+
+    def is_dim(self, x: Int, y: Int) -> Bool:
+        return (self.ul[self.head_of(y * self.w + x)] & DIM_BIT) != 0
+
+    def strikethrough(mut self, x: Int, y: Int, n: Int = 1):
+        for j in range(n):
+            if x + j < self.cx0 or x + j >= self.cx1 or y < self.cy0 or y >= self.cy1:
+                continue
+            var k = self.head_of(y * self.w + x + j)
+            self.ul[k] |= STRIKE_BIT
+
+    def is_strikethrough(self, x: Int, y: Int) -> Bool:
+        return (self.ul[self.head_of(y * self.w + x)] & STRIKE_BIT) != 0
 
     def set_fg(mut self, x: Int, y: Int, fg: Int):
         if x < self.cx0 or x >= self.cx1 or y < self.cy0 or y >= self.cy1:
@@ -597,10 +631,30 @@ struct Screen(Movable):
                     lastbg = b
                 var u = self.ul[k]
                 if (u & BOLD_BIT) != (lastul & BOLD_BIT):
-                    append_str(out, "\x1b[1m" if (u & BOLD_BIT) != 0 else "\x1b[22m")
-                    lastul = (lastul & ~BOLD_BIT) | (u & BOLD_BIT)
+                    if (u & BOLD_BIT) != 0:
+                        append_str(out, "\x1b[1m")
+                        lastul |= BOLD_BIT
+                    else:
+                        append_str(out, "\x1b[22m")
+                        lastul &= ~(BOLD_BIT | DIM_BIT)
+                if (u & DIM_BIT) != (lastul & DIM_BIT):
+                    if (u & DIM_BIT) != 0:
+                        append_str(out, "\x1b[2m")
+                        lastul |= DIM_BIT
+                    else:
+                        append_str(out, "\x1b[22m")
+                        lastul &= ~(BOLD_BIT | DIM_BIT)
+                        if (u & BOLD_BIT) != 0:
+                            append_str(out, "\x1b[1m")
+                            lastul |= BOLD_BIT
+                if (u & ITALIC_BIT) != (lastul & ITALIC_BIT):
+                    append_str(out, "\x1b[3m" if (u & ITALIC_BIT) != 0 else "\x1b[23m")
+                    lastul = (lastul & ~ITALIC_BIT) | (u & ITALIC_BIT)
+                if (u & STRIKE_BIT) != (lastul & STRIKE_BIT):
+                    append_str(out, "\x1b[9m" if (u & STRIKE_BIT) != 0 else "\x1b[29m")
+                    lastul = (lastul & ~STRIKE_BIT) | (u & STRIKE_BIT)
                 if u != lastul:
-                    if (u & ~BOLD_BIT) == 0:
+                    if (u & ~ATTR_MASK) == 0:
                         append_str(out, "\x1b[24m")
                     elif self.styled_ul:
                         append_str(out, "\x1b[4:")
@@ -664,10 +718,14 @@ struct Screen(Movable):
                 self.pbg[k] = b
         if lastlk != 0:
             append_str(out, "\x1b]8;;\x1b\\")
-        if (lastul & ~BOLD_BIT) != 0:
+        if (lastul & ~ATTR_MASK) != 0:
             append_str(out, "\x1b[24m")
-        if (lastul & BOLD_BIT) != 0:
+        if (lastul & (BOLD_BIT | DIM_BIT)) != 0:
             append_str(out, "\x1b[22m")
+        if (lastul & ITALIC_BIT) != 0:
+            append_str(out, "\x1b[23m")
+        if (lastul & STRIKE_BIT) != 0:
+            append_str(out, "\x1b[29m")
         self.force = False
         if len(self.xseq) > XSEQ_MAX:
             # the pool only grows; start over and repaint everything next frame

@@ -20,11 +20,12 @@ from swap import delete_file
 from app_notify import *
 from util import *
 from window import Window, WK_EDITOR, WK_AGENT
-from term import KEY_ENTER, KEY_ESC, KEY_TAB, KEY_BACKSPACE, KEY_DELETE, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_UP, KEY_DOWN, KEY_PGUP, KEY_PGDN, K_BASE, MOD_ALT, ctrl
+from term import KEY_ENTER, KEY_ESC, KEY_TAB, KEY_BACKSPACE, KEY_DELETE, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_UP, KEY_DOWN, KEY_PGUP, KEY_PGDN, K_BASE, MOD_ALT, MOD_SHIFT, ctrl
+from agentprompt import parse_slash_command, available_slash_commands, filter_slash_commands, AgentPrompt
 from dialog import Dialog, Field, D_AGENT_MODEL, D_AGENT_MODE, D_AGENT_THINKING, D_AGENT_FILE
 from filestate import state_name
 from toml import toml_quote
-from json import JsonWriter
+from json import JsonWriter, json_quote
 from acp import *
 from agentchat import *
 from markdown import MdLine, md_render
@@ -81,6 +82,61 @@ __extension App:
             return ""
         return self.agent_sessions_dir + "/" + state_name(root) + ".sid"
 
+    def agent_mcp_servers_json(self, root: String) -> String:
+        """Synthesize MCP servers JSON list for ACP session handshake.
+        Auto-wires turbomojo MCP server and merges trusted [mcp.<name>] from config."""
+        var out = String("[")
+        var count = 0
+
+        # 1. Built-in turbomojo MCP server
+        var s_dir = state_dir()
+        var cmd: String
+        var args = List[String]()
+
+        var bin = which("tmide-mcp")
+        if bin.byte_length() > 0:
+            cmd = bin
+        else:
+            var tmide_bin = which("tmide")
+            if tmide_bin.byte_length() > 0 and path_exists(join_path(dirname(tmide_bin), "tmide-mcp")):
+                cmd = join_path(dirname(tmide_bin), "tmide-mcp")
+            else:
+                cmd = self.python_for(root)
+                var s1 = join_path(root, "scripts/mcp_server.py")
+                var s2 = join_path(self.cwd, "scripts/mcp_server.py")
+                if path_exists(s1):
+                    args.append(s1)
+                elif path_exists(s2):
+                    args.append(s2)
+                else:
+                    args.append("scripts/mcp_server.py")
+
+        out += "{\"name\":\"turbomojo\",\"command\":" + json_quote(cmd) + ",\"args\":["
+        for ai in range(len(args)):
+            if ai > 0:
+                out += ","
+            out += json_quote(args[ai])
+        out += "],\"env\":{\"XDG_STATE_HOME\":" + json_quote(s_dir) + "}}"
+        count += 1
+
+        # 2. Merged trusted [mcp.<name>] servers
+        for k in range(len(self.mcp_names)):
+            out += ",{\"name\":" + json_quote(self.mcp_names[k]) + ",\"command\":" + json_quote(self.mcp_cmds[k]) + ",\"args\":["
+            for ai in range(len(self.mcp_args[k])):
+                if ai > 0:
+                    out += ","
+                out += json_quote(self.mcp_args[k][ai])
+            out += "],\"env\":{"
+            for ei in range(len(self.mcp_env_keys[k])):
+                if ei > 0:
+                    out += ","
+                out += json_quote(self.mcp_env_keys[k][ei]) + ":" + json_quote(self.mcp_env_vals[k][ei])
+            out += "}}"
+            count += 1
+
+        out += "]"
+        return out^
+
     def agent_start(mut self):
         if self.agent_command.byte_length() == 0:
             self.say("No agent is set up (tools.agent)")
@@ -95,6 +151,7 @@ __extension App:
         if sf.byte_length() > 0 and path_exists(sf):
             self.agent.resume_session_id = String(read_text(sf).strip())
         self.agent_forget()                     # a new session allows nothing yet
+        self.agent.mcp_servers_json = self.agent_mcp_servers_json(root)
         _ = self.agent.start(self.agent_command, root, log, now_ns())
 
     def agent_new_session(mut self) raises:
@@ -522,10 +579,164 @@ __extension App:
         w.end_arr()
         return w.text()
 
+    def agent_slash_matches(self) -> List[String]:
+        var s = String(to_str(self.agent_input).lstrip())
+        if not s.startswith("/") or s.find(" ") >= 0 or s.find("\n") >= 0:
+            return List[String]()
+        return filter_slash_commands(s)
+
+    def agent_slash_sync(mut self):
+        var matches = self.agent_slash_matches()
+        if len(matches) > 0:
+            self.agent_slash_open = True
+            if self.agent_slash_sel < 0 or self.agent_slash_sel >= len(matches):
+                self.agent_slash_sel = 0
+        else:
+            self.agent_slash_open = False
+            self.agent_slash_sel = 0
+
+    def agent_complete_slash(mut self) -> Bool:
+        var raw = to_str(self.agent_input)
+        var s = String(raw.lstrip())
+        if not s.startswith("/") or s.find(" ") >= 0 or s.find("\n") >= 0:
+            return False
+        var matches = filter_slash_commands(s)
+        if len(matches) == 0:
+            self.agent_slash_open = False
+            self.say("No slash command matches " + s)
+            return True
+        if len(matches) == 1:
+            self.agent_input = decode(matches[0] + " ")
+            self.agent_cur = len(self.agent_input)
+            self.agent_slash_open = False
+            self.agent_slash_sel = 0
+            return True
+        if self.agent_slash_open:
+            var chosen = matches[self.agent_slash_sel % len(matches)]
+            self.agent_input = decode(chosen + " ")
+            self.agent_cur = len(self.agent_input)
+            self.agent_slash_open = False
+            self.agent_slash_sel = 0
+            return True
+        self.agent_slash_open = True
+        self.agent_slash_sel = 0
+        var lcp = matches[0]
+        for m in matches:
+            var j = 0
+            while j < lcp.byte_length() and j < m.byte_length() and lcp[byte=j] == m[byte=j]:
+                j += 1
+            var cut_lcp = String(lcp[byte=0:j])
+            lcp = cut_lcp
+        if lcp.byte_length() > s.byte_length():
+            self.agent_input = decode(lcp)
+            self.agent_cur = len(self.agent_input)
+        self.say("Slash commands: " + "  ".join(matches))
+        return True
+
+    def agent_slash_exec(mut self, verb: String, arg: String) raises -> Bool:
+        if verb == "/clear":
+            self.chat.clear()
+            self.chat.note("Conversation cleared.")
+            self.say("Agent conversation cleared")
+            return True
+        if verb == "/revert":
+            self.agent_revert_turn()
+            return True
+        if verb == "/help":
+            self.chat.note("Slash commands: `/model [id]`, `/mode [auto|accept-edits|ask|plan]`, `/thinking [level]`, `/clear`, `/revert`, `/help`. Mention `@file`, `@problems`, `@git`, `@terminal`; Shift-Enter inserts a newline.")
+            self.say("Slash commands: /model /mode /thinking /clear /revert /help")
+            return True
+        if verb == "/mode":
+            if arg.byte_length() == 0:
+                self.agent_mode_dialog()
+                return True
+            if len(self.agent.mode_ids) > 0:
+                for k in range(len(self.agent.mode_ids)):
+                    if self.agent.mode_ids[k] == arg or lower_str(self.agent.mode_names[k]) == lower_str(arg):
+                        self.agent_mode_choose(k)
+                        self.chat.note("Mode: " + self.agent.mode_ids[k])
+                        return True
+            var std_modes = ["auto", "accept-edits", "ask", "plan"]
+            for m in std_modes:
+                if String(m) == arg:
+                    self.agent_mode = arg
+                    self.persist_option("tools", "agent_mode", toml_quote(arg))
+                    if self.agent.state == AS_READY:
+                        var target = self.agent.asking_mode() if arg == "ask" else arg
+                        if target.byte_length() > 0 and target in self.agent.mode_ids and target != self.agent.mode:
+                            _ = self.agent.set_mode(target, now_ns())
+                    self.chat.note("Mode: " + arg)
+                    self.say("Agent mode: " + arg)
+                    self.export_ide_state()
+                    return True
+            self.say("Unknown agent mode: " + arg)
+            return True
+        if verb == "/model":
+            if arg.byte_length() == 0:
+                self.agent_model_dialog()
+                return True
+            if self.agent.state == AS_READY:
+                var hit = -1
+                for k in range(len(self.agent.model_ids)):
+                    if self.agent.model_ids[k] == arg:
+                        hit = k
+                        break
+                if hit < 0:
+                    var q = lower_str(arg)
+                    for k in range(len(self.agent.model_ids)):
+                        if lower_str(self.agent.model_ids[k]).find(q) >= 0 or lower_str(self.agent.model_names[k]).find(q) >= 0:
+                            hit = k
+                            break
+                if hit >= 0:
+                    self.agent_model_choose(hit)
+                else:
+                    _ = self.agent.set_model(arg, now_ns())
+                    self.chat.note("Model: " + arg)
+                    self.say("Agent model: " + arg)
+            else:
+                self.chat.note("Model requested: " + arg)
+                self.say("Start the agent first (Ctrl-F11) to switch model to " + arg)
+            return True
+        if verb == "/thinking":
+            if arg.byte_length() == 0:
+                self.agent_thinking_dialog()
+                return True
+            if self.agent.state == AS_READY:
+                var hit = -1
+                for k in range(len(self.agent.thinking_ids)):
+                    if self.agent.thinking_ids[k] == arg or lower_str(self.agent.thinking_names[k]) == lower_str(arg):
+                        hit = k
+                        break
+                if hit >= 0:
+                    self.agent_thinking_choose(hit)
+                else:
+                    _ = self.agent.set_thinking(arg, now_ns())
+                    self.chat.note("Thinking: " + arg)
+                    self.say("Agent thinking: " + arg)
+            else:
+                self.chat.note("Thinking requested: " + arg)
+                self.say("Start the agent first (Ctrl-F11) to set thinking level")
+            return True
+        return False
+
     def agent_send(mut self) raises:
         var text = String(to_str(self.agent_input).strip())
         if text.byte_length() == 0:
             return
+        var sc = parse_slash_command(text)
+        if sc[0].byte_length() > 0:
+            if sc[0] == "/model" or sc[0] == "/mode" or sc[0] == "/thinking" or sc[0] == "/clear" or sc[0] == "/revert" or sc[0] == "/help":
+                if len(self.agent_history) == 0 or self.agent_history[len(self.agent_history) - 1] != text:
+                    self.agent_history.append(text)
+                self.agent_hist_idx = -1
+                self.agent_draft.clear()
+                self.agent_input.clear()
+                self.agent_cur = 0
+                self.agent_scroll = 0
+                self.agent_slash_open = False
+                self.agent_slash_sel = 0
+                _ = self.agent_slash_exec(sc[0], sc[1])
+                return
         if self.agent.busy():
             self.say("The agent is still working (Esc stops it)")
             return
@@ -550,6 +761,8 @@ __extension App:
         self.agent_input.clear()
         self.agent_cur = 0
         self.agent_scroll = 0
+        self.agent_slash_open = False
+        self.agent_slash_sel = 0
 
     # ------------------------------------------------- pickers & @completion
     def agent_model_dialog(mut self):
@@ -846,19 +1059,29 @@ __extension App:
                 return True
             if k >= 32 and k < K_BASE:
                 return True
-        if k == KEY_ENTER and n == 0 and len(self.agent_props) > 0:
+        if k == (KEY_ENTER | MOD_SHIFT):
+            self.agent_input.insert(self.agent_cur, 10)
+            self.agent_cur += 1
+            self.agent_slash_sync()
+            return True
+        elif k == KEY_ENTER and n == 0 and len(self.agent_props) > 0:
             self.agent_show_proposal()
         elif k == KEY_ENTER:
             self.agent_send()
         elif k == KEY_ESC:
+            if self.agent_slash_open:
+                self.agent_slash_open = False
+                return True
             _ = self.agent_esc()
         elif k == KEY_BACKSPACE:
             if self.agent_cur > 0:
                 _ = self.agent_input.pop(self.agent_cur - 1)
                 self.agent_cur -= 1
+                self.agent_slash_sync()
         elif k == KEY_DELETE:
             if self.agent_cur < n:
                 _ = self.agent_input.pop(self.agent_cur)
+                self.agent_slash_sync()
         elif k == KEY_LEFT:
             self.agent_cur = max(0, self.agent_cur - 1)
         elif k == KEY_RIGHT:
@@ -868,6 +1091,8 @@ __extension App:
         elif k == KEY_END:
             self.agent_cur = n
         elif k == KEY_TAB or k == ctrl(32):
+            if k == KEY_TAB and self.agent_complete_slash():
+                return True
             self.agent_complete_at()
         elif k == (KEY_UP | MOD_ALT):
             if len(self.agent_history) > 0:
@@ -878,6 +1103,7 @@ __extension App:
                     self.agent_hist_idx -= 1
                 self.agent_input = decode(self.agent_history[self.agent_hist_idx])
                 self.agent_cur = len(self.agent_input)
+                self.agent_slash_sync()
         elif k == (KEY_DOWN | MOD_ALT):
             if self.agent_hist_idx >= 0:
                 self.agent_hist_idx += 1
@@ -887,9 +1113,20 @@ __extension App:
                 else:
                     self.agent_input = decode(self.agent_history[self.agent_hist_idx])
                 self.agent_cur = len(self.agent_input)
+                self.agent_slash_sync()
         elif k == KEY_UP:
+            if self.agent_slash_open:
+                var m = self.agent_slash_matches()
+                if len(m) > 0:
+                    self.agent_slash_sel = (self.agent_slash_sel + len(m) - 1) % len(m)
+                    return True
             self.agent_scroll += 1
         elif k == KEY_DOWN:
+            if self.agent_slash_open:
+                var m = self.agent_slash_matches()
+                if len(m) > 0:
+                    self.agent_slash_sel = (self.agent_slash_sel + 1) % len(m)
+                    return True
             self.agent_scroll = max(0, self.agent_scroll - 1)
         elif k == KEY_PGUP:
             self.agent_scroll += max(1, self.wins[t].h - 6)
@@ -898,6 +1135,7 @@ __extension App:
         elif k >= 32 and k < K_BASE:
             self.agent_input.insert(self.agent_cur, k)
             self.agent_cur += 1
+            self.agent_slash_sync()
         else:
             return False
         return True
@@ -925,10 +1163,11 @@ __extension App:
             return False
         for c in text:
             var ch = c
-            if ch == 10 or ch == 13 or ch == 9:
-                ch = 32                         # the prompt is one paragraph
+            if ch == 13:
+                continue
             self.agent_input.insert(self.agent_cur, ch)
             self.agent_cur += 1
+        self.agent_slash_sync()
         return True
 
     # ---------------------------------------------------------------- draw
@@ -945,6 +1184,10 @@ __extension App:
             cur = List[Int]()
             shown = decode("Run `" + self.agent_asks[0].title + "`? Y runs it, A always (this session), N refuses")
         for c in shown:
+            if c == 10:
+                rows.append(cur^)
+                cur = decode("  ")
+                continue
             if len(cur) >= width:
                 rows.append(cur^)
                 cur = decode("  ")
@@ -972,6 +1215,18 @@ __extension App:
         var first = max(0, n - area - self.agent_scroll)
         var lines = self.agent_lines.copy()
         self.draw_md(x, y, w, area, lines, first)
+        if self.agent_slash_open and area >= 2:
+            var sm = self.agent_slash_matches()
+            var sh = min(len(sm), area)
+            if sh > 0:
+                var sy = y + area - sh
+                var sw = min(w, 28)
+                for sr in range(sh):
+                    var sel_it = sr == (self.agent_slash_sel % len(sm))
+                    var fg = p.ed_bg if sel_it else p.frame_act
+                    var bg = p.frame_act if sel_it else p.ed_bg
+                    self.scr.fill(x, sy + sr, sw, 1, 32, fg, bg)
+                    _ = self.scr.text(x + 1, sy + sr, sm[sr], fg, bg)
         # the line between: what the agent is doing
         var sep = String("")
         if self.agent.busy():
@@ -1004,12 +1259,28 @@ __extension App:
         var h = self.wins[i].h - 2
         if w < 8 or h < 4:
             return
-        var rows = self.agent_input_rows(w - 1)
+        var row_w = w - 1
+        var rows = self.agent_input_rows(row_w)
         var keep = min(len(rows), max(1, h // 3))
         var area = h - keep - 1
-        var per = w - 3                     # characters of the prompt on a row
-        var row = self.agent_cur // per
-        var col = 2 + self.agent_cur % per
+        var per = max(1, row_w - 2)
+        var row = 0
+        var seg_col = 0
+        var lim = min(self.agent_cur, len(self.agent_input))
+        for idx in range(lim):
+            var c = self.agent_input[idx]
+            if c == 10:
+                row += 1
+                seg_col = 0
+            else:
+                if seg_col >= per:
+                    row += 1
+                    seg_col = 0
+                seg_col += 1
+        if lim < len(self.agent_input) and self.agent_input[lim] != 10 and seg_col >= per:
+            row += 1
+            seg_col = 0
+        var col = 2 + seg_col
         if row >= len(rows):
             row = len(rows) - 1
             col = len(rows[row])

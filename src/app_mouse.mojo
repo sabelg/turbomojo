@@ -6,13 +6,14 @@ from term import (
     Terminal, Event, EV_KEY, EV_MOUSE, EV_PASTE, K_BASE, KEY_ESC, KEY_ENTER, KEY_TAB,
     KEY_BACKSPACE, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_PGUP,
     KEY_PGDN, KEY_INSERT, KEY_DELETE, MOD_SHIFT, MOD_ALT, MOD_CTRL, KEY_MASK, fkey, ctrl, alt,
-    MB_LEFT, MB_WHEEL_UP, MB_WHEEL_DOWN,
+    MB_LEFT, MB_MIDDLE, MB_WHEEL_UP, MB_WHEEL_DOWN,
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, MINIMAP_W, ACT_OTHER, ACT_TYPE
+from layout import L_ROW, L_COL, RATIO_MIN, RATIO_MAX
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -76,11 +77,14 @@ __extension App:
             if self.mode == M_HOVER:
                 self.hover_scroll = max(0, min(max(0, len(self.hover_lines) - self.hover_page()), self.hover_scroll + d))
                 return
+            if self.mode == M_PEEK:
+                self.peek_scroll = max(0, min(max(0, len(self.peek_lines) - 1), self.peek_scroll + d))
+                return
             if self.mode != M_NORMAL:
                 return
             var i = self.window_at(x, y)
             if i >= 0:
-                if self.wins[i].kind != WK_EDITOR:
+                if self.wins[i].kind != WK_EDITOR and self.wins[i].kind != WK_MDPREVIEW:
                     self.wins[i].cr = max(0, min(self.wins[i].buf.count() - 1, self.wins[i].cr + d))
                     self.wins[i].follow = True
                 else:
@@ -92,6 +96,29 @@ __extension App:
             return
         # ---- drag
         if e.drag:
+            if self.mode == M_NORMAL and self.drag == 6 and self.tiled:
+                var sn = self.drag_split_node
+                if sn >= 0 and sn < len(self.lay.kind) and self.lay.alive[sn]:
+                    var r: Int
+                    if self.drag_split_col:
+                        r = ((y - self.lay.gy[sn] + 1) * 1000) // max(1, self.lay.gh[sn])
+                    else:
+                        r = ((x - self.lay.gx[sn]) * 1000) // max(1, self.lay.gw[sn])
+                    self.lay.ratio[sn] = max(RATIO_MIN, min(RATIO_MAX, r))
+                    self.layout_sync()
+                return
+            if self.mode == M_NORMAL and (self.drag == 5 or self.drag == 7):
+                var swi = self.drag_scroll_wi if self.drag == 5 else self.drag_minimap_wi
+                if swi >= 0 and swi < len(self.wins):
+                    var sy0 = self.wins[swi].y + 1
+                    var sy1 = self.wins[swi].y + self.wins[swi].h - 2
+                    var span = max(1, sy1 - sy0)
+                    var clamped_y = max(sy0, min(sy1, y))
+                    var tot = max(0, self.wins[swi].buf.count() - max(1, self.wins[swi].rows()))
+                    self.wins[swi].top = ((clamped_y - sy0) * tot) // span
+                    self.wins[swi].top_seg = 0
+                    self.wins[swi].follow = False
+                return
             var t = self.top()
             if t < 0 or self.mode != M_NORMAL:
                 return
@@ -131,6 +158,16 @@ __extension App:
                     bv = self.wins[t].vcol(bp.r, bp.c)
                 self.wins[t].box_select(self.drag_dy, self.drag_dx, br, bv)
             return
+        if e.button == MB_MIDDLE:
+            if self.mode == M_NORMAL:
+                for k in range(len(self.tab_wid)):
+                    if y == self.tab_y[k] and x >= self.tab_x0[k] and x < self.tab_x1[k] and self.tab_wid[k] > 0:
+                        var ti = self.win_by_wid(self.tab_wid[k])
+                        if ti >= 0:
+                            self.close_window(ti, NEXT_CLOSE)
+                            self.layout_sync()
+                        return
+            return
         if e.button != MB_LEFT:
             return
         # ---- dialogs
@@ -169,8 +206,8 @@ __extension App:
                     self.dlg.list_move(k - self.dlg.list_sel)
                     self.last_click_item = k
             return
-        # ---- completion popup or hover window: any click closes it
-        if self.mode == M_COMPLETE or self.mode == M_HOVER:
+        # ---- completion popup, hover or peek window: any click closes it
+        if self.mode == M_COMPLETE or self.mode == M_HOVER or self.mode == M_PEEK:
             self.mode = M_NORMAL
         # ---- menu bar / dropdown
         if self.mode == M_MENU:
@@ -224,6 +261,24 @@ __extension App:
                     self.focus(ti)              # a tab of a pane: show that file
                     self.layout_sync()
                     return
+        if self.tiled:
+            for sn in range(len(self.lay.kind)):
+                if not self.lay.alive[sn]:
+                    continue
+                if self.lay.kind[sn] == L_ROW:
+                    var sx = self.lay.gx[self.lay.second[sn]]
+                    if x == sx and y > self.lay.gy[sn] and y < self.lay.gy[sn] + self.lay.gh[sn] - 1:
+                        self.drag = 6
+                        self.drag_split_node = sn
+                        self.drag_split_col = False
+                        return
+                elif self.lay.kind[sn] == L_COL:
+                    var sy = self.lay.gy[self.lay.second[sn]]
+                    if y == sy - 1 and x > self.lay.gx[sn] + 2 and x < self.lay.gx[sn] + self.lay.gw[sn] - 3:
+                        self.drag = 6
+                        self.drag_split_node = sn
+                        self.drag_split_col = True
+                        return
         var i = self.window_at(x, y)
         if i < 0:
             return
@@ -240,14 +295,14 @@ __extension App:
             if x >= wx + ww - 5 and x <= wx + ww - 3:
                 self.zoom_toggle()                  # (the box: maximize or restore)
                 return
-            if self.tiled and self.wins[t].kind == WK_EDITOR:
+            if self.tiled and self.is_pane_win(self.wins[t].kind):
                 return                          # panes are not dragged about
             self.drag = 1
             self.drag_dx = x - wx
             self.drag_dy = y - wy
             return
         if x >= wx + ww - 2 and y >= wy + wh - 1:
-            if not (self.tiled and self.wins[t].kind == WK_EDITOR):
+            if not (self.tiled and self.is_pane_win(self.wins[t].kind)):
                 self.drag = 2
             return
         if x == wx + ww - 1:
@@ -258,10 +313,26 @@ __extension App:
                 self.wins[t].scroll(1)
             elif y < wy + wh // 2:
                 self.wins[t].scroll(-self.wins[t].rows())
+                self.drag = 5
+                self.drag_scroll_wi = t
             else:
                 self.wins[t].scroll(self.wins[t].rows())
+                self.drag = 5
+                self.drag_scroll_wi = t
             return
         if y == wy + wh - 1 or x == wx:
+            return
+        if self.wins[t].kind == WK_EDITOR and self.wins[t].minimap and not self.scr.plain and x >= wx + ww - 1 - MINIMAP_W and x < wx + ww - 1:
+            var sy0 = wy + 1
+            var sy1 = wy + wh - 2
+            var span = max(1, sy1 - sy0)
+            var clamped_y = max(sy0, min(sy1, y))
+            var tot = max(0, self.wins[t].buf.count() - max(1, self.wins[t].rows()))
+            self.wins[t].top = ((clamped_y - sy0) * tot) // span
+            self.wins[t].top_seg = 0
+            self.wins[t].follow = False
+            self.drag = 7
+            self.drag_minimap_wi = t
             return
         if self.wins[t].kind != WK_EDITOR:
             var r = self.wins[t].top + (y - wy - 1)
@@ -272,9 +343,19 @@ __extension App:
                     self.wins[t].cr = r
             return
         if self.wins[t].gut > 0 and x > wx and x < wx + self.wins[t].gut and self.wins[t].path.byte_length() > 0:
-            # a click on the line number sets or removes a breakpoint there
             var br = self.wins[t].pos_at_screen_row(y - wy - 1).r
             if br < self.wins[t].buf.count():
+                # A click on column wx + 1 at a test-lens row executes that test
+                if x == wx + 1 and len(self.wins[t].test_lens_rows) > 0:
+                    var is_lens = False
+                    for k in range(len(self.wins[t].test_lens_rows)):
+                        if self.wins[t].test_lens_rows[k] == br:
+                            is_lens = True
+                            break
+                    if is_lens:
+                        self.test_run_single(t, br)
+                        return
+                # Otherwise a click on the line number sets or removes a breakpoint
                 self.bp_toggle_at(t, br)
             return
         if self.wins[t].gut > 0 and x == wx + self.wins[t].gut:

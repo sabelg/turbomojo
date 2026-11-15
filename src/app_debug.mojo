@@ -60,6 +60,7 @@ from dbgview import *
 from json import json_quote
 from window import WK_DEBUG, WK_CPU
 from cpuview import *
+from signals import own_pid
 
 
 __extension App:
@@ -101,6 +102,9 @@ __extension App:
         """Run > Debug: build the current file with debug information and run it under
         the debugger. While a program is stopped, the same command lets it continue."""
         if self.dbg.active():
+            if self.dbg_post_mortem or self.dbg.post_mortem:
+                self.say("Cannot step in a core dump")
+                return
             if self.dbg.state == DS_RUNNING:
                 self.debug_pause()
                 return
@@ -206,6 +210,8 @@ __extension App:
             self.dbg.set_config(f, "setBreakpoints", self.bps.source_request(f, extra))
         if len(self.bps.sent_functions()) > 0:
             self.dbg.set_config("", "setFunctionBreakpoints", self.bps.function_request())
+        if len(self.bps.data_bps) > 0:
+            self.dbg.set_config("@data", "setDataBreakpoints", self.bps.data_request())
         if not self.dbg.begin(cmd, exe, launch_cwd, args, log, launch_env):
             var why = self.dbg.error
             self.notify_as("debug", NL_ERROR, "The debugger did not start", why, True)
@@ -368,6 +374,9 @@ __extension App:
         if not self.dbg.active():
             self.say("No program is being debugged - " + self.reg.key_label(CM_DEBUG) + " starts one, " + self.reg.key_label(CM_RUN_CURSOR) + " runs to the cursor")
             return
+        if self.dbg_post_mortem or self.dbg.post_mortem:
+            self.say("Cannot step in a core dump")
+            return
         if self.dbg.state != DS_STOPPED:
             self.say("The program is running - " + self.reg.key_label(CM_PAUSE) + " pauses it")
             return
@@ -377,6 +386,9 @@ __extension App:
             self.debug_mark_clear()
 
     def debug_pause(mut self):
+        if self.dbg_post_mortem or self.dbg.post_mortem:
+            self.say("Cannot step in a core dump")
+            return
         if self.dbg.state != DS_RUNNING:
             self.say("No program is running under the debugger")
             return
@@ -386,6 +398,9 @@ __extension App:
     def debug_run_to_cursor(mut self) raises:
         """F4: run until the cursor's line - a breakpoint there for one stop. Without
         a session, debugging starts and runs to it."""
+        if self.dbg.active() and (self.dbg_post_mortem or self.dbg.post_mortem):
+            self.say("Cannot step in a core dump")
+            return
         var i = self.top_editor()
         if i < 0:
             return
@@ -424,12 +439,17 @@ __extension App:
         """The session is over (or the user ends it): stop the adapter and the program,
         and say how it ended."""
         var failed = self.dbg.error
+        var was_attached_live = self.dbg.attached_live or self.dbg_attached_pid > 0
         self.dbg.finish()
+        self.dbg_post_mortem = False
+        self.dbg_attached_pid = 0
         self.debug_mark_clear()
         self.dv_running()
         self.dview.note = "(no program is being debugged)"
         self.dview.watch_shown.clear()          # "?" until the next stop
         self.cpu_running()
+        self.cpu.ibps.clear()
+        self.cpu.src_map.clear()
         self.cpu.note = "(no program is stopped)"
         self.cpuwin_show()
         self.debugwin_show()
@@ -440,6 +460,8 @@ __extension App:
         var footer: String
         if failed.byte_length() > 0:
             footer = failed
+        elif by_user and was_attached_live:
+            footer = "Detached from process"
         elif by_user:
             footer = "Debugging ended - the program was stopped"
         elif self.dbg.exited:
@@ -454,6 +476,145 @@ __extension App:
             if len(self.dbg.console) > 0:
                 tail = " - " + String(self.dbg.console[len(self.dbg.console) - 1].strip())
             self.notify_as("debug", NL_ERROR, "Debugging failed", failed + tail, True)
+
+    def debug_attach_pid_open(mut self):
+        """Run > Attach to PID: open dialog to attach debugger to a live process."""
+        if self.dbg.active():
+            self.say("A program is already being debugged - " + self.reg.key_label(CM_CANCEL) + " ends it")
+            return
+        self.dbg_core_entries.clear()
+        var r = run_capture("ps -eo pid=,comm= --sort=-pid 2>/dev/null | head -n 25")
+        var items = List[String]()
+        var data = List[Int]()
+        for raw in bytes_to_str(r.out).split("\n"):
+            var ln = String(String(raw).strip())
+            if ln.byte_length() == 0:
+                continue
+            var sp = ln.find(" ")
+            var pid_s = String(ln[byte=0:sp].strip()) if sp > 0 else ln
+            try:
+                var pid_v = atol(pid_s)
+                if pid_v > 0 and pid_v != own_pid():
+                    self.dbg_core_entries.append("pid:" + String(pid_v))
+                    items.append(ln)
+                    data.append(len(items) - 1)
+            except:
+                pass
+        var h = min(20, max(10, len(items) + 9))
+        var d = Dialog(D_DEBUG_ATTACH, "Attach to Process (PID)", min(72, self.scr.w - 4), h)
+        d.lines.append("Enter a running process PID (or choose from the list); detaching leaves it running.")
+        if len(items) > 0:
+            d.set_items(items^, data^)
+        d.fields.append(Field("~P~ID", ""))
+        d.fields[0].fresh = True
+        d.buttons.append("~A~ttach")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def debug_core_open(mut self):
+        """Run > Open Core Dump: open post-mortem core dump via coredumpctl or path."""
+        if self.dbg.active():
+            self.say("A program is already being debugged - " + self.reg.key_label(CM_CANCEL) + " ends it")
+            return
+        self.dbg_core_entries.clear()
+        var r = run_capture("coredumpctl list --no-legend 2>/dev/null | tail -n 25")
+        var items = List[String]()
+        var data = List[Int]()
+        for raw in bytes_to_str(r.out).split("\n"):
+            var ln = String(String(raw).strip())
+            if ln.byte_length() == 0:
+                continue
+            var entry = parse_coredumpctl_line(ln)
+            if entry.exe.byte_length() > 0 and entry.core_path.byte_length() > 0:
+                self.dbg_core_entries.append(entry.exe + "\t" + entry.core_path)
+                items.append(entry.timestamp + "  PID " + String(entry.pid) + "  " + entry.signal_name + "  " + basename(entry.exe))
+                data.append(len(items) - 1)
+        var h = min(22, max(11, len(items) + 10))
+        var d = Dialog(D_DEBUG_ATTACH, "Open Core Dump", min(80, self.scr.w - 4), h)
+        d.lines.append("Inspect a post-mortem core dump: enter `<executable> <core_file>` or select below.")
+        if len(items) > 0:
+            d.set_items(items^, data^)
+        d.fields.append(Field("~E~xecutable and core file", ""))
+        d.fields[0].fresh = True
+        d.buttons.append("~O~pen")
+        d.buttons.append("Cancel")
+        self.show(d^)
+
+    def debug_attach_start(mut self, target: String) raises:
+        """Start either a live PID attach session or a post-mortem core dump session."""
+        if self.dbg.active():
+            self.say("A program is already being debugged")
+            return
+        var t = String(target.strip())
+        if t.byte_length() == 0 and self.dlg.kind == D_DEBUG_ATTACH:
+            if self.dlg.list_sel >= 0 and self.dlg.list_sel < len(self.dbg_core_entries):
+                t = self.dbg_core_entries[self.dlg.list_sel]
+        if t.byte_length() == 0:
+            self.say("Specify a PID or `<executable> <core_file>`")
+            return
+        var cmd = self.debug_adapter_command()
+        if cmd.byte_length() == 0:
+            self.info("Debug", "The debug adapter was not found: " + self.debug_adapter)
+            return
+        var log = (dirname(self.log_path) + "/dap.log") if self.log_path.byte_length() > 0 else String("/dev/null")
+        var pid_val = -1
+        if t.startswith("pid:"):
+            try:
+                pid_val = atol(String(t[byte=4:].strip()))
+            except:
+                pid_val = -1
+        elif t.find("/") < 0 and t.find("\t") < 0 and t.find(" ") < 0:
+            try:
+                pid_val = atol(t)
+            except:
+                pid_val = -1
+        if pid_val > 0:
+            self.bp_sync()
+            self.dbg.clear_config()
+            for f in self.bps.files():
+                self.dbg.set_config(f, "setBreakpoints", self.bps.source_request(f))
+            if len(self.bps.sent_functions()) > 0:
+                self.dbg.set_config("", "setFunctionBreakpoints", self.bps.function_request())
+            if not self.dbg.attach_pid(cmd, pid_val, log):
+                self.say("Could not attach to PID " + String(pid_val) + ": " + self.dbg.error)
+                return
+            self.dbg_attached_pid = pid_val
+            self.dbg_post_mortem = False
+            self.dbg_source = "PID " + String(pid_val)
+            self.debug_show("Attaching to PID " + String(pid_val) + "...")
+            self.say("Attaching to PID " + String(pid_val) + "...")
+            return
+
+        # Core dump target: `<exe>\t<core>` or `<exe> <core>`
+        var exe = String("")
+        var core_file = String("")
+        var tab = t.find("\t")
+        if tab > 0:
+            exe = String(t[byte=0:tab].strip())
+            core_file = String(t[byte=tab + 1:].strip())
+        else:
+            var parts = split_arguments(t)
+            if len(parts) >= 2:
+                exe = parts[0]
+                core_file = parts[1]
+            elif len(parts) == 1:
+                core_file = parts[0]
+                var ed = self.top_editor()
+                if ed >= 0 and self.wins[ed].path.byte_length() > 0:
+                    var p = self.wins[ed].path
+                    exe = join_path(dirname(p), "build/" + stem(p) + ".debug")
+        if core_file.byte_length() == 0 or not path_exists(core_file):
+            self.say("Core file not found: " + core_file)
+            return
+        self.dbg.clear_config()
+        if not self.dbg.attach_core(cmd, exe, core_file, log):
+            self.say("Could not open core dump: " + self.dbg.error)
+            return
+        self.dbg_post_mortem = True
+        self.dbg_attached_pid = 0
+        self.dbg_source = core_file
+        self.debug_show("Opening core dump " + basename(core_file) + "...")
+        self.say("Opening core dump " + basename(core_file) + "...")
 
     # ========================================================== breakpoints
     def bp_file(self) -> String:
@@ -760,6 +921,7 @@ __extension App:
         var di = self.debugwin_index()
         if di < 0:
             return
+        self.dview.data_bps = self.bps.data_bps.copy()
         var text = List[Int]()
         var lines = self.dview.lines()
         for k in range(len(lines)):
@@ -841,10 +1003,43 @@ __extension App:
                     var hint = m.doc.str(m.doc.get(sc, "presentationHint"), "")
                     if hint == "locals" or (handle == 0 and m.doc.str(m.doc.get(sc, "name"), "") == "Locals"):
                         handle = m.doc.int(m.doc.get(sc, "variablesReference"), 0)
+                self.dview.scope_handle = handle
                 if handle > 0:
                     self.dv_ask_children(handle, "")
                 else:
                     self.dview.note = "(no variables)"
+                continue
+            if m.request_seq == self.dbg.data_info_seq:
+                self.dbg.data_info_seq = -1
+                var wname = self.dbg.data_info_name
+                var waddr = self.dbg.data_info_addr
+                self.dbg.data_info_name = ""
+                self.dbg.data_info_addr = ""
+                var data_id_idx = m.doc.get(b, "dataId")
+                var data_id = m.doc.str(data_id_idx, "") if (m.success and data_id_idx >= 0 and not m.doc.is_null(data_id_idx)) else String("")
+                if data_id.byte_length() == 0:
+                    self.say("The debugger cannot place a hardware watchpoint on " + wname)
+                else:
+                    var dbi = self.bps.find_data_bp(wname, waddr)
+                    if dbi >= 0:
+                        self.bps.data_bps[dbi].data_id = data_id
+                        self.bps.data_bps[dbi].access_type = "write"
+                    else:
+                        self.bps.data_bps.append(DataBreakpoint(data_id, "write", wname, waddr))
+                    var dbps = self.bps.data_bps.copy()
+                    self.dbg.data_bp_seq = self.dbg.set_data_breakpoints(dbps)
+                    self.say("Watchpoint on " + wname + ": write")
+                continue
+            if m.request_seq == self.dbg.data_bp_seq:
+                self.dbg.data_bp_seq = -1
+                if m.success:
+                    var children = m.doc.children(m.doc.get(b, "breakpoints"))
+                    var nb = min(len(self.bps.data_bps), len(children))
+                    for bi in range(nb):
+                        var cn = children[bi]
+                        var is_ver = m.doc.bool(m.doc.get(cn, "verified"), False)
+                        self.bps.data_bps[bi].id = m.doc.int(m.doc.get(cn, "id"), -1)
+                        self.bps.data_bps[bi].verified = BV_OK if is_ver else BV_NOT
                 continue
             var handled = False
             for k in range(len(self.dv_watch_seqs)):
@@ -933,6 +1128,30 @@ __extension App:
         if kind != VK_VAR:
             return
         var n = self.dview.nodes[idx].copy()
+        if k == 119 or k == 87:
+            var dbi = self.bps.find_data_bp(n.name, n.address())
+            if dbi >= 0:
+                var next_mode = cycle_watchpoint_access_type(self.bps.data_bps[dbi].access_type)
+                if next_mode.byte_length() == 0:
+                    _ = self.bps.data_bps.pop(dbi)
+                    self.say("Watchpoint cleared on " + n.name)
+                else:
+                    self.bps.data_bps[dbi].access_type = next_mode
+                    self.say("Watchpoint on " + n.name + ": " + next_mode)
+                if self.dbg.can_send():
+                    var dbps = self.bps.data_bps.copy()
+                    self.dbg.data_bp_seq = self.dbg.set_data_breakpoints(dbps)
+                self.debugwin_show()
+                return
+            if self.dbg.state != DS_STOPPED:
+                self.say("Stop the program first to set a hardware watchpoint")
+                return
+            var vref = self.dview.parent_handle_of(idx)
+            self.dbg.data_info_name = n.name
+            self.dbg.data_info_addr = n.address()
+            self.dbg.data_info_seq = self.dbg.data_breakpoint_info(n.name, vref)
+            self.say("Setting watchpoint on " + n.name + "...")
+            return
         if k == 61 or ((k == KEY_ENTER or k == 32) and not n.has_children()):
             self.dv_set_dialog(idx)
             return
@@ -1214,13 +1433,16 @@ __extension App:
         self.cpu_mem_seq = -1
         self.cpuwin_show()
 
+    def cpu_ask_disasm(mut self):
+        if self.cpu.ip.byte_length() > 0:
+            self.cpu_dis_seq = self.dbg.ask("disassemble", "{\"memoryReference\":" + json_quote(self.cpu.ip) + ",\"instructionOffset\":-24,\"instructionCount\":96,\"resolveSymbols\":true}")
+
     def cpu_stopped(mut self):
         """Ask for what the CPU window shows (only while it is open)."""
         if self.cpuwin_index() < 0 or self.dbg.state != DS_STOPPED:
             return
         self.cpu.ip = self.dbg.stop_ip
-        if self.cpu.ip.byte_length() > 0:
-            self.cpu_dis_seq = self.dbg.ask("disassemble", "{\"memoryReference\":" + json_quote(self.cpu.ip) + ",\"instructionOffset\":-8,\"instructionCount\":28,\"resolveSymbols\":true}")
+        self.cpu_ask_disasm()
         if len(self.dbg.frames) > 0:
             self.cpu_scope_seq = self.dbg.ask("scopes", "{\"frameId\":" + String(self.dbg.frames[0].id) + "}")
         self.cpu_read_memory()
@@ -1238,10 +1460,40 @@ __extension App:
         if m.request_seq == self.cpu_dis_seq:
             self.cpu_dis_seq = -1
             self.cpu.code.clear()
+            self.cpu.src_map.clear()
             if not m.success:
                 self.cpu.note = "(no disassembly: " + m.message + ")"
+            var cached_paths = List[String]()
+            var cached_texts = List[String]()
             for ins in m.doc.children(m.doc.get(b, "instructions")):
-                self.cpu.code.append(Instr(m.doc.str(m.doc.get(ins, "address"), ""), m.doc.str(m.doc.get(ins, "instruction"), ""), m.doc.str(m.doc.path(ins, "location/path"), ""), m.doc.int(m.doc.get(ins, "line"), 0)))
+                var ipath = m.doc.str(m.doc.path(ins, "location/path"), "")
+                var iline = m.doc.int(m.doc.get(ins, "line"), 0)
+                self.cpu.code.append(Instr(m.doc.str(m.doc.get(ins, "address"), ""), m.doc.str(m.doc.get(ins, "instruction"), ""), ipath, iline))
+                if ipath.byte_length() > 0 and iline > 0 and path_exists(ipath):
+                    var key = ipath + ":" + String(iline)
+                    if self.cpu.src_map.get(key).byte_length() == 0:
+                        var ftxt = String("")
+                        var found_cached = False
+                        for ci in range(len(cached_paths)):
+                            if cached_paths[ci] == ipath:
+                                ftxt = cached_texts[ci]
+                                found_cached = True
+                                break
+                        if not found_cached:
+                            ftxt = read_text(ipath)
+                            cached_paths.append(ipath)
+                            cached_texts.append(ftxt)
+                        var flines = ftxt.split("\n")
+                        if iline - 1 < len(flines):
+                            self.cpu.src_map.put(key, String(String(flines[iline - 1]).strip()))
+        elif m.request_seq == self.dbg.ibp_seq:
+            self.dbg.ibp_seq = -1
+            if m.success:
+                var bnodes = m.doc.children(m.doc.get(b, "breakpoints"))
+                var nb = min(len(self.cpu.ibps), len(bnodes))
+                for bi in range(nb):
+                    self.cpu.ibps[bi].verified = m.doc.bool(m.doc.get(bnodes[bi], "verified"), False)
+                    self.cpu.ibps[bi].id = m.doc.int(m.doc.get(bnodes[bi], "id"), -1)
         elif m.request_seq == self.cpu_scope_seq:
             self.cpu_scope_seq = -1
             for sc in m.doc.children(m.doc.get(b, "scopes")):
@@ -1311,19 +1563,55 @@ __extension App:
         self.cpuwin_show()
         return True
 
-    def cpuwin_key(mut self, k: Int):
-        """G: memory at an address or a variable; + / -: next / previous 128 bytes; V: SIMD lanes."""
+    def cpuwin_key(mut self, k: Int) raises:
+        """G: memory at an address or a variable; + / - / ] / [: next / previous 128 bytes;
+        V: SIMD lanes; B: toggle instruction breakpoint; Enter: jump to source line."""
         if k == 118 or k == 86:
             var m = self.cpu.cycle_simd_mode()
             self.cpuwin_show()
             self.say("SIMD lanes: " + m)
             return
-        if k == 43 or k == 45:
+        if k == 43 or k == 45 or k == 93 or k == 91:
             if self.cpu.mem_address < 0:
                 return
-            self.cpu.mem_address = max(0, self.cpu.mem_address + (128 if k == 43 else -128))
+            var forward = k == 43 or k == 93
+            self.cpu.mem_address = max(0, self.cpu.mem_address + (128 if forward else -128))
             self.cpu_read_memory()
             self.cpuwin_show()
+            return
+        if k == 98 or k == 66:
+            var ci = self.cpuwin_index()
+            if ci < 0:
+                return
+            var idx = self.cpu.instr_at_row(self.wins[ci].cr)
+            if idx < 0 or idx >= len(self.cpu.code):
+                self.say("Move cursor to an instruction line to toggle an instruction breakpoint")
+                return
+            var addr = String(self.cpu.code[idx].address)
+            var added = toggle_instruction_breakpoint(self.cpu.ibps, addr)
+            if self.dbg.can_send():
+                var ibps_copy = self.cpu.ibps.copy()
+                self.dbg.ibp_seq = self.dbg.set_instruction_breakpoints(ibps_copy)
+            self.cpuwin_show()
+            self.say(("Instruction breakpoint set at " if added else "Instruction breakpoint removed at ") + addr)
+            return
+        if k == KEY_ENTER:
+            var ci = self.cpuwin_index()
+            if ci < 0:
+                return
+            var idx = self.cpu.instr_at_row(self.wins[ci].cr)
+            if idx < 0 or idx >= len(self.cpu.code):
+                return
+            var jt = handle_enter_key_on_instruction(self.cpu.code[idx])
+            if jt.ok and path_exists(jt.path):
+                self.jump_mark()
+                self.open_path(jt.path)
+                var ed = self.top()
+                self.wins[ed].goto(jt.editor_row, 0)
+            else:
+                self.say(jt.error_message if jt.error_message.byte_length() > 0 else String("No source line for this instruction"))
+            return
+        if k != 103 and k != 71:
             return
         var d = Dialog(D_MEMADDR, "Memory At", min(60, self.scr.w - 4), 10)
         d.lines.append("An address (0x...) or the name of a variable (total, p).")

@@ -12,7 +12,9 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
+from hexview import is_binary_data, render_hex_rows
+from markdown import md_render
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -58,7 +60,7 @@ __extension App:
         if path_exists(p) and not is_dir(p) and not self.restoring:
             self.frec_note(p)
         for i in range(len(self.wins)):
-            if self.wins[i].kind == WK_EDITOR and self.wins[i].path == p:
+            if (self.wins[i].kind == WK_EDITOR or self.wins[i].kind == WK_HEX) and self.wins[i].path == p:
                 self.focus(i)
                 return
         if is_dir(p):
@@ -79,6 +81,20 @@ __extension App:
             i = self.top()
         if path_exists(p):
             var bytes = read_file(p)
+            if is_binary_data(bytes):
+                self.wins[i].kind = WK_HEX
+                self.wins[i].read_only = True
+                self.wins[i].gut = 0
+                self.wins[i].hex_bytes = bytes^
+                var n_hex = max(1, (len(self.wins[i].hex_bytes) + 15) // 16)
+                self.wins[i].buf.load(List[Int](length=max(0, n_hex - 1), fill=10))
+                self.wins[i].buf.modified = False
+                self.wins[i].cr = 0
+                self.wins[i].cc = 0
+                self.wins[i].top = 0
+                self.note_disk_state(i)
+                self.say("Binary file detected: opened read-only in hex inspector")
+                return
             var big = len(bytes) > self.large_file_bytes
             self.wins[i].buf.load_bytes(bytes)
             self.wins[i].buf.large = big
@@ -123,6 +139,9 @@ __extension App:
             self.apply_buffer_settings(i, EcProps())
 
     def save_window(mut self, i: Int, next: Int) raises -> Bool:
+        if self.wins[i].read_only or self.wins[i].kind == WK_HEX:
+            self.say("Buffer is read-only")
+            return False
         self.typed_ns = 0                       # a save is a pause: held toasts come now
         if self.wins[i].path.byte_length() == 0:
             self.saveas_dialog(i, next)
@@ -162,6 +181,7 @@ __extension App:
         var saved = String(self.wins[i].path)
         self.plugins_event("save", saved)
         self.export_ide_state()
+        self.tests_on_save(saved)
         if self.format_on_save and next == NEXT_NONE and is_mojo_file(saved) and not self.wins[i].buf.large and not self.trust_held and self.trust_ok() and not self.aux_job.active:
             var inner = "cd " + shell_quote(dirname(saved)) + " && exec " + self.mojo_for(saved) + " format -q " + shell_quote(saved)
             var cmd = self.with_env(saved, inner) + " 2>&1"
@@ -240,6 +260,8 @@ __extension App:
             return False
         if self.wins[i].kind != WK_EDITOR or self.wins[j].kind != WK_EDITOR:
             return False
+        if self.wins[i].buf_id >= 0 and self.wins[i].buf_id == self.wins[j].buf_id:
+            return True
         if self.wins[i].path.byte_length() > 0 and self.wins[i].path == self.wins[j].path:
             return True
         return self.wins[i].clone_group > 0 and self.wins[i].clone_group == self.wins[j].clone_group
@@ -276,27 +298,46 @@ __extension App:
             for dst in range(n):
                 if not self.same_shared_buffer(src, dst):
                     continue
-                var d_cr = self.wins[dst].cr
-                var d_cc = self.wins[dst].cc
                 var d_want = self.wins[dst].want
                 var d_top = self.wins[dst].top
                 var d_top_seg = self.wins[dst].top_seg
                 var d_left = self.wins[dst].left
-                var d_folds = self.wins[dst].buf.folds.copy()
-                var cb = self.wins[src].buf.copy()
-                self.wins[dst].buf = cb^
-                self.wins[dst].buf.folds.clear()
-                self.wins[dst].buf.fold_ends.clear()
-                self.wins[dst].buf.fold_version = -1
-                self.wins[dst].cr = d_cr
-                self.wins[dst].cc = d_cc
+                # Zero-copy sync: BufferCore (Rope) is shared via ArcPointer.
+                # Propagate buffer state and clamp view-local cursor/scroll offsets without deep-copying Rope.
+                self.wins[dst].buf.core = self.wins[src].buf.core
+                self.wins[dst].buf.version = self.wins[src].buf.version
+                self.wins[dst].buf.modified = self.wins[src].buf.modified
+                self.wins[dst].buf.undos = self.wins[src].buf.undos.copy()
+                self.wins[dst].buf.redos = self.wins[src].buf.redos.copy()
+                self.wins[dst].buf.marks = self.wins[src].buf.marks.copy()
+                self.wins[dst].buf.bps = self.wins[src].buf.bps.copy()
+                self.wins[dst].buf.bp_looks = self.wins[src].buf.bp_looks.copy()
+                self.wins[dst].buf.bp_stamp = self.wins[src].buf.bp_stamp
+                self.wins[dst].buf.exec_row = self.wins[src].buf.exec_row
+                self.wins[dst].buf.git_state = self.wins[src].buf.git_state
+                self.wins[dst].buf.git_path = self.wins[src].buf.git_path
+                self.wins[dst].buf.git_base = self.wins[src].buf.git_base.copy()
+                self.wins[dst].buf.git_base_text = self.wins[src].buf.git_base_text
+                self.wins[dst].buf.git_ver = self.wins[src].buf.git_ver
+                self.wins[dst].buf.git_marks = self.wins[src].buf.git_marks.copy()
+                self.wins[dst].buf.sem = self.wins[src].buf.sem.copy()
+                self.wins[dst].buf.hints = self.wins[src].buf.hints.copy()
+                self.wins[dst].buf.changes = self.wins[src].buf.changes.copy()
+                self.wins[dst].buf.changes_lost = self.wins[src].buf.changes_lost
+                self.wins[dst].buf.changes_chars = self.wins[src].buf.changes_chars
+                self.wins[dst].buf.lstate = self.wins[src].buf.lstate.copy()
+                self.wins[dst].buf.ldirty_from = self.wins[src].buf.ldirty_from
+                self.wins[dst].buf.ldirty_to = self.wins[src].buf.ldirty_to
+                self.wins[dst].buf.lex_work = self.wins[src].buf.lex_work
+                self.wins[dst].buf.crlf = self.wins[src].buf.crlf
+                self.wins[dst].buf.use_tabs = self.wins[src].buf.use_tabs
+                self.wins[dst].buf.tab_width = self.wins[src].buf.tab_width
+                self.wins[dst].buf.indent_size = self.wins[src].buf.indent_size
                 self.wins[dst].clamp()
                 self.wins[dst].want = d_want
                 self.wins[dst].top = max(0, min(d_top, self.wins[dst].buf.count() - 1))
                 self.wins[dst].top_seg = d_top_seg
                 self.wins[dst].left = d_left
-                if len(d_folds) > 0:
-                    self.restore_folds(dst, d_folds)
                 self.wins[dst].gseq = max(self.wins[dst].gseq, self.wins[src].gseq)
                 self.wins[dst].disk_hash = self.wins[src].disk_hash
                 self.wins[dst].disk_size = self.wins[src].disk_size
@@ -304,6 +345,16 @@ __extension App:
                 self.wins[dst].gut = self.wins[dst].gutter_for(self.line_numbers)
                 self.wins[dst].sync_ver = self.wins[dst].buf.version
                 done.append(dst)
+        for pv in range(n):
+            if self.wins[pv].kind == WK_MDPREVIEW and self.wins[pv].preview_peer_wid > 0:
+                var peer = self.win_by_wid(self.wins[pv].preview_peer_wid)
+                if peer >= 0 and self.wins[peer].kind == WK_EDITOR:
+                    self.wins[pv].buf.core = self.wins[peer].buf.core
+                    self.wins[pv].buf.version = self.wins[peer].buf.version
+                    var pcount = max(1, self.wins[peer].buf.count() - 1)
+                    var md_lines = md_render(to_str(self.wins[pv].buf.all_text()), max(8, self.wins[pv].w - 4), self.hl)
+                    var mcount = max(0, len(md_lines) - 1)
+                    self.wins[pv].top = (min(self.wins[peer].top, pcount) * mcount) // pcount
 
     def clone_editor_view(mut self, right: Bool = True):
         """Open a second synchronized view of the active editor in a split pane."""
@@ -314,6 +365,10 @@ __extension App:
         if self.wins[ti].clone_group == 0:
             self.wins[ti].clone_group = self.next_clone_group
             self.next_clone_group += 1
+        if self.wins[ti].buf_id < 0:
+            self.wins[ti].buf_id = len(self.buffers)
+            self.buffers.append(self.wins[ti].buf.copy())
+        var bid = self.wins[ti].buf_id
         var cg = self.wins[ti].clone_group
         var title = String(self.wins[ti].title)
         var path = String(self.wins[ti].path)
@@ -334,6 +389,7 @@ __extension App:
         self.wins[ti].sync_ver = self.wins[ti].buf.version
         var ci = self.new_editor(title, path)
         self.wins[ci].clone_group = cg
+        self.wins[ci].buf_id = bid
         self.wins[ci].buf = cb^
         self.wins[ci].cr = cr
         self.wins[ci].cc = cc
@@ -384,6 +440,14 @@ __extension App:
             self.fit_windows()
             self.say("Split view: " + (basename(path) if path.byte_length() > 0 else title))
 
+    def split_window_horiz(mut self):
+        """Split the active editor window horizontally (above/below)."""
+        self.clone_editor_view(False)
+
+    def split_window_vert(mut self):
+        """Split the active editor window vertically (side-by-side)."""
+        self.clone_editor_view(True)
+
     def remove_window(mut self, i: Int):
         if self.wins[i].kind == WK_MESSAGE:
             self.panel_keep()       # the panel's page is there again when it is reopened
@@ -392,8 +456,47 @@ __extension App:
             self.drop_swap(i)   # closing the last view is a decision: nothing left to recover
         _ = self.wins.pop(i)
 
+    def hex_view_toggle(mut self):
+        """Toggle virtualized 16-byte/row hex + ASCII inspector (`WK_HEX`) on the active window."""
+        var t = self.top()
+        if t < 0:
+            return
+        if self.wins[t].kind == WK_HEX:
+            if is_binary_data(self.wins[t].hex_bytes):
+                self.say("Binary file stays read-only in hex inspector")
+                return
+            var raw = self.wins[t].hex_bytes.copy()
+            self.wins[t].hex_bytes.clear()
+            self.wins[t].kind = WK_EDITOR
+            self.wins[t].read_only = False
+            self.wins[t].buf.load_bytes(raw)
+            self.wins[t].gut = self.wins[t].gutter_for(self.line_numbers)
+            self.wins[t].cr = 0
+            self.wins[t].cc = 0
+            self.wins[t].top = 0
+            self.say("Exited hex inspector")
+        elif self.wins[t].kind == WK_EDITOR:
+            if self.wins[t].buf.modified:
+                self.say("Save or revert changes before switching to read-only hex inspector")
+                return
+            var raw = self.wins[t].buf.to_bytes()
+            self.wins[t].hex_bytes = raw^
+            self.wins[t].kind = WK_HEX
+            self.wins[t].read_only = True
+            self.wins[t].gut = 0
+            var n_hex = max(1, (len(self.wins[t].hex_bytes) + 15) // 16)
+            self.wins[t].buf.load(List[Int](length=max(0, n_hex - 1), fill=10))
+            self.wins[t].buf.modified = False
+            self.wins[t].cr = 0
+            self.wins[t].cc = 0
+            self.wins[t].top = 0
+            self.say("Hex inspector (read-only)")
+
     def close_window(mut self, i: Int, next: Int):
         if i < 0:
+            return
+        if self.wins[i].pinned and next == NEXT_CLOSE:
+            self.say("Tab is pinned (unpin first to close)")
             return
         if self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified and (next == NEXT_QUIT or not self.has_shared_sibling(i)):
             self.focus(i)

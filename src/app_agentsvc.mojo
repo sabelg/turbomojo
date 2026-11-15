@@ -20,7 +20,7 @@ from json import Json, json_parse, json_quote, J_ARR, J_NUM, J_OBJ
 from acp import *
 from agentchat import *
 from agentsvc import *
-from gitdiff import Side, side_hunks, unified, DR_OLD, DR_NEW
+from gitdiff import Side, side_hunks, unified, DR_OLD, DR_NEW, DR_SPLIT_CHG
 from app_outline import *
 from app_gitdiff import *
 from app_files import *
@@ -274,7 +274,7 @@ __extension App:
         self.wins[t].top = 0
         self.git_diff_refresh()
         for r in range(len(self.gd_rows)):
-            if self.gd_rows[r].kind == DR_OLD or self.gd_rows[r].kind == DR_NEW:
+            if self.gd_rows[r].kind == DR_OLD or self.gd_rows[r].kind == DR_NEW or self.gd_rows[r].kind == DR_SPLIT_CHG:
                 self.wins[t].cr = r
                 self.wins[t].follow = True
                 break

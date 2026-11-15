@@ -31,6 +31,14 @@ def test_snippet_tabstop_expansion() raises:
     assert_equal(exp.stops[0].end, 8)
 
 
+def test_mirrored_tabstops_multi_cursor() raises:
+    var exp = expand_snippet_full("var ${1:foo} = ${1:foo} + 1", "    ")
+    assert_equal(exp.text, "var foo = foo + 1")
+    assert_equal(len(exp.stops), 2)
+    assert_equal(exp.stops[0].num, 1)
+    assert_equal(exp.stops[1].num, 1)
+
+
 def test_builtin_mojo_snippets_are_modern_mojo_12() raises:
     var snips = mojo_snippets()
     assert_true(len(snips) >= 9)

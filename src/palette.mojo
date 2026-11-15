@@ -32,6 +32,26 @@ comptime LMAGENTA = 0xFF55FF
 comptime YELLOW = 0xFFFF55
 comptime WHITE = 0xFFFFFF
 
+# CVD-safe 4-level rainbow delimiter colors (Wong palette)
+comptime CVD_RAINBOW_0 = 0x56B4E9
+comptime CVD_RAINBOW_1 = 0xF0E442
+comptime CVD_RAINBOW_2 = 0x009E73
+comptime CVD_RAINBOW_3 = 0xD55E00
+
+
+def cvd_rainbow_color(depth: Int) -> Int:
+    var d = depth % 4
+    if d < 0:
+        d += 4
+    if d == 0:
+        return CVD_RAINBOW_0
+    elif d == 1:
+        return CVD_RAINBOW_1
+    elif d == 2:
+        return CVD_RAINBOW_2
+    else:
+        return CVD_RAINBOW_3
+
 
 struct Palette(Copyable, Movable):
     var name: String
@@ -107,6 +127,9 @@ struct Palette(Copyable, Movable):
     var shadow_bg: Int
     var scanlines: Bool     # draw every other row a little darker (a CRT look)
     var monochrome: Bool    # one hue by design: its colours need not differ in hue (contrast.cvd_problems)
+
+    def rainbow_color(self, depth: Int) -> Int:
+        return cvd_rainbow_color(depth)
 
     def __init__(out self):
         """Turbo Classic."""

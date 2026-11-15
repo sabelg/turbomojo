@@ -35,6 +35,7 @@ comptime EV_PASTE = 3
 comptime EV_FOCUS = 4         # the terminal got (key 1) or lost (key 0) the focus (mode 1004)
 
 comptime MB_LEFT = 0
+comptime MB_MIDDLE = 1
 comptime MB_RIGHT = 2
 comptime MB_WHEEL_UP = 64
 comptime MB_WHEEL_DOWN = 65

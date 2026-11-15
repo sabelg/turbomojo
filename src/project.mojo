@@ -365,3 +365,50 @@ def build_max_commands(model_or_args: String, custom_arch_dir: String = "") -> T
     labels.append("Inspect MAX CLI & flags      max --version / max serve --help")
     cmds.append("max --version && max serve --help | head -n 28")
     return (labels^, cmds^)
+
+
+@fieldwise_init
+struct ProjectMRU(Copyable, Movable):
+    var entries: List[String]
+    var max_size: Int
+
+    def __init__(out self, max_size: Int = 10):
+        self.entries = List[String]()
+        self.max_size = max_size
+
+    def record_visit(mut self, path: String):
+        if path.byte_length() == 0:
+            return
+        var hit = -1
+        for i in range(len(self.entries)):
+            if self.entries[i] == path:
+                hit = i
+                break
+        if hit >= 0:
+            _ = self.entries.pop(hit)
+        self.entries.insert(0, path)
+        while len(self.entries) > self.max_size:
+            _ = self.entries.pop(len(self.entries) - 1)
+
+    def to_toml(self) -> String:
+        var out = String("[mru]\nprojects = [\n")
+        for i in range(len(self.entries)):
+            out += "  \"" + self.entries[i].replace("\"", "\\\"") + "\",\n"
+        out += "]\n"
+        return out^
+
+
+def parse_mru_toml(toml_content: String) -> List[String]:
+    var res = List[String]()
+    if toml_content.byte_length() == 0:
+        return res^
+
+    for line in toml_content.split("\n"):
+        var l = String(String(line).strip())
+        if l.startswith("\"") and l.endswith("\","):
+            var p = String(l[byte=1:l.byte_length() - 2]).replace("\\\"", "\"")
+            res.append(p)
+        elif l.startswith("\"") and l.endswith("\""):
+            var p = String(l[byte=1:l.byte_length() - 1]).replace("\\\"", "\"")
+            res.append(p)
+    return res^

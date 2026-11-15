@@ -14,6 +14,53 @@ comptime BV_OK = 1           # the debugger placed it
 comptime BV_NOT = 2          # the debugger could not place it
 
 
+struct DataBreakpoint(Copyable, Movable):
+    var data_id: String
+    var access_type: String      # "write", "readWrite", "read"
+    var name: String
+    var address: String
+    var verified: Int            # BV_OK, BV_NOT, BV_UNKNOWN
+    var id: Int
+    var condition: String
+    var hit_count: String
+
+    def __init__(out self, data_id: String, access_type: String, name: String = "", address: String = ""):
+        self.data_id = data_id
+        self.access_type = access_type
+        self.name = name
+        self.address = address
+        self.verified = BV_UNKNOWN
+        self.id = -1
+        self.condition = ""
+        self.hit_count = ""
+
+    def look(self) -> Int:
+        """How the debugger displays it: 1 ●, 3 ◆ (with condition/hit), 4 ◌ (not placed)."""
+        if self.verified == BV_NOT:
+            return 4
+        if self.condition.byte_length() > 0 or self.hit_count.byte_length() > 0:
+            return 3
+        return 1
+
+    def badge(self) -> String:
+        if self.look() == 4:
+            return "◌"
+        if self.look() == 3:
+            return "◆"
+        return "●"
+
+
+def cycle_watchpoint_access_type(current: String) -> String:
+    """Cycle watchpoint trap modes: '' -> 'write' -> 'readWrite' -> 'read' -> ''."""
+    if current == "write":
+        return "readWrite"
+    if current == "readWrite":
+        return "read"
+    if current == "read":
+        return ""
+    return "write"
+
+
 struct Breakpoint(Copyable, Movable):
     var path: String        # the file ('' for a function breakpoint)
     var line: Int           # 1-based
@@ -109,9 +156,38 @@ def bp_unescape(s: String) -> String:
 
 struct Breakpoints(Copyable, Movable):
     var items: List[Breakpoint]
+    var data_bps: List[DataBreakpoint]
 
     def __init__(out self):
         self.items = List[Breakpoint]()
+        self.data_bps = List[DataBreakpoint]()
+
+    def find_data_bp(self, name: String, address: String) -> Int:
+        for k in range(len(self.data_bps)):
+            if address.byte_length() > 0 and self.data_bps[k].address.byte_length() > 0:
+                if self.data_bps[k].address == address:
+                    return k
+            elif self.data_bps[k].name == name and name.byte_length() > 0:
+                return k
+        return -1
+
+    def data_request(self) -> String:
+        var w = JsonWriter()
+        w.begin_obj()
+        w.key("breakpoints")
+        w.begin_arr()
+        for i in range(len(self.data_bps)):
+            w.begin_obj()
+            w.kv_str("dataId", self.data_bps[i].data_id)
+            w.kv_str("accessType", self.data_bps[i].access_type)
+            if self.data_bps[i].condition.byte_length() > 0:
+                w.kv_str("condition", self.data_bps[i].condition)
+            if self.data_bps[i].hit_count.byte_length() > 0:
+                w.kv_str("hitCondition", self.data_bps[i].hit_count)
+            w.end_obj()
+        w.end_arr()
+        w.end_obj()
+        return w.text()
 
     def find(self, path: String, line: Int) -> Int:
         for k in range(len(self.items)):
@@ -221,6 +297,9 @@ struct Breakpoints(Copyable, Movable):
             self.items[k].verified = BV_UNKNOWN
             self.items[k].actual = 0
             self.items[k].id = -1
+        for k in range(len(self.data_bps)):
+            self.data_bps[k].verified = BV_UNKNOWN
+            self.data_bps[k].id = -1
 
     # ---------------------------------------------------------- the file
     def encode(self) -> String:

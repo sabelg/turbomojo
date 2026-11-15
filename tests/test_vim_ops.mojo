@@ -450,6 +450,20 @@ def test_the_engine() raises:
     assert_equal(vcls(9, False), 0)
 
 
+def test_vim_polyglot_comment_toggle() raises:
+    var app = make("const x = 5;\n")
+    app.wins[0].path = "main.zig"
+    keys(app, "gcc")
+    assert_equal(text(app), "// const x = 5;\n")
+    keys(app, "gcc")
+    assert_equal(text(app), "const x = 5;\n")
+
+    var app_mojo = make("var x = 5\n")
+    app_mojo.wins[0].path = "main.mojo"
+    keys(app_mojo, "gcc")
+    assert_equal(text(app_mojo), "# var x = 5\n")
+
+
 def test_the_reference() raises:
     var md = vim_keys_markdown()
     for row in ["| w b e | Normal, Visual |", "| d c y | Normal |", "| ip ap | after d c y |", "| . | Normal | Repeat the last change |", "| u Ctrl-R | Normal | Undo / redo |"]:

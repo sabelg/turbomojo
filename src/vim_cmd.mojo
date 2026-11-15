@@ -352,3 +352,205 @@ def ex_is(name: String, full: String, shortest: Int) -> Bool:
     if name.byte_length() < shortest or name.byte_length() > full.byte_length():
         return False
     return full.startswith(name)
+
+
+@fieldwise_init
+struct VimSetItem(Copyable, Movable):
+    var ok: Bool
+    var error: String
+    var key: String
+    var bool_val: Bool
+    var int_val: Int
+    var toggle: Bool
+
+
+def _parse_pos_int(s: String) -> Int:
+    var cps = decode(s)
+    if len(cps) == 0:
+        return -1
+    var v = 0
+    for ch in cps:
+        if not is_digit(ch):
+            return -1
+        v = min(v * 10 + (ch - 48), 1000)
+    return v if v > 0 else -1
+
+
+def parse_set(arg: String) -> List[VimSetItem]:
+    """Parse space-separated `:set` options (nu/nonu, rnu/nornu, wrap/nowrap, ic/noic, list/nolist, ts=N, sw=N)."""
+    var out = List[VimSetItem]()
+    for part in arg.split(" "):
+        var tok = String(String(part).strip())
+        if tok.byte_length() == 0:
+            continue
+        var eq = tok.find("=")
+        if eq > 0:
+            var lhs = String(tok[byte=0:eq])
+            var rhs = String(tok[byte=eq + 1:])
+            var iv = _parse_pos_int(rhs)
+            if (lhs == "ts" or lhs == "tabstop") and iv > 0 and iv <= 32:
+                out.append(VimSetItem(True, "", "tabstop", False, iv, False))
+            elif (lhs == "sw" or lhs == "shiftwidth") and iv > 0 and iv <= 32:
+                out.append(VimSetItem(True, "", "shiftwidth", False, iv, False))
+            else:
+                out.append(VimSetItem(False, "E474: Invalid argument: " + tok, "", False, 0, False))
+            continue
+        var toggle = False
+        if tok.endswith("!"):
+            toggle = True
+            var trimmed = String(tok[byte=0:tok.byte_length() - 1])
+            tok = trimmed^
+        if tok == "nu" or tok == "number":
+            out.append(VimSetItem(True, "", "number", True, 0, toggle))
+        elif tok == "nonu" or tok == "nonumber":
+            out.append(VimSetItem(True, "", "number", False, 0, False))
+        elif tok == "rnu" or tok == "relativenumber":
+            out.append(VimSetItem(True, "", "relativenumber", True, 0, toggle))
+        elif tok == "nornu" or tok == "norelativenumber":
+            out.append(VimSetItem(True, "", "relativenumber", False, 0, False))
+        elif tok == "wrap":
+            out.append(VimSetItem(True, "", "wrap", True, 0, toggle))
+        elif tok == "nowrap":
+            out.append(VimSetItem(True, "", "wrap", False, 0, False))
+        elif tok == "ic" or tok == "ignorecase":
+            out.append(VimSetItem(True, "", "ignorecase", True, 0, toggle))
+        elif tok == "noic" or tok == "noignorecase":
+            out.append(VimSetItem(True, "", "ignorecase", False, 0, False))
+        elif tok == "list":
+            out.append(VimSetItem(True, "", "list", True, 0, toggle))
+        elif tok == "nolist":
+            out.append(VimSetItem(True, "", "list", False, 0, False))
+        else:
+            out.append(VimSetItem(False, "E518: Unknown option: " + tok, "", False, 0, False))
+    return out^
+
+
+struct VimGlobal(Copyable, Movable):
+    var ok: Bool
+    var error: String
+    var invert: Bool
+    var pat: List[Int]
+    var cmd: String
+
+    def __init__(out self):
+        self.ok = False
+        self.error = ""
+        self.invert = False
+        self.pat = List[Int]()
+        self.cmd = ""
+
+
+def parse_global(raw: List[Int], invert: Bool) -> VimGlobal:
+    """Parse `:g[!]/pat/[cmd]` / `:v/pat/[cmd]`."""
+    var g = VimGlobal()
+    g.invert = invert
+    var i = 0
+    while i < len(raw) and raw[i] == 32:
+        i += 1
+    if i >= len(raw):
+        g.error = "E148: Regular expression missing from global"
+        return g^
+    var d = raw[i]
+    if is_alpha(d) or is_digit(d) or d == 92 or d == 34 or d == 124:
+        g.error = "E146: Regular expressions can't be delimited by letters"
+        return g^
+    i += 1
+    while i < len(raw):
+        var ch = raw[i]
+        if ch == 92 and i + 1 < len(raw):
+            if raw[i + 1] == d:
+                g.pat.append(d)
+            else:
+                g.pat.append(92)
+                g.pat.append(raw[i + 1])
+            i += 2
+            continue
+        if ch == d:
+            i += 1
+            break
+        g.pat.append(ch)
+        i += 1
+    while i < len(raw) and raw[i] == 32:
+        i += 1
+    var rest = List[Int]()
+    for k in range(i, len(raw)):
+        rest.append(raw[k])
+    g.cmd = to_str(rest)
+    g.ok = True
+    return g^
+
+
+struct VimGrep(Copyable, Movable):
+    var ok: Bool
+    var error: String
+    var pat: List[Int]
+    var all: Bool
+    var nojump: Bool
+    var files: List[String]
+
+    def __init__(out self):
+        self.ok = False
+        self.error = ""
+        self.pat = List[Int]()
+        self.all = False
+        self.nojump = False
+        self.files = List[String]()
+
+
+def parse_vimgrep(raw: List[Int]) -> VimGrep:
+    """Parse `:vimgrep /pat/[g][j] [files...]` or `:vimgrep word [files...]`."""
+    var vg = VimGrep()
+    var i = 0
+    while i < len(raw) and raw[i] == 32:
+        i += 1
+    if i >= len(raw):
+        vg.error = "E682: Invalid search pattern or delimiter"
+        return vg^
+    var d = raw[i]
+    var delimited = not (is_alpha(d) or is_digit(d) or d == 95 or d == 46 or d == 42)
+    if delimited:
+        i += 1
+        var closed = False
+        while i < len(raw):
+            var ch = raw[i]
+            if ch == 92 and i + 1 < len(raw):
+                if raw[i + 1] == d:
+                    vg.pat.append(d)
+                else:
+                    vg.pat.append(92)
+                    vg.pat.append(raw[i + 1])
+                i += 2
+                continue
+            if ch == d:
+                closed = True
+                i += 1
+                break
+            vg.pat.append(ch)
+            i += 1
+        if not closed:
+            vg.error = "E682: Invalid search pattern or delimiter"
+            return vg^
+        while i < len(raw) and raw[i] != 32:
+            if raw[i] == 103:
+                vg.all = True
+            elif raw[i] == 106:
+                vg.nojump = True
+            else:
+                vg.error = "E474: Invalid flag in vimgrep"
+                return vg^
+            i += 1
+    else:
+        while i < len(raw) and raw[i] != 32:
+            vg.pat.append(raw[i])
+            i += 1
+    var tail = List[Int]()
+    for k in range(i, len(raw)):
+        tail.append(raw[k])
+    for part in to_str(tail).split(" "):
+        var fp = String(String(part).strip())
+        if fp.byte_length() > 0:
+            vg.files.append(fp)
+    vg.ok = len(vg.pat) > 0
+    if not vg.ok:
+        vg.error = "E682: Invalid search pattern or delimiter"
+    return vg^

@@ -16,11 +16,13 @@ are empty unless Mojo's LLDB plugin (lib/libMojoLLDB.so) is loaded before initia
 """
 from std.collections import List
 from std.ffi import external_call
-from json import Json, JsonWriter, json_parse_bytes, json_quote, J_OBJ, J_STR, J_BOOL
+from json import Json, JsonWriter, json_parse, json_parse_bytes, json_quote, J_OBJ, J_ARR, J_STR, J_BOOL
 from rpc import Framer, frame
 from proc import Proc
 from util import dirname, path_exists, shell_quote, bytes_to_str
+from breakpoints import DataBreakpoint, BV_UNKNOWN, BV_OK, BV_NOT
 from dbgview import FrameRow
+from cpuview import Instr, InstructionBreakpoint
 
 comptime DAP_INVALID = 0
 comptime DAP_RESPONSE = 1    # the answer to one of our requests
@@ -362,6 +364,15 @@ struct DebugSession(Copyable, Movable):
     var stop_ip: String             # the instruction the program is stopped at
     var asked: List[Int]            # requests made through ask() that wait for their answer
     var answers: List[DapMessage]   # their answers, for the IDE to take
+    var attached_live: Bool
+    var post_mortem: Bool
+    var core_file: String
+    var attach_target_pid: Int
+    var data_info_seq: Int
+    var data_info_name: String
+    var data_info_addr: String
+    var data_bp_seq: Int
+    var ibp_seq: Int
 
     def __init__(out self):
         self.conn = DapConn()
@@ -405,6 +416,15 @@ struct DebugSession(Copyable, Movable):
         self.stop_ip = ""
         self.asked = List[Int]()
         self.answers = List[DapMessage]()
+        self.attached_live = False
+        self.post_mortem = False
+        self.core_file = ""
+        self.attach_target_pid = 0
+        self.data_info_seq = -1
+        self.data_info_name = ""
+        self.data_info_addr = ""
+        self.data_bp_seq = -1
+        self.ibp_seq = -1
 
     def active(self) -> Bool:
         return self.state != DS_OFF
@@ -432,6 +452,15 @@ struct DebugSession(Copyable, Movable):
         self.launched = False
         self.asked.clear()
         self.answers.clear()
+        self.attached_live = False
+        self.post_mortem = False
+        self.core_file = ""
+        self.attach_target_pid = 0
+        self.data_info_seq = -1
+        self.data_info_name = ""
+        self.data_info_addr = ""
+        self.data_bp_seq = -1
+        self.ibp_seq = -1
         self.clear_stop()
 
     def clear_stop(mut self):
@@ -463,6 +492,81 @@ struct DebugSession(Copyable, Movable):
         self.state = DS_INIT
         _ = self.conn.request("initialize", initialize_arguments())
         return True
+
+    def attach_pid(mut self, adapter_cmd: String, pid: Int, stderr_path: String = "/dev/null") -> Bool:
+        """Start the adapter and attach to a running process `pid`."""
+        if self.state != DS_OFF or pid <= 0:
+            return False
+        self.reset()
+        self.attached_live = True
+        self.post_mortem = False
+        self.attach_target_pid = pid
+        self.pid = pid
+        if adapter_cmd.byte_length() == 0 or not self.conn.start(adapter_cmd, stderr_path):
+            self.attached_live = False
+            self.attach_target_pid = 0
+            self.pid = 0
+            self.error = "The debug adapter could not be started"
+            return False
+        self.state = DS_INIT
+        _ = self.conn.request("initialize", initialize_arguments())
+        return True
+
+    def attach_core(mut self, adapter_cmd: String, program: String, core_file: String, stderr_path: String = "/dev/null") -> Bool:
+        """Start the adapter and open a post-mortem `core_file` for `program`."""
+        if self.state != DS_OFF:
+            return False
+        self.reset()
+        self.post_mortem = True
+        self.attached_live = False
+        self.program = program
+        self.core_file = core_file
+        if adapter_cmd.byte_length() == 0 or not self.conn.start(adapter_cmd, stderr_path):
+            self.post_mortem = False
+            self.error = "The debug adapter could not be started"
+            return False
+        self.state = DS_INIT
+        _ = self.conn.request("initialize", initialize_arguments())
+        return True
+
+    def data_breakpoint_info(mut self, name: String, variables_reference: Int) -> Int:
+        var jw = JsonWriter()
+        jw.begin_obj()
+        jw.kv_str("name", name)
+        jw.kv_int("variablesReference", variables_reference)
+        jw.end_obj()
+        return self.ask("dataBreakpointInfo", jw.text())
+
+    def set_data_breakpoints(mut self, bps: List[DataBreakpoint]) -> Int:
+        var jw = JsonWriter()
+        jw.begin_obj()
+        jw.key("breakpoints")
+        jw.begin_arr()
+        for i in range(len(bps)):
+            jw.begin_obj()
+            jw.kv_str("dataId", bps[i].data_id)
+            jw.kv_str("accessType", bps[i].access_type)
+            if bps[i].condition.byte_length() > 0:
+                jw.kv_str("condition", bps[i].condition)
+            if bps[i].hit_count.byte_length() > 0:
+                jw.kv_str("hitCondition", bps[i].hit_count)
+            jw.end_obj()
+        jw.end_arr()
+        jw.end_obj()
+        return self.ask("setDataBreakpoints", jw.text())
+
+    def set_instruction_breakpoints(mut self, ibps: List[InstructionBreakpoint]) -> Int:
+        var jw = JsonWriter()
+        jw.begin_obj()
+        jw.key("breakpoints")
+        jw.begin_arr()
+        for i in range(len(ibps)):
+            jw.begin_obj()
+            jw.kv_str("instructionReference", ibps[i].address)
+            jw.end_obj()
+        jw.end_arr()
+        jw.end_obj()
+        return self.ask("setInstructionBreakpoints", jw.text())
 
     def can_send(self) -> Bool:
         """The adapter takes breakpoint changes now (the program runs or is stopped)."""
@@ -617,11 +721,21 @@ struct DebugSession(Copyable, Movable):
             self.take_capabilities(m.doc, m.body())
             if self.state == DS_INIT:
                 self.state = DS_LAUNCH
-                _ = self.conn.request("launch", launch_arguments(self.program, self.cwd, self.args, self.env))
+                if self.post_mortem:
+                    _ = self.conn.request("attach", "{\"program\":" + json_quote(self.program) + ",\"coreFile\":" + json_quote(self.core_file) + "}")
+                elif self.attached_live:
+                    _ = self.conn.request("attach", "{\"pid\":" + String(self.attach_target_pid) + "}")
+                else:
+                    _ = self.conn.request("launch", launch_arguments(self.program, self.cwd, self.args, self.env))
             return 0
         if m.name == "launch":
             if not m.success:
                 self.error = "The program could not be started: " + m.message
+                return DE_FAILED
+            return 0
+        if m.name == "attach":
+            if not m.success:
+                self.error = "Could not attach: " + m.message
                 return DE_FAILED
             return 0
         if m.name == "configurationDone":
@@ -698,7 +812,7 @@ struct DebugSession(Copyable, Movable):
         return out^
 
     def resume(mut self) -> Bool:
-        if self.state != DS_STOPPED:
+        if self.post_mortem or self.state != DS_STOPPED:
             return False
         self.step_kind = ""
         _ = self.conn.request("continue", "{\"threadId\":" + String(self.stop_thread) + "}")
@@ -708,7 +822,7 @@ struct DebugSession(Copyable, Movable):
         """One step of the stopped thread: "next" (over), "stepIn" or "stepOut" - a
         line, or with `instruction` one machine instruction. The program counts as
         running until the adapter says where it stopped."""
-        if self.state != DS_STOPPED:
+        if self.post_mortem or self.state != DS_STOPPED:
             return False
         var what = kind
         if instruction:
@@ -733,7 +847,7 @@ struct DebugSession(Copyable, Movable):
 
     def pause(mut self) -> Bool:
         """Stop the running program where it is (the adapter reports it as a stop)."""
-        if self.state != DS_RUNNING:
+        if self.post_mortem or self.state != DS_RUNNING:
             return False
         # the main thread's id is the process id (Linux); before the first stop that is
         # the only thread known
@@ -746,13 +860,16 @@ struct DebugSession(Copyable, Movable):
         return True
 
     def finish(mut self):
-        """End the session whatever its state: ask the adapter to end the program,
-        give it half a second, stop the adapter, and make sure the program is gone -
-        a debugger that was killed must not leave it running."""
+        """End the session whatever its state: ask the adapter to end the program (or
+        detach cleanly when attached to a live PID), give it half a second, stop the
+        adapter, and make sure a launched program is gone."""
         if self.state == DS_OFF:
             return
+        var was_attached_live = self.attached_live
+        var was_post_mortem = self.post_mortem
         if self.conn.alive() and not self.conn.ended():
-            var asked = self.conn.request("disconnect", "{\"terminateDebuggee\":true}")
+            var disc_args = "{\"terminateDebuggee\":false,\"restart\":false}" if was_attached_live else "{\"terminateDebuggee\":true}"
+            var asked = self.conn.request("disconnect", disc_args)
             for _ in range(50):
                 var msgs = self.conn.poll()
                 for k in range(len(msgs)):
@@ -763,8 +880,428 @@ struct DebugSession(Copyable, Movable):
                     break
                 _ = external_call["usleep", Int32](UInt32(10000))
         _ = self.conn.stop()
-        if self.pid > 0 and not self.exited:
+        if not was_attached_live and not was_post_mortem and self.pid > 0 and not self.exited:
             if Int(external_call["kill", Int32](Int32(self.pid), Int32(0))) == 0:
                 _ = external_call["kill", Int32](Int32(self.pid), Int32(9))
+        self.attached_live = False
+        self.post_mortem = False
+        self.core_file = ""
+        self.attach_target_pid = 0
         self.state = DS_OFF
         self.clear_stop()
+
+
+# ===========================================================================
+# Feature #14 DAP Helpers: Data Breakpoints / Hardware Watchpoints
+# ===========================================================================
+
+struct DataBreakpointInfoResult(Copyable, Movable):
+    var data_id: String
+    var access_types: List[String]
+    var ok: Bool
+
+    def __init__(out self, data_id: String, var access_types: List[String], ok: Bool):
+        self.data_id = data_id
+        self.access_types = access_types^
+        self.ok = ok
+
+
+def build_data_breakpoint_info_request(name: String, variables_reference: Int) -> String:
+    """Format DAP dataBreakpointInfo request."""
+    var jw = JsonWriter()
+    jw.begin_obj()
+    jw.kv_str("command", "dataBreakpointInfo")
+    jw.key("arguments")
+    jw.begin_obj()
+    jw.kv_str("name", name)
+    jw.kv_int("variablesReference", variables_reference)
+    jw.end_obj()
+    jw.end_obj()
+    return jw.text()
+
+
+def parse_data_breakpoint_info_response(resp_json: String) -> DataBreakpointInfoResult:
+    """Parse DAP dataBreakpointInfo response, extracting dataId and accessTypes."""
+    var doc = json_parse(resp_json)
+    var empty_types = List[String]()
+    if not doc.ok or len(doc.kinds) == 0:
+        return DataBreakpointInfoResult("", empty_types^, False)
+
+    var succ_idx = doc.get(0, "success")
+    var ok = doc.bool(succ_idx, False) if succ_idx >= 0 else False
+    if not ok:
+        return DataBreakpointInfoResult("", empty_types^, False)
+
+    var body_idx = doc.get(0, "body")
+    if body_idx < 0:
+        return DataBreakpointInfoResult("", empty_types^, False)
+
+    var data_id_idx = doc.get(body_idx, "dataId")
+    if data_id_idx < 0 or doc.is_null(data_id_idx):
+        return DataBreakpointInfoResult("", empty_types^, False)
+    var data_id = doc.str(data_id_idx, "")
+    if data_id.byte_length() == 0:
+        return DataBreakpointInfoResult("", empty_types^, False)
+
+    var types = List[String]()
+    var types_idx = doc.get(body_idx, "accessTypes")
+    if types_idx >= 0 and doc.kinds[types_idx] == J_ARR:
+        for ch in doc.children(types_idx):
+            types.append(doc.str(ch, ""))
+
+    return DataBreakpointInfoResult(data_id, types^, True)
+
+
+def build_set_data_breakpoints_request(bps: List[DataBreakpoint]) -> String:
+    """Format DAP setDataBreakpoints request."""
+    var jw = JsonWriter()
+    jw.begin_obj()
+    jw.kv_str("command", "setDataBreakpoints")
+    jw.key("arguments")
+    jw.begin_obj()
+    jw.key("breakpoints")
+    jw.begin_arr()
+    for i in range(len(bps)):
+        jw.begin_obj()
+        jw.kv_str("dataId", bps[i].data_id)
+        jw.kv_str("accessType", bps[i].access_type)
+        if bps[i].condition.byte_length() > 0:
+            jw.kv_str("condition", bps[i].condition)
+        if bps[i].hit_count.byte_length() > 0:
+            jw.kv_str("hitCondition", bps[i].hit_count)
+        jw.end_obj()
+    jw.end_arr()
+    jw.end_obj()
+    jw.end_obj()
+    return jw.text()
+
+
+def apply_set_data_breakpoints_response(resp_json: String, mut bps: List[DataBreakpoint]):
+    """Update DataBreakpoint list with verified status and IDs from adapter."""
+    var doc = json_parse(resp_json)
+    if not doc.ok:
+        return
+    var body_idx = doc.get(0, "body")
+    if body_idx < 0:
+        return
+    var arr_idx = doc.get(body_idx, "breakpoints")
+    if arr_idx < 0 or doc.kinds[arr_idx] != J_ARR:
+        return
+    var children = doc.children(arr_idx)
+    var n = min(len(bps), len(children))
+    for i in range(n):
+        var c = children[i]
+        var id_idx = doc.get(c, "id")
+        var ver_idx = doc.get(c, "verified")
+        var is_ver = doc.bool(ver_idx, False) if ver_idx >= 0 else False
+        bps[i].id = doc.int(id_idx, -1) if id_idx >= 0 else -1
+        bps[i].verified = BV_OK if is_ver else BV_NOT
+
+
+struct WatchpointSession(Copyable, Movable):
+    var state: Int
+    var stop_reason: String
+    var hit_breakpoint_id: Int
+    var last_toast: String
+    var active_bps: List[DataBreakpoint]
+
+    def __init__(out self):
+        self.state = DS_RUNNING
+        self.stop_reason = ""
+        self.hit_breakpoint_id = -1
+        self.last_toast = ""
+        self.active_bps = List[DataBreakpoint]()
+
+    def on_stopped(mut self, reason: String, description: String, hit_id: Int):
+        self.state = DS_STOPPED
+        self.stop_reason = reason
+        self.hit_breakpoint_id = hit_id
+
+    def forget_debugger(mut self):
+        for i in range(len(self.active_bps)):
+            self.active_bps[i].verified = BV_UNKNOWN
+            self.active_bps[i].id = -1
+
+
+# ===========================================================================
+# Feature #15 DAP Helpers: Post-Mortem Core Dumps & Live PID Attach
+# ===========================================================================
+
+struct CoreDumpEntry(Copyable, Movable):
+    var timestamp: String
+    var pid: Int
+    var uid: Int
+    var gid: Int
+    var signal_name: String
+    var exe: String
+    var core_path: String
+
+    def __init__(out self, timestamp: String, pid: Int, uid: Int, gid: Int, signal_name: String, exe: String, core_path: String):
+        self.timestamp = timestamp
+        self.pid = pid
+        self.uid = uid
+        self.gid = gid
+        self.signal_name = signal_name
+        self.exe = exe
+        self.core_path = core_path
+
+
+struct StackFrame(Copyable, Movable):
+    var id: Int
+    var name: String
+    var line: Int
+    var source_path: String
+
+    def __init__(out self, id: Int, name: String, line: Int, source_path: String):
+        self.id = id
+        self.name = name
+        self.line = line
+        self.source_path = source_path
+
+
+struct StepResult(Copyable, Movable):
+    var ok: Bool
+    var message: String
+
+    def __init__(out self, ok: Bool, message: String):
+        self.ok = ok
+        self.message = message
+
+
+struct CoreDumpSession(Copyable, Movable):
+    var state: Int
+    var is_post_mortem: Bool
+    var pid: Int
+    var program: String
+    var core_file: String
+    var stop_line: Int
+    var stop_reason: String
+    var stop_description: String
+    var error_msg: String
+    var frames: List[StackFrame]
+    var filters: List[String]
+
+    def __init__(out self):
+        self.state = DS_OFF
+        self.is_post_mortem = False
+        self.pid = 0
+        self.program = ""
+        self.core_file = ""
+        self.stop_line = 0
+        self.stop_reason = ""
+        self.stop_description = ""
+        self.error_msg = ""
+        self.frames = List[StackFrame]()
+        self.filters = List[String]()
+
+    def attach_core(mut self, program: String, core_file: String, success: Bool, err: String = ""):
+        self.program = program
+        self.core_file = core_file
+        if not success:
+            self.state = DS_OFF
+            self.error_msg = err
+            return
+        self.is_post_mortem = True
+        self.state = DS_STOPPED
+        self.stop_reason = "signal"
+
+    def attach_pid(mut self, pid: Int, success: Bool, err: String = ""):
+        self.pid = pid
+        if not success:
+            self.state = DS_OFF
+            self.error_msg = err
+            return
+        self.is_post_mortem = False
+        self.state = DS_STOPPED
+        self.stop_reason = "signal"
+
+    def can_step(self) -> Bool:
+        return not self.is_post_mortem and self.state == DS_STOPPED
+
+    def can_resume(self) -> Bool:
+        return not self.is_post_mortem and self.state == DS_STOPPED
+
+    def resume(mut self) -> StepResult:
+        if self.is_post_mortem:
+            return StepResult(False, "Cannot step in a core dump")
+        if self.state != DS_STOPPED:
+            return StepResult(False, "Program is not stopped")
+        self.state = DS_RUNNING
+        return StepResult(True, "")
+
+    def step(mut self, kind: String) -> StepResult:
+        if self.is_post_mortem:
+            return StepResult(False, "Cannot step in a core dump")
+        if self.state != DS_STOPPED:
+            return StepResult(False, "Program is not stopped")
+        self.state = DS_RUNNING
+        return StepResult(True, "")
+
+
+def build_core_dump_attach_request(program: String, core_file: String) -> String:
+    """Format DAP attach request for post-mortem core dump."""
+    var jw = JsonWriter()
+    jw.begin_obj()
+    jw.kv_str("command", "attach")
+    jw.key("arguments")
+    jw.begin_obj()
+    jw.kv_str("program", program)
+    jw.kv_str("coreFile", core_file)
+    jw.end_obj()
+    jw.end_obj()
+    return jw.text()
+
+
+def build_live_pid_attach_request(pid: Int) -> String:
+    """Format DAP attach request for live PID attach."""
+    var jw = JsonWriter()
+    jw.begin_obj()
+    jw.kv_str("command", "attach")
+    jw.key("arguments")
+    jw.begin_obj()
+    jw.kv_int("pid", pid)
+    jw.end_obj()
+    jw.end_obj()
+    return jw.text()
+
+
+def build_live_pid_detach_request() -> String:
+    """Format DAP disconnect request with terminateDebuggee=false."""
+    var jw = JsonWriter()
+    jw.begin_obj()
+    jw.kv_str("command", "disconnect")
+    jw.key("arguments")
+    jw.begin_obj()
+    jw.kv_bool("terminateDebuggee", False)
+    jw.kv_bool("restart", False)
+    jw.end_obj()
+    jw.end_obj()
+    return jw.text()
+
+
+def build_exception_filters_request(filters: List[String]) -> String:
+    """Format DAP setExceptionBreakpoints request with signal and exception filters."""
+    var jw = JsonWriter()
+    jw.begin_obj()
+    jw.kv_str("command", "setExceptionBreakpoints")
+    jw.key("arguments")
+    jw.begin_obj()
+    jw.key("filters")
+    jw.begin_arr()
+    for i in range(len(filters)):
+        jw.str(filters[i])
+    jw.end_arr()
+    jw.end_obj()
+    jw.end_obj()
+    return jw.text()
+
+
+def parse_coredumpctl_line(line: String) -> CoreDumpEntry:
+    """Parse one line of coredumpctl list --no-legend tabular output."""
+    var parts = List[String]()
+    for s in line.strip().split(" "):
+        var p = String(s.strip())
+        if p.byte_length() > 0:
+            parts.append(p)
+
+    var sig_idx = -1
+    for i in range(len(parts)):
+        if parts[i].startswith("SIG"):
+            sig_idx = i
+            break
+
+    if sig_idx >= 4 and sig_idx + 2 < len(parts):
+        var pid = 0
+        var uid = 0
+        var gid = 0
+        try:
+            pid = atol(parts[sig_idx - 3])
+            uid = atol(parts[sig_idx - 2])
+            gid = atol(parts[sig_idx - 1])
+        except:
+            pass
+
+        var timestamp = ""
+        for t in range(sig_idx - 3):
+            if timestamp.byte_length() > 0:
+                timestamp += " "
+            timestamp += parts[t]
+
+        var sig = parts[sig_idx]
+        var exe = parts[sig_idx + 1]
+        var core_path = parts[sig_idx + 2]
+        return CoreDumpEntry(timestamp, pid, uid, gid, sig, exe, core_path)
+
+    return CoreDumpEntry("", 0, 0, 0, "", "", "")
+
+
+def extract_faulting_address_from_description(desc: String) -> String:
+    """Extract address from e.g. 'signal SIGSEGV: address access violation (0x0)'."""
+    var open_paren = desc.find("(")
+    var close_paren = desc.find(")")
+    if open_paren >= 0 and close_paren > open_paren:
+        return String(desc[byte=open_paren + 1:close_paren])
+    return ""
+
+
+# ===========================================================================
+# Feature #16 DAP Helpers: Disassembly & Instruction Breakpoints
+# ===========================================================================
+
+def build_disassemble_request(memory_ref: String, instruction_offset: Int = -24, instruction_count: Int = 96) -> String:
+    """Format DAP disassemble request."""
+    var jw = JsonWriter()
+    jw.begin_obj()
+    jw.kv_str("command", "disassemble")
+    jw.key("arguments")
+    jw.begin_obj()
+    jw.kv_str("memoryReference", memory_ref)
+    jw.kv_int("instructionOffset", instruction_offset)
+    jw.kv_int("instructionCount", instruction_count)
+    jw.kv_bool("resolveSymbols", True)
+    jw.end_obj()
+    jw.end_obj()
+    return jw.text()
+
+
+def parse_disassemble_response(resp_json: String) -> List[Instr]:
+    """Parse DAP disassemble response into a list of Instr."""
+    var out = List[Instr]()
+    var doc = json_parse(resp_json)
+    if not doc.ok:
+        return out^
+    var body = doc.get(0, "body")
+    if body < 0:
+        return out^
+    var arr = doc.get(body, "instructions")
+    if arr < 0 or doc.kinds[arr] != J_ARR:
+        return out^
+    for c in doc.children(arr):
+        var addr = doc.str(doc.get(c, "address"), "")
+        var text = doc.str(doc.get(c, "instruction"), "")
+        var line = doc.int(doc.get(c, "line"), 0)
+        var path = ""
+        var loc = doc.get(c, "location")
+        if loc >= 0:
+            path = doc.str(doc.get(loc, "path"), "")
+        out.append(Instr(addr, text, path, line))
+    return out^
+
+
+def build_set_instruction_breakpoints_request(ibps: List[InstructionBreakpoint]) -> String:
+    """Format DAP setInstructionBreakpoints request."""
+    var jw = JsonWriter()
+    jw.begin_obj()
+    jw.kv_str("command", "setInstructionBreakpoints")
+    jw.key("arguments")
+    jw.begin_obj()
+    jw.key("breakpoints")
+    jw.begin_arr()
+    for i in range(len(ibps)):
+        jw.begin_obj()
+        jw.kv_str("instructionReference", ibps[i].address)
+        jw.end_obj()
+    jw.end_arr()
+    jw.end_obj()
+    jw.end_obj()
+    return jw.text()

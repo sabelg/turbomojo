@@ -6,6 +6,7 @@ line. The question runs in the background (it can take a second on a busy server
 
 This module has the command and reads its output; the IDE runs it (app_gpu.mojo)."""
 from std.collections import List
+from util import bytes_to_str, shell_quote
 
 # one shell command for every machine: the first line says which tool answered
 comptime GPU_QUERY = "if command -v nvidia-smi >/dev/null 2>&1; then echo nvidia; nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null; elif command -v rocm-smi >/dev/null 2>&1; then echo rocm; rocm-smi --showproductname --csv 2>/dev/null; else echo none; fi"
@@ -404,4 +405,269 @@ def parse_kernel_profile(output: String) -> List[String]:
             out.append("  " + bar + meta + "  " + st.name)
     for note in sanitizer_notes:
         out.append("  [sanitizer] " + note)
+    return out^
+
+
+# ---------------------------------------------------------------------------
+# Single-Kernel GPU Roofline Deep Dive (F09)
+# ---------------------------------------------------------------------------
+
+@fieldwise_init
+struct GpuStallReason(Copyable, Movable):
+    var reason: String
+    var pct: Float64
+
+
+@fieldwise_init
+struct GpuRooflineData(Copyable, Movable):
+    var kernel_name: String
+    var sm_compute_pct: Float64
+    var dram_bw_pct: Float64
+    var occupancy_pct: Float64
+    var registers_per_thread: Int
+    var stalls: List[GpuStallReason]
+    var bound_classification: String
+
+    def __init__(out self, kernel_name: String):
+        self.kernel_name = kernel_name
+        self.sm_compute_pct = 0.0
+        self.dram_bw_pct = -1.0  # -1.0 denotes N/A / not available
+        self.occupancy_pct = 0.0
+        self.registers_per_thread = 0
+        self.stalls = List[GpuStallReason]()
+        self.bound_classification = "Latency-Bound"
+
+
+def classify_kernel_bound(sm_pct: Float64, dram_pct: Float64, occ_pct: Float64) -> String:
+    """Classify kernel into Compute-Bound, Memory-Bound, or Latency-Bound."""
+    _ = occ_pct
+    if dram_pct < 0.0:
+        return "Compute-Bound" if sm_pct > 30.0 else "Latency-Bound"
+    if sm_pct < 30.0 and dram_pct < 30.0:
+        return "Latency-Bound"
+    if sm_pct >= dram_pct:
+        return "Compute-Bound"
+    return "Memory-Bound"
+
+
+def parse_csv_cells(line: String) -> List[String]:
+    """Parse a single CSV row into a list of unquoted cell strings."""
+    var out = List[String]()
+    var cur = List[UInt8]()
+    var inside_quotes = False
+    var b = line.as_bytes()
+    for i in range(len(b)):
+        var c = b[i]
+        if c == 34:  # quote "
+            inside_quotes = not inside_quotes
+        elif c == 44 and not inside_quotes:  # comma ,
+            out.append(String(bytes_to_str(cur).strip()))
+            cur = List[UInt8]()
+        else:
+            cur.append(c)
+    out.append(String(bytes_to_str(cur).strip()))
+    return out^
+
+
+def parse_float_val(tok: String) -> Float64:
+    """Parse float from string, handling N/A as -1.0."""
+    var s = String(tok.strip())
+    if s == "N/A" or s == "n/a" or s.byte_length() == 0:
+        return -1.0
+    var dot = s.find(".")
+    var neg = s.startswith("-")
+    var start_idx = 1 if neg else 0
+    var int_part: Float64 = 0.0
+    var end_int = dot if dot >= 0 else s.byte_length()
+    var b = s.as_bytes()
+    for i in range(start_idx, end_int):
+        if b[i] >= 48 and b[i] <= 57:
+            int_part = int_part * 10.0 + Float64(Int(b[i]) - 48)
+    var frac_part: Float64 = 0.0
+    if dot >= 0:
+        var div: Float64 = 10.0
+        for i in range(dot + 1, s.byte_length()):
+            if b[i] >= 48 and b[i] <= 57:
+                frac_part += Float64(Int(b[i]) - 48) / div
+                div *= 10.0
+    var res = int_part + frac_part
+    return -res if neg else res
+
+
+def parse_int_val(tok: String) -> Int:
+    var s = String(tok.strip())
+    var val = 0
+    var b = s.as_bytes()
+    for i in range(len(b)):
+        if b[i] >= 48 and b[i] <= 57:
+            val = val * 10 + Int(b[i]) - 48
+    return val
+
+
+def format_stall_reason(metric_name: String) -> String:
+    """Convert stall metric suffix to readable title."""
+    if metric_name.find("long_scoreboard") >= 0:
+        return "Long Scoreboard"
+    elif metric_name.find("wait") >= 0:
+        return "Wait"
+    elif metric_name.find("barrier") >= 0:
+        return "Barrier"
+    elif metric_name.find("math_pipe_throttle") >= 0:
+        return "Math Pipe Throttle"
+    elif metric_name.find("short_scoreboard") >= 0:
+        return "Short Scoreboard"
+    return metric_name
+
+
+def parse_rocprofv3_csv_output(csv_text: String) -> List[GpuRooflineData]:
+    """Parse AMD rocprofv3 CSV format: KernelName, VALUUtilization, VRAMBandwidth, WavefrontOccupancy, VGPRs."""
+    var out = List[GpuRooflineData]()
+    var is_first = True
+    for line_slice in csv_text.split("\n"):
+        var raw_line = String(line_slice)
+        var t = String(raw_line.strip())
+        if t.byte_length() == 0:
+            continue
+        var cells = parse_csv_cells(t)
+        if is_first:
+            is_first = False
+            continue
+        if len(cells) >= 5:
+            var name = cells[0]
+            var valu = parse_float_val(cells[1])
+            var vram = parse_float_val(cells[2])
+            var occ = parse_float_val(cells[3])
+            var vgpr = parse_int_val(cells[4])
+            var item = GpuRooflineData(name)
+            item.sm_compute_pct = valu
+            item.dram_bw_pct = vram
+            item.occupancy_pct = occ
+            item.registers_per_thread = vgpr
+            item.bound_classification = classify_kernel_bound(valu, vram, occ)
+            out.append(item^)
+    return out^
+
+
+def parse_ncu_csv_output(csv_text: String) -> List[GpuRooflineData]:
+    """Parse Nsight Compute (ncu) or AMD rocprofv3 CSV metrics."""
+    if csv_text.find("VALUUtilization") >= 0 or csv_text.find("VRAMBandwidth") >= 0:
+        return parse_rocprofv3_csv_output(csv_text)
+
+    var out = List[GpuRooflineData]()
+    var kernel_names = List[String]()
+
+    for line_slice in csv_text.split("\n"):
+        var raw_line = String(line_slice)
+        var t = String(raw_line.strip())
+        if t.byte_length() == 0 or t.startswith("ID") or t.startswith("\"ID\""):
+            continue
+        var cells = parse_csv_cells(t)
+        if len(cells) < 4:
+            continue
+        var kname = cells[1]
+        var metric_name = cells[2]
+        var metric_val = cells[3]
+
+        var kidx = -1
+        for idx in range(len(kernel_names)):
+            if kernel_names[idx] == kname:
+                kidx = idx
+                break
+        if kidx < 0:
+            kernel_names.append(kname)
+            out.append(GpuRooflineData(kname))
+            kidx = len(out) - 1
+
+        if metric_name.find("sm__throughput") >= 0:
+            out[kidx].sm_compute_pct = parse_float_val(metric_val)
+        elif metric_name.find("gpu__dram_throughput") >= 0:
+            out[kidx].dram_bw_pct = parse_float_val(metric_val)
+        elif metric_name.find("sm__warps_active") >= 0:
+            out[kidx].occupancy_pct = parse_float_val(metric_val)
+        elif metric_name.find("launch__registers_per_thread") >= 0:
+            out[kidx].registers_per_thread = parse_int_val(metric_val)
+        elif metric_name.find("smsp__warp_issue_stalled_") >= 0:
+            var pct = parse_float_val(metric_val)
+            var reason = format_stall_reason(metric_name)
+            out[kidx].stalls.append(GpuStallReason(reason, pct))
+
+    for idx in range(len(out)):
+        out[idx].bound_classification = classify_kernel_bound(
+            out[idx].sm_compute_pct, out[idx].dram_bw_pct, out[idx].occupancy_pct
+        )
+
+    return out^
+
+
+def parse_ncu_source_stall_lines(source_csv: String) -> List[Tuple[Int, String, Float64]]:
+    """Parse ncu --page source CSV output attributing stalls to source lines."""
+    var out = List[Tuple[Int, String, Float64]]()
+    for line_slice in source_csv.split("\n"):
+        var raw_line = String(line_slice)
+        var t = String(raw_line.strip())
+        if t.byte_length() == 0 or t.find("Source Line") >= 0 or t.find("Line") == 0:
+            continue
+        var cells = parse_csv_cells(t)
+        if len(cells) >= 3:
+            var line_no = parse_int_val(cells[0])
+            var reason = cells[1]
+            var count = parse_float_val(cells[2])
+            out.append((line_no, reason, count))
+    return out^
+
+
+def filter_valid_source_stall_lines(stalls: List[Tuple[Int, String, Float64]], max_lines: Int) -> List[Tuple[Int, String, Float64]]:
+    """Filter out line numbers outside the active buffer bounds."""
+    var out = List[Tuple[Int, String, Float64]]()
+    for s in stalls:
+        var l = s[0]
+        if l > 0 and l <= max_lines:
+            out.append(s)
+    return out^
+
+
+def check_profiler_permissions(stderr: String) -> String:
+    """Inspect profiler output for missing GPU hardware counter permissions."""
+    if stderr.find("ERR_NVGPUCTRPERM") >= 0 or stderr.find("Permission denied to access GPU performance counters") >= 0:
+        return "GPU profiling permission denied: set options nvidia NVreg_RestrictProfilingToAdminUsers=0 in /etc/modprobe.d/"
+    return ""
+
+
+def build_roofline_cli_command(tool: String, mojo_bin: String, src_path: String, out_exe: String, out_csv: String) -> String:
+    """Build the deep-dive profiler CLI command."""
+    var build_step = mojo_bin + " build -O3 --debug-level=line-tables " + shell_quote(src_path) + " -o " + shell_quote(out_exe)
+    if tool == "rocprofv3":
+        var run_step = "rocprofv3 --kernel-trace --stats " + shell_quote(out_exe) + " > " + shell_quote(out_csv)
+        return build_step + " && " + run_step
+    var ncu_step = "ncu --csv --set basic --page raw " + shell_quote(out_exe) + " > " + shell_quote(out_csv)
+    return build_step + " && " + ncu_step
+
+
+def _roofline_1dp(val: Float64) -> String:
+    var neg = val < 0.0
+    var v = -val if neg else val
+    var i_part = Int(v)
+    var frac = Int((v - Float64(i_part)) * 10.0 + 0.5)
+    if frac >= 10:
+        i_part += 1
+        frac = 0
+    return ("-" if neg else "") + String(i_part) + "." + String(frac)
+
+
+def format_roofline_report(data: GpuRooflineData) -> List[String]:
+    """Format a human-readable GPU kernel roofline summary block."""
+    var out = List[String]()
+    out.append("Kernel Roofline: " + data.kernel_name + "  [" + data.bound_classification + "]")
+    out.append("  SM Compute:  " + gpu_bar(Int(data.sm_compute_pct + 0.5), 16) + " " + _roofline_1dp(data.sm_compute_pct) + "%")
+    if data.dram_bw_pct >= 0.0:
+        out.append("  DRAM BW:     " + gpu_bar(Int(data.dram_bw_pct + 0.5), 16) + " " + _roofline_1dp(data.dram_bw_pct) + "%")
+    else:
+        out.append("  DRAM BW:     [n/a] N/A (unified memory)")
+    out.append("  Occupancy:   " + gpu_bar(Int(data.occupancy_pct + 0.5), 16) + " " + _roofline_1dp(data.occupancy_pct) + "%")
+    if data.registers_per_thread > 0:
+        out.append("  Registers:   " + String(data.registers_per_thread) + " regs/thread")
+    if len(data.stalls) > 0:
+        out.append("  Top Warp Stalls:")
+        for st in data.stalls:
+            out.append("    - " + st.reason + ": " + _roofline_1dp(st.pct) + "%")
     return out^

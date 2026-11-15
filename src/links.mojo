@@ -123,3 +123,62 @@ def link_uri(format: String, host: String, abs_path: String, line: Int, col: Int
         f.replace("{host}", host).replace("{path}", percent_encode_path(abs_path))
         .replace("{line}", String(max(1, line))).replace("{column}", String(max(1, col)))
     )
+
+
+def parse_ssh_host(conn: String) -> String:
+    """Extracts remote host/server from SSH_CONNECTION ('client_ip c_port server_ip s_port')
+    with resilience against irregular whitespace, or falls back to system hostname."""
+    if conn.byte_length() == 0:
+        return host_name()
+    var parts = List[String]()
+    var cur = String("")
+    for i in range(conn.byte_length()):
+        var c = conn[byte=i]
+        if c == " " or c == "\t":
+            if cur.byte_length() > 0:
+                parts.append(cur)
+                cur = ""
+        else:
+            cur += String(c)
+    if cur.byte_length() > 0:
+        parts.append(cur)
+    if len(parts) >= 3:
+        return parts[2]
+    return host_name()
+
+
+def format_ssh_pill(host: String) -> String:
+    """Formats [ssh:<host>] status pill for the IDE status line."""
+    if host.byte_length() == 0:
+        return ""
+    return "[ssh:" + host + "]"
+
+
+def parse_port_forward(line: String, host: String, is_ssh: Bool) -> String:
+    """Scans terminal output line for localhost binds (127.0.0.1:, localhost:, [::1]:)
+    and constructs 'ssh -L <port>:127.0.0.1:<port> <host>' command when running over SSH."""
+    if not is_ssh or host.byte_length() == 0:
+        return ""
+    var patterns = List[String]()
+    patterns.append("127.0.0.1:")
+    patterns.append("localhost:")
+    patterns.append("[::1]:")
+
+    for k in range(len(patterns)):
+        var pat = patterns[k]
+        var idx = line.find(pat)
+        if idx >= 0:
+            var start = idx + pat.byte_length()
+            var port_str = String("")
+            var i = start
+            while i < line.byte_length():
+                var c = line[byte=i]
+                if c >= "0" and c <= "9":
+                    port_str += String(c)
+                    i += 1
+                else:
+                    break
+            if port_str.byte_length() > 0:
+                return "ssh -L " + port_str + ":127.0.0.1:" + port_str + " " + host
+    return ""
+

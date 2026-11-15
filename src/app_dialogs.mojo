@@ -53,6 +53,7 @@ from app_newproject import *
 from app_setup import *
 from app_presets import *
 from app_pkginstall import *
+from app_plugins import *
 from setupcheck import setup_items, setup_needs_attention
 
 
@@ -503,6 +504,38 @@ __extension App:
         elif kind == D_MAX_SERVE and b == 0:
             var s = self.dlg.selected_item()
             self.max_serve_run(self.dlg.item_data[s] if s >= 0 else 0, self.dlg.field_text(0))
+        elif kind == D_UNDO_TREE and b == 0:
+            var ai = self.active_editor()
+            var s = self.dlg.selected_item()
+            if ai >= 0 and s >= 0 and s < len(self.dlg.item_data):
+                var res = self.wins[ai].buf.undo_jump_to(self.dlg.item_data[s])
+                if res[0]:
+                    self.wins[ai].goto(res[1].r, res[1].c)
+                    self.sync_shared_buffers(ai)
+        elif kind == D_GIT_STASH:
+            var s = self.dlg.selected_item()
+            self.git_stash_button(b, self.dlg.item_data[s] if s >= 0 else -1, self.dlg.field_text(0))
+        elif kind == D_SWITCH_PROJECT:
+            var s = self.dlg.selected_item()
+            self.switch_project_button(b, self.dlg.item_data[s] if s >= 0 else -1, self.dlg.field_text(0))
+        elif kind == D_GIT_WORKTREE:
+            var s = self.dlg.selected_item()
+            self.git_worktree_button(b, self.dlg.item_data[s] if s >= 0 else -1, self.dlg.field_text(0))
+        elif kind == D_PLUGINS:
+            var s = self.dlg.selected_item()
+            self.plugins_dialog_button(b, self.dlg.item_data[s] if s >= 0 else -1)
+            if b == 0 or b == 1:
+                self.plugins_manager_open()
+        elif kind == D_DEBUG_ATTACH and b == 0:
+            var t = String(self.dlg.field_text(0).strip())
+            var s = self.dlg.selected_item()
+            if t.byte_length() == 0 and s >= 0 and s < len(self.dlg.item_data):
+                var idx = self.dlg.item_data[s]
+                if idx >= 0 and idx < len(self.dbg_core_entries):
+                    t = self.dbg_core_entries[idx]
+            self.debug_attach_start(t)
+        elif kind == D_HIERARCHY and b == 0:
+            self.hierarchy_go(self.dlg.selected_item())
 
     # ------------------------------------------------------------ find / replace
     def current_search(self) -> Search:

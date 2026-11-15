@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -68,7 +68,7 @@ from app_vim import *
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_RUN_CELL or cmd == CM_RUN_CELL_NEXT or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_BENCH_RUN or cmd == CM_GPU_ROOFLINE or cmd == CM_DEBUG_ATTACH_PID or cmd == CM_DEBUG_CORE or cmd == CM_TERM_NEW or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_RUN_CELL or cmd == CM_RUN_CELL_NEXT or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
@@ -243,6 +243,10 @@ __extension App:
             self.persist_option("editor", "inlay_hints", toml_bool(self.hints_on))
         elif cmd == CM_AUTOINDENT:
             self.persist_option("editor", "auto_indent", toml_bool(self.auto_indent))
+        elif cmd == CM_RAINBOW_BRACKETS:
+            self.persist_option("editor", "rainbow_brackets", toml_bool(self.rainbow_brackets))
+        elif cmd == CM_TEST_WATCH:
+            self.persist_option("tools", "test_watch", toml_bool(self.test_watch_on))
         elif cmd >= CM_THEME0 and cmd < CM_THEME0 + THEME_COUNT:
             self.persist_option("ui", "theme", toml_quote(self.theme_id))
         elif cmd >= CM_KEYMAP0 and cmd < CM_KEYMAP0 + KEYMAP_COUNT:
@@ -294,12 +298,22 @@ __extension App:
             self.close_window(self.top(), NEXT_CLOSE)
         elif cmd == CM_CLOSEALL:
             var i = len(self.wins) - 1
+            var kept_mod = False
+            var kept_pin = False
             while i >= 0:
-                if not (self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified):
+                if self.wins[i].pinned:
+                    kept_pin = True
+                elif self.wins[i].kind == WK_EDITOR and self.wins[i].buf.modified:
+                    kept_mod = True
+                else:
                     self.remove_window(i)
                 i -= 1
-            if len(self.wins) > 0:
+            if kept_mod and kept_pin:
+                self.say("Modified and pinned windows were kept open")
+            elif kept_mod:
                 self.say("Modified windows were kept open")
+            elif kept_pin:
+                self.say("Pinned windows were kept open")
         elif cmd == CM_SHELL:
             self.term.leave()
             _ = run_system("printf '\\nType exit to return to TurboMojo...\\n\\n'; ${SHELL:-/bin/sh}")
@@ -309,12 +323,21 @@ __extension App:
             self.quit()
         elif cmd == CM_UNDO:
             if ai >= 0:
-                self.wins[ai].undo()
+                if self.wins[ai].read_only:
+                    self.say("Buffer is read-only")
+                else:
+                    self.wins[ai].undo()
         elif cmd == CM_REDO:
             if ai >= 0:
-                self.wins[ai].redo()
+                if self.wins[ai].read_only:
+                    self.say("Buffer is read-only")
+                else:
+                    self.wins[ai].redo()
         elif cmd == CM_CUT or cmd == CM_COPY:
             var src = ai if ai >= 0 else self.top()
+            if cmd == CM_CUT and ai >= 0 and self.wins[ai].read_only:
+                self.say("Buffer is read-only")
+                return
             if src >= 0 and self.wins[src].kind == WK_EDITOR and self.wins[src].has_multi():
                 var all = self.wins[src].selections_text()
                 if len(all) > 0:
@@ -334,11 +357,17 @@ __extension App:
                 self.clipboard = self.wins[src].buf.line(self.wins[src].cr)
                 self.osc52(self.clipboard.copy())
         elif cmd == CM_PASTE:
-            if ai >= 0 and len(self.clipboard) > 0:
-                self.wins[ai].paste_multi(self.clipboard)
+            if ai >= 0:
+                if self.wins[ai].read_only:
+                    self.say("Buffer is read-only")
+                elif len(self.clipboard) > 0:
+                    self.wins[ai].paste_multi(self.clipboard)
         elif cmd == CM_CLEAR:
             if ai >= 0:
-                self.wins[ai].multi(OP_DELSEL, 0, False, False, List[Int]())
+                if self.wins[ai].read_only:
+                    self.say("Buffer is read-only")
+                else:
+                    self.wins[ai].multi(OP_DELSEL, 0, False, False, List[Int]())
         elif cmd >= CM_KEYMAP0 and cmd < CM_KEYMAP0 + KEYMAP_COUNT:
             self.keymap = cmd - CM_KEYMAP0
             self.vim_reset()
@@ -823,6 +852,84 @@ __extension App:
             d.buttons.append("~O~K")
             d.focus = d.button_focus_index(0)
             self.show(d^)
+        elif cmd == CM_BENCH_RUN:
+            self.bench_run()
+        elif cmd == CM_BENCH_SAVE:
+            self.bench_save_baseline()
+        elif cmd == CM_GPU_ROOFLINE:
+            self.gpu_roofline_run()
+        elif cmd == CM_TEST_WATCH:
+            self.tests_toggle_watch()
+        elif cmd == CM_CELL_RESTART:
+            for k in range(len(self.wins)):
+                self.wins[k].cell_badge_rows.clear()
+                self.wins[k].cell_badges.clear()
+            self.say("Cell kernel state reset")
+        elif cmd == CM_DEBUG_ATTACH_PID:
+            self.debug_attach_pid_open()
+        elif cmd == CM_DEBUG_CORE:
+            self.debug_core_open()
+        elif cmd == CM_CALL_HIERARCHY:
+            self.hierarchy_open(False)
+        elif cmd == CM_TYPE_HIERARCHY:
+            self.hierarchy_open(True)
+        elif cmd == CM_PEEK_DEF:
+            self.peek_definition_open()
+        elif cmd == CM_GIT_PREVIEW_HUNK:
+            self.peek_hunk_open()
+        elif cmd == CM_UNDO_TREE:
+            if ai >= 0:
+                var lines = self.wins[ai].buf.undo_tree_lines()
+                var data = List[Int]()
+                var sel_idx = 0
+                for k in range(len(lines)):
+                    if k < len(self.wins[ai].buf.core[].utree_nodes):
+                        var nid = self.wins[ai].buf.core[].utree_nodes[k].id
+                        data.append(nid)
+                        if nid == self.wins[ai].buf.core[].utree_active:
+                            sel_idx = k
+                    else:
+                        data.append(k)
+                var d = Dialog(D_UNDO_TREE, "Undo Tree", min(72, self.scr.w - 4), min(18, max(9, len(lines) + 6)))
+                d.set_items(lines^, data^)
+                d.list_sel = sel_idx
+                d.buttons.append("~J~ump")
+                d.buttons.append("~C~ancel")
+                self.show(d^)
+        elif cmd == CM_HEX_VIEW:
+            self.hex_view_toggle()
+        elif cmd == CM_RAINBOW_BRACKETS:
+            self.rainbow_brackets = not self.rainbow_brackets
+            for k in range(len(self.wins)):
+                if self.wins[k].kind == WK_EDITOR:
+                    self.wins[k].rainbow_brackets = self.rainbow_brackets
+            self.say("Rainbow brackets " + ("on" if self.rainbow_brackets else "off"))
+        elif cmd == CM_PIN_TAB:
+            self.toggle_pin_tab()
+        elif cmd == CM_MD_PREVIEW:
+            self.toggle_md_preview()
+        elif cmd == CM_GIT_LOG:
+            self.git_log_open()
+        elif cmd == CM_GIT_PUSH:
+            self.git_remote_sync("push")
+        elif cmd == CM_GIT_PULL:
+            self.git_remote_sync("pull")
+        elif cmd == CM_GIT_FETCH:
+            self.git_remote_sync("fetch")
+        elif cmd == CM_GIT_STASH_LIST:
+            self.git_stash_list_open()
+        elif cmd == CM_SWITCH_PROJECT:
+            self.switch_project_open()
+        elif cmd == CM_GIT_WORKTREE:
+            self.git_worktree_open()
+        elif cmd == CM_PLUGINS:
+            self.plugins_manager_open()
+        elif cmd == CM_TERM_NEW:
+            self.term_new_tab()
+        elif cmd == CM_TERM_NEXT:
+            self.term_next_tab()
+        elif cmd == CM_TERM_PREV:
+            self.term_prev_tab()
         elif cmd == CM_REFRESH:
             self.scr.force = True
 

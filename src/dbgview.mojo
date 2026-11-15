@@ -15,6 +15,7 @@ bytes to write (`writeMemory`, base64).
 """
 from std.collections import List
 from std.memory import bitcast
+from breakpoints import DataBreakpoint
 from util import basename
 
 comptime VK_HEAD = 0         # a title line
@@ -171,7 +172,7 @@ def value_width(type: String) -> Int:
         return 8
     if k == "si32" or k == "ui32" or k == "i32" or k == "f32":
         return 4
-    if k == "si16" or k == "ui16" or k == "i16" or k == "f16":
+    if k == "si16" or k == "ui16" or k == "i16" or k == "f16" or k == "bf16":
         return 2
     if k == "si8" or k == "ui8" or k == "i8" or k == "bool" or k == "i1":
         return 1
@@ -184,8 +185,22 @@ def encode_value(type: String, text: String) -> Tuple[List[UInt8], String]:
     var k = scalar_kind(type)
     var n = value_width(type)
     var t = String(text.strip())
-    if n == 0 or k == "f16" or k == "bf16":
+    if n == 0:
         return (out^, "values of type " + nice_type(type) + " cannot be set here")
+    if k == "f16" or k == "bf16":
+        var fh: Float64
+        try:
+            fh = Float64(t)
+        except:
+            return (out^, "not a number: " + t)
+        var bits16: UInt16
+        if k == "f16":
+            bits16 = bitcast[DType.uint16](Float16(fh))
+        else:
+            bits16 = bitcast[DType.uint16](BFloat16(fh))
+        out.append(UInt8(bits16 & 0xFF))
+        out.append(UInt8((bits16 >> 8) & 0xFF))
+        return (out^, "")
     if k == "bool" or k == "i1":
         var low = t.lower()
         if low == "true" or t == "1":
@@ -246,6 +261,45 @@ def base64(data: List[UInt8]) -> String:
         out.append(abc[b2 & 63] if i + 2 < len(data) else 61)
         i += 3
     return String(StringSlice(unsafe_from_utf8=Span(out)))
+
+
+def encode_tensor_value(dtype_str: String, text: String) -> Tuple[List[UInt8], String]:
+    """Encode scalar f16, bf16, f32, or f64 value to little-endian bytes."""
+    var out = List[UInt8]()
+    var t = String(text.strip())
+    var dt = dtype_str.lower()
+
+    if dt == "f16" or dt.find("scalar<f16>") >= 0 or dt == "float16":
+        return encode_value("f16", t)
+    if dt == "bf16" or dt.find("scalar<bf16>") >= 0 or dt == "bfloat16":
+        return encode_value("bf16", t)
+    if dt == "f32" or dt.find("scalar<f32>") >= 0 or dt == "float32":
+        return encode_value("f32", t)
+    if dt == "f64" or dt.find("scalar<f64>") >= 0 or dt == "float64":
+        return encode_value("f64", t)
+    return (out^, "unsupported tensor dtype: " + dtype_str)
+
+
+def _dbg_hex16(v: Int) -> String:
+    var abc = "0123456789ABCDEF"
+    var out = String("")
+    var u = UInt64(v)
+    var n = 0
+    while u > 0 or n < 16:
+        var d = Int(u & 15)
+        out = String(abc[byte=d:d + 1]) + out
+        u = u >> 4
+        n += 1
+        if n >= 16:
+            break
+    return "0x" + out
+
+
+def build_dap_write_memory_request(address: Int, raw_bytes: List[UInt8]) -> String:
+    """Build a DAP writeMemory request payload with 16-hex address and base64 data."""
+    var addr_str = _dbg_hex16(address)
+    var b64_str = base64(raw_bytes)
+    return '{"command":"writeMemory","arguments":{"memoryReference":"' + addr_str + '","data":"' + b64_str + '"}}'
 
 
 def address_in(text: String) -> String:
@@ -326,6 +380,14 @@ struct VarNode(Copyable, Movable):
         return s
 
 
+def format_varnode_with_watchpoint(node: VarNode, bp: DataBreakpoint) -> String:
+    """Format variable display row with hardware watchpoint badge."""
+    var base = node.line()
+    if bp.data_id.byte_length() == 0 or bp.access_type.byte_length() == 0:
+        return base
+    return base + "   [" + bp.badge() + " W:" + bp.access_type + "]"
+
+
 struct DebugView(Copyable, Movable):
     var frames: List[FrameRow]
     var sel: Int                    # the frame whose variables are shown
@@ -336,6 +398,8 @@ struct DebugView(Copyable, Movable):
     var rows_index: List[Int]       # ... and which frame or node
     var watches: List[String]       # watched expressions
     var watch_shown: List[String]   # how each is shown now
+    var data_bps: List[DataBreakpoint]
+    var scope_handle: Int
 
     def __init__(out self):
         self.frames = List[FrameRow]()
@@ -347,12 +411,28 @@ struct DebugView(Copyable, Movable):
         self.rows_index = List[Int]()
         self.watches = List[String]()
         self.watch_shown = List[String]()
+        self.data_bps = List[DataBreakpoint]()
+        self.scope_handle = 0
 
     def clear(mut self):
         self.frames.clear()
         self.sel = 0
         self.nodes.clear()
         self.note = ""
+        self.scope_handle = 0
+
+    def parent_handle_of(self, idx: Int) -> Int:
+        if idx < 0 or idx >= len(self.nodes):
+            return 0
+        var d = self.nodes[idx].depth
+        if d <= 0:
+            return self.scope_handle
+        var j = idx - 1
+        while j >= 0:
+            if self.nodes[j].depth < d:
+                return self.nodes[j].handle
+            j -= 1
+        return self.scope_handle
 
     def find(self, path: String) -> Int:
         for k in range(len(self.nodes)):
@@ -471,7 +551,20 @@ struct DebugView(Copyable, Movable):
             self.rows_kind.append(VK_NOTE)
             self.rows_index.append(-1)
         for k in range(len(self.nodes)):
-            out.append(self.nodes[k].line())
+            var nd = self.nodes[k].copy()
+            var addr = nd.address()
+            var line_str = nd.line()
+            for bi in range(len(self.data_bps)):
+                var bp = self.data_bps[bi].copy()
+                var hit = False
+                if addr.byte_length() > 0 and bp.address.byte_length() > 0:
+                    hit = addr == bp.address
+                elif nd.name.byte_length() > 0 and bp.name == nd.name:
+                    hit = True
+                if hit:
+                    line_str = format_varnode_with_watchpoint(nd, bp)
+                    break
+            out.append(line_str)
             self.rows_kind.append(VK_VAR)
             self.rows_index.append(k)
         return out^

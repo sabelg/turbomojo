@@ -407,5 +407,24 @@ def test_explorer_shows_git_status() raises:
     _ = run_system("rm -rf " + shell_quote(d))
 
 
+def test_git_worktree_index_resolution() raises:
+    if which("git").byte_length() == 0:
+        return
+    var d = repo("worktree-main")
+    var wt = env_or("TMPDIR", "/tmp") + "/tm-git-wt-" + String(own_pid())
+    _ = run_system("rm -rf " + shell_quote(wt))
+    assert_equal(git(d, "worktree add -b feat " + shell_quote(wt)), 0)
+    var dirs = resolve_git_dir(wt)
+    assert_true(dirs[0].byte_length() > 0)
+    assert_true(dirs[0].find("worktrees") >= 0, dirs[0])
+    assert_true(dirs[1].byte_length() > 0)
+    assert_true(dirs[1].endswith(".git"), dirs[1])
+    var app = App()
+    app.git.root = wt
+    assert_equal(app.git_index_path(), dirs[0] + "/index")
+    _ = run_system("rm -rf " + shell_quote(wt))
+    _ = run_system("rm -rf " + shell_quote(d))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

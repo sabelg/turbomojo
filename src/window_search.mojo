@@ -5,7 +5,9 @@ from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
-from search import Search, make_search
+from search import Search, make_search, MatchSpan, search_multiline_literal, search_multiline_regex
+from regex import fold
+from vim_motion import match_fwd, match_back
 from window import *
 
 
@@ -23,21 +25,64 @@ __extension Window:
         return Range(r, lo, r, hi)
 
     def select_match(mut self, r: Int, s: Int, e: Int):
+        self.select_match_span(r, s, r, e)
+
+    def select_match_span(mut self, r1: Int, c1: Int, r2: Int, c2: Int):
         self.extra.clear()
         self.sel = True
-        self.ar = r
-        self.ac = s
-        self.cr = r
-        self.cc = e
+        self.ar = r1
+        self.ac = c1
+        self.cr = r2
+        self.cc = c2
         self.sync_want()
         self.follow = True
         self.break_group()
+
+    def _multiline_spans(self, s: Search) -> List[MatchSpan]:
+        var out = List[MatchSpan]()
+        if not s.ok:
+            return out^
+        var cps = self.buf.all_text()
+        var pat_s = to_str(s.pat)
+        var raw = (
+            search_multiline_regex(cps, pat_s, not s.case_sensitive)
+            if s.use_regex
+            else search_multiline_literal(cps, pat_s, not s.case_sensitive)
+        )
+        for sp in raw:
+            if self.scope_on:
+                if sp.r1 < self.scope.r1 or (sp.r1 == self.scope.r1 and sp.c1 < self.scope.c1):
+                    continue
+                if sp.r2 > self.scope.r2 or (sp.r2 == self.scope.r2 and sp.c2 > self.scope.c2):
+                    continue
+            if s.whole_word:
+                var a = self.buf.core[].rope.offset(sp.r1, sp.c1)
+                var b = self.buf.core[].rope.offset(sp.r2, sp.c2)
+                if not s.word_ok(cps, a, b):
+                    continue
+            out.append(sp.copy())
+        return out^
 
     def search_from(mut self, s: Search, r0: Int, c0: Int) -> Bool:
         """Select the first match at or after (r0, c0), wrapping around the end of the
         text (or of the search scope). Returns False if there is none."""
         if not s.ok:
             return False
+        if s.is_multiline():
+            var spans = self._multiline_spans(s)
+            if len(spans) == 0:
+                return False
+            var idx = 0
+            var found = False
+            for k in range(len(spans)):
+                if spans[k].r1 > r0 or (spans[k].r1 == r0 and spans[k].c1 >= c0):
+                    idx = k
+                    found = True
+                    break
+            if not found:
+                idx = 0
+            self.select_match_span(spans[idx].r1, spans[idx].c1, spans[idx].r2, spans[idx].c2)
+            return True
         var n = self.buf.count()
         for k in range(n + 1):
             var r = (r0 + k) % n
@@ -61,6 +106,24 @@ __extension Window:
         if not self.has_sel() or not s.ok:
             return False
         var q = self.sel_range()
+        if s.is_multiline():
+            var cps = self.buf.all_text()
+            var a = self.buf.core[].rope.offset(q.r1, q.c1)
+            var b = self.buf.core[].rope.offset(q.r2, q.c2)
+            if b <= a:
+                return False
+            if s.whole_word and not s.word_ok(cps, a, b):
+                return False
+            if s.use_regex:
+                var m = s.re.match_at(cps, a)
+                return len(m) >= 2 and m[0] == a and m[1] == b
+            if b - a != len(s.folded):
+                return False
+            for i in range(len(s.folded)):
+                var ch = cps[a + i] if s.case_sensitive else fold(cps[a + i])
+                if ch != s.folded[i]:
+                    return False
+            return True
         if q.r1 != q.r2:
             return False
         var m = s.caps_in(self.buf.line(q.r1), q.c1)
@@ -68,9 +131,32 @@ __extension Window:
 
     def replace_current(mut self, s: Search, rep: List[Int]) -> Bool:
         """Replace the selected match (one undo step). The cursor ends after the new text."""
-        if not self.sel_is_match(s):
+        if self.read_only or not self.sel_is_match(s):
             return False
         var q = self.sel_range()
+        if s.is_multiline():
+            var repl_text: List[Int]
+            if s.use_regex:
+                var cps = self.buf.all_text()
+                var a = self.buf.core[].rope.offset(q.r1, q.c1)
+                var m = s.re.match_at(cps, a)
+                repl_text = s.replacement(rep, cps, m)
+            else:
+                repl_text = rep.copy()
+            var g = self.new_group()
+            _ = self.buf.delete(q.r1, q.c1, q.r2, q.c2, self.cr, self.cc, g)
+            var p = self.buf.insert(q.r1, q.c1, repl_text, self.cr, self.cc, g)
+            if self.scope_on and q.r2 <= self.scope.r2:
+                if q.r2 == self.scope.r2:
+                    self.scope.c2 = p.c + (self.scope.c2 - q.c2)
+                self.scope.r2 += p.r - q.r2
+            self.sel = False
+            self.cr = p.r
+            self.cc = p.c
+            self.sync_want()
+            self.break_group()
+            self.follow = True
+            return True
         var ln = self.buf.line(q.r1)
         var m = s.caps_in(ln, q.c1)
         var text = s.replacement(rep, ln, m)
@@ -93,8 +179,35 @@ __extension Window:
     def replace_matches(mut self, s: Search, rep: List[Int]) -> Int:
         """Replace every match (inside the scope, if one is set) as one undo step.
         Returns how many were replaced."""
-        if not s.ok:
+        if self.read_only or not s.ok:
             return 0
+        if s.is_multiline():
+            var spans = self._multiline_spans(s)
+            if len(spans) == 0:
+                return 0
+            var cps = List[Int]()
+            if s.use_regex:
+                cps = self.buf.all_text()
+            var g = self.new_group()
+            var k = len(spans) - 1
+            while k >= 0:
+                var sp = spans[k].copy()
+                var repl_text: List[Int]
+                if s.use_regex:
+                    var a = self.buf.core[].rope.offset(sp.r1, sp.c1)
+                    var m = s.re.match_at(cps, a)
+                    repl_text = s.replacement(rep, cps, m)
+                else:
+                    repl_text = rep.copy()
+                _ = self.buf.delete(sp.r1, sp.c1, sp.r2, sp.c2, self.cr, self.cc, g)
+                _ = self.buf.insert(sp.r1, sp.c1, repl_text, self.cr, self.cc, g)
+                k -= 1
+            self.sel = False
+            self.clamp()
+            self.sync_want()
+            self.break_group()
+            self.follow = True
+            return len(spans)
         var g = self.new_group()
         var count = 0
         var last = self.buf.count() - 1
@@ -148,7 +261,6 @@ __extension Window:
         if not s.ok:
             return Range(0, 0, 0, 0)
         var q = self.sel_range()
-        var has = self.has_sel() and q.r1 == q.r2
         var first = 0
         var last = self.buf.count() - 1
         if self.scope_on:
@@ -157,6 +269,17 @@ __extension Window:
         if last - first + 1 > line_limit:
             last = first + line_limit - 1
             cut = 1
+        if s.is_multiline():
+            var has_ml = self.has_sel()
+            var spans = self._multiline_spans(s)
+            for sp in spans:
+                if sp.r1 < first or sp.r1 > last:
+                    continue
+                total += 1
+                if has_ml and sp.r1 == q.r1 and sp.c1 == q.c1 and sp.r2 == q.r2 and sp.c2 == q.c2:
+                    index = total
+            return Range(total, index, cut, 0)
+        var has = self.has_sel() and q.r1 == q.r2
         for r in range(first, last + 1):
             var ln = self.buf.line(r)
             var cols = self.scope_cols(r, len(ln))
@@ -199,7 +322,7 @@ __extension Window:
 
     def match_bracket(self) -> Pos:
         """Position of the bracket matching the one at (or just before) the cursor, or
-        Pos(-1, -1). Looks at most 2000 lines away."""
+        Pos(-1, -1). Looks at most 2000 lines away, lexer-aware skipping strings/comments."""
         var opens = List[Int]()
         var closes = List[Int]()
         for o in [40, 91, 123]:
@@ -214,45 +337,7 @@ __extension Window:
             var ch = here[c]
             for k in range(3):
                 if ch == opens[k]:
-                    var depth = 0
-                    var r = self.cr
-                    var cc = c
-                    var ln = here.copy()
-                    while r < self.buf.count():
-                        while cc < len(ln):
-                            var x = ln[cc]
-                            if x == opens[k]:
-                                depth += 1
-                            elif x == closes[k]:
-                                depth -= 1
-                                if depth == 0:
-                                    return Pos(r, cc)
-                            cc += 1
-                        r += 1
-                        cc = 0
-                        if r - self.cr > 2000 or r >= self.buf.count():
-                            break
-                        ln = self.buf.line(r)
-                    return Pos(-1, -1)
+                    return match_fwd(self.buf, self.cr, c, opens[k], closes[k])
                 if ch == closes[k]:
-                    var depth = 0
-                    var r = self.cr
-                    var cc = c
-                    var ln = here.copy()
-                    while r >= 0:
-                        while cc >= 0:
-                            var x = ln[cc]
-                            if x == closes[k]:
-                                depth += 1
-                            elif x == opens[k]:
-                                depth -= 1
-                                if depth == 0:
-                                    return Pos(r, cc)
-                            cc -= 1
-                        r -= 1
-                        if r < 0 or self.cr - r > 2000:
-                            break
-                        ln = self.buf.line(r)
-                        cc = len(ln) - 1
-                    return Pos(-1, -1)
+                    return match_back(self.buf, self.cr, c, opens[k], closes[k])
         return Pos(-1, -1)

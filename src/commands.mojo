@@ -136,6 +136,33 @@ comptime CM_CONFLICT_THEIRS = 266 # Palette: Git accept theirs
 comptime CM_CONFLICT_BOTH = 267  # Palette: Git accept both
 comptime CM_RUN_CELL = 268       # Compile > Run code cell (# %%)
 comptime CM_RUN_CELL_NEXT = 269  # Palette / Ctrl-Shift-Enter: Run code cell & advance
+comptime CM_BENCH_RUN = 270      # Palette: Run std.benchmark
+comptime CM_BENCH_SAVE = 271     # Palette: Save benchmark baseline
+comptime CM_GPU_ROOFLINE = 272   # Palette: GPU kernel roofline
+comptime CM_TEST_WATCH = 273     # Palette: Toggle test watch on save
+comptime CM_CELL_RESTART = 274   # Palette: Restart cell kernel
+comptime CM_DEBUG_ATTACH_PID = 275 # Palette: Attach debugger to PID...
+comptime CM_DEBUG_CORE = 276     # Palette: Open post-mortem core dump...
+comptime CM_CALL_HIERARCHY = 277 # Palette: Call hierarchy...
+comptime CM_TYPE_HIERARCHY = 278 # Palette: Type hierarchy...
+comptime CM_PEEK_DEF = 279       # Palette: Peek definition
+comptime CM_GIT_PREVIEW_HUNK = 280 # Palette: Preview git hunk inline
+comptime CM_UNDO_TREE = 281      # Palette: Undo tree...
+comptime CM_HEX_VIEW = 282       # Palette: Toggle hex inspector
+comptime CM_RAINBOW_BRACKETS = 283 # Palette: Rainbow brackets
+comptime CM_PIN_TAB = 284        # Palette: Pin or unpin tab
+comptime CM_MD_PREVIEW = 285     # Palette: Markdown side-by-side preview
+comptime CM_GIT_LOG = 286        # Palette: Git commit graph & log
+comptime CM_GIT_PUSH = 287       # Palette: Git push
+comptime CM_GIT_PULL = 288       # Palette: Git pull --rebase
+comptime CM_GIT_FETCH = 289      # Palette: Git fetch --prune
+comptime CM_GIT_STASH_LIST = 290 # Palette: Git stash list...
+comptime CM_SWITCH_PROJECT = 291 # Palette: Switch project...
+comptime CM_GIT_WORKTREE = 292   # Palette: Git worktrees...
+comptime CM_PLUGINS = 293        # Palette: Manage plugins...
+comptime CM_TERM_NEW = 294       # Palette: New terminal tab
+comptime CM_TERM_NEXT = 295      # Palette: Next terminal tab
+comptime CM_TERM_PREV = 296      # Palette: Previous terminal tab
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -909,6 +936,34 @@ def build_registry() -> Registry:
     r.cmd(CM_PIXI_ENV, "options.pixiEnvironment", "Pi~x~i environment...", "Select which Pixi environment builds, runs, tests, formatting, terminal, debugger and LSP use")
     r.hide(CM_FORMAT_SAVE, "options.formatOnSave", "Format on save", "Reformat Mojo files automatically with mojo format when saving")
     r.hide(CM_INDENT_GUIDES, "options.indentGuides", "Indent guides", "Show subtle vertical guides on indentation columns")
+    r.hide(CM_RAINBOW_BRACKETS, "options.rainbowBrackets", "Rainbow brackets", "Show CVD-safe 4-level nested delimiter colouring")
+    r.hide(CM_BENCH_RUN, "compile.runBenchmarks", "Run std.benchmark", "Run Mojo std.benchmark suite with -O3 and compare against baseline")
+    r.hide(CM_BENCH_SAVE, "compile.saveBenchBaseline", "Save benchmark baseline", "Save the latest benchmark metrics as the project baseline")
+    r.hide(CM_GPU_ROOFLINE, "compile.gpuRoofline", "GPU kernel roofline", "Profile single-kernel compute/DRAM utilization, occupancy, registers and warp stalls")
+    r.hide(CM_TEST_WATCH, "tests.watchOnSave", "Toggle test watch on save", "Automatically run cached test binaries when saving test files")
+    r.hide(CM_CELL_RESTART, "cells.restartKernel", "Restart cell kernel", "Restart the persistent # %% notebook cell kernel")
+    r.hide(CM_DEBUG_ATTACH_PID, "debug.attachPid", "Attach debugger to PID...", "Attach LLDB DAP to a running process ID without terminating it on detach")
+    r.hide(CM_DEBUG_CORE, "debug.openCoreDump", "Open post-mortem core dump...", "Inspect a post-mortem core dump or coredumpctl crash snapshot")
+    r.hide(CM_CALL_HIERARCHY, "search.callHierarchy", "Call hierarchy...", "Show incoming callers and outgoing callees of the function at the cursor")
+    r.hide(CM_TYPE_HIERARCHY, "search.typeHierarchy", "Type hierarchy...", "Show implemented traits (supertypes) and implementing structs (subtypes)")
+    r.hide(CM_PEEK_DEF, "search.peekDefinition", "Peek definition", "Preview the definition or references inline below the cursor")
+    r.bind(CM_PEEK_DEF, fkey(12) | MOD_ALT | MOD_SHIFT)
+    r.hide(CM_GIT_PREVIEW_HUNK, "git.previewHunk", "Preview git hunk inline", "Show inline diff of the hunk at the cursor with S/R/U actions")
+    r.hide(CM_UNDO_TREE, "edit.undoTree", "Undo tree...", "Browse and jump across non-linear undo branches")
+    r.hide(CM_HEX_VIEW, "file.openHexView", "Toggle hex inspector", "Inspect the current file in the virtualized 16-byte/row hex + ASCII viewer")
+    r.hide(CM_PIN_TAB, "window.pinTab", "Pin or unpin tab", "Pin the active tab so batch close preserves it")
+    r.hide(CM_MD_PREVIEW, "window.markdownPreview", "Markdown side-by-side preview", "Open or close a live scroll-synchronized Markdown preview split")
+    r.hide(CM_GIT_LOG, "git.log", "Git commit graph & log", "Open the topological commit graph and history browser")
+    r.hide(CM_GIT_PUSH, "git.push", "Git push", "Push commits to the upstream remote asynchronously")
+    r.hide(CM_GIT_PULL, "git.pull", "Git pull --rebase", "Pull from upstream remote with --rebase asynchronously")
+    r.hide(CM_GIT_FETCH, "git.fetch", "Git fetch --prune", "Fetch and prune remote tracking branches asynchronously")
+    r.hide(CM_GIT_STASH_LIST, "git.stashList", "Git stash list...", "Browse, preview, apply, pop, drop or create named git stashes")
+    r.hide(CM_SWITCH_PROJECT, "file.switchProject", "Switch project...", "Switch to a recent project folder in-place")
+    r.hide(CM_GIT_WORKTREE, "git.worktrees", "Git worktrees...", "List, create, prune or switch git worktrees")
+    r.hide(CM_PLUGINS, "options.pluginsManager", "Manage plugins...", "Inspect running plugins and start, stop or restart them")
+    r.hide(CM_TERM_NEW, "window.newTerminalTab", "New terminal tab", "Open an additional shell tab in the integrated terminal")
+    r.hide(CM_TERM_NEXT, "window.nextTerminalTab", "Next terminal tab", "Switch to the next shell tab in the integrated terminal")
+    r.hide(CM_TERM_PREV, "window.prevTerminalTab", "Previous terminal tab", "Switch to the previous shell tab in the integrated terminal")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")

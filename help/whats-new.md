@@ -73,6 +73,19 @@
     & test execution (`turbomojo_debug_inspect`, `turbomojo_run_test`); and Vim `:`/`/`
     `Up`/`Down` history, `:` `Tab` command & path completion, uppercase global marks
     (`mA`–`mZ`), and `''` jump-back.
+  - **40-Feature Milestone (`F01`–`F40`)**: `std.benchmark` runner with JSON baseline
+    regression tracking and inline `[ns/op]` badges; PTX / AMDGCN / ASM / LLVM IR codegen
+    inspector with live cursor sync + Nsight Compute / `rocprofv3` roofline profiler; Test
+    Explorer watch-on-save, line coverage gutter, and failed-test debugging; DAP attach to
+    PID & `coredumpctl` post-mortem core dumps; workspace call & type hierarchy; inline
+    cursor-anchored PeekBox (`Alt-Shift-F12`) and Git hunk preview (`S` / `R`); branching
+    undo tree (`g-` / `g+`), binary hex viewer, rainbow brackets, interactive minimap &
+    overview ruler, draggable tiled splitters, pinned tabs, and scroll-synced Markdown
+    preview; Vim `:set`, `:marks`, `:registers`, `gn`/`gN`, `g;`/`g,`, `gv`, and `q:`/`q/`;
+    Git commit graph, stash picker, async push/pull/fetch, worktrees & MRU project
+    switcher; Plugin API v2 (`editor/edit`, `diagnostics/set`, manager dialog), multi-tab
+    terminal, SSH `[ssh:host]` status pill + `ssh -L` port-forward toasts, and extended
+    `tmide --lines` + TUI screen-reader context cues.
 
 ## 2.2: ready for other people
 - A program that uses a library which is not installed (`unable to locate module

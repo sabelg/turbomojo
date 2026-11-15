@@ -436,5 +436,20 @@ def test_message_window_click_selects_row() raises:
     assert_equal(app.wins[app.top()].kind, WK_MESSAGE)
 
 
+def test_gutter_click_test_lens() raises:
+    var app = make("def test_example():\n    pass\n")
+    app.wins[0].path = "/tmp/test_foo.mojo"
+    app.wins[0].test_lens_rows.append(0)
+    app.wins[0].test_lens_states.append(1)
+    app.draw()
+    var wx = app.wins[0].x
+    var wy = app.wins[0].y
+    # Click on wx + 1 at row 0 (the test lens glyph)
+    click(app, wx + 1, wy + 1)
+    # Click on wx + 2 at row 0 (line number digit, toggles breakpoint)
+    click(app, wx + 2, wy + 1)
+    assert_equal(len(app.wins[0].buf.bps), 1)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

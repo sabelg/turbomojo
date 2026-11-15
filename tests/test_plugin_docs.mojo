@@ -55,7 +55,7 @@ def test_the_methods_are_the_hosts() raises:
     var host = bytes_to_str(read_file(getcwd() + "/src/app_plugins.mojo"))
     var to_ide = headings_between(page(), "Messages to TurboMojo", "Errors")
     var from_ide = headings_between(page(), "Messages from TurboMojo", "Messages to TurboMojo")
-    assert_equal(len(to_ide), 8, "\n".join(to_ide))
+    assert_equal(len(to_ide), 10, "\n".join(to_ide))
     assert_equal(len(from_ide), 6, "\n".join(from_ide))
     for m in to_ide:
         assert_true(host.find("m.method == \"" + m + "\"") >= 0, "documented but not answered: " + m)

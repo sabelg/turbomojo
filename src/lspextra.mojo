@@ -10,6 +10,9 @@ struct ExtraServer(Copyable, Movable):
     var command: String
     var exts: List[String]
     var client: LspClient
+    var crashes: List[Int]
+    var restart_due: Int
+    var restart_base_ms: Int
 
     def __init__(out self, name: String, command: String, exts: List[String], language: String):
         self.name = name
@@ -17,6 +20,9 @@ struct ExtraServer(Copyable, Movable):
         self.exts = exts.copy()
         self.client = LspClient()
         self.client.language_id = language
+        self.crashes = List[Int]()
+        self.restart_due = 0
+        self.restart_base_ms = 1000
 
 
 def ends_with_any(path: String, exts: List[String]) -> Bool:

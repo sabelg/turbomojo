@@ -120,7 +120,9 @@ pinned at the top.
 on, problems appear as you type - underlined in the code, and on the Problems page - and:
 
 - **Alt-I** describes the name at the cursor, **Alt-P** shows a call's parameters;
-- **F12** goes to the definition, **Shift-F12** lists every use, **Shift-F2** renames;
+- **F12** goes to the definition (**Alt-Shift-F12** peeks at definitions inline below the
+  cursor without leaving your file), **Shift-F12** lists every use, **Shift-F2** renames,
+  and Search > Call hierarchy / Type hierarchy inspect callers, callees and traits;
 - **Alt-Enter** offers the server's quick fixes for the problem at the cursor;
 - **Ctrl-F1** shows the documentation of the name at the cursor (Help > Docs pane keeps
   it beside the code, following the cursor).
@@ -182,9 +184,12 @@ the cursor) to it.
 ## Git
 
 In a git repository the gutter marks lines changed since the last commit (**Alt-N** and
-**Alt-B** go to the next and previous change) and the explorer colours files by their
-state. File > Diff shows a file's changes, where you stage, revert or unstage one change
-at a time; File > Commit, Branch and Blame do what they say.
+**Alt-B** go to the next and previous change, and File > Preview git hunk peeks, stages or
+reverts the hunk inline) and the explorer colours files by their state. File > Diff shows
+a file's changes (including side-by-side split view and 3-way conflict actions), where you
+stage, revert or unstage one change at a time; File > Commit, Branch, Blame, Git log,
+Stash list, Push / Pull / Fetch, Worktrees and Switch project cover the rest of daily Git
+work.
 
 ## Coding agents
 

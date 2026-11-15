@@ -1,6 +1,7 @@
 """The file explorer's model: the project folder as a tree of which only the opened
 folders are listed, and the file operations (create, rename, move, delete to trash)."""
 from util import lower_str, str_contains
+from platform import IS_MACOS
 from glyphs import nerd_file_icon
 from std.collections import List
 from std.os import listdir
@@ -59,7 +60,16 @@ struct ExplorerTree(Movable):
             return False
         return self.rules.ignored(name)
 
+    def hidden_path(self, path: String, name: String, is_dir: Bool) -> Bool:
+        if name == ".git":
+            return True
+        if self.show_all:
+            return False
+        return self.rules.ignored_path(path, is_dir)
+
     def list_folder(mut self, dir: String, depth: Int):
+        if dir != self.root:
+            self.rules.load_subdir_gitignore(dir)
         var names = List[String]()
         try:
             for n in listdir(dir):
@@ -70,9 +80,11 @@ struct ExplorerTree(Movable):
         var dirs = List[String]()
         var files = List[String]()
         for n in names:
-            if self.hidden(n):
+            var p = join_path(dir, n)
+            var is_d = isdir(p)
+            if self.hidden_path(p, n, is_d):
                 continue
-            if isdir(join_path(dir, n)):
+            if is_d:
                 dirs.append(n)
             else:
                 files.append(n)
@@ -280,27 +292,44 @@ def move_path(src: String, dst: String) -> String:
 
 
 def default_trash_dir() -> String:
-    """The desktop's trash folder (freedesktop.org layout): $XDG_DATA_HOME/Trash, by
-    default ~/.local/share/Trash."""
-    var data = env_or("XDG_DATA_HOME", "")
-    if data.byte_length() == 0:
-        var home = env_or("HOME", "")
-        if home.byte_length() == 0:
-            return ""
-        data = home + "/.local/share"
-    return data + "/Trash"
+    """The desktop's trash folder: ~/.Trash on macOS; $XDG_DATA_HOME/Trash
+    (~/.local/share/Trash) on Linux."""
+    var home = env_or("HOME", "")
+    if home.byte_length() == 0:
+        return ""
+    comptime if IS_MACOS:
+        return home + "/.Trash"
+    else:
+        var data = env_or("XDG_DATA_HOME", "")
+        if data.byte_length() == 0:
+            data = home + "/.local/share"
+        return data + "/Trash"
 
 
 def trash_path(path: String, trash: String) -> String:
-    """Move a file or folder to the trash: into `trash`/files under a name that is free
-    there, with the record `trash`/info/<name>.trashinfo that lets the desktop's trash
-    put it back. Returns '' or why not; nothing is ever deleted outright."""
+    """Move a file or folder to the trash: on macOS (~/.Trash), moved directly;
+    on Linux, into `trash`/files under a free name with `trash`/info/<name>.trashinfo.
+    Returns '' or why not; nothing is ever deleted outright."""
     if not path_exists(path):
         return basename(path) + " is no longer there"
     if trash.byte_length() == 0:
         return "No trash folder is known (HOME is not set)"
     if inside(path, trash):
         return "The trash folder is inside what would be deleted"
+    # macOS ~/.Trash layout: direct placement without files/ and info/ subdirectories
+    if trash.endswith("/.Trash"):
+        if run_system("mkdir -p -- " + shell_quote(trash) + " 2>/dev/null") != 0:
+            return "Cannot use the trash folder " + trash
+        var name = basename(path)
+        var target = name
+        var n = 1
+        while path_exists(trash + "/" + target):
+            n += 1
+            target = name + "." + String(n)
+        if run_system("mv -- " + shell_quote(path) + " " + shell_quote(trash + "/" + target) + " 2>/dev/null") != 0:
+            return "Cannot move " + name + " to the trash"
+        return ""
+    # Linux freedesktop.org trash layout
     if run_system("mkdir -p -- " + shell_quote(trash + "/files") + " " + shell_quote(trash + "/info") + " 2>/dev/null") != 0:
         return "Cannot use the trash folder " + trash
     var name = basename(path)

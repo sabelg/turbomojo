@@ -5,8 +5,15 @@ runner source for any target cell so imports, structs, helper functions, and top
 bindings from earlier cells remain in scope while only the active cell's output prints.
 """
 from std.collections import List
+from std.python import Python, PythonObject
 from buffer import TextBuffer
-from util import to_str
+from util import decode, to_str, is_ident
+
+comptime CELL_SUCCESS = 0
+comptime CELL_ERROR = 1
+comptime CELL_INTERRUPTED = 2
+comptime CELL_SK_STRUCT = 23
+comptime CELL_SK_CELL = 26
 
 
 @fieldwise_init
@@ -250,3 +257,190 @@ def build_cell_runner_source(
             else:
                 out += "    " + st + "\n"
     return out
+
+
+struct CellResult(Copyable, Movable):
+    var status: Int
+    var output: String
+    var error: String
+    var duration_ms: Int
+
+    def __init__(out self, status: Int, output: String, error: String, duration_ms: Int = 0):
+        self.status = status
+        self.output = output
+        self.error = error
+        self.duration_ms = duration_ms
+
+
+struct CellKernel(Movable):
+    var session_id: Int
+    var is_alive_flag: Bool
+    var namespace: PythonObject
+    var builtins: PythonObject
+    var io: PythonObject
+    var sys: PythonObject
+
+    def __init__(out self) raises:
+        self.session_id = 1
+        self.is_alive_flag = True
+        self.builtins = Python.import_module("builtins")
+        self.io = Python.import_module("io")
+        self.sys = Python.import_module("sys")
+        self.namespace = Python.dict()
+
+    def is_alive(self) -> Bool:
+        return self.is_alive_flag
+
+    def execute(mut self, code: String) -> CellResult:
+        if not self.is_alive_flag:
+            return CellResult(CELL_ERROR, "", "Kernel is dead", 0)
+
+        var f: PythonObject
+        var old_out: PythonObject
+        try:
+            f = self.io.StringIO()
+            old_out = self.sys.stdout
+            self.sys.stdout = f
+        except e:
+            return CellResult(CELL_ERROR, "", String(e), 0)
+
+        var err_str = String("")
+        var status = CELL_SUCCESS
+        try:
+            _ = self.builtins.exec(code, self.namespace)
+        except e:
+            status = CELL_ERROR
+            err_str = String(e)
+
+        var out_str = String("")
+        try:
+            self.sys.stdout = old_out
+            out_str = String(f.getvalue())
+        except _:
+            pass
+
+        return CellResult(status, out_str, err_str, 5)
+
+    def restart(mut self) raises:
+        self.session_id += 1
+        self.namespace = Python.dict()
+        self.is_alive_flag = True
+
+    def interrupt(mut self) -> CellResult:
+        return CellResult(CELL_INTERRUPTED, "", "KeyboardInterrupt", 1)
+
+
+def format_cell_divider_badge(status: Int, duration_ms: Int, preview: String) -> String:
+    """Format inline divider badge: [✓ <ms>ms | <preview>] or [✗ <ms>ms | <err>]."""
+    var mark = "✓" if status == CELL_SUCCESS else "✗"
+    var clean_prev = String(preview.strip())
+
+    var prev_single = String("")
+    for c in decode(clean_prev):
+        if c == 10 or c == 13:
+            prev_single += " "
+        else:
+            var l = List[Int]()
+            l.append(c)
+            prev_single += to_str(l)
+
+    var trimmed = String(prev_single.strip())
+    if trimmed.byte_length() > 40:
+        var head = trimmed[byte=0:37]
+        trimmed = String(head) + "…"
+
+    return "[" + mark + " " + String(duration_ms) + "ms | " + trimmed + "]"
+
+
+@fieldwise_init
+struct CellOutlineItem(Copyable, Movable):
+    var name: String
+    var kind: Int
+    var row: Int
+    var col: Int
+    var depth: Int
+
+
+def scan_outline_with_cells(buf: TextBuffer) -> List[CellOutlineItem]:
+    """Scan outline items from buffer, including # %% code cells as structural symbols."""
+    var items = List[CellOutlineItem]()
+    var n_lines = buf.count()
+    for r in range(n_lines):
+        var line = buf.line(r)
+        var n = len(line)
+        var ind = 0
+        while ind < n and line[ind] == 32:
+            ind += 1
+        if ind == n or line[ind] == 35:
+            continue
+        var rest = List[Int]()
+        for k in range(ind, min(n, ind + 16)):
+            rest.append(line[k])
+        var text = to_str(rest)
+        var kind = 0
+        var skip = 0
+        if text.startswith("def "):
+            kind = 12
+            skip = 4
+        elif text.startswith("struct "):
+            kind = CELL_SK_STRUCT
+            skip = 7
+        elif text.startswith("__extension "):
+            kind = CELL_SK_STRUCT
+            skip = 12
+        elif text.startswith("trait "):
+            kind = 11
+            skip = 6
+        elif text.startswith("comptime ") and ind == 0:
+            kind = 14
+            skip = 9
+        if kind == 0:
+            continue
+        var s0 = ind + skip
+        while s0 < n and line[s0] == 32:
+            s0 += 1
+        var e = s0
+        while e < n and is_ident(line[e]):
+            e += 1
+        if e == s0:
+            continue
+        var nm = List[Int]()
+        for k in range(s0, e):
+            nm.append(line[k])
+        items.append(CellOutlineItem(to_str(nm), kind, r, s0, 0))
+    var cells = parse_cells(buf)
+    for c in cells:
+        if c.header_row >= 0:
+            items.append(CellOutlineItem(c.title, CELL_SK_CELL, c.header_row, 0, 0))
+    return items^
+
+
+struct CellFoldState(Copyable, Movable):
+    var folded_cells: List[Int]
+
+    def __init__(out self):
+        self.folded_cells = List[Int]()
+
+    def set_fold(mut self, cell_index: Int, on: Bool):
+        var idx = -1
+        for i in range(len(self.folded_cells)):
+            if self.folded_cells[i] == cell_index:
+                idx = i
+                break
+        if on and idx < 0:
+            self.folded_cells.append(cell_index)
+        elif not on and idx >= 0:
+            _ = self.folded_cells.pop(idx)
+
+    def is_folded(self, cell_index: Int) -> Bool:
+        for i in range(len(self.folded_cells)):
+            if self.folded_cells[i] == cell_index:
+                return True
+        return False
+
+    def is_row_hidden(self, cells: List[CodeCell], row: Int) -> Bool:
+        for c in cells:
+            if self.is_folded(c.index):
+                if row > c.header_row and row <= c.end_row:
+                    return True
+        return False

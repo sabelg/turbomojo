@@ -64,6 +64,17 @@ comptime EX_REFRESH_MS = 2000
 
 
 __extension App:
+    def explorer_watch_dirs(mut self):
+        """Register the explorer's root and every expanded folder with inotify."""
+        if not self.watch.active():
+            return
+        if self.ex.root.byte_length() > 0:
+            _ = self.watch.watch_dir(self.ex.root)
+        for i in range(len(self.ex.opened)):
+            var d = self.ex.opened[i]
+            if d.byte_length() > 0:
+                _ = self.watch.watch_dir(d)
+
     def explorer_toggle(mut self):
         """Window > File explorer: open it (or go to it); from inside it: close it."""
         var xi = self.explorer_index()
@@ -95,6 +106,7 @@ __extension App:
         self.wins.append(win^)
         self.ex.set_root(self.symidx_root())
         var row = self.ex.reveal(current) if current.byte_length() > 0 else -1
+        self.explorer_watch_dirs()
         self.explorer_show()
         var t = self.top()
         self.wins[t].cr = max(0, row)
@@ -159,6 +171,7 @@ __extension App:
         """After a change: read the folders again and mark `mark` (if it is shown)."""
         self.ex.rebuild()
         var row = self.ex.reveal(mark) if mark.byte_length() > 0 else -1
+        self.explorer_watch_dirs()
         self.explorer_show()
         var xi = self.explorer_index()
         if xi >= 0:
@@ -183,6 +196,7 @@ __extension App:
                 return True
             if self.ex.rows[row].dir:
                 self.ex.toggle(row)
+                self.explorer_watch_dirs()
                 self.explorer_show()
             else:
                 self.jump_mark()
@@ -194,6 +208,7 @@ __extension App:
             if has and self.ex.rows[row].dir:
                 if not self.ex.rows[row].open:
                     self.ex.toggle(row)
+                    self.explorer_watch_dirs()
                     self.explorer_show()
                 elif row + 1 < len(self.ex.rows) and self.ex.rows[row + 1].depth > self.ex.rows[row].depth:
                     self.wins[t].cr = row + 1
@@ -201,6 +216,7 @@ __extension App:
         if k == KEY_LEFT:
             if has and self.ex.rows[row].dir and self.ex.rows[row].open:
                 self.ex.toggle(row)
+                self.explorer_watch_dirs()
                 self.explorer_show()
             elif has:
                 var up = self.ex.parent_row(row)

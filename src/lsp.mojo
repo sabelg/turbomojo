@@ -152,6 +152,8 @@ struct LspCaps(Copyable, Movable):
     var semantic_range: Bool
     var token_types: List[String]         # the semantic token legend
     var token_modifiers: List[String]
+    var call_hierarchy: Bool
+    var type_hierarchy: Bool
 
     def __init__(out self):
         self.sync_kind = SYNC_NONE
@@ -184,6 +186,8 @@ struct LspCaps(Copyable, Movable):
         self.semantic_range = False
         self.token_types = List[String]()
         self.token_modifiers = List[String]()
+        self.call_hierarchy = False
+        self.type_hierarchy = False
 
     def describe(self) -> List[String]:
         """One line per feature the server offers, for the log and for people."""
@@ -224,6 +228,10 @@ struct LspCaps(Copyable, Movable):
             names.append("inlay hints")
         if self.semantic_tokens:
             names.append("semantic tokens")
+        if self.call_hierarchy:
+            names.append("call hierarchy")
+        if self.type_hierarchy:
+            names.append("type hierarchy")
         var line = String("features: ")
         for i in range(len(names)):
             line += (", " if i > 0 else "") + names[i]
@@ -306,6 +314,8 @@ def parse_caps(caps: Json) -> LspCaps:
         c.semantic_range = rng >= 0 and not caps.is_null(rng) and (caps.kind(rng) != 1 or caps.bool(rng))
         c.token_types = string_items(caps, caps.path(0, "semanticTokensProvider/legend/tokenTypes"))
         c.token_modifiers = string_items(caps, caps.path(0, "semanticTokensProvider/legend/tokenModifiers"))
+    c.call_hierarchy = cap_on(caps, "callHierarchyProvider")
+    c.type_hierarchy = cap_on(caps, "typeHierarchyProvider")
     return c^
 
 
@@ -760,6 +770,148 @@ def parse_inlay(doc: Json, result: Int) -> List[LspHint]:
         if label.byte_length() == 0:
             continue
         out.append(LspHint(max(0, doc.int(doc.get(pos, "line"), 0)), max(0, doc.int(doc.get(pos, "character"), 0)), label, doc.int(doc.get(h, "kind"), 0)))
+    return out^
+
+
+def parse_formatting_edits(doc: Json, result: Int) -> List[LspEdit]:
+    """Read a `textDocument/formatting` `TextEdit[]` answer (null -> empty)."""
+    var out = List[LspEdit]()
+    if result < 0 or doc.is_null(result):
+        return out^
+    for e_node in doc.children(result):
+        var s = doc.path(e_node, "range/start")
+        var e = doc.path(e_node, "range/end")
+        var nt = doc.get(e_node, "newText")
+        if s >= 0 and e >= 0 and nt >= 0:
+            out.append(LspEdit(
+                max(0, doc.int(doc.get(s, "line"), 0)),
+                max(0, doc.int(doc.get(s, "character"), 0)),
+                max(0, doc.int(doc.get(e, "line"), 0)),
+                max(0, doc.int(doc.get(e, "character"), 0)),
+                doc.str(nt),
+            ))
+    return out^
+
+
+@fieldwise_init
+struct CallHierarchyItem(Copyable, Movable):
+    var name: String
+    var kind: Int
+    var uri: String
+    var path: String
+    var row: Int
+    var col16: Int
+    var detail: String
+    var raw: String
+
+
+@fieldwise_init
+struct TypeHierarchyItem(Copyable, Movable):
+    var name: String
+    var kind: Int
+    var uri: String
+    var path: String
+    var row: Int
+    var col16: Int
+    var detail: String
+    var raw: String
+
+
+def _parse_call_hierarchy_node(doc: Json, node: Int) -> CallHierarchyItem:
+    var uri = doc.str(doc.get(node, "uri"))
+    var p = uri_to_path(uri) if uri.startswith("file://") else uri
+    var start = doc.path(node, "selectionRange/start")
+    if start < 0:
+        start = doc.path(node, "range/start")
+    var row = max(0, doc.int(doc.get(start, "line"), 0)) if start >= 0 else 0
+    var col16 = max(0, doc.int(doc.get(start, "character"), 0)) if start >= 0 else 0
+    return CallHierarchyItem(
+        doc.str(doc.get(node, "name")),
+        doc.int(doc.get(node, "kind"), 12),
+        uri,
+        p,
+        row,
+        col16,
+        doc.str(doc.get(node, "detail")),
+        doc.dump(node),
+    )
+
+
+def parse_call_hierarchy_items(doc: Json, result: Int) -> List[CallHierarchyItem]:
+    """Read `textDocument/prepareCallHierarchy` `CallHierarchyItem[]` answer."""
+    var out = List[CallHierarchyItem]()
+    if result < 0 or doc.is_null(result):
+        return out^
+    for c in doc.children(result):
+        var it = _parse_call_hierarchy_node(doc, c)
+        if it.name.byte_length() > 0:
+            out.append(it^)
+    return out^
+
+
+def parse_incoming_calls(doc: Json, result: Int) -> List[CallHierarchyItem]:
+    """Read `callHierarchy/incomingCalls` `CallHierarchyIncomingCall[]` answer (positioning on first `fromRanges` if given)."""
+    var out = List[CallHierarchyItem]()
+    if result < 0 or doc.is_null(result):
+        return out^
+    for entry in doc.children(result):
+        var from_node = doc.get(entry, "from")
+        if from_node < 0:
+            continue
+        var it = _parse_call_hierarchy_node(doc, from_node)
+        if it.name.byte_length() == 0:
+            continue
+        var fr = doc.get(entry, "fromRanges")
+        if fr >= 0 and doc.size(fr) > 0:
+            var r0 = doc.children(fr)[0]
+            var s0 = doc.get(r0, "start")
+            if s0 >= 0:
+                it.row = max(0, doc.int(doc.get(s0, "line"), it.row))
+                it.col16 = max(0, doc.int(doc.get(s0, "character"), it.col16))
+        out.append(it^)
+    return out^
+
+
+def parse_outgoing_calls(doc: Json, result: Int) -> List[CallHierarchyItem]:
+    """Read `callHierarchy/outgoingCalls` `CallHierarchyOutgoingCall[]` answer."""
+    var out = List[CallHierarchyItem]()
+    if result < 0 or doc.is_null(result):
+        return out^
+    for entry in doc.children(result):
+        var to_node = doc.get(entry, "to")
+        if to_node < 0:
+            continue
+        var it = _parse_call_hierarchy_node(doc, to_node)
+        if it.name.byte_length() > 0:
+            out.append(it^)
+    return out^
+
+
+def parse_type_hierarchy_items(doc: Json, result: Int) -> List[TypeHierarchyItem]:
+    """Read `prepareTypeHierarchy` / `supertypes` / `subtypes` `TypeHierarchyItem[]` answer."""
+    var out = List[TypeHierarchyItem]()
+    if result < 0 or doc.is_null(result):
+        return out^
+    for node in doc.children(result):
+        var uri = doc.str(doc.get(node, "uri"))
+        var p = uri_to_path(uri) if uri.startswith("file://") else uri
+        var start = doc.path(node, "selectionRange/start")
+        if start < 0:
+            start = doc.path(node, "range/start")
+        var row = max(0, doc.int(doc.get(start, "line"), 0)) if start >= 0 else 0
+        var col16 = max(0, doc.int(doc.get(start, "character"), 0)) if start >= 0 else 0
+        var name = doc.str(doc.get(node, "name"))
+        if name.byte_length() > 0:
+            out.append(TypeHierarchyItem(
+                name,
+                doc.int(doc.get(node, "kind"), 23),
+                uri,
+                p,
+                row,
+                col16,
+                doc.str(doc.get(node, "detail")),
+                doc.dump(node),
+            ))
     return out^
 
 
@@ -1514,6 +1666,75 @@ struct LspClient(Copyable, Movable):
             return -1
         return self.conn.request("completionItem/resolve", raw_item, now)
 
+    def request_formatting(
+        mut self,
+        uri: String,
+        tab_size: Int,
+        insert_spaces: Bool,
+        now: Int = 0,
+    ) -> Int:
+        """Ask the server to format the whole document (`textDocument/formatting`)."""
+        if self.state != LSP_READY or not self.table.formatting or self.find_doc(uri) < 0:
+            return -1
+        var p = (
+            "{\"textDocument\":{\"uri\":"
+            + json_quote(uri)
+            + "},\"options\":{\"tabSize\":"
+            + String(max(1, tab_size))
+            + ",\"insertSpaces\":"
+            + ("true" if insert_spaces else "false")
+            + "}}"
+        )
+        return self.conn.request("textDocument/formatting", p, now)
+
+    def request_prepare_call_hierarchy(
+        mut self,
+        uri: String,
+        line: Int,
+        character: Int,
+        now: Int = 0,
+    ) -> Int:
+        """Ask for `CallHierarchyItem[]` at `(line, character)` (`textDocument/prepareCallHierarchy`)."""
+        if self.state != LSP_READY or not self.table.call_hierarchy or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/prepareCallHierarchy", self.position_params(uri, line, character) + "}", now)
+
+    def request_incoming_calls(mut self, raw_item: String, now: Int = 0) -> Int:
+        """Ask for callers of `raw_item` (`callHierarchy/incomingCalls`)."""
+        if self.state != LSP_READY or not self.table.call_hierarchy or raw_item.byte_length() == 0:
+            return -1
+        return self.conn.request("callHierarchy/incomingCalls", "{\"item\":" + raw_item + "}", now)
+
+    def request_outgoing_calls(mut self, raw_item: String, now: Int = 0) -> Int:
+        """Ask for callees of `raw_item` (`callHierarchy/outgoingCalls`)."""
+        if self.state != LSP_READY or not self.table.call_hierarchy or raw_item.byte_length() == 0:
+            return -1
+        return self.conn.request("callHierarchy/outgoingCalls", "{\"item\":" + raw_item + "}", now)
+
+    def request_prepare_type_hierarchy(
+        mut self,
+        uri: String,
+        line: Int,
+        character: Int,
+        now: Int = 0,
+    ) -> Int:
+        """Ask for `TypeHierarchyItem[]` at `(line, character)` (`textDocument/prepareTypeHierarchy`)."""
+        if self.state != LSP_READY or not self.table.type_hierarchy or self.find_doc(uri) < 0:
+            return -1
+        return self.conn.request("textDocument/prepareTypeHierarchy", self.position_params(uri, line, character) + "}", now)
+
+    def request_supertypes(mut self, raw_item: String, now: Int = 0) -> Int:
+        """Ask for supertypes of `raw_item` (`typeHierarchy/supertypes`)."""
+        if self.state != LSP_READY or not self.table.type_hierarchy or raw_item.byte_length() == 0:
+            return -1
+        return self.conn.request("typeHierarchy/supertypes", "{\"item\":" + raw_item + "}", now)
+
+    def request_subtypes(mut self, raw_item: String, now: Int = 0) -> Int:
+        """Ask for subtypes of `raw_item` (`typeHierarchy/subtypes`)."""
+        if self.state != LSP_READY or not self.table.type_hierarchy or raw_item.byte_length() == 0:
+            return -1
+        return self.conn.request("typeHierarchy/subtypes", "{\"item\":" + raw_item + "}", now)
+
     def doc_version(self, uri: String) -> Int:
         var i = self.find_doc(uri)
         return self.docs[i].version if i >= 0 else -1
@@ -1626,8 +1847,78 @@ struct LspClient(Copyable, Movable):
                     if len(self.log) > 200:
                         _ = self.log.pop(0)
             elif m.kind == RPC_REQUEST:
-                # requests we can satisfy with "nothing" get null; the rest are refused
-                if m.method == "client/registerCapability" or m.method == "client/unregisterCapability" or m.method == "window/workDoneProgress/create":
+                if m.method == "client/registerCapability":
+                    var regs = m.doc.get(m.params(), "registrations")
+                    if regs >= 0:
+                        for reg in m.doc.children(regs):
+                            var meth = m.doc.str(m.doc.get(reg, "method"))
+                            var ropts = m.doc.get(reg, "registerOptions")
+                            if meth == "textDocument/didSave":
+                                self.table.sync_save = True
+                            elif meth == "textDocument/didChange":
+                                if ropts >= 0:
+                                    var sk = m.doc.int(m.doc.get(ropts, "syncKind"), self.table.sync_kind)
+                                    if sk >= SYNC_NONE and sk <= SYNC_INCREMENTAL:
+                                        self.table.sync_kind = sk
+                            elif meth == "textDocument/formatting":
+                                self.table.formatting = True
+                            elif meth == "textDocument/inlayHint":
+                                self.table.inlay_hint = True
+                            elif (
+                                meth == "textDocument/semanticTokens"
+                                or meth == "textDocument/semanticTokens/full"
+                                or meth == "textDocument/semanticTokens/range"
+                            ):
+                                self.table.semantic_tokens = True
+                                if meth != "textDocument/semanticTokens/range":
+                                    self.table.semantic_full = True
+                                if meth == "textDocument/semanticTokens/range":
+                                    self.table.semantic_range = True
+                                if ropts >= 0:
+                                    var full_opt = m.doc.get(ropts, "full")
+                                    if full_opt >= 0 and not m.doc.is_null(full_opt):
+                                        self.table.semantic_full = m.doc.kind(full_opt) != 1 or m.doc.bool(full_opt)
+                                    var rng_opt = m.doc.get(ropts, "range")
+                                    if rng_opt >= 0 and not m.doc.is_null(rng_opt):
+                                        self.table.semantic_range = m.doc.kind(rng_opt) != 1 or m.doc.bool(rng_opt)
+                                    var tt = string_items(m.doc, m.doc.path(ropts, "legend/tokenTypes"))
+                                    if len(tt) > 0:
+                                        self.table.token_types = tt^
+                                    var tm = string_items(m.doc, m.doc.path(ropts, "legend/tokenModifiers"))
+                                    if len(tm) > 0:
+                                        self.table.token_modifiers = tm^
+                            elif meth == "textDocument/documentSymbol":
+                                self.table.document_symbol = True
+                            elif meth == "textDocument/definition":
+                                self.table.definition = True
+                            elif meth == "textDocument/references":
+                                self.table.references = True
+                            elif meth == "textDocument/rename":
+                                self.table.rename = True
+                                if ropts >= 0 and m.doc.bool(m.doc.get(ropts, "prepareProvider")):
+                                    self.table.prepare_rename = True
+                            elif meth == "textDocument/codeAction":
+                                self.table.code_action = True
+                                if ropts >= 0 and m.doc.bool(m.doc.get(ropts, "resolveProvider")):
+                                    self.table.code_action_resolve = True
+                            elif meth == "textDocument/callHierarchy":
+                                self.table.call_hierarchy = True
+                            elif meth == "textDocument/typeHierarchy":
+                                self.table.type_hierarchy = True
+                            elif meth == "textDocument/hover":
+                                self.table.hover = True
+                            elif meth == "textDocument/completion":
+                                self.table.completion = True
+                                if ropts >= 0:
+                                    if m.doc.bool(m.doc.get(ropts, "resolveProvider")):
+                                        self.table.completion_resolve = True
+                                    var trigs = string_items(m.doc, m.doc.get(ropts, "triggerCharacters"))
+                                    if len(trigs) > 0:
+                                        self.table.completion_triggers = trigs^
+                            elif meth == "textDocument/signatureHelp":
+                                self.table.signature_help = True
+                    self.conn.respond(m.id_json, "null")
+                elif m.method == "client/unregisterCapability" or m.method == "window/workDoneProgress/create":
                     self.conn.respond(m.id_json, "null")
                 elif m.method == "workspace/applyEdit":
                     # handed to the editor, which checks it and may ask the user

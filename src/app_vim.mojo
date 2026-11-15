@@ -12,6 +12,7 @@ from appstate import *
 from util import *
 from term import KEY_ESC, KEY_ENTER, KEY_BACKSPACE, KEY_TAB, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_HOME, KEY_END, KEY_DELETE, KEY_INSERT, MOD_SHIFT, MOD_ALT, MOD_CTRL, KEY_MASK, K_BASE
 from window import WK_EDITOR, Range
+from layout import L_GROUP, L_ROW, L_COL, RATIO_MIN, RATIO_MAX
 from vim import *
 from vim_motion import *
 from app_input import *
@@ -142,6 +143,107 @@ __extension App:
             self.vim.dot = self.vim.cur.copy()
         self.vim.cur.clear()
         self.vim.changed = False
+
+    def vim_ctrl_w(mut self, t: Int, wb: Int, wn: Int) raises:
+        """Ctrl-W <key> window / split management."""
+        if wb == 119:
+            self.exec(CM_NEXT_PANE if self.tiled else CM_NEXTWIN)
+        elif wb == 104 or wb == KEY_LEFT:
+            self.vim_pane_dir(-1, 0)
+        elif wb == 108 or wb == KEY_RIGHT:
+            self.vim_pane_dir(1, 0)
+        elif wb == 107 or wb == KEY_UP:
+            self.vim_pane_dir(0, -1)
+        elif wb == 106 or wb == KEY_DOWN:
+            self.vim_pane_dir(0, 1)
+        elif wb == 115:
+            self.exec(CM_SPLIT_DOWN)
+        elif wb == 118:
+            self.exec(CM_SPLIT_RIGHT)
+        elif wb == 113 or wb == 99:
+            self.exec(CM_CLOSE)
+        elif wb == 111:
+            self.exec(CM_ZOOM)
+        elif wb == 61:                                  # Ctrl-W =: equalize split ratios
+            for ri in range(len(self.lay.ratio)):
+                self.lay.ratio[ri] = 500
+            for wi in range(len(self.wins)):
+                self.wins[wi].half = False
+            if self.tiled:
+                self.layout_sync()
+            else:
+                self.fit_windows()
+        elif wb == 62 or wb == 60 or wb == 43 or wb == 45:  # Ctrl-W > < + -: grow/shrink pane
+            var want_kind = L_ROW if (wb == 62 or wb == 60) else L_COL
+            var grow = wb == 62 or wb == 43
+            var delta = (50 if grow else -50) * max(1, wn)
+            if self.tiled:
+                var node = self.lay.cur
+                var adjusted = False
+                while node >= 0 and self.lay.parent[node] >= 0:
+                    var par = self.lay.parent[node]
+                    if self.lay.kind[par] == want_kind:
+                        var nr = self.lay.ratio[par] + (delta if self.lay.first[par] == node else -delta)
+                        self.lay.ratio[par] = max(RATIO_MIN, min(RATIO_MAX, nr))
+                        adjusted = True
+                        break
+                    node = par
+                if not adjusted:
+                    _ = self.lay.resize(delta)
+                self.layout_sync()
+            elif t >= 0:
+                if wb == 62 or wb == 60:
+                    self.wins[t].w = max(16, min(self.scr.w - self.wins[t].x, self.wins[t].w + (4 if grow else -4) * max(1, wn)))
+                else:
+                    self.wins[t].h = max(5, min(self.desk_h() + 1 - self.wins[t].y, self.wins[t].h + (2 if grow else -2) * max(1, wn)))
+        elif wb == 72 or wb == 74 or wb == 75 or wb == 76:  # Ctrl-W H J K L: move tab/split
+            if self.tiled:
+                self.layout_sync()
+                var all_ids = self.lay.ids()
+                if len(all_ids) >= 2 and len(self.lay.tabs[self.lay.cur]) > 0:
+                    var id = self.lay.shown(self.lay.cur)
+                    self.lay.remove(id)
+                    var old_root = self.lay.root
+                    var split_kind = L_ROW if (wb == 72 or wb == 76) else L_COL
+                    var s = self.lay.new_node(split_kind, -1)
+                    var ng = self.lay.new_node(L_GROUP, s)
+                    self.lay.tabs[ng].append(id)
+                    self.lay.parent[old_root] = s
+                    if wb == 72 or wb == 75:
+                        self.lay.first[s] = ng
+                        self.lay.second[s] = old_root
+                    else:
+                        self.lay.first[s] = old_root
+                        self.lay.second[s] = ng
+                    self.lay.root = s
+                    self.lay.cur = ng
+                    self.layout_sync()
+            elif t >= 0:
+                var dh = self.desk_h()
+                if wb == 72:
+                    self.wins[t].x = 0
+                    self.wins[t].y = 1
+                    self.wins[t].w = max(16, self.scr.w // 2)
+                    self.wins[t].h = dh
+                elif wb == 76:
+                    var rw = max(16, self.scr.w // 2)
+                    self.wins[t].x = max(0, self.scr.w - rw)
+                    self.wins[t].y = 1
+                    self.wins[t].w = rw
+                    self.wins[t].h = dh
+                elif wb == 75:
+                    self.wins[t].x = 0
+                    self.wins[t].y = 1
+                    self.wins[t].w = self.scr.w
+                    self.wins[t].h = max(5, dh // 2)
+                else:
+                    var bh = max(5, dh // 2)
+                    self.wins[t].x = 0
+                    self.wins[t].y = 1 + max(0, dh - bh)
+                    self.wins[t].w = self.scr.w
+                    self.wins[t].h = bh
+        else:
+            self.vim_cancel()
 
     def vim_pane_dir(mut self, dx: Int, dy: Int) raises:
         """Focus the visible window in direction (dx, dy) from the active window."""
@@ -307,30 +409,12 @@ __extension App:
             self.vim_done()
             return True
         if self.vim.pend == 23:                     # Ctrl-W <key>: window commands
+            var wn = self.vim.take_count()
             self.vim.pend = 0
             self.vim.count = 0
             self.vim.cur.clear()
             var wb = k & KEY_MASK
-            if wb == 119:
-                self.exec(CM_NEXT_PANE if self.tiled else CM_NEXTWIN)
-            elif wb == 104 or wb == KEY_LEFT:
-                self.vim_pane_dir(-1, 0)
-            elif wb == 108 or wb == KEY_RIGHT:
-                self.vim_pane_dir(1, 0)
-            elif wb == 107 or wb == KEY_UP:
-                self.vim_pane_dir(0, -1)
-            elif wb == 106 or wb == KEY_DOWN:
-                self.vim_pane_dir(0, 1)
-            elif wb == 115:
-                self.exec(CM_SPLIT_DOWN)
-            elif wb == 118:
-                self.exec(CM_SPLIT_RIGHT)
-            elif wb == 113 or wb == 99:
-                self.exec(CM_CLOSE)
-            elif wb == 111:
-                self.exec(CM_ZOOM)
-            else:
-                self.vim_cancel()
+            self.vim_ctrl_w(t, wb, wn)
             return True
         if (k & MOD_CTRL) != 0 and (k & MOD_ALT) == 0:
             var cb = k & KEY_MASK
@@ -660,6 +744,32 @@ __extension App:
             self.vim.pend = 0
             if ch == CH_G:
                 self.vim_do_motion(t, CH_G, 0, False)
+            elif (ch == 45 or ch == 43) and self.vim.op == 0 and self.vim.mode == VM_NORMAL:   # g- / g+
+                var n_u = self.vim.take_count()
+                self.vim_cancel()
+                if self.wins[t].read_only:
+                    self.say("Buffer is read-only")
+                    return True
+                var moved = False
+                var last_p = Pos(-1, -1)
+                for _ in range(n_u):
+                    var step = self.wins[t].buf.undo_earlier() if ch == 45 else self.wins[t].buf.undo_later()
+                    if not step[0]:
+                        break
+                    moved = True
+                    last_p = step[1].copy()
+                if moved:
+                    self.wins[t].sel = False
+                    self.wins[t].extra.clear()
+                    if last_p.r >= 0:
+                        self.wins[t].cr = last_p.r
+                        self.wins[t].cc = last_p.c
+                    self.wins[t].clamp()
+                    self.wins[t].sync_want()
+                    self.vim_settle(t)
+                    self.sync_shared_buffers(t)
+                else:
+                    self.say("Already at oldest change" if ch == 45 else "Already at newest change")
             elif ch == 100 and self.vim.op == 0 and self.vim.mode == VM_NORMAL:     # gd
                 self.vim_cancel()
                 self.exec(CM_DEFINITION)
@@ -1113,6 +1223,11 @@ __extension App:
             out.append(10)
         return out^
 
+    def toggle_comment_multi(mut self, t: Int):
+        """Toggle comments on window `t` across all cursors using language-aware prefix."""
+        if t >= 0 and t < len(self.wins):
+            self.wins[t].toggle_comment_multi()
+
     def vim_apply(mut self, t: Int, op: Int, s: VimSpan):
         """Operator `op` on span `s`."""
         var n_lines = s.r2 - s.r1 + 1
@@ -1122,8 +1237,8 @@ __extension App:
             self.wins[t].ar = s.r1
             self.wins[t].ac = 0
             self.wins[t].cr = s.r2
-            self.wins[t].cc = 0
-            self.wins[t].toggle_comment()
+            self.wins[t].cc = max(1, self.wins[t].buf.llen(s.r2))
+            self.toggle_comment_multi(t)
             self.wins[t].sel = False
             self.wins[t].vsel = 0
             self.wins[t].cr = s.r1
