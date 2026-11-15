@@ -221,7 +221,7 @@ def test_tier2_f27_bound5_markdown_code_block_syntax_in_preview() raises:
 def test_tier2_f27_bound6_gfm_checkbox_glyphs_and_wk_mdpreview_draw() raises:
     """Verify GFM checkboxes render ☐/☑ glyphs and WK_MDPREVIEW Window.draw renders rich Markdown."""
     var hl = Highlighter()
-    var doc = "# Title\n\n- [ ] Todo item\n- [x] Done ~~old~~ item\n\n```mojo\ndef main():\n    pass\n```\n"
+    var doc = "# Title\n\n- [ ] Todo item\n- [x] Done ~~old~~ item\n\n| ColA | ColB |\n|---|---|\n| v1 | v2 |\n\n```mojo\ndef main():\n    pass\n```\n"
     var lines = md_render(doc, 60, hl)
     var full = String("")
     for l in lines:
@@ -229,18 +229,19 @@ def test_tier2_f27_bound6_gfm_checkbox_glyphs_and_wk_mdpreview_draw() raises:
     assert_true(full.find("☐ Todo item") >= 0)
     assert_true(full.find("☑ Done old item") >= 0)
 
-    var win = Window(WK_MDPREVIEW, "README.md", "README.md", 0, 0, 64, 14, 1)
+    var win = Window(WK_MDPREVIEW, "README.md", "README.md", 0, 0, 64, 18, 1)
     win.buf.load(decode(doc))
-    var scr = Screen(64, 14)
+    var scr = Screen(64, 18)
     var pal = theme(0)
     win.draw(scr, pal, hl, True, False, False, False)
 
     var all_scr = String("")
-    for ry in range(1, 13):
+    for ry in range(1, 17):
         all_scr += to_str(scr.row_text(ry)) + "\n"
     assert_true(all_scr.find("Title") >= 0)
     assert_true(all_scr.find("☐ Todo item") >= 0)
     assert_true(all_scr.find("☑ Done old item") >= 0)
+    assert_true(all_scr.find("┌") >= 0 and all_scr.find("ColA") >= 0 and all_scr.find("v2") >= 0, all_scr)
 
 
 def test_tier2_f27_bound7_app_pinned_tab_middle_close_mdpreview_and_splitter_drag() raises:

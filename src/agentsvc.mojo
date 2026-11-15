@@ -111,6 +111,7 @@ struct AgentTerm(Copyable, Movable):
                 self.truncated = True
             self.done = True
             var st = self.pty.status
+            _ = self.pty.stop()
             if st & 127 == 0:
                 self.code = (st >> 8) & 255
             else:
@@ -127,6 +128,8 @@ struct AgentTerm(Copyable, Movable):
                 self.code = (st >> 8) & 255
             else:
                 self.signal = st & 127 if st >= 0 and st & 127 != 0 else 9
+        elif self.pty.master >= 0:
+            _ = self.pty.stop()
 
     def exit_json(self) -> String:
         """{"exitCode": .., "signal": ..} (as ACP has it: a signal by name)."""

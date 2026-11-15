@@ -31,9 +31,9 @@ jobs:
           - platform: linux-aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    # Tests compile into 4 cached shards (scripts/gen_test_runner.py) instead of 140+
-    # separate AOT binaries; 45 minutes leaves generous headroom on 4-CPU runners.
-    timeout-minutes: 45
+    # Tests compile into 9 cached shards (scripts/gen_test_runner.py) instead of 180+
+    # separate AOT binaries; 120 minutes leaves generous headroom on cold-cache 4-CPU runners.
+    timeout-minutes: 120
     env:
       TM_JOBS: "4"
     steps:
@@ -68,7 +68,7 @@ jobs:
     name: check (osx-arm64)
     if: github.event_name != 'schedule'
     runs-on: macos-14
-    timeout-minutes: 45
+    timeout-minutes: 120
     continue-on-error: true
     env:
       TM_JOBS: "4"

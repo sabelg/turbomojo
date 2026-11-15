@@ -77,6 +77,13 @@ __extension App:
                 return i
         return -1
 
+    def gpu_probe_stop(mut self):
+        if self.gpu_fd >= 0:
+            _ = external_call["pclose", Int32](self.gpu_fp)
+            self.gpu_fd = -1
+            self.gpu_fp = 0
+            self.gpu_out.clear()
+
     def gpu_mon_stop(mut self):
         if self.gpu_mon_fd >= 0:
             _ = external_call["pclose", Int32](self.gpu_mon_fp)
@@ -140,9 +147,9 @@ __extension App:
                 text.append(10)
             for cp in decode(lines[k]):
                 text.append(cp)
-            if lines[k].startswith("GPU ["):
+            if lines[k].startswith("GPU ") and not lines[k].startswith("GPU Telemetry"):
                 marks.append(RM_OK)
-            elif k == 0 or lines[k].startswith("Active GPU Processes:"):
+            elif k == 0 or lines[k].startswith("Active Compute Processes"):
                 marks.append(RM_DIM)
             else:
                 marks.append(RM_NONE)

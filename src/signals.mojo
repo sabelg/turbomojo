@@ -72,6 +72,10 @@ struct SignalFd(Copyable, Movable):
         _ = external_call["close", Int32](fds[0])
         _ = external_call["close", Int32](fds[1])
         if Int(r) != SIGNAL_READ_FD or Int(w) != SIGNAL_WRITE_FD:
+            if Int(r) == SIGNAL_READ_FD:
+                _ = external_call["close", Int32](Int32(SIGNAL_READ_FD))
+            if Int(w) == SIGNAL_WRITE_FD:
+                _ = external_call["close", Int32](Int32(SIGNAL_WRITE_FD))
             return False
         make_nonblocking(SIGNAL_READ_FD)
         make_nonblocking(SIGNAL_WRITE_FD)

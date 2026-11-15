@@ -6,7 +6,7 @@ after the other (Ctrl-K B). A dash: no key in that keymap - the menus and the co
 palette (Ctrl-P, then >) have every command. Your own keys (`[keys]` in the config file)
 come on top; Help > Keyboard reference (F1) shows the keys as you have them.
 
-This file is made by `tmide --keys` (TurboMojo 2.2.0).
+This file is made by `tmide --keys` (TurboMojo 2.4.0).
 
 ## System (≡)
 
@@ -86,6 +86,7 @@ This file is made by `tmide --keys` (TurboMojo 2.2.0).
 | Describe symbol | Alt-I | Alt-I | Alt-I |
 | Parameter info | Alt-P | Alt-P | Alt-P |
 | Go to definition | F12 | F12 | F12 |
+| Peek definition | Alt-Shift-F12 | Alt-Shift-F12 | Alt-Shift-F12 |
 | Find references | Shift-F12 | Shift-F12 | Shift-F12 |
 | Rename symbol | Shift-F2 | Shift-F2 | Shift-F2 |
 | Quick fix | Alt-Enter | Alt-Enter | Alt-Enter |
@@ -180,7 +181,6 @@ This file is made by `tmide --keys` (TurboMojo 2.2.0).
 | Send to REPL | Ctrl-F10 | Ctrl-F10 | Ctrl-F10 |
 | Mention in agent prompt | Shift-F11 | Shift-F11 | Shift-F11 |
 | Run code cell and advance (# %%) | Ctrl-Shift-Enter | Ctrl-Shift-Enter | Ctrl-Shift-Enter |
-| Peek definition | Alt-Shift-F12 | Alt-Shift-F12 | Alt-Shift-F12 |
 
 ## Always
 

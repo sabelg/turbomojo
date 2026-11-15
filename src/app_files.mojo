@@ -13,7 +13,7 @@ from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from hexview import is_binary_data, render_hex_rows
-from markdown import md_render
+from markdown import md_render_rich
 from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
@@ -352,7 +352,8 @@ __extension App:
                     self.wins[pv].buf.core = self.wins[peer].buf.core
                     self.wins[pv].buf.version = self.wins[peer].buf.version
                     var pcount = max(1, self.wins[peer].buf.count() - 1)
-                    var md_lines = md_render(to_str(self.wins[pv].buf.all_text()), max(8, self.wins[pv].w - 4), self.hl)
+                    var md_links = List[String]()
+                    var md_lines = md_render_rich(to_str(self.wins[pv].buf.all_text()), max(8, self.wins[pv].w - 4), self.hl, md_links, True)
                     var mcount = max(0, len(md_lines) - 1)
                     self.wins[pv].top = (min(self.wins[peer].top, pcount) * mcount) // pcount
 

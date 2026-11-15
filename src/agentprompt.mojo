@@ -61,6 +61,7 @@ struct AgentPrompt(Movable):
 
     def key(mut self, k: Int) -> Bool:
         var n = len(self.input)
+        self.cur = max(0, min(self.cur, n))
         if k == KEY_BACKSPACE:
             if self.cur > 0:
                 _ = self.input.pop(self.cur - 1)
@@ -113,11 +114,13 @@ struct AgentPrompt(Movable):
 
     def insert_newline(mut self):
         """Insert newline into prompt (Shift-Enter)."""
+        self.cur = max(0, min(self.cur, len(self.input)))
         self.input.insert(self.cur, 10)
         self.cur += 1
 
     def paste(mut self, text: List[Int]) -> Bool:
         """Preserves newlines (10) and spaces during paste, stripping CR (13)."""
+        self.cur = max(0, min(self.cur, len(self.input)))
         for c in text:
             var ch = c
             if ch == 13:
@@ -131,12 +134,13 @@ struct AgentPrompt(Movable):
         var rows = List[List[Int]]()
         var cur_row = decode("› ")
         var shown = self.input.copy()
+        var wrap_w = max(3, width)
         for c in shown:
             if c == 10:  # Newline
                 rows.append(cur_row^)
                 cur_row = decode("  ")
                 continue
-            if len(cur_row) >= width:
+            if len(cur_row) >= wrap_w:
                 rows.append(cur_row^)
                 cur_row = decode("  ")
             cur_row.append(c)
@@ -151,7 +155,7 @@ struct AgentPrompt(Movable):
         var per = max(1, width - 2)
         var row = 0
         var seg_col = 0
-        var lim = min(self.cur, len(self.input))
+        var lim = max(0, min(self.cur, len(self.input)))
         for idx in range(lim):
             var c = self.input[idx]
             if c == 10:

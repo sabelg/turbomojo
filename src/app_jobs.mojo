@@ -169,6 +169,9 @@ __extension App:
     # -------------------------------------------------- background jobs
     def start_job(mut self, kind: Int, cmd: String, path: String, exe: String) -> Bool:
         """Start `cmd` through popen with a non-blocking pipe; the main loop polls it."""
+        if self.job.active:
+            self.say("Compiler is busy - Ctrl-F2 cancels it")
+            return False
         self.fsearch.cancel()           # the Message window is about to show this job
         var c = "echo __PID__$$ && " + cmd
         var fp = popen_read(c)
@@ -375,6 +378,99 @@ __extension App:
             _ = external_call["kill", Int32](Int32(self.job.pid), Int32(15))
         self.job.cancelled = True
         self.say("Cancelling...")
+
+    def stop_job_now(mut self):
+        """Force-terminate and reap `self.job` without blocking on `pclose`, cleaning any temp outputs."""
+        if not self.job.active:
+            return
+        var buf = List[UInt8](length=4096, fill=0)
+        var eof = False
+        for step in range(30):
+            var n = external_call["read", Int](Int32(self.job.fd), buf.unsafe_ptr(), Int(4096))
+            if n > 0:
+                for k in range(n):
+                    self.job.data.append(buf[k])
+            elif n == 0:
+                eof = True
+                break
+            if self.job.pid == 0 and len(self.job.data) >= 8 and self.job.data[0] == 95:
+                var nl = -1
+                for k in range(len(self.job.data)):
+                    if self.job.data[k] == 10:
+                        nl = k
+                        break
+                if nl > 0:
+                    var digits = List[UInt8]()
+                    for k in range(7, nl):
+                        digits.append(self.job.data[k])
+                    try:
+                        self.job.pid = atol(bytes_to_str(digits))
+                    except:
+                        self.job.pid = -1
+            if self.job.pid > 0 and step == 0:
+                _ = external_call["kill", Int32](Int32(self.job.pid), Int32(15))
+            elif self.job.pid > 0 and step == 20 and not eof:
+                _ = external_call["kill", Int32](Int32(self.job.pid), Int32(9))
+            if eof:
+                break
+            _ = external_call["usleep", Int32](UInt32(10000))
+        if self.job.pid > 0 and not eof:
+            _ = external_call["kill", Int32](Int32(self.job.pid), Int32(9))
+        _ = external_call["pclose", Int32](self.job.fp)
+        if self.job.kind == JOB_CELL and self.cell_tmp_path.byte_length() > 0:
+            delete_file(self.cell_tmp_path)
+            self.cell_tmp_path = ""
+        if self.job.kind == JOB_MAX_BENCH and self.max_bench_out_file.byte_length() > 0:
+            delete_file(self.max_bench_out_file)
+            self.max_bench_out_file = ""
+        if self.job.kind == JOB_ROOFLINE and self.job.exe.byte_length() > 0:
+            delete_file(self.job.exe)
+        self.job = Job()
+
+    def stop_aux_job_now(mut self):
+        """Force-terminate and reap `self.aux_job` without blocking on `pclose`, cleaning any temp outputs."""
+        if not self.aux_job.active:
+            return
+        var buf = List[UInt8](length=4096, fill=0)
+        var eof = False
+        for step in range(30):
+            var n = external_call["read", Int](Int32(self.aux_job.fd), buf.unsafe_ptr(), Int(4096))
+            if n > 0:
+                for k in range(n):
+                    self.aux_job.data.append(buf[k])
+            elif n == 0:
+                eof = True
+                break
+            if self.aux_job.pid == 0 and len(self.aux_job.data) >= 8 and self.aux_job.data[0] == 95:
+                var nl = -1
+                for k in range(len(self.aux_job.data)):
+                    if self.aux_job.data[k] == 10:
+                        nl = k
+                        break
+                if nl > 0:
+                    var digits = List[UInt8]()
+                    for k in range(7, nl):
+                        digits.append(self.aux_job.data[k])
+                    try:
+                        self.aux_job.pid = atol(bytes_to_str(digits))
+                    except:
+                        self.aux_job.pid = -1
+            if self.aux_job.pid > 0 and step == 0:
+                _ = external_call["kill", Int32](Int32(self.aux_job.pid), Int32(15))
+            elif self.aux_job.pid > 0 and step == 20 and not eof:
+                _ = external_call["kill", Int32](Int32(self.aux_job.pid), Int32(9))
+            if eof:
+                break
+            _ = external_call["usleep", Int32](UInt32(10000))
+        if self.aux_job.pid > 0 and not eof:
+            _ = external_call["kill", Int32](Int32(self.aux_job.pid), Int32(9))
+        _ = external_call["pclose", Int32](self.aux_job.fp)
+        if self.aux_job.kind == JOB_CODEGEN and self.codegen_out_file.byte_length() > 0:
+            delete_file(self.codegen_out_file)
+            self.codegen_out_file = ""
+        if self.aux_job.kind == JOB_ROOFLINE and self.aux_job.exe.byte_length() > 0:
+            delete_file(self.aux_job.exe)
+        self.aux_job = Job()
 
     def job_elapsed(self) -> Float64:
         return Float64(Int(perf_counter_ns()) - self.job.t0) / 1e9

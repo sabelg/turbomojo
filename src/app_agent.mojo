@@ -492,7 +492,11 @@ __extension App:
             var r = run_capture("cd " + shell_quote(root) + " && git status --short --branch 2>&1 && echo '---' && git diff --stat 2>&1 && echo '---' && git diff 2>&1")
             var out = bytes_to_str(r.out)
             if out.byte_length() > 16384:
-                var trimmed = String(out[byte=0:16384])
+                var cut_at = 16384
+                var ob = out.as_bytes()
+                while cut_at > 0 and (Int(ob[cut_at]) & 0xC0) == 0x80:
+                    cut_at -= 1
+                var trimmed = String(out[byte=0:cut_at])
                 out = trimmed + "\n...(git diff truncated)"
             if String(out.strip()).byte_length() == 0:
                 out = "(clean git working tree)"

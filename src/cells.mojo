@@ -7,7 +7,7 @@ bindings from earlier cells remain in scope while only the active cell's output 
 from std.collections import List
 from std.python import Python, PythonObject
 from buffer import TextBuffer
-from util import decode, to_str, is_ident
+from util import decode, to_str, is_ident, slice_str
 
 comptime CELL_SUCCESS = 0
 comptime CELL_ERROR = 1
@@ -345,9 +345,9 @@ def format_cell_divider_badge(status: Int, duration_ms: Int, preview: String) ->
             prev_single += to_str(l)
 
     var trimmed = String(prev_single.strip())
-    if trimmed.byte_length() > 40:
-        var head = trimmed[byte=0:37]
-        trimmed = String(head) + "…"
+    var cps = decode(trimmed)
+    if len(cps) > 40:
+        trimmed = slice_str(cps, 0, 37) + "…"
 
     return "[" + mark + " " + String(duration_ms) + "ms | " + trimmed + "]"
 

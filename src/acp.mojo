@@ -536,6 +536,7 @@ struct AcpClient(Movable):
         if m.id == self.init_id:
             self.init_id = -1
             if m.kind == RPC_ERROR:
+                _ = self.conn.stop()
                 self.fail("initialize failed: " + m.error_message())
                 return
             var r = m.result()
@@ -583,6 +584,7 @@ struct AcpClient(Movable):
         if m.id == self.new_id:
             self.new_id = -1
             if m.kind == RPC_ERROR:
+                _ = self.conn.stop()
                 var why = m.error_message()
                 if len(self.auth_methods) > 0:
                     why += " (the agent wants you to sign in first: run it once in a terminal)"
@@ -590,6 +592,7 @@ struct AcpClient(Movable):
                 return
             self.session_id = m.doc.str(m.doc.get(m.result(), "sessionId"))
             if self.session_id.byte_length() == 0:
+                _ = self.conn.stop()
                 self.fail("no session: the agent gave no session id")
                 return
             self.resumed = False

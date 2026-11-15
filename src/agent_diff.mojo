@@ -64,7 +64,7 @@ struct AgentProposalQueue(Movable):
 
     def accept_current(mut self) -> Bool:
         """Accept current proposal: writes to disk, records snapshot, advances queue."""
-        if len(self.proposals) == 0 or self.current_idx >= len(self.proposals):
+        if self.current_idx < 0 or len(self.proposals) == 0 or self.current_idx >= len(self.proposals):
             return False
         var p = self.proposals.pop(self.current_idx)
         self.record_checkpoint(p.path, p.old, p.exists)
@@ -78,7 +78,7 @@ struct AgentProposalQueue(Movable):
 
     def reject_current(mut self) -> Bool:
         """Reject current proposal: leaves disk untouched, advances queue."""
-        if len(self.proposals) == 0 or self.current_idx >= len(self.proposals):
+        if self.current_idx < 0 or len(self.proposals) == 0 or self.current_idx >= len(self.proposals):
             return False
         _ = self.proposals.pop(self.current_idx)
         if len(self.proposals) == 0:
@@ -95,7 +95,7 @@ struct AgentProposalQueue(Movable):
 
     def stage_hunk(mut self, hunk_idx: Int) -> Bool:
         """Stage single hunk into current proposal's new text."""
-        if len(self.proposals) == 0 or self.current_idx >= len(self.proposals):
+        if self.current_idx < 0 or len(self.proposals) == 0 or self.current_idx >= len(self.proposals):
             return False
         var p = self.proposals[self.current_idx].copy()
         var old_s = Side.of(p.old)
@@ -109,7 +109,7 @@ struct AgentProposalQueue(Movable):
 
     def unstage_hunk(mut self, hunk_idx: Int) -> Bool:
         """Unstage/revert single hunk from current proposal's new text."""
-        if len(self.proposals) == 0 or self.current_idx >= len(self.proposals):
+        if self.current_idx < 0 or len(self.proposals) == 0 or self.current_idx >= len(self.proposals):
             return False
         var p = self.proposals[self.current_idx].copy()
         var old_s = Side.of(p.old)

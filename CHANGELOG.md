@@ -1,7 +1,7 @@
 # Changelog
 
 What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.md) and the
-day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.2.0;
+day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.4.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
 
 ## 2.4: Mojo 1.2 & GPU developer milestone - 2026-11-15

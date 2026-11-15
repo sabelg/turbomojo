@@ -953,6 +953,8 @@ __extension App:
                 self.poll_aux_job()
             except:
                 break
+        if self.aux_job.active and self.aux_job.kind == JOB_DOCS:
+            self.stop_aux_job_now()
 
     def finish_docs_job(mut self, status: Int):
         """Called by poll_aux_job() when background `mojo doc` completes."""

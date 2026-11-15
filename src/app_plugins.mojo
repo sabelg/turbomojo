@@ -58,6 +58,13 @@ __extension App:
         return out^
 
     def plugins_stop(mut self):
+        var pi = len(self.panels) - 1
+        while pi >= 0:
+            if self.panels[pi].plugin < len(self.plugins):
+                self.panel_remove(pi, False)
+            else:
+                _ = self.panels.pop(pi)
+            pi -= 1
         for k in range(len(self.plugins)):
             if self.plugins[k].state != PL_STOPPED:
                 self.plugins[k].conn.notify("shutdown", "")

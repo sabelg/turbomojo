@@ -1207,6 +1207,8 @@ struct LspClient(Copyable, Movable):
         """Launch the server and send `initialize`."""
         if self.state == LSP_STARTING or self.state == LSP_READY:
             return True
+        if self.conn.proc.running:
+            _ = self.conn.stop()
         self.server_cmd = cmd
         self.root_uri = path_to_uri(root_dir)
         self.docs.clear()
@@ -1837,6 +1839,7 @@ struct LspClient(Copyable, Movable):
                 if len(self.replies) > 64:
                     _ = self.replies.pop(0)
             elif m.kind == RPC_ERROR and m.id == self.init_id:
+                _ = self.conn.stop()
                 self.state = LSP_FAILED
                 self.last_error = "initialize failed: " + m.error_message()
             elif m.kind == RPC_NOTIFICATION:

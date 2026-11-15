@@ -43,7 +43,11 @@ def explain_code_prompt(place: String, code: String, excerpts: List[String]) -> 
 def doc_excerpt(page_title: String, section: String) -> String:
     var s = section
     if s.byte_length() > EXCERPT_MAX:
-        var cut = String(s[byte=0:EXCERPT_MAX])
+        var cut_at = EXCERPT_MAX
+        var sb = s.as_bytes()
+        while cut_at > 0 and (Int(sb[cut_at]) & 0xC0) == 0x80:
+            cut_at -= 1
+        var cut = String(s[byte=0:cut_at])
         s = cut + "\n..."
     return "### Page: " + page_title + "\n\n" + s
 

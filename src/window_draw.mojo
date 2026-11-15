@@ -11,7 +11,7 @@ from git import GB_KNOWN, GS_NONE, GS_CONFLICT, GS_DELETED, GS_UNTRACKED, GS_ADD
 from linediff import LM_NONE, LM_ADDED, LM_CHANGED, LM_DELETED_ABOVE
 from hexview import render_hex_rows
 from markdown import (
-    md_render, MdLine, MD_TEXT, MD_BOLD, MD_ITALIC, MD_CODE, MD_HEAD, MD_LINK, MD_DIM, MD_STRIKE, MD_BLOCK,
+    md_render, md_render_rich, MdLine, MD_TEXT, MD_BOLD, MD_ITALIC, MD_CODE, MD_HEAD, MD_LINK, MD_DIM, MD_STRIKE, MD_BLOCK,
 )
 from vim_motion import is_code_mask, active_scope_range, ScopeRange
 from search import MatchSpan
@@ -259,12 +259,13 @@ __extension Window:
                 scr.put(sx, ty, 0x25A0, pal.scroll_fg, pal.scroll_bg)
 
     def draw_mdpreview(self, mut scr: Screen, pal: Palette, hl: Highlighter, active: Bool):
-        """Render live Markdown preview (`WK_MDPREVIEW`) with SGR styling and code blocks."""
+        """Render live Markdown preview (`WK_MDPREVIEW`) with SGR styling, tables, and code blocks."""
         var rws = self.rows()
         var bg = pal.ed_bg
         scr.fill(self.x + 1, self.y + 1, self.w - 2, self.h - 2, 32, pal.ed_fg, bg)
         var md_w = max(8, self.w - 4)
-        var lines = md_render(to_str(self.buf.all_text()), md_w, hl)
+        var md_links = List[String]()
+        var lines = md_render_rich(to_str(self.buf.all_text()), md_w, hl, md_links, True)
         var total_rows = len(lines)
         var r0 = max(0, min(self.top, max(0, total_rows - 1)))
         scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
@@ -285,7 +286,7 @@ __extension Window:
                 elif st == MD_CODE:
                     cfg = pal.syn[4]
                     cbg = pal.curline_bg
-                elif st == MD_LINK:
+                elif st == MD_LINK or st < 0:
                     cfg = pal.frame_act
                 elif st == MD_DIM or st == MD_STRIKE:
                     cfg = pal.gutter_fg
@@ -303,7 +304,7 @@ __extension Window:
                     scr.dim(xx, yy, wcell)
                 elif st == MD_STRIKE:
                     scr.strikethrough(xx, yy, wcell)
-                elif st == MD_LINK:
+                elif st == MD_LINK or st < 0:
                     scr.underline(xx, yy, False, pal.frame_act)
                 xx = nx
         scr.no_clip()
@@ -528,7 +529,7 @@ __extension Window:
                         else:
                             rb_colors.append(-1)
                 loaded = r
-                seg = min(seg, len(starts) - 1)
+                seg = max(0, min(seg, len(starts) - 1))
             var s0 = starts[seg]
             var s1 = starts[seg + 1] if seg + 1 < len(starts) else len(ln)
             var v0 = vs[seg]
@@ -611,7 +612,7 @@ __extension Window:
                     scr.put(self.x + 1, yy, 69 if sev == 1 else (87 if sev == 2 else 105), num_fg, pal.gutter_bg)   # E W i
                 elif seg == 0 and not is_msg and pad >= 1 and len(self.test_lens_rows) > 0:
                     for tli in range(len(self.test_lens_rows)):
-                        if self.test_lens_rows[tli] == r:
+                        if self.test_lens_rows[tli] == r and tli < len(self.test_lens_states):
                             var ts = self.test_lens_states[tli]
                             var tch = 0x2713 if ts == 2 else (0x2717 if ts == 3 else 0x25B7)
                             var tfg = pal.msg_ok if ts == 2 else (pal.diag_err if ts == 3 else pal.gutter_fg)
@@ -817,7 +818,7 @@ __extension Window:
                             scr.dim(hx0, yy, eol_x - hx0)
                 if len(self.dbg_inline_rows) > 0 and eol_x + 4 < cx0 + cls:
                     for dli in range(len(self.dbg_inline_rows)):
-                        if self.dbg_inline_rows[dli] == r:
+                        if self.dbg_inline_rows[dli] == r and dli < len(self.dbg_inline_vals):
                             eol_x = scr.text(eol_x, yy, "⟨" + self.dbg_inline_vals[dli] + "⟩  ", pal.msg_note, rowbg)
                             break
                 var drew_cell = False

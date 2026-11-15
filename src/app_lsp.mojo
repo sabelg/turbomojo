@@ -541,6 +541,15 @@ __extension App:
         self.lsp_sent_ns = 0
         var env_name = self.active_pixi_env()
         var env_tag = " [" + env_name + "]" if env_name.byte_length() > 0 and env_name != "default" else String("")
+        # Sweep any dead or failed pool entries before checking for a warm hit
+        var spk = 0
+        while spk < len(self.lsp_pool_keys):
+            if not self.lsp_pool[spk].active() or not self.lsp_pool[spk].conn.proc.running:
+                self.lsp_pool[spk].stop()
+                _ = self.lsp_pool.pop(spk)
+                _ = self.lsp_pool_keys.pop(spk)
+            else:
+                spk += 1
         # Check if we already have a warm server for target_key
         var hit = -1
         for pk in range(len(self.lsp_pool_keys)):
@@ -553,9 +562,9 @@ __extension App:
             if prev_starts > self.lsp.starts:
                 self.lsp.starts = prev_starts
             self.lsp_env = target_key
-            # Re-sync and re-track across all open editor windows
+            # Re-sync and re-track open editor windows belonging to this environment
             for wi in range(len(self.wins)):
-                if self.wins[wi].kind == WK_EDITOR and self.lsp_wants(wi) and wi != ai:
+                if self.wins[wi].kind == WK_EDITOR and self.lsp_wants(wi) and wi != ai and self.lsp_env_key(self.wins[wi].path) == target_key:
                     self.lsp_track(wi, now)
             self.lsp_track(ai, now)
             var mf = self.lsp_manifest(self.lsp_front)

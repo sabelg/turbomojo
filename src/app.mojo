@@ -313,13 +313,13 @@ __extension App:
             except err:
                 self.log_error(String(err))
                 self.info("Error", String(err))
+        if self.fsearch.active:
+            self.fsearch.cancel()
         if self.job.active:
-            self.cancel_job()
-            _ = external_call["pclose", Int32](self.job.fp)
+            self.stop_job_now()
         if self.aux_job.active:
-            if self.aux_job.pid > 0:
-                _ = external_call["kill", Int32](Int32(self.aux_job.pid), Int32(15))
-            _ = external_call["pclose", Int32](self.aux_job.fp)
+            self.stop_aux_job_now()
+        self.gpu_probe_stop()
         self.gpu_mon_stop()
         self.dbg.finish()           # a program being debugged does not outlive the IDE
         _ = self.git_proc.stop()
@@ -328,6 +328,9 @@ __extension App:
         self.extra_stop_all()       # nor the other language servers
         self.agent_services_end()   # and its commands
         _ = self.tshell.pty.stop()  # nor the terminals' programs (they get SIGHUP)
+        for k in range(len(self.tshells)):
+            _ = self.tshells[k].pty.stop()
+        self.tshells.clear()
         _ = self.trun.pty.stop()
         _ = self.trepl.pty.stop()
         self.bp_sync()

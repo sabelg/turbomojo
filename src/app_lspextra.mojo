@@ -117,7 +117,7 @@ __extension App:
     def extra_stop_all(mut self):
         for k in range(len(self.lsp_extra)):
             self.lsp_extra[k].restart_due = 0
-            if self.lsp_extra[k].client.active():
+            if self.lsp_extra[k].client.active() or self.lsp_extra[k].client.conn.proc.running:
                 self.lsp_extra[k].client.stop()
 
     def extra_wants(self, k: Int, i: Int) -> Bool:

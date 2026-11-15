@@ -112,27 +112,18 @@ struct GpuSample(Copyable, Movable):
 
 def parse_int_or(text: String, fallback: Int = -1) -> Int:
     var t = String(text.strip())
-    if unknown(t):
-        return fallback
-    var dot = t.find(".")
-    if dot >= 0:
-        var t_dot = String(t[byte=0:dot])
-        t = t_dot
-    var pct = t.find("%")
-    if pct >= 0:
-        var t_pct = String(t[byte=0:pct])
-        t = t_pct
-    var t_clean = String(t.strip())
-    t = t_clean
-    if t.byte_length() == 0:
+    if unknown(t) or t.byte_length() == 0:
         return fallback
     var n = 0
+    var got = False
     for b in t.as_bytes():
         var c = Int(b)
-        if c < 48 or c > 57:
-            return fallback
-        n = n * 10 + c - 48
-    return n
+        if c >= 48 and c <= 57:
+            n = n * 10 + c - 48
+            got = True
+        else:
+            break
+    return n if got else fallback
 
 
 def parse_gpu_samples(output: String) -> Tuple[List[GpuSample], List[String]]:
@@ -157,7 +148,11 @@ def parse_gpu_samples(output: String) -> Tuple[List[GpuSample], List[String]]:
                 continue
             if in_procs:
                 if len(c) >= 3 and c[1].byte_length() > 0:
-                    var mem_note = ("  " + c[3] + " MiB") if (len(c) > 3 and not unknown(c[3])) else String("")
+                    var mem_note = String("")
+                    if len(c) > 3 and not unknown(c[3]):
+                        var cu3 = c[3].upper()
+                        var has_mib = cu3.endswith("MIB") or cu3.endswith("MB") or cu3.endswith("B")
+                        mem_note = "  " + c[3] + ("" if has_mib else " MiB")
                     procs.append("PID " + c[1] + "  " + c[2] + mem_note)
                 continue
             if len(c) < 2:
@@ -256,7 +251,9 @@ def format_gpu_monitor(samples: List[GpuSample], procs: List[String], hist: List
         if s.temp_c >= 0:
             meta += "Temp " + String(s.temp_c) + "°C"
         if s.power_w.byte_length() > 0:
-            meta += ("  ·  " if meta.byte_length() > 0 else String("")) + "Power " + s.power_w + " W"
+            var pwu = s.power_w.upper()
+            var pw_unit = "" if pwu.endswith("W") else " W"
+            meta += ("  ·  " if meta.byte_length() > 0 else String("")) + "Power " + s.power_w + pw_unit
         if meta.byte_length() > 0:
             out.append("  Sensors: " + meta)
         out.append("")

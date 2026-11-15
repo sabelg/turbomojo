@@ -6387,3 +6387,43 @@ TurboMojo's way of changing settings; Options is).
     `tmide --lines` + TUI screen-reader context cues (`announce_reader_context`).
 - Verified: zero compiler warnings on `build/tmide` and all 9 test shards; all unit + E2E
   suites, `gen_docs.py --check`, and `docs/KEYMAP.md` verified through `scripts/check.sh`.
+
+## 2026-11-15 · v2.4.0 stabilization, lifecycle hardening & menu polish · done
+
+- Live dogfooding fixes:
+  - `src/gpuinfo.mojo` & `src/app_gpu.mojo`: `parse_int_or` now parses leading integer
+    digits before unit suffixes (`"43008 MiB"`, `"61 C"`, `"82.5%"`), `format_gpu_monitor`
+    and `parse_gpu_samples` avoid duplicating `" W"` / `" MiB"` suffixes, `gpuwin_render`
+    matches `"GPU "` and `"Active Compute Processes"` headers, and `gpu_probe_stop()` reaps
+    any in-flight status probe on exit.
+  - `src/window_draw.mojo` & `src/app_files.mojo`: `WK_MDPREVIEW` now uses `md_render_rich`
+    with `rich = True` for both drawing and scroll synchronization so Markdown pipe tables
+    render as box-drawing tables and links render underlined.
+  - `src/main.mojo`: `screenshot()` sets `app.help_dir` so `--screenshot --command
+    help.*` works out of the box, and CLI binary files opened in `WK_HEX` are no longer
+    covered by a blank `CM_NEW` editor window.
+- Subprocess, FD lifecycle & UTF-8 / bounds hardening:
+  - `src/lsp.mojo`, `src/app_lsp.mojo`, `src/lspextra.mojo`, `src/app_lspextra.mojo`:
+    `LspClient` stops `conn` on `initialize` `RPC_ERROR` and before restarting, `lsp_pool`
+    sweeps dead/failed entries unconditionally and filters warm-hit sibling tracking by
+    `lsp_env_key`, and `configure_servers` prevents aliasing live `Proc` handles on
+    duplicate config entries.
+  - `src/agentsvc.mojo`, `src/acp.mojo`, `src/app_jobs.mojo`, `src/app_outline.mojo`,
+    `src/app_plugins.mojo`, `src/app.mojo`, `src/watch.mojo`, `src/signals.mojo`:
+    `AgentTerm.pump` closes PTY `master` FDs on natural exit, `App.run()` exit stops all
+    background `tshells` tabs and non-blockingly terminates/reaps `job` and `aux_job`
+    (cleaning temp outputs), `AcpClient` stops failed child processes on handshake errors,
+    `plugins_stop` clears plugin panels before reload, and `watch` / `signals` close
+    partial descriptors on init errors.
+  - `src/cells.mojo`, `src/app_agent.mojo`, `src/agentexplain.mojo`, `src/window_draw.mojo`,
+    `src/agentprompt.mojo`, `src/agent_diff.mojo`: UTF-8 codepoint-safe truncation and
+    clamped list indices across cell badges, agent excerpts, prompt input, proposal queues,
+    and editor gutter/ghost rendering.
+- Menu discoverability & release `2.4.0`:
+  - Promoted 25 Phase 13 commands from hidden palette-only entries into `≡`, `File`, `Edit`,
+    `Text`, `Search`, `Compile`, and `Options` with conflict-free hotkeys (`CM_RAINBOW_BRACKETS`
+    and `CM_TEST_WATCH` wired into `toggle_cmds()` and `checked()`).
+  - Bumped version to `2.4.0` across `src/version.mojo`, `pixi.toml`, `recipe/recipe.yaml`,
+    `help/whats-new.md`, `src/helpbook.mojo`, `CHANGELOG.md`, `docs/KEYMAP.md`, and
+    `docs/SOURCE.md`; tuned `.github/workflows/ci.yml` shard comments and 120-minute
+    cold-cache timeout.

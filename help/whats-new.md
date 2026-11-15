@@ -1,6 +1,39 @@
 # What's new
 
-## 2.3 (in progress): a vim interface
+## 2.4: Mojo 1.2 & GPU developer milestone
+
+- **Benchmarking, Codegen & GPU Roofline**: `std.benchmark` runner (`Compile > Run
+  std.benchmark`) with JSON baseline regression tracking and inline `[ns/op]` gutter/EOL
+  badges; PTX / AMDGCN / ASM / LLVM IR codegen inspector with live cursor sync; Nsight
+  Compute / `rocprofv3` roofline profiler (`Compile > GPU kernel roofline`); and `max serve`
+  / `max benchmark` workflows.
+- **Testing, Cells & Post-Mortem Debugging**: Test Explorer watch-on-save (`Compile > Toggle
+  test watch on save`), line coverage gutter, and `d` to debug a failed test in
+  `mojo-lldb-dap`; `# %%` interactive Mojo & Python code cells with execution timing badges
+  and `Compile > Restart cell kernel`; DAP attach to live PID (`Compile > Attach debugger to
+  PID...`) and `coredumpctl` crash dump inspection (`Compile > Open post-mortem core
+  dump...`); inline variable ghosts, GPU lane focus, and CPU SIMD / FP16 / BF16 lane views.
+- **LSP, Navigation & Editor Core**: workspace call & type hierarchy (`Search > Call
+  hierarchy...`, `Search > Type query / hierarchy...`); cursor-anchored inline PeekBox
+  (`Alt-Shift-F12`) and inline Git hunk preview (`Search > Preview git hunk inline`);
+  branching undo tree (`Edit > Undo history tree...`, `g-` / `g+`), read-only binary hex
+  inspector (`Text > Toggle hex inspector`, auto-detected on binary files), CVD-safe rainbow
+  brackets (`Options > Rainbow brackets`), interactive minimap & overview ruler, draggable
+  tiled splitters, pinned tabs, and scroll-synced rich Markdown preview (`Text > Markdown
+  side-by-side preview`, with box-drawing tables, checkboxes, and fenced code blocks).
+- **Vim, Git, Agent, Plugins & Remote**: Vim `:set`, `:marks`, `:registers`, `gn`/`gN`,
+  `g;`/`g,`, `gv`, and `q:`/`q/`; topological Git commit graph (`File > Git history & log`),
+  stash picker, async push / pull / fetch, worktrees (`File > Git worktrees...`), and MRU
+  project switcher (`File > Switch project...`); multi-hunk agent diff review and `@doc` /
+  `@symbol` grounding; Plugin API v2 (`editor/edit`, `diagnostics/set`, `Manage plugins...`),
+  multi-tab terminal, SSH `[ssh:host]` status pill + `ssh -L` port-forward toasts, and
+  extended `tmide --lines` + TUI screen-reader context cues.
+- **Stabilization & Menu Polish**: full menu-bar discoverability across all 10 menus with
+  conflict-free hotkeys, unit-tolerant GPU telemetry parsing, hardened subprocess / PTY /
+  LSP pool descriptor lifecycles, and UTF-8 boundary safety across cell badges and agent
+  excerpts.
+
+## 2.3: a vim interface
 
 - Options > Keys: Vim (`keymap = "vim"`) gives the editor vim's modes. Normal mode
   (NORMAL in the status line, a block cursor) has vim's motions (w b e, 0 ^ $, gg G,
@@ -73,19 +106,6 @@
     & test execution (`turbomojo_debug_inspect`, `turbomojo_run_test`); and Vim `:`/`/`
     `Up`/`Down` history, `:` `Tab` command & path completion, uppercase global marks
     (`mA`–`mZ`), and `''` jump-back.
-  - **40-Feature Milestone (`F01`–`F40`)**: `std.benchmark` runner with JSON baseline
-    regression tracking and inline `[ns/op]` badges; PTX / AMDGCN / ASM / LLVM IR codegen
-    inspector with live cursor sync + Nsight Compute / `rocprofv3` roofline profiler; Test
-    Explorer watch-on-save, line coverage gutter, and failed-test debugging; DAP attach to
-    PID & `coredumpctl` post-mortem core dumps; workspace call & type hierarchy; inline
-    cursor-anchored PeekBox (`Alt-Shift-F12`) and Git hunk preview (`S` / `R`); branching
-    undo tree (`g-` / `g+`), binary hex viewer, rainbow brackets, interactive minimap &
-    overview ruler, draggable tiled splitters, pinned tabs, and scroll-synced Markdown
-    preview; Vim `:set`, `:marks`, `:registers`, `gn`/`gN`, `g;`/`g,`, `gv`, and `q:`/`q/`;
-    Git commit graph, stash picker, async push/pull/fetch, worktrees & MRU project
-    switcher; Plugin API v2 (`editor/edit`, `diagnostics/set`, manager dialog), multi-tab
-    terminal, SSH `[ssh:host]` status pill + `ssh -L` port-forward toasts, and extended
-    `tmide --lines` + TUI screen-reader context cues.
 
 ## 2.2: ready for other people
 - A program that uses a library which is not installed (`unable to locate module

@@ -105,6 +105,19 @@ def test_telemetry_monitor_and_codegen_inspector() raises:
     hist.append([20, 50, 82])
     var mon = "\n".join(format_gpu_monitor(parsed[0], parsed[1], hist))
     assert_true(mon.find("82%") >= 0 and mon.find("40960 / 81559 MiB") >= 0 and mon.find("PID 4321") >= 0, mon)
+    # Unit-suffixed nvidia-smi telemetry ("43008 MiB", "61 C", "542.4 W", "2048 MiB") parses cleanly without "W W" or "MiB MiB"
+    var parsed_units = parse_gpu_samples(
+        "nvidia\n0, NVIDIA RTX PRO 6000, 91 %, 43008 MiB, 97887 MiB, 61 C, 542.4 W\n__PROCS__\n0000:01:00.0, 7788, tmide_bench, 2048 MiB\n"
+    )
+    assert_equal(len(parsed_units[0]), 1)
+    assert_equal(parsed_units[0][0].util_pct, 91)
+    assert_equal(parsed_units[0][0].mem_used_mib, 43008)
+    assert_equal(parsed_units[0][0].mem_total_mib, 97887)
+    assert_equal(parsed_units[0][0].temp_c, 61)
+    var mon_units = "\n".join(format_gpu_monitor(parsed_units[0], parsed_units[1], hist))
+    assert_true(mon_units.find("43008 / 97887 MiB") >= 0, mon_units)
+    assert_true(mon_units.find("Power 542.4 W") >= 0 and mon_units.find("W W") < 0, mon_units)
+    assert_true(mon_units.find("2048 MiB") >= 0 and mon_units.find("MiB MiB") < 0, mon_units)
     var app = App()
     app.scr.resize(120, 32)
     app.gpu_mon_query = "echo nvidia; echo '0, NVIDIA GB10, 45, [N/A], [N/A], 52, 28.5'; echo __PROCS__"

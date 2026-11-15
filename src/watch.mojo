@@ -117,7 +117,6 @@ struct Watcher(Copyable, Movable):
             var dfd = external_call["open", Int32](d.as_c_string_span(), Int32(0)) # O_RDONLY
             if Int(dfd) < 0:
                 return False
-            self.dir_fds.append(dfd)
             var ev = List[UInt8](length=32, fill=0)
             # ident = dfd (8 bytes @ 0)
             for i in range(4):
@@ -131,7 +130,9 @@ struct Watcher(Copyable, Movable):
             ev[12] = 0x2F
             var res = external_call["kevent", Int32](Int32(self.fd), ev.unsafe_ptr(), Int32(1), Pointer[UInt8, MutAnyOrigin](unsafe_from_address=0), Int32(0), Pointer[UInt8, MutAnyOrigin](unsafe_from_address=0))
             if Int(res) < 0:
+                _ = external_call["close", Int32](dfd)
                 return False
+            self.dir_fds.append(dfd)
             self.dirs.append(dir)
             return True
         else:

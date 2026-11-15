@@ -36,22 +36,21 @@ def configure_servers(mut servers: List[ExtraServer], s: Settings):
     """The servers of the settings; running ones still configured the same way keep
     running, the others are stopped."""
     var out = List[ExtraServer]()
+    var used = List[Bool](length=len(servers), fill=False)
     for j in range(len(s.lsp_names)):
         var kept = False
         for k in range(len(servers)):
-            if servers[k].name == s.lsp_names[j] and servers[k].command == s.lsp_cmds[j]:
+            if not used[k] and servers[k].name == s.lsp_names[j] and servers[k].command == s.lsp_cmds[j]:
+                used[k] = True
                 var e = servers[k].copy()
                 e.exts = s.lsp_exts[j].copy()
                 e.client.language_id = s.lsp_langs[j]
                 out.append(e^)
                 kept = True
+                break
         if not kept:
             out.append(ExtraServer(s.lsp_names[j], s.lsp_cmds[j], s.lsp_exts[j], s.lsp_langs[j]))
     for k in range(len(servers)):
-        var still = False
-        for e in out:
-            if e.name == servers[k].name and e.command == servers[k].command:
-                still = True
-        if not still and servers[k].client.active():
+        if not used[k] and (servers[k].client.active() or servers[k].client.conn.proc.running):
             servers[k].client.stop()
     servers = out^

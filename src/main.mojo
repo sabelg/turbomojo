@@ -2,6 +2,7 @@
 from std.sys import argv
 from std.ffi import external_call
 from app import *
+from window import WK_HEX
 from term import is_terminal
 from linemode import *
 from util import env_or
@@ -88,11 +89,12 @@ def screenshot(mut app: App, args: List[String]) raises -> Int:
             files.append(a)
             k += 1
     app.config_path = ""             # a toggled option is for the picture, not saved
+    app.help_dir = state_dir() + "/help"
     app.scr.resize(w, h)
     app.theme_apply()
     for f in files:
         app.open_path(f)
-    if app.top_editor() < 0:
+    if app.top_editor() < 0 and (app.top() < 0 or app.wins[app.top()].kind != WK_HEX):
         app.exec(CM_NEW)
     app.clock_fixed = "10:00"          # the same picture each time
     app.status = ""                   # ("Loaded /home/...": a picture shows no one's paths)
@@ -273,7 +275,7 @@ def main() raises:
             _ = app.session_restore()
         except e:
             print("cannot restore the session:", String(e))
-    if app.top_editor() < 0:
+    if app.top_editor() < 0 and (app.top() < 0 or app.wins[app.top()].kind != WK_HEX):
         app.exec(CM_NEW)
     app.plugins_start()             # (they answer in the background)
     app.show_config_warnings()
