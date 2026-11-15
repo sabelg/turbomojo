@@ -208,6 +208,8 @@ def scan_outline(buf: TextBuffer) -> List[OutlineItem]:
                     title = String(cmt[byte=3:].strip())
                 if title.byte_length() == 0:
                     title = "Cell " + String(cell_num)
+                if ind == 0:
+                    indents.clear()
                 items.append(OutlineItem(title, SK_CELL, r, ind, 0))
             continue
         var rest = List[Int]()
@@ -219,12 +221,18 @@ def scan_outline(buf: TextBuffer) -> List[OutlineItem]:
         if text.startswith("def "):
             kind = SK_FUNCTION
             skip = 4
+        elif text.startswith("async def "):
+            kind = SK_FUNCTION
+            skip = 10
         elif text.startswith("fn "):
             kind = SK_FUNCTION
             skip = 3
         elif text.startswith("struct "):
             kind = SK_STRUCT
             skip = 7
+        elif text.startswith("class "):
+            kind = SK_CLASS
+            skip = 6
         elif text.startswith("__extension "):
             kind = SK_STRUCT
             skip = 12
@@ -261,6 +269,40 @@ def scan_outline(buf: TextBuffer) -> List[OutlineItem]:
         items.append(OutlineItem(to_str(name), kind, r, s0, depth, st_traits^))
         indents.append(ind)
     return items^
+
+
+def merge_outline_cells(server_items: List[OutlineItem], buf: TextBuffer) -> List[OutlineItem]:
+    """Merge `# %%` SK_CELL markers from `buf` into LSP `documentSymbol` results in row order."""
+    var scanned = scan_outline(buf)
+    var cells = List[OutlineItem]()
+    for it in scanned:
+        if it.kind == SK_CELL:
+            var dup = False
+            for s in server_items:
+                if s.kind == SK_CELL and s.row == it.row:
+                    dup = True
+                    break
+            if not dup:
+                cells.append(it.copy())
+    if len(cells) == 0:
+        return server_items.copy()
+    var out = List[OutlineItem]()
+    var si = 0
+    var ci = 0
+    while si < len(server_items) and ci < len(cells):
+        if cells[ci].row <= server_items[si].row:
+            out.append(cells[ci].copy())
+            ci += 1
+        else:
+            out.append(server_items[si].copy())
+            si += 1
+    while ci < len(cells):
+        out.append(cells[ci].copy())
+        ci += 1
+    while si < len(server_items):
+        out.append(server_items[si].copy())
+        si += 1
+    return out^
 
 
 def items_kind_at(items: List[OutlineItem], depth: Int) -> Int:

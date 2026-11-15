@@ -1312,3 +1312,40 @@ __extension App:
         self.doc_loaded = False             # read the folder again at the next opening
         self.doc_path = ""
         self.say(result)
+
+    def cell_open_plot_preview(mut self):
+        """Render the latest captured `# %%` cell PNG plot(s) via TurboMojo's Kitty/Sixel
+        terminal graphics viewer (`M_DOCS`)."""
+        if len(self.cell_last_plots) == 0:
+            self.say("No cell plots captured yet - run a # %% plot cell first")
+            return
+        var md_lines = List[String]()
+        md_lines.append("# Notebook Cell Plots")
+        md_lines.append("")
+        var shown = 0
+        for k in range(len(self.cell_last_plots)):
+            var pp = self.cell_last_plots[k]
+            if not path_exists(pp):
+                continue
+            shown += 1
+            var dims = String("")
+            var pic = png_decode(read_file(pp))
+            if pic.ok:
+                dims = " (" + String(pic.w) + "x" + String(pic.h) + " px)"
+            md_lines.append("## Plot " + String(shown) + ": `" + basename(pp) + "`" + dims)
+            md_lines.append("")
+            md_lines.append("![Plot " + String(shown) + "](" + pp + ")")
+            md_lines.append("")
+        if shown == 0:
+            self.say("Plot image file is no longer on disk")
+            return
+        var md_path = env_or("TMPDIR", "/tmp") + "/turbomojo-cell-plots-" + String(own_pid()) + ".md"
+        if not write_file(md_path, str_bytes("\n".join(md_lines) + "\n")):
+            self.say("Could not write plot preview page")
+            return
+        if not self.doc_loaded:
+            self.docs_load()
+        self.mode = M_DOCS
+        self.doc_focus = 1
+        self.docs_show(md_path, "", True)
+        self.say("Showing " + String(shown) + " cell plot(s) - Esc returns to editor")

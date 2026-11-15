@@ -48,7 +48,7 @@ from symindex import SymbolIndex, IndexedSymbol, FileIndex
 from frecency import Frecency
 from docs import DocEntry
 from layout import Layout
-from project import PixiTask
+from project import PixiTask, discover_mojo_project_root, discover_auto_include_dirs
 from runconfig import RunConfig
 from trust import TrustStore
 from doclib import DocLibrary, DocIndex, Found, default_docs_home
@@ -753,7 +753,29 @@ struct App(Movable):
     var gd_side_by_side: Bool
     var cell_advance: Bool
     var cell_tmp_path: String
+    var cell_line_map: List[Int]
+    var cell_mojo_proc: Proc
+    var cell_mojo_env: String
+    var cell_mojo_preamble: String
+    var cell_py_proc: Proc
+    var cell_py_env: String
+    var cell_py_preamble: String
+    var cell_k_active: Bool
+    var cell_k_is_py: Bool
+    var cell_k_seq: Int
+    var cell_k_t0: Int
+    var cell_k_path: String
+    var cell_k_title: String
+    var cell_k_index: Int
+    var cell_k_header_row: Int
+    var cell_k_code_row: Int
+    var cell_last_plots: List[String]
+    var cell_k_buf: List[UInt8]
+    var cell_k_interrupt_ns: Int
     var codegen_line_map: List[Int]
+    var codegen_base_marks: List[Int]
+    var codegen_sync_row: Int
+    var codegen_sync_cg_row: Int
     var bench_baseline_json: String
     var max_bench_out_file: String
     var max_baseline_json: String
@@ -1375,7 +1397,29 @@ struct App(Movable):
         self.gd_side_by_side = False
         self.cell_advance = False
         self.cell_tmp_path = ""
+        self.cell_line_map = List[Int]()
+        self.cell_mojo_proc = Proc()
+        self.cell_mojo_env = ""
+        self.cell_mojo_preamble = ""
+        self.cell_py_proc = Proc()
+        self.cell_py_env = ""
+        self.cell_py_preamble = ""
+        self.cell_k_active = False
+        self.cell_k_is_py = False
+        self.cell_k_seq = 0
+        self.cell_k_t0 = 0
+        self.cell_k_path = ""
+        self.cell_k_title = ""
+        self.cell_k_index = -1
+        self.cell_k_header_row = -1
+        self.cell_k_code_row = 0
+        self.cell_last_plots = List[String]()
+        self.cell_k_buf = List[UInt8]()
+        self.cell_k_interrupt_ns = 0
         self.codegen_line_map = List[Int]()
+        self.codegen_base_marks = List[Int]()
+        self.codegen_sync_row = -1
+        self.codegen_sync_cg_row = -1
         self.bench_baseline_json = ""
         self.max_bench_out_file = ""
         self.max_baseline_json = ""
@@ -1592,6 +1636,10 @@ struct App(Movable):
             t = min(t, 1000)
         if self.lsp.conn.wants_write():
             t = min(t, 10)
+        if self.cell_mojo_proc.wants_write() or self.cell_py_proc.wants_write():
+            t = min(t, 10)
+        if self.cell_k_active:
+            t = min(t, 40)
         if self.dbg.active() and self.dbg.conn.wants_write():
             t = min(t, 10)
         if self.tshell.pty.wants_write() or self.trun.pty.wants_write() or self.trepl.pty.wants_write():
@@ -1623,6 +1671,111 @@ struct App(Movable):
         for ip in self.include_paths:
             out += " -I " + shell_quote(ip)
         return out
+
+    def include_dirs_for(self, path: String) -> List[String]:
+        """Configured `include_paths` plus zero-config auto-discovered project / `src/`
+        include directories for `path` (deduplicated, preserving user priority)."""
+        var out = List[String]()
+        for ip in self.include_paths:
+            if ip.byte_length() > 0:
+                out.append(ip)
+        if path.byte_length() == 0:
+            return out^
+        var root = discover_mojo_project_root(path)
+        var norm_proj = normalize_path(self.project_dir) if self.project_dir.byte_length() > 0 else String("")
+        if root.byte_length() > 0 and root != norm_proj:
+            for cfg_name in [".turbomojo.toml", "turbomojo.toml"]:
+                var cfg_p = join_path(root, String(cfg_name))
+                if path_exists(cfg_p):
+                    var sub_s = load_settings("", read_text(cfg_p))
+                    for sub_ip in sub_s.include_paths:
+                        if sub_ip.byte_length() > 0:
+                            var resolved = abs_path(root, sub_ip)
+                            var seen = False
+                            for ex in out:
+                                if ex == resolved:
+                                    seen = True
+                                    break
+                            if not seen:
+                                out.append(resolved)
+                    break
+        for ad in discover_auto_include_dirs(path):
+            var seen = False
+            for ex in out:
+                if ex == ad:
+                    seen = True
+                    break
+            if not seen:
+                out.append(ad)
+        return out^
+
+    def include_flags_for(self, path: String) -> String:
+        """" -I dir" for configured + auto-discovered per-file include folders
+        (skipping `dirname(path)` itself, which `mojo` already searches, and skipping
+        `<project_root>` when `<project_root>/src` exists so `src/`-layout builds stay minimal)."""
+        if path.byte_length() == 0:
+            return self.include_flags()
+        var out = String("")
+        var emitted = List[String]()
+        for ip in self.include_paths:
+            if ip.byte_length() > 0:
+                out += " -I " + shell_quote(ip)
+                emitted.append(normalize_path(abs_path(self.cwd, ip)))
+        var file_dir = normalize_path(path if is_dir(path) else dirname(path))
+        var root = discover_mojo_project_root(path)
+        var has_root_src = root.byte_length() > 0 and is_dir(join_path(root, "src"))
+        var norm_proj = normalize_path(self.project_dir) if self.project_dir.byte_length() > 0 else String("")
+        if root.byte_length() > 0 and root != norm_proj:
+            for cfg_name in [".turbomojo.toml", "turbomojo.toml"]:
+                var cfg_p = join_path(root, String(cfg_name))
+                if path_exists(cfg_p):
+                    var sub_s = load_settings("", read_text(cfg_p))
+                    for sub_ip in sub_s.include_paths:
+                        if sub_ip.byte_length() > 0:
+                            var resolved = normalize_path(abs_path(root, sub_ip))
+                            if resolved != file_dir and not (resolved in emitted):
+                                out += " -I " + shell_quote(resolved)
+                                emitted.append(resolved)
+                    break
+        for ad in discover_auto_include_dirs(path):
+            if ad == file_dir:
+                continue
+            if has_root_src and ad == root:
+                continue
+            if not (ad in emitted):
+                out += " -I " + shell_quote(ad)
+                emitted.append(ad)
+        return out
+
+    def mojo_repl_import_setup(self, mj_exe: String, dir: String, path: String) -> String:
+        """Shell snippet exporting `MODULAR_MOJO_MAX_IMPORT_PATH` for `mojo repl`
+        (since `mojo repl` delegates flags to LLDB and rejects `-I`)."""
+        var dirs = self.include_dirs_for(path)
+        if len(dirs) == 0:
+            return ""
+        var imps = List[String]()
+        if dir.byte_length() > 0:
+            imps.append(dir)
+        for d in dirs:
+            if d.byte_length() > 0:
+                var full = abs_path(self.cwd, d)
+                var seen = False
+                for ex in imps:
+                    if ex == full:
+                        seen = True
+                        break
+                if not seen:
+                    imps.append(full)
+        if len(imps) == 0:
+            return ""
+        var joined_imps = ",".join(imps)
+        return (
+            "__tm_std=\"$(dirname \"$(dirname \"$(command -v "
+            + mj_exe
+            + ")\")\")/lib/mojo\"; [ -d \"$__tm_std\" ] && export MODULAR_MOJO_MAX_IMPORT_PATH="
+            + shell_quote(joined_imps)
+            + ",\"$__tm_std\"; "
+        )
 
     def compiler_cmd(mut self) -> String:
         """The configured compiler command with the environment it needs."""

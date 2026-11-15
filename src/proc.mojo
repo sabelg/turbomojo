@@ -62,7 +62,8 @@ struct Proc(Copyable, Movable):
         var in_w = Int(fds[1])
         # the child must not inherit the write end, or it would never see end-of-input
         _ = external_call["fcntl", Int32](Int32(in_w), Int32(2), Int32(1))
-        var line = "echo __PID__$$; exec " + cmd + " <&" + String(in_r) + " 2>>" + shell_quote(stderr_path)
+        var err_redir = String(" 2>&1") if stderr_path.byte_length() == 0 else (" 2>>" + shell_quote(stderr_path))
+        var line = "echo __PID__$$; exec " + cmd + " <&" + String(in_r) + err_redir
         var fp = popen_read(line)
         _ = external_call["close", Int32](Int32(in_r))
         if fp == 0:

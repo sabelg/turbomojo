@@ -9,6 +9,7 @@ from dialog import *
 from util import *
 from lsp import *
 from buffer import Mark, Hint
+from cells import build_mojo_notebook_virtual_doc
 from highlight import C_PARAM, C_DEF, C_PROP, C_TYPE, C_NS, C_SELF
 from appstate import *
 from app_notify import *
@@ -19,6 +20,7 @@ from app_jobs import *
 from app_lspextra import *
 from app_pkginstall import *
 from pkginstall import in_env
+from project import discover_mojo_project_root, discover_auto_include_dirs
 
 comptime LSP_DEBOUNCE_MS = 300     # quiet time after the last edit before the server is told
 
@@ -44,19 +46,42 @@ def semantic_class(name: String) -> Int:
 __extension App:
     def lsp_env_key(self, path: String) -> String:
         var m = self.lsp_manifest(path)
-        if m.byte_length() == 0:
+        if m.byte_length() > 0:
+            var env = self.active_pixi_env()
+            if env.byte_length() == 0 or env == "default":
+                return m
+            return m + "|" + env
+        if path.byte_length() == 0:
             return ""
-        var env = self.active_pixi_env()
-        if env.byte_length() == 0 or env == "default":
-            return m
-        return m + "|" + env
+        var root = discover_mojo_project_root(path)
+        if root.byte_length() == 0:
+            return ""
+        var norm_cwd = normalize_path(self.cwd) if self.cwd.byte_length() > 0 else String("")
+        var norm_proj = normalize_path(self.project_dir) if self.project_dir.byte_length() > 0 else String("")
+        if root == norm_cwd or root == norm_proj:
+            for ad in discover_auto_include_dirs(path):
+                if basename(ad) == "src" and dirname(ad) != norm_cwd and dirname(ad) != norm_proj:
+                    return "root:" + dirname(ad)
+            return ""
+        return "root:" + root
 
     def lsp_server_command(mut self, path: String) -> String:
         """Command line of the language server, with include paths so that modules
-        resolve: the file's folder, the working directory, and the project's own
-        (`tools.include_paths`)."""
+        resolve: the file's folder, the working directory, configured `tools.include_paths`,
+        and zero-config auto-discovered project / `src/` roots."""
         var exe = String(self.lsp_server)
-        var args = " -I " + shell_quote(dirname(path)) + " -I " + shell_quote(self.cwd) + self.include_flags()
+        var fdir = dirname(path)
+        var args = " -I " + shell_quote(fdir) + " -I " + shell_quote(self.cwd) + self.include_flags()
+        for ad in self.include_dirs_for(path):
+            if ad == fdir or ad == self.cwd:
+                continue
+            var in_cfg = False
+            for cfg_ip in self.include_paths:
+                if cfg_ip == ad:
+                    in_cfg = True
+                    break
+            if not in_cfg:
+                args += " -I " + shell_quote(ad)
         var manifest = self.lsp_manifest(path)
         if manifest.byte_length() > 0:
             return in_env("exec " + exe + args, self.pixi_cmd, manifest, self.active_pixi_env())      # sees what the project installed (P11-14)
@@ -128,18 +153,43 @@ __extension App:
         var p = self.wins[i].path
         return p == self.lsp_path or p.endswith(".mojo") or p.endswith(".🔥")
 
+    def lsp_sync_notebook_map(mut self, i: Int) -> Tuple[Bool, String]:
+        """Synchronize `Window.lsp_nb_*` virtual-document mappings for `# %%` Mojo notebooks."""
+        var vdoc = build_mojo_notebook_virtual_doc(self.wins[i].buf)
+        self.wins[i].lsp_nb_active = vdoc.active
+        self.wins[i].lsp_nb_v2b_row = vdoc.v2b_row.copy()
+        self.wins[i].lsp_nb_v2b_col = vdoc.v2b_col.copy()
+        self.wins[i].lsp_nb_b2v_row = vdoc.b2v_row.copy()
+        self.wins[i].lsp_nb_b2v_col = vdoc.b2v_col.copy()
+        for j in range(len(self.wins)):
+            if self.same_shared_buffer(i, j):
+                self.wins[j].lsp_nb_active = vdoc.active
+                self.wins[j].lsp_nb_v2b_row = vdoc.v2b_row.copy()
+                self.wins[j].lsp_nb_v2b_col = vdoc.v2b_col.copy()
+                self.wins[j].lsp_nb_b2v_row = vdoc.b2v_row.copy()
+                self.wins[j].lsp_nb_b2v_col = vdoc.b2v_col.copy()
+        return (vdoc.active, vdoc.text)
+
     def lsp_open_doc(mut self, i: Int):
         """didOpen for window i; from here on its edits are recorded for the server."""
         var uri = path_to_uri(self.wins[i].path)
-        if self.lsp.did_open(uri, bytes_to_str(self.wins[i].buf.lsp_bytes())):
-            self.wins[i].buf.start_tracking()
+        var nb = self.lsp_sync_notebook_map(i)
+        var doc_txt = nb[1] if nb[0] else bytes_to_str(self.wins[i].buf.lsp_bytes())
+        if self.lsp.did_open(uri, doc_txt):
+            if nb[0]:
+                self.wins[i].buf.stop_tracking()
+            else:
+                self.wins[i].buf.start_tracking()
             var v = self.wins[i].buf.version
             self.wins[i].lsp_sent_version = v
             self.wins[i].lsp_seen_version = v
             self.wins[i].lsp_due = 0
             for j in range(len(self.wins)):
                 if self.same_shared_buffer(i, j):
-                    self.wins[j].buf.start_tracking()
+                    if nb[0]:
+                        self.wins[j].buf.stop_tracking()
+                    else:
+                        self.wins[j].buf.start_tracking()
                     self.wins[j].lsp_sent_version = v
                     self.wins[j].lsp_seen_version = v
                     self.wins[j].lsp_due = 0
@@ -155,18 +205,32 @@ __extension App:
         var v = self.wins[i].buf.version
         if v == self.wins[i].lsp_sent_version and not always:
             return
-        var sent = -1
-        if self.lsp.table.sync_kind == SYNC_INCREMENTAL and not self.wins[i].buf.changes_lost and self.wins[i].buf.track:
-            sent = self.lsp.did_change_ranges(uri, self.wins[i].buf.take_changes())
-        if sent < 0:
+        var was_nb = self.wins[i].lsp_nb_active
+        var nb = self.lsp_sync_notebook_map(i)
+        if nb[0]:
+            _ = self.wins[i].buf.take_changes()
+            self.wins[i].buf.stop_tracking()
+            _ = self.lsp.did_change(uri, nb[1])
+        elif was_nb:
+            _ = self.wins[i].buf.take_changes()
             _ = self.lsp.did_change(uri, bytes_to_str(self.wins[i].buf.lsp_bytes()))
             self.wins[i].buf.start_tracking()
+        else:
+            var sent = -1
+            if self.lsp.table.sync_kind == SYNC_INCREMENTAL and not self.wins[i].buf.changes_lost and self.wins[i].buf.track:
+                sent = self.lsp.did_change_ranges(uri, self.wins[i].buf.take_changes())
+            if sent < 0:
+                _ = self.lsp.did_change(uri, bytes_to_str(self.wins[i].buf.lsp_bytes()))
+                self.wins[i].buf.start_tracking()
         self.wins[i].lsp_sent_version = v
         self.wins[i].lsp_seen_version = v
         for j in range(len(self.wins)):
             if self.same_shared_buffer(i, j):
                 _ = self.wins[j].buf.take_changes()
-                self.wins[j].buf.start_tracking()
+                if nb[0]:
+                    self.wins[j].buf.stop_tracking()
+                else:
+                    self.wins[j].buf.start_tracking()
                 self.wins[j].lsp_sent_version = v
                 self.wins[j].lsp_seen_version = v
                 self.wins[j].lsp_due = 0
@@ -256,8 +320,8 @@ __extension App:
                 var vend = min(self.wins[i].buf.count(), vtop + self.wins[i].rows())
                 var out_of_range = self.wins[i].hint_top < 0 or vtop < self.wins[i].hint_top or vend > self.wins[i].hint_end
                 if self.wins[i].hint_version != v or out_of_range:
-                    var h0 = max(0, vtop - 25)
-                    var h1 = min(self.wins[i].buf.count(), vend + 50)
+                    var h0 = 0 if self.wins[i].lsp_nb_active else max(0, vtop - 25)
+                    var h1 = max(self.wins[i].buf.count(), len(self.wins[i].lsp_nb_v2b_row)) if self.wins[i].lsp_nb_active else min(self.wins[i].buf.count(), vend + 50)
                     var id = self.lsp.request_inlay(uri, h1, now, h0)
                     if id >= 0:
                         self.hint_req_id = id
@@ -296,10 +360,19 @@ __extension App:
         var ascii = True
         var count = self.wins[i].buf.count()
         for k in range(len(toks) // 4):
-            var r = toks[k * 4]
+            var vr = toks[k * 4]
             var kind = toks[k * 4 + 3]
-            if r >= count or kind >= len(classes) or classes[kind] < 0:
+            if kind >= len(classes) or classes[kind] < 0:
                 continue
+            var va = toks[k * 4 + 1]
+            var vb = va + toks[k * 4 + 2]
+            var p1 = self.wins[i].lsp_from_virtual_pos(vr, va)
+            var p2 = self.wins[i].lsp_from_virtual_pos(vr, vb)
+            var r = p1[0]
+            if r < 0 or r >= count:
+                continue
+            var a = p1[1]
+            var b = max(a, p2[1])
             if r != row:
                 row = r
                 line = self.wins[i].buf.line(r)
@@ -308,8 +381,6 @@ __extension App:
                     if c >= 128:
                         ascii = False
                         break
-            var a = toks[k * 4 + 1]
-            var b = a + toks[k * 4 + 2]
             if not ascii:
                 a = utf16_to_col(line, a)
                 b = utf16_to_col(line, b)
@@ -317,6 +388,19 @@ __extension App:
             sem.append(a)
             sem.append(b)
             sem.append(classes[kind])
+        if self.wins[i].lsp_nb_active:
+            var ntok = len(sem) // 4
+            for ti in range(1, ntok):
+                var tj = ti
+                while tj > 0 and (
+                    sem[tj * 4] < sem[(tj - 1) * 4]
+                    or (sem[tj * 4] == sem[(tj - 1) * 4] and sem[tj * 4 + 1] < sem[(tj - 1) * 4 + 1])
+                ):
+                    for f in range(4):
+                        var tmp = sem[tj * 4 + f]
+                        sem[tj * 4 + f] = sem[(tj - 1) * 4 + f]
+                        sem[(tj - 1) * 4 + f] = tmp
+                    tj -= 1
         self.wins[i].buf.sem = sem.copy()
         for j in range(len(self.wins)):
             if self.same_shared_buffer(i, j):
@@ -337,8 +421,10 @@ __extension App:
         self.wins[i].buf.hints.clear()
         var count = self.wins[i].buf.count()
         for h in parse_inlay(m.doc, m.result()):
-            if h.row < count:
-                self.wins[i].buf.hints.append(Hint(h.row, utf16_to_col(self.wins[i].buf.line(h.row), h.col16), h.label, h.kind))
+            var mp = self.wins[i].lsp_from_virtual_pos(h.row, h.col16)
+            var br = mp[0]
+            if br >= 0 and br < count:
+                self.wins[i].buf.hints.append(Hint(br, utf16_to_col(self.wins[i].buf.line(br), mp[1]), h.label, h.kind))
 
     def lsp_format_request(mut self, ai: Int) -> Bool:
         """Request `textDocument/formatting` from the matching extra server or Mojo server."""
@@ -361,6 +447,8 @@ __extension App:
             self.fmt_req_srv = xk
             self.fmt_req_path = path
             return True
+        if self.wins[ai].lsp_nb_active:
+            return False
         if self.lsp.state != LSP_READY or not self.lsp.table.formatting:
             return False
         self.lsp_send_changes(ai, now, False)
@@ -464,6 +552,7 @@ __extension App:
                 self.wins[i].buf.stop_tracking()
                 self.wins[i].buf.marks.clear()
                 self.wins[i].lsp_due = 0
+                self.wins[i].lsp_nb_active = False
         self.decor_reset(True, True)
         self.lsp_restart_due = 0
         self.lsp_restart_path = ""
@@ -477,11 +566,21 @@ __extension App:
         server's UTF-16 columns turned into character columns."""
         self.wins[i].buf.marks.clear()
         var count = self.wins[i].buf.count()
+        if count <= 0:
+            return
         for d in self.lsp.diagnostics(path_to_uri(self.wins[i].path)):
-            var l1 = max(0, min(d.line, count - 1))
-            var l2 = max(l1, min(d.end_line, count - 1))
-            var c1 = utf16_to_col(self.wins[i].buf.line(l1), d.ch)
-            var c2 = utf16_to_col(self.wins[i].buf.line(l2), d.end_ch)
+            var p1 = self.wins[i].lsp_from_virtual_pos(d.line, d.ch)
+            if p1[0] < 0:
+                continue
+            var p2 = self.wins[i].lsp_from_virtual_pos(d.end_line, d.end_ch)
+            if p2[0] < p1[0]:
+                p2 = (p1[0], max(p1[1], d.end_ch))
+            var l1 = max(0, min(p1[0], count - 1))
+            var l2 = max(l1, min(p2[0], count - 1))
+            var c1 = utf16_to_col(self.wins[i].buf.line(l1), p1[1])
+            var c2 = utf16_to_col(self.wins[i].buf.line(l2), p2[1])
+            if l1 == l2 and c2 < c1:
+                c2 = c1
             self.wins[i].buf.marks.append(Mark(l1, c1, l2, c2, d.severity, d.message))
 
     def lsp_show(mut self, latency_ms: Int):

@@ -134,7 +134,7 @@ __extension App:
                     path = cand
         var dir = dirname(path)
         var exe = join_path(dir, "build/" + stem(path) + ".debug")
-        var inner = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build -g -O0" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe)
+        var inner = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build -g -O0" + self.include_flags_for(path) + " " + shell_quote(path) + " -o " + shell_quote(exe)
         var cmd = self.with_env(path, inner) + " 2>&1"
         if self.start_job(JOB_DEBUG, cmd, path, exe):
             self.panel_write(PG_MESSAGE)
@@ -155,7 +155,7 @@ __extension App:
         self.dbg_override_args = ("--only " + shell_quote(test_name)) if test_name.byte_length() > 0 else String("")
         var dir = dirname(path)
         var exe = join_path(dir, "build/" + stem(path) + ".debug")
-        var inner = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build -g -O0" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe)
+        var inner = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build -g -O0" + self.include_flags_for(path) + " " + shell_quote(path) + " -o " + shell_quote(exe)
         var cmd = self.with_env(path, inner) + " 2>&1"
         if self.start_job(JOB_DEBUG, cmd, path, exe):
             self.panel_write(PG_MESSAGE)

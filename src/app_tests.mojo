@@ -446,7 +446,7 @@ __extension App:
                 flags = " --only"
                 for n in only:
                     flags += " " + shell_quote(n)
-            var fallback = "cd " + shell_quote(dirname(p)) + " && exec " + self.mojo_for(p) + " run" + self.include_flags() + " " + shell_quote(p) + flags
+            var fallback = "cd " + shell_quote(dirname(p)) + " && exec " + self.mojo_for(p) + " run" + self.include_flags_for(p) + " " + shell_quote(p) + flags
             var inner = fallback
             if not list_only and cdir.byte_length() > 0:
                 var st = test_stem(p)
@@ -466,7 +466,7 @@ __extension App:
                     var build_and_run = (
                         "rm -f " + shell_quote(bin_p) + " " + shell_quote(sig_p) + " " + shell_quote(bin_sig_p)
                         + " && cd " + shell_quote(dirname(p))
-                        + " && " + self.mojo_for(p) + " build" + self.include_flags() + " " + shell_quote(p) + " -o " + shell_quote(bin_p)
+                        + " && " + self.mojo_for(p) + " build" + self.include_flags_for(p) + " " + shell_quote(p) + " -o " + shell_quote(bin_p)
                         + " && printf '%s' " + shell_quote(cur_mtime) + " > " + shell_quote(sig_p)
                         + " && printf '%s' " + shell_quote(cur_mtime) + " > " + shell_quote(bin_sig_p)
                         + " && exec " + shell_quote(bin_p) + flags

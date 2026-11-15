@@ -52,7 +52,22 @@ if grep -q "warning:" build/build.log; then
   exit 1
 fi
 
-JOBS="${TM_JOBS:-$(( $(nproc) / 2 ))}"
+if [ -n "${TM_JOBS:-}" ]; then
+  JOBS="$TM_JOBS"
+else
+  CPU_JOBS=$(( $(nproc) / 2 ))
+  [ "$CPU_JOBS" -ge 1 ] || CPU_JOBS=1
+  JOBS="$CPU_JOBS"
+  if [ -r /proc/meminfo ]; then
+    MEM_AVAIL_KB="$(awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo)"
+    if [ -n "${MEM_AVAIL_KB:-}" ] && [ "$MEM_AVAIL_KB" -gt 0 ] 2>/dev/null; then
+      # ~5 GiB per parallel Mojo shard compiler keeps 8-32 GiB hosts out of swap/OOM
+      MEM_JOBS=$(( MEM_AVAIL_KB / 5242880 ))
+      [ "$MEM_JOBS" -ge 1 ] || MEM_JOBS=1
+      [ "$MEM_JOBS" -lt "$JOBS" ] && JOBS="$MEM_JOBS"
+    fi
+  fi
+fi
 [ "$JOBS" -ge 1 ] || JOBS=1
 MOJO_VER="$("$MOJO" --version)"
 SRC_SIG="$({ printf '%s\n' "$MOJO_VER"; sha256sum src/*.mojo; } | sha256sum | awk '{print $1}')"

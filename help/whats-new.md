@@ -1,5 +1,33 @@
 # What's new
 
+## 2.5: notebooks, refactorings & zero-config projects
+
+- **Terminal Notebooks & Jupyter `.ipynb`**: persistent non-blocking `mojo repl` and `python3`
+  cell kernels (`# %%`, `Ctrl-Enter` / `Ctrl-Shift-Enter`) with FD-level prior-cell stdout
+  suppression, live `mojo-lsp-server` `NotebookVirtualDoc` virtualization, exact error-line
+  remapping, outline cell hierarchy & folding, lossless nbformat v4 `.ipynb` open/save +
+  `File > Export notebook as .ipynb...`, and automatic `matplotlib` / PNG inline terminal
+  plots (`Compile > View cell plot`, Kitty / Sixel / half-block preview).
+- **Zero-Config Subprojects**: opening any `.mojo` / `.🔥` file from `$HOME` or a multi-repo
+  parent workspace automatically discovers enclosing `turbomojo.toml` / `pixi.toml` /
+  `mojoproject.toml` / `.git` roots and `src/` package directories, injecting `-I` include
+  roots across LSP, Build, Run, Debug, Test, Codegen, and cell kernels while keying the warm
+  `lsp_pool` per subproject.
+- **Structural Refactorings & Mojo 1.2 Migration Assistant**: `Text > Migrate legacy syntax
+  to Mojo 1.2...` (and `Migrate workspace to Mojo 1.2...` + `Ctrl-.` quick fixes) rewrites
+  `fn`, `let`, `alias`, `@parameter` `if`/`for`, `inout`, `owned`, `borrowed`, `@value` +
+  `(Copyable, Movable)`, and bare stdlib imports safely outside strings/comments via
+  `offer_edit()` preview & 1-step Undo; plus `Text > Extract variable...` and `Text > Extract
+  function...` on selections.
+- **Live Codegen Cursor Sync & GPU Kernel Resource Badges**: bidirectional live cursor
+  tracking between `WK_EDITOR` and `WK_CODEGEN` (`ASM` / `PTX` / `AMDGCN` / `LLVM IR`, with
+  DWARF data-section stripping) and inline `def` header badges (`[⚡ 32 regs | 4.0 KB smem |
+  0 spills]`, `[⚡ N SIMD | 0 spills | M insns]`) parsed from PTX, `ptxas info`, AMDGCN, ASM,
+  and LLVM IR.
+- **Memory-Aware Test Gate & Packaging**: `scripts/check.sh` auto-scales parallel test shard
+  compilation from `/proc/meminfo` (`MemAvailable`) to prevent swap/OOM on 8–32 GiB hosts,
+  and `packaging/PKGBUILD` builds native Arch / Omarchy Linux packages.
+
 ## 2.4: Mojo 1.2 & GPU developer milestone
 
 - **Benchmarking, Codegen & GPU Roofline**: `std.benchmark` runner (`Compile > Run

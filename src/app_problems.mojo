@@ -33,11 +33,19 @@ __extension App:
             var path = uri_to_path(self.lsp.diags[k].uri)
             var wi = self.find_editor(path)
             for d in self.lsp.diags[k].items:
-                var col = d.ch + 1
-                if wi >= 0 and d.line >= 0 and d.line < self.wins[wi].buf.count():
-                    col = utf16_to_col(self.wins[wi].buf.line(d.line), d.ch) + 1
+                var dline = d.line
+                var dch = d.ch
+                if wi >= 0 and self.wins[wi].lsp_nb_active:
+                    var mp = self.wins[wi].lsp_from_virtual_pos(d.line, d.ch)
+                    if mp[0] < 0:
+                        continue
+                    dline = mp[0]
+                    dch = mp[1]
+                var col = dch + 1
+                if wi >= 0 and dline >= 0 and dline < self.wins[wi].buf.count():
+                    col = utf16_to_col(self.wins[wi].buf.line(dline), dch) + 1
                 var lines = d.message.split("\n")
-                var p = Problem(PS_SERVER, d.severity if d.severity >= 1 and d.severity <= 4 else SEV_ERROR, path, d.line + 1, col, String(lines[0]) if len(lines) > 0 else String(""))
+                var p = Problem(PS_SERVER, d.severity if d.severity >= 1 and d.severity <= 4 else SEV_ERROR, path, dline + 1, col, String(lines[0]) if len(lines) > 0 else String(""))
                 for j in range(1, len(lines)):
                     p.more.append(String(lines[j]))
                 out.append(p^)
@@ -249,12 +257,19 @@ __extension App:
             if r > 0:
                 t.append(10)
             var cps = decode(shown[r])
+            var py_loc = parse_py_traceback_loc(shown[r])
             if (str_contains(shown[r], "error:") and not shown[r].startswith("mojo: ")) or str_contains(shown[r], "warning:"):
                 var loc = self.parse_loc(cps)
                 if loc.row > 0:
                     loc.msg_line = r
-                    loc.path = abs_path(self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd), loc.path)
+                    if not path_exists(loc.path) and self.find_editor_or_title(loc.path) < 0:
+                        loc.path = abs_path(self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd), loc.path)
                     self.errs.append(loc^)
+            elif py_loc.row > 0:
+                py_loc.msg_line = r
+                if not path_exists(py_loc.path) and self.find_editor_or_title(py_loc.path) < 0:
+                    py_loc.path = abs_path(self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd), py_loc.path)
+                self.errs.append(py_loc^)
             for c in cps:
                 t.append(c)
         self.wins[mi].buf.load(t)

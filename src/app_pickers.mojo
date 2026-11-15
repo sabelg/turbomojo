@@ -344,31 +344,9 @@ __extension App:
         d.list_filter = True
         var items = List[String]()
         var data = List[Int]()
-        for r in range(self.wins[ai].buf.count()):
-            var ind = self.wins[ai].indent_of(r)
-            var line = self.wins[ai].buf.line(r)
-            var rest = slice_str(line, ind, len(line))
-            var kw = String("")
-            for k in ["def ", "fn ", "struct ", "__extension ", "trait ", "comptime "]:
-                if rest.startswith(k):
-                    kw = String(k)
-            if kw.byte_length() == 0:
-                continue
-            if kw == "comptime " and ind > 0:
-                continue
-            var s0 = ind + cp_len(kw)
-            var e = s0
-            while e < len(line) and is_ident(line[e]):
-                e += 1
-            if e == s0:
-                continue
-            var name = slice_str(line, s0, e)
-            var pad = String("")
-            for _ in range(self.wins[ai].vcol(r, ind) // max(1, self.wins[ai].buf.indent_size)):
-                pad += "  "
-            var tag = String("ƒ ") if kw == "def " or kw == "fn " else (String("◆ ") if kw == "struct " or kw == "__extension " else (String("◇ ") if kw == "trait " else String("= ")))
-            items.append(pad_right(pad + tag + name, 44) + ":" + String(r + 1))
-            data.append(r)
+        for it in scan_outline(self.wins[ai].buf):
+            items.append(pad_right(outline_line(it), 44) + ":" + String(it.row + 1))
+            data.append(it.row)
         if len(items) == 0:
             self.say("No symbols found")
             return
@@ -769,7 +747,8 @@ __extension App:
         self.lsp.cancel_request(self.comp_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)          # the server must see what was just typed
-        var id = self.lsp.request_completion(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, now)
+        var vp = self.wins[ai].lsp_to_virtual_pos(self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc))
+        var id = self.lsp.request_completion(uri, vp[0], vp[1], trigger, now)
         if id < 0:
             return False
         self.comp_srv_extra = -1
@@ -815,7 +794,7 @@ __extension App:
         var member = start > 0 and start <= len(line) and line[start - 1] == 46
         if prefix.byte_length() > 0 and not (member and same and len(self.comp_srv) > 0):
             words = self.collect_completions(ai, prefix)
-        var want_snips = not member and lang_for_path(self.wins[ai].path, self.wins[ai].title) == HL_MOJO
+        var want_snips = not member and self.wins[ai].effective_lang() == HL_MOJO
         self.comp_rebuild(prefix, words, want_snips, not member)
         self.comp_waiting = False
         if len(self.comp_items) == 0:
@@ -883,7 +862,7 @@ __extension App:
         if prefix.byte_length() > 0 and not (member and len(self.comp_srv) > 0):
             # after "x." the server's members are the answer; keywords would be noise
             words = self.collect_completions(ai, prefix)
-        var want_snips = not member and lang_for_path(self.wins[ai].path, self.wins[ai].title) == HL_MOJO
+        var want_snips = not member and self.wins[ai].effective_lang() == HL_MOJO
         self.comp_rebuild(prefix, words, want_snips, not member)
         if len(self.comp_items) == 0:
             if waiting:
@@ -981,6 +960,16 @@ __extension App:
         var used_lsp_edit = False
         if sidx >= 0 and self.comp_srv[sidx].has_edit:
             var ed = self.comp_srv[sidx].edit.copy()
+            if self.comp_srv_extra < 0 and self.wins[ai].lsp_nb_active:
+                var mp1 = self.wins[ai].lsp_from_virtual_pos(ed.r1, ed.c1)
+                var mp2 = self.wins[ai].lsp_from_virtual_pos(ed.r2, ed.c2)
+                if mp1[0] >= 0 and mp2[0] >= 0:
+                    ed.r1 = mp1[0]
+                    ed.c1 = mp1[1]
+                    ed.r2 = mp2[0]
+                    ed.c2 = mp2[1]
+                else:
+                    ed.r1 = -1
             if ed.r1 == ed.r2 and ed.r1 >= 0 and ed.r1 < self.wins[ai].buf.count():
                 var ln = self.wins[ai].buf.line(ed.r1)
                 var c1 = utf16_to_col(ln, ed.c1)
@@ -1127,7 +1116,8 @@ __extension App:
         self.lsp.cancel_request(self.hover_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)
-        var id = self.lsp.request_hover(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
+        var vp = self.wins[ai].lsp_to_virtual_pos(self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc))
+        var id = self.lsp.request_hover(uri, vp[0], vp[1], now)
         if id < 0:
             return False
         self.hover_req_id = id
@@ -1223,7 +1213,8 @@ __extension App:
         self.lsp.cancel_request(self.sig_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)
-        var id = self.lsp.request_signature(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), trigger, again, now)
+        var vp = self.wins[ai].lsp_to_virtual_pos(self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc))
+        var id = self.lsp.request_signature(uri, vp[0], vp[1], trigger, again, now)
         if id < 0:
             return False
         self.sig_srv = -1

@@ -39,7 +39,7 @@ TurboMojo is for the places and habits where a terminal is better:
 | Learning Mojo | Mojo's error messages explained, the manual, the standard library and the GPU puzzles offline, practice copies of the examples | the documentation website |
 | Accessibility | screen-reader mode with a plain line mode, colour-blind-safe themes | VS Code's own, mature screen-reader support |
 | Extensions | plugins in Mojo (commands, status items, panels) and other language servers | the whole VS Code marketplace |
-| Notebooks, GUI previews | `# %%` interactive code cells in the terminal (Mojo & Python); no GUI previews | yes |
+| Notebooks, GUI previews | `# %%` & Jupyter `.ipynb` notebooks (Mojo & Python) with Kitty/Sixel cell plots; no web GUI previews | yes |
 
 ## Build & run
 
@@ -106,6 +106,9 @@ pixi run bundle
 scp build/turbomojo-*-linux-*.tar.gz gpu-box:
 ssh gpu-box 'tar -xzf turbomojo-*-linux-*.tar.gz'
 ```
+
+**On Arch / Omarchy Linux.** `packaging/PKGBUILD` builds a native `pacman` package
+installing `tmide`, `tmide-mcp`, documentation, and shell completions (`cd packaging && makepkg -si`).
 
 `tmide --version` prints the version, `tmide --help` the command line.
 

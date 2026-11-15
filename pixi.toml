@@ -8,7 +8,7 @@ platforms = [
   # macOS on Apple silicon: resolved and compiled for here (scripts/macos-link.sh); not run
   "osx-arm64",
 ]
-version = "2.4.0"          # (the same as src/version.mojo)
+version = "2.5.0"          # (the same as src/version.mojo)
 
 # The default environment uses the stable Mojo release. The `nightly` environment is a
 # canary: `pixi run canary` runs the whole gate against the newest nightly toolchain so

@@ -10,7 +10,8 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
-from highlight import Highlighter, lang_for_path, C_CMT, C_STR
+from highlight import Highlighter, HL_MOJO, lang_for_path, C_CMT, C_STR
+from refactor import migrate_mojo12_buffer, extract_variable_edits, extract_function_edits
 from snippets import synthesize_mojo_quickfixes
 from symindex import FileIndex, is_mojo_file
 from outline import scan_outline
@@ -362,7 +363,8 @@ __extension App:
             return False
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)
-        var id = self.lsp.request_references(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
+        var vp = self.wins[ai].lsp_to_virtual_pos(self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc))
+        var id = self.lsp.request_references(uri, vp[0], vp[1], now)
         if id < 0:
             return False
         self.ref_srv = -1
@@ -388,7 +390,18 @@ __extension App:
                 return
             self.say("Language server: " + m.error_message())
             return
-        var locs = parse_locations(m.doc, m.result())
+        var raw_locs = parse_locations(m.doc, m.result())
+        var locs = List[LspLocation]()
+        for rl in raw_locs:
+            var ml = rl.copy()
+            var wi = self.find_editor(ml.path)
+            if wi >= 0 and self.wins[wi].lsp_nb_active and self.ref_srv < 0:
+                var mp = self.wins[wi].lsp_from_virtual_pos(ml.row, ml.col16)
+                if mp[0] < 0:
+                    continue
+                ml.row = mp[0]
+                ml.col16 = mp[1]
+            locs.append(ml^)
         if len(locs) == 0:
             self.say("No references found for this place")
             return
@@ -547,6 +560,9 @@ __extension App:
                     self.say("Asking " + self.lsp_extra[xk].name + "...")
                 return
             self.rename_ask(self.word_under(ai))
+            return
+        if xk < 0 and self.wins[ai].lsp_nb_active and path.byte_length() > 0 and self.word_under(ai).byte_length() > 0:
+            self.local_rename_start(ai)
             return
         if self.lsp.state != LSP_READY or path.byte_length() == 0 or self.lsp.find_doc(path_to_uri(path)) < 0:
             if path.byte_length() > 0 and self.word_under(ai).byte_length() > 0:
@@ -926,6 +942,30 @@ __extension App:
                 var u1 = self.wins[ai].buf.utf16_col(qf.r1, qf.c1)
                 var u2 = self.wins[ai].buf.utf16_col(qf.r2, qf.c2)
                 out.append(self.make_local_action(path, qf.title, qf.r1, u1, qf.r2, u2, qf.new_text, qf.preferred))
+            var mig_edits = migrate_mojo12_buffer(self.wins[ai].buf)
+            if len(mig_edits) >= 2:
+                var a = CodeAction()
+                a.title = "Migrate entire file to Mojo 1.2 (" + String(len(mig_edits)) + " changes)"
+                a.kind = "quickfix"
+                a.preferred = False
+                var uri = path_to_uri(path)
+                var parts = List[String]()
+                for me in mig_edits:
+                    parts.append(
+                        "{\"range\":{\"start\":{\"line\":"
+                        + String(me.r1)
+                        + ",\"character\":"
+                        + String(me.c1)
+                        + "},\"end\":{\"line\":"
+                        + String(me.r2)
+                        + ",\"character\":"
+                        + String(me.c2)
+                        + "}},\"newText\":"
+                        + json_quote(me.text)
+                        + "}"
+                    )
+                a.edit_json = "{\"changes\":{" + json_quote(uri) + ":[" + ",".join(parts) + "]}}"
+                out.append(a^)
         return out^
 
     def show_actions_dialog(mut self):
@@ -979,6 +1019,13 @@ __extension App:
             self.actions_resend()
             if self.act_req_id >= 0:
                 self.say("Asking " + self.lsp_extra[xk].name + "...")
+            return
+        if xk < 0 and self.wins[ai].lsp_nb_active:
+            if len(local) > 0:
+                self.actions = local^
+                self.show_actions_dialog()
+            else:
+                self.say("No quick fixes here")
             return
         if self.lsp.state != LSP_READY or path.byte_length() == 0 or self.lsp.find_doc(path_to_uri(path)) < 0:
             if len(local) > 0:
@@ -1202,7 +1249,8 @@ __extension App:
         self.lsp.cancel_request(self.def_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)
-        var id = self.lsp.request_definition(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
+        var vp = self.wins[ai].lsp_to_virtual_pos(self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc))
+        var id = self.lsp.request_definition(uri, vp[0], vp[1], now)
         if id < 0:
             return False
         self.def_srv = -1
@@ -1244,7 +1292,8 @@ __extension App:
         self.lsp.cancel_request(self.def_req_id)
         var now = now_ns()
         self.lsp_send_changes(ai, now, False)
-        var id = self.lsp.request_type_definition(uri, self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc), now)
+        var vp = self.wins[ai].lsp_to_virtual_pos(self.wins[ai].cr, self.wins[ai].buf.utf16_col(self.wins[ai].cr, self.wins[ai].cc))
+        var id = self.lsp.request_type_definition(uri, vp[0], vp[1], now)
         if id < 0:
             return False
         self.def_srv = -1
@@ -1275,8 +1324,16 @@ __extension App:
         var all_locs = parse_locations(m.doc, m.result())
         var locs = List[LspLocation]()
         for l in all_locs:
-            if self.find_editor(l.path) >= 0 or path_exists(l.path):
-                locs.append(l.copy())
+            var ml = l.copy()
+            var wi = self.find_editor(ml.path)
+            if wi >= 0 and self.wins[wi].lsp_nb_active and self.def_srv < 0:
+                var mp = self.wins[wi].lsp_from_virtual_pos(ml.row, ml.col16)
+                if mp[0] < 0:
+                    continue
+                ml.row = mp[0]
+                ml.col16 = mp[1]
+            if wi >= 0 or path_exists(ml.path):
+                locs.append(ml^)
         if len(locs) == 0:
             self.say(("No " + noun + " found for this place") if len(all_locs) == 0 else ("The " + noun + " is in a file that cannot be opened"))
             return
@@ -1461,3 +1518,204 @@ __extension App:
             return True
         self.mode = M_NORMAL
         return False
+
+    # ======================================== Mojo 1.2 migration & refactorings
+    def apply_local_buffer_edits(
+        mut self,
+        wi: Int,
+        edits: List[LspEdit],
+        noun: String,
+        title: String,
+        what: String,
+        done: String,
+    ):
+        """Apply `edits` to editor `wi` as a single undo group (routing saved files
+        through `offer_edit` and applying directly onto unsaved buffers)."""
+        if wi < 0 or wi >= len(self.wins) or len(edits) == 0:
+            return
+        if self.wins[wi].read_only:
+            self.say("Buffer is read-only")
+            return
+        var path = String(self.wins[wi].path)
+        if path.byte_length() > 0:
+            self.snapshot_versions()
+            var we = WorkspaceEdit()
+            for ed in edits:
+                we.add(path, ed)
+            self.offer_edit(we^, noun, title, what, done)
+            return
+        var lines = List[List[Int]]()
+        for r in range(self.wins[wi].buf.count()):
+            lines.append(self.wins[wi].buf.line(r))
+        var plan: List[PlanEdit]
+        try:
+            plan = plan_edits(lines, edits)
+        except e:
+            self.info(noun, "Cannot apply refactoring: " + String(e))
+            return
+        self.wins[wi].collapse()
+        self.wins[wi].sel = False
+        var cr = self.wins[wi].cr
+        var cc = self.wins[wi].cc
+        var g = self.wins[wi].new_group()
+        for p in plan:
+            if p.r1 != p.r2 or p.c1 != p.c2:
+                _ = self.wins[wi].buf.delete(p.r1, p.c1, p.r2, p.c2, cr, cc, g)
+            if len(p.text) > 0:
+                _ = self.wins[wi].buf.insert(p.r1, p.c1, p.text, cr, cc, g)
+        self.wins[wi].clamp()
+        self.wins[wi].sync_want()
+        self.wins[wi].break_group()
+        self.sync_shared_buffers(wi)
+        self.say(done + ": " + count_of(len(edits), "change") + " in 1 file")
+
+    def migrate_mojo12_file(mut self):
+        """Migrate legacy Mojo constructs in the active editor buffer to Mojo 1.2."""
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open a Mojo file first")
+            return
+        if self.wins[ai].effective_lang() != HL_MOJO:
+            self.say("Mojo 1.2 Migration applies to Mojo (.mojo / .🔥) buffers")
+            return
+        var edits = migrate_mojo12_buffer(self.wins[ai].buf)
+        if len(edits) == 0:
+            self.say("Buffer already conforms to Mojo 1.2 syntax (0 legacy constructs found)")
+            return
+        self.apply_local_buffer_edits(
+            ai,
+            edits,
+            "Mojo 1.2 Migration",
+            "Migrate to Mojo 1.2",
+            "Migrate legacy Mojo constructs to Mojo 1.2",
+            "Migrated to Mojo 1.2",
+        )
+
+    def migrate_mojo12_project(mut self) raises:
+        """Scan workspace `.mojo`/`.🔥` files, preview legacy -> Mojo 1.2 edits in Message,
+        and confirm multi-file 1-step Undo application via `offer_edit()`."""
+        self.snapshot_versions()
+        var paths = collect_search_files(self.cwd, "")
+        var prefix = self.cwd + "/"
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_EDITOR and self.wins[k].path.startswith(prefix):
+                var wp = self.wins[k].path
+                if not (wp in paths):
+                    paths.append(wp)
+        var we = WorkspaceEdit()
+        for p in paths:
+            if not is_mojo_file(p):
+                continue
+            var wi = self.find_editor(p)
+            var edits: List[LspEdit]
+            if wi >= 0:
+                edits = migrate_mojo12_buffer(self.wins[wi].buf)
+            else:
+                var raw = read_file(p)
+                if len(raw) == 0 or len(raw) > MAX_FILE_BYTES or is_binary(raw):
+                    continue
+                var tmp_buf = TextBuffer()
+                tmp_buf.load_bytes(raw)
+                edits = migrate_mojo12_buffer(tmp_buf)
+            for ed in edits:
+                we.add(p, ed)
+        if we.count() == 0:
+            self.say("Workspace already conforms to Mojo 1.2 syntax (0 legacy constructs found)")
+            return
+        self.offer_edit(
+            we^,
+            "Mojo 1.2 Migration",
+            "Migrate Workspace to Mojo 1.2",
+            "Migrate legacy Mojo syntax to Mojo 1.2",
+            "Migrated workspace to Mojo 1.2",
+        )
+
+    def extract_variable_ask(mut self):
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open an editor first")
+            return
+        if self.wins[ai].read_only:
+            self.say("Buffer is read-only")
+            return
+        if not self.wins[ai].has_sel():
+            self.say("Select an expression on a single line first")
+            return
+        var sr = self.wins[ai].sel_range()
+        if sr.r1 != sr.r2:
+            self.say("Extract Variable requires a single-line expression selection")
+            return
+        var d = Dialog(D_EXTRACT_VAR, "Extract Variable", min(56, self.scr.w - 4), 8)
+        d.lines.append("Name for the extracted variable:")
+        var f = Field("~V~ariable name", "extracted")
+        f.fresh = True
+        d.fields.append(f^)
+        d.buttons.append("~E~xtract")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def extract_variable_apply(mut self, name: String):
+        var ai = self.active_editor()
+        if ai < 0 or not self.wins[ai].has_sel():
+            self.say("No active expression selection to extract")
+            return
+        var sr = self.wins[ai].sel_range()
+        var is_mj = self.wins[ai].effective_lang() == HL_MOJO
+        var res = extract_variable_edits(
+            self.wins[ai].buf, sr.r1, sr.c1, sr.r2, sr.c2, name, is_mj
+        )
+        if res[0].byte_length() > 0:
+            self.say(res[0])
+            return
+        var clean = String(name.strip())
+        self.apply_local_buffer_edits(
+            ai,
+            res[1],
+            "Extract Variable",
+            "Extract Variable",
+            "Extract expression into '" + clean + "'",
+            "Extracted variable '" + clean + "'",
+        )
+
+    def extract_function_ask(mut self):
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open an editor first")
+            return
+        if self.wins[ai].read_only:
+            self.say("Buffer is read-only")
+            return
+        if not self.wins[ai].has_sel():
+            self.say("Select one or more statement lines to extract into a function")
+            return
+        var d = Dialog(D_EXTRACT_FUNC, "Extract Function", min(56, self.scr.w - 4), 8)
+        d.lines.append("Name for the extracted helper function:")
+        var f = Field("~F~unction name", "extracted_fn")
+        f.fresh = True
+        d.fields.append(f^)
+        d.buttons.append("~E~xtract")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def extract_function_apply(mut self, name: String):
+        var ai = self.active_editor()
+        if ai < 0 or not self.wins[ai].has_sel():
+            self.say("No active statement selection to extract")
+            return
+        var sr = self.wins[ai].sel_range()
+        var is_mj = self.wins[ai].effective_lang() == HL_MOJO
+        var res = extract_function_edits(
+            self.wins[ai].buf, sr.r1, sr.c1, sr.r2, sr.c2, name, is_mj
+        )
+        if res[0].byte_length() > 0:
+            self.say(res[0])
+            return
+        var clean = String(name.strip())
+        self.apply_local_buffer_edits(
+            ai,
+            res[1],
+            "Extract Function",
+            "Extract Function",
+            "Extract statements into '" + clean + "'",
+            "Extracted function '" + clean + "'",
+        )

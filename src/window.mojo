@@ -159,12 +159,18 @@ struct Window(Copyable, Movable):
     var hex_bytes: List[UInt8]
     var cell_badge_rows: List[Int]
     var cell_badges: List[String]
+    var lsp_nb_active: Bool
+    var lsp_nb_v2b_row: List[Int]
+    var lsp_nb_v2b_col: List[Int]
+    var lsp_nb_b2v_row: List[Int]
+    var lsp_nb_b2v_col: List[Int]
     var bench_badge_rows: List[Int]
     var bench_badges: List[String]
     var cov_rows: List[Int]
     var cov_states: List[Int]
     var sel_hist: List[Range]
     var buf_id: Int
+    var lang_override: Int
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
         self.kind = kind
@@ -256,12 +262,21 @@ struct Window(Copyable, Movable):
         self.hex_bytes = List[UInt8]()
         self.cell_badge_rows = List[Int]()
         self.cell_badges = List[String]()
+        self.lsp_nb_active = False
+        self.lsp_nb_v2b_row = List[Int]()
+        self.lsp_nb_v2b_col = List[Int]()
+        self.lsp_nb_b2v_row = List[Int]()
+        self.lsp_nb_b2v_col = List[Int]()
         self.bench_badge_rows = List[Int]()
         self.bench_badges = List[String]()
         self.cov_rows = List[Int]()
         self.cov_states = List[Int]()
         self.sel_hist = List[Range]()
         self.buf_id = -1
+        self.lang_override = -1
+
+    def effective_lang(self) -> Int:
+        return self.lang_override if self.lang_override >= 0 else lang_for_path(self.path, self.title)
 
     # ------------------------------------------------------------ geometry
     def contains(self, px: Int, py: Int) -> Bool:
@@ -428,25 +443,40 @@ struct Window(Copyable, Movable):
         if self.buf.fold_index(row) >= 0:
             return self.buf.set_fold(row, False)
         if not self.buf.foldable(row):
-            # the enclosing block: the nearest line above that is indented less
+            # the enclosing block: the nearest line above that is indented less,
+            # or an enclosing `# %%` code cell header
+            var found_hdr = -1
             var ind = self.buf.indent_cols(row)
             if ind < 0:
-                # a blank line counts as indented like the next line that is not blank
                 var j = row + 1
-                while j < self.buf.count() and self.buf.indent_cols(j) < 0:
+                while j < self.buf.count() and self.buf.indent_cols(j) < 0 and not self.buf.is_cell_header(j):
                     j += 1
-                if j >= self.buf.count():
-                    return False
-                ind = self.buf.indent_cols(j)
-            var k = row - 1
-            while k >= 0:
-                var ki = self.buf.indent_cols(k)
-                if ki >= 0 and ki < ind and self.buf.foldable(k):
-                    break
-                k -= 1
-            if k < 0 or self.buf.block_end(k) < row:
+                if j < self.buf.count() and not self.buf.is_cell_header(j):
+                    ind = self.buf.indent_cols(j)
+            if ind > 0:
+                var k = row - 1
+                while k >= 0:
+                    if self.buf.is_cell_header(k):
+                        break
+                    var ki = self.buf.indent_cols(k)
+                    if ki >= 0 and ki < ind and self.buf.foldable(k):
+                        if self.buf.block_end(k) >= row:
+                            found_hdr = k
+                        break
+                    k -= 1
+            if found_hdr < 0:
+                var ck = row - 1
+                while ck >= 0:
+                    if self.buf.is_cell_header(ck):
+                        if self.buf.block_end(ck) >= row:
+                            found_hdr = ck
+                        break
+                    ck -= 1
+            if found_hdr < 0:
                 return False
-            row = k
+            row = found_hdr
+            if self.buf.fold_index(row) >= 0:
+                return self.buf.set_fold(row, False)
         if not self.buf.set_fold(row, True):
             return False
         self.extra.clear()
@@ -606,7 +636,7 @@ struct Window(Copyable, Movable):
         if self.kind != WK_EDITOR or self.buf.large:
             return
         var count = self.buf.count()
-        var lang = lang_for_path(self.path, self.title)
+        var lang = self.effective_lang()
         if self.buf.ldirty_from >= 0:
             var row = self.buf.ldirty_from
             var last = self.buf.ldirty_to
@@ -652,7 +682,7 @@ struct Window(Copyable, Movable):
         otherwise computed by scanning from the last cached line (slow path)."""
         if self.kind != WK_EDITOR or self.buf.large:
             return 0
-        var lang = lang_for_path(self.path, self.title)
+        var lang = self.effective_lang()
         var known = len(self.buf.lstate) - 1
         var clean = self.buf.ldirty_from < 0 or self.buf.ldirty_from >= row
         if row <= known and clean:
@@ -1238,3 +1268,46 @@ struct Window(Copyable, Movable):
         self.clamp()
         self.break_group()
         self.follow = True
+
+    def set_cell_badge(mut self, row: Int, badge: String):
+        self.buf.set_cell_badge(row, badge)
+        self.sync_cell_badges()
+
+    def clear_cell_badges(mut self):
+        self.buf.clear_cell_badges()
+        self.cell_badge_rows.clear()
+        self.cell_badges.clear()
+
+    def sync_cell_badges(mut self):
+        if len(self.buf.cell_badge_rows) == 0:
+            return
+        var krows = List[Int]()
+        var kvals = List[String]()
+        var count = self.buf.count()
+        for i in range(len(self.buf.cell_badge_rows)):
+            var br = self.buf.cell_badge_rows[i]
+            if br >= 0 and br < count and i < len(self.buf.cell_badges):
+                if br == 0 or self.buf.is_cell_header(br):
+                    krows.append(br)
+                    kvals.append(self.buf.cell_badges[i])
+        self.buf.cell_badge_rows = krows.copy()
+        self.buf.cell_badges = kvals.copy()
+        self.cell_badge_rows = krows^
+        self.cell_badges = kvals^
+
+    def lsp_to_virtual_pos(self, row: Int, col16: Int) -> Tuple[Int, Int]:
+        if self.lsp_nb_active and row >= 0 and row < len(self.lsp_nb_b2v_row):
+            var vr = self.lsp_nb_b2v_row[row]
+            if vr >= 0:
+                return (vr, col16 + self.lsp_nb_b2v_col[row])
+        return (row, col16)
+
+    def lsp_from_virtual_pos(self, vrow: Int, vcol16: Int) -> Tuple[Int, Int]:
+        if self.lsp_nb_active:
+            if vrow < 0 or vrow >= len(self.lsp_nb_v2b_row):
+                return (-1, 0)
+            var br = self.lsp_nb_v2b_row[vrow]
+            if br < 0:
+                return (-1, 0)
+            return (br, max(0, vcol16 - self.lsp_nb_v2b_col[vrow]))
+        return (vrow, vcol16)

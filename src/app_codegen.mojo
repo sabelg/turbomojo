@@ -9,6 +9,8 @@ from util import *
 from codegen import (
     CG_ASM, CG_LLVM, CodegenSummary, format_codegen_header,
     parse_asm_with_line_tables, parse_llvm_with_line_tables,
+    extract_kernel_resources, format_kernel_resource_badge,
+    find_codegen_rows_for_source,
 )
 from bench import (
     BenchmarkItem, BenchmarkDiff, is_bench_source, find_bench_functions,
@@ -59,11 +61,95 @@ __extension App:
                 marks.append(RM_NONE)
         var keep_cr = 0 if reset_pos else self.wins[ci].cr
         var keep_top = 0 if reset_pos else self.wins[ci].top
+        self.codegen_base_marks = marks.copy()
+        self.codegen_sync_row = -1
+        self.codegen_sync_cg_row = -1
         self.wins[ci].buf.load(text)
         self.wins[ci].row_marks = marks^
         self.wins[ci].buf.modified = False
         self.wins[ci].cr = max(0, min(keep_cr, self.wins[ci].buf.count() - 1))
         self.wins[ci].top = max(0, min(keep_top, self.wins[ci].buf.count() - 1))
+
+    def apply_codegen_badges(mut self, path: String, raw: String, mode: Int):
+        """Attach per-kernel / per-function register, shared-memory, SIMD & spill badges
+        onto `def` headers in the open editor for `path`."""
+        var ei = self.find_editor(path)
+        if ei < 0:
+            return
+        var stats = extract_kernel_resources(raw, mode)
+        if len(stats) == 0:
+            return
+        var items = scan_outline(self.wins[ei].buf)
+        var changed = False
+        for it in items:
+            if it.kind != SK_FUNCTION and it.kind != SK_METHOD:
+                continue
+            var fn_low = it.name.lower()
+            if fn_low.byte_length() == 0:
+                continue
+            var best = -1
+            for k in range(len(stats)):
+                if stats[k].name == it.name:
+                    best = k
+                    break
+            if best < 0 and fn_low.byte_length() >= 3:
+                for k in range(len(stats)):
+                    if stats[k].name.lower().find(fn_low) >= 0:
+                        best = k
+                        break
+            if best >= 0:
+                var badge = format_kernel_resource_badge(stats[best])
+                var updated = False
+                for bi in range(len(self.wins[ei].bench_badge_rows)):
+                    if self.wins[ei].bench_badge_rows[bi] == it.row:
+                        self.wins[ei].bench_badges[bi] = badge
+                        updated = True
+                        break
+                if not updated:
+                    self.wins[ei].bench_badge_rows.append(it.row)
+                    self.wins[ei].bench_badges.append(badge)
+                changed = True
+        if changed:
+            self.sync_shared_buffers(ei)
+
+    def codegen_sync_cursor(mut self):
+        """Live bidirectional cursor synchronization between the Mojo editor (`WK_EDITOR`)
+        and its open `WK_CODEGEN` assembly / PTX / LLVM-IR pane."""
+        var ci = self.codegen_index()
+        if ci < 0 or len(self.codegen_line_map) == 0 or self.codegen_path.byte_length() == 0:
+            return
+        var ei = self.find_editor(self.codegen_path)
+        if ei < 0:
+            return
+        if self.top() == ci:
+            if self.wins[ci].cr != self.codegen_sync_cg_row:
+                self.codegen_sync_cg_row = self.wins[ci].cr
+                if self.wins[ci].cr >= 0 and self.wins[ci].cr < len(self.codegen_line_map):
+                    var mapped = self.codegen_line_map[self.wins[ci].cr]
+                    if mapped > 0:
+                        var tr = max(0, min(mapped - 1, self.wins[ei].buf.count() - 1))
+                        self.wins[ei].cr = tr
+                        self.wins[ei].follow = True
+                        self.codegen_sync_row = tr
+                        var marks = self.codegen_base_marks.copy()
+                        for r in find_codegen_rows_for_source(self.codegen_line_map, mapped):
+                            if r >= 0 and r < len(marks) and marks[r] != RM_WARN:
+                                marks[r] = RM_OK
+                        self.wins[ci].row_marks = marks^
+            return
+        if self.wins[ei].cr != self.codegen_sync_row:
+            self.codegen_sync_row = self.wins[ei].cr
+            var want_src = self.wins[ei].cr + 1
+            var marks = self.codegen_base_marks.copy()
+            var matched = find_codegen_rows_for_source(self.codegen_line_map, want_src)
+            for mr in matched:
+                if mr >= 0 and mr < len(marks) and marks[mr] != RM_WARN:
+                    marks[mr] = RM_OK
+            self.wins[ci].row_marks = marks^
+            if len(matched) > 0:
+                self.wins[ci].cr = matched[0]
+                self.wins[ci].follow = True
+                self.codegen_sync_cg_row = matched[0]
 
     def codegen_open(mut self) raises:
         """Open (or toggle/refresh) the Codegen Inspector side pane for the active editor."""
@@ -110,7 +196,7 @@ __extension App:
         var out_file = env_or("TMPDIR", "/tmp") + "/turbomojo-codegen-" + String(own_pid()) + ext
         self.codegen_out_file = out_file
         var dir = dirname(path)
-        var inner = "cd " + shell_quote(dir) + " && exec " + self.mojo_for(path) + " build --debug-level=line-tables --emit=" + emit_kind + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(out_file)
+        var inner = "cd " + shell_quote(dir) + " && exec " + self.mojo_for(path) + " build --debug-level=line-tables --emit=" + emit_kind + self.include_flags_for(path) + " " + shell_quote(path) + " -o " + shell_quote(out_file)
         var cmd = self.with_env(path, inner) + " 2>&1"
         var loading = List[String]()
         loading.append("Codegen Inspector: " + basename(path))
@@ -160,6 +246,17 @@ __extension App:
                 lmap.append(0)
         self.codegen_line_map = lmap^
         self.codegen_render_lines(rendered, True)
+        self.apply_codegen_badges(path, raw, self.codegen_mode)
+        var ei_now = self.find_editor(path)
+        if ei_now >= 0:
+            var init_matches = find_codegen_rows_for_source(self.codegen_line_map, self.wins[ei_now].cr + 1)
+            if len(init_matches) > 0:
+                var ci_now = self.codegen_index()
+                if ci_now >= 0:
+                    self.wins[ci_now].cr = init_matches[0]
+                    self.wins[ci_now].follow = True
+                    self.codegen_sync_row = self.wins[ei_now].cr
+                    self.codegen_sync_cg_row = init_matches[0]
         self.say("Codegen ready: " + String(summary.simd_ops) + " SIMD ops, " + String(summary.spill_ops) + " spills")
 
     def codegen_key(mut self, k: Int) raises -> Bool:
@@ -257,7 +354,7 @@ __extension App:
         var dir = dirname(path)
         var bench_cli = build_benchmark_cli_command(path)
         var mojo_bin = self.mojo_for(path)
-        var inc = self.include_flags()
+        var inc = self.include_flags_for(path)
         if mojo_bin != "mojo" or inc.byte_length() > 0:
             bench_cli = mojo_bin + " run -O3" + inc + " " + shell_quote(path)
         var inner = "cd " + shell_quote(dir) + " && exec " + bench_cli
@@ -459,7 +556,7 @@ __extension App:
         else:
             tool_name = "compute-sanitizer"
             prof_cmd = shell_quote(sanitizer) + " --tool memcheck " + shell_quote(exe)
-        var inner = "cd " + shell_quote(dir) + " && mkdir -p build && " + self.mojo_for(path) + " build" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " && " + prof_cmd
+        var inner = "cd " + shell_quote(dir) + " && mkdir -p build && " + self.mojo_for(path) + " build" + self.include_flags_for(path) + " " + shell_quote(path) + " -o " + shell_quote(exe) + " && " + prof_cmd
         var cmd = self.with_env(path, inner) + " 2>&1 </dev/null"
         if self.start_job(JOB_TASK, cmd, dir, "profile:" + tool_name):
             self.task_output("Building & profiling GPU kernels with " + tool_name + "...")
@@ -485,7 +582,7 @@ __extension App:
         var exe = join_path(dir, "build/" + stem(path))
         var out_csv = env_or("TMPDIR", "/tmp") + "/turbomojo-roofline-" + String(own_pid()) + ".csv"
         var tool_name = "ncu" if ncu.byte_length() > 0 else "rocprofv3"
-        var mojo_bin = self.mojo_for(path) + self.include_flags()
+        var mojo_bin = self.mojo_for(path) + self.include_flags_for(path)
         var roof_cmd = build_roofline_cli_command(tool_name, mojo_bin, path, exe, out_csv)
         var src_step = (" && { ncu --csv --page source " + shell_quote(exe) + " > " + shell_quote(out_csv + ".src") + " 2>/dev/null || true; }") if tool_name == "ncu" else String("")
         var inner = "cd " + shell_quote(dir) + " && mkdir -p build && (" + roof_cmd + ")" + src_step

@@ -10,7 +10,8 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
-from highlight import Highlighter
+from highlight import Highlighter, HL_MOJO
+from ipynb import is_ipynb_path, ipynb_to_percent_text, percent_text_to_ipynb
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from hexview import is_binary_data, render_hex_rows
 from markdown import md_render_rich
@@ -96,6 +97,24 @@ __extension App:
                 self.say("Binary file detected: opened read-only in hex inspector")
                 return
             var big = len(bytes) > self.large_file_bytes
+            if not big and is_ipynb_path(p):
+                var nb_doc = ipynb_to_percent_text(bytes_to_str(bytes))
+                if nb_doc.ok:
+                    self.wins[i].buf.load_bytes(str_bytes(nb_doc.text))
+                    self.wins[i].buf.modified = False
+                    self.wins[i].buf.large = False
+                    self.wins[i].lang_override = nb_doc.lang_id()
+                    self.wins[i].cr = 0
+                    self.wins[i].cc = 0
+                    self.wins[i].top = 0
+                    self.wins[i].disk_hash = content_hash(bytes)
+                    self.wins[i].disk_size = len(bytes)
+                    self.apply_editorconfig(i)
+                    self.note_disk_state(i)
+                    self.wins[i].sync_ver = self.wins[i].buf.version
+                    self.plugins_event("open", p)
+                    self.say("Loaded Jupyter notebook (" + ("Mojo" if nb_doc.is_mojo else "Python") + "): " + p)
+                    return
             self.wins[i].buf.load_bytes(bytes)
             self.wins[i].buf.large = big
             self.wins[i].cr = 0
@@ -158,7 +177,17 @@ __extension App:
             # the text now has characters Latin-1 cannot hold
             self.wins[i].buf.encoding = ENC_UTF8
             note = " as UTF-8 (it has characters Latin-1 cannot hold)"
-        var b = self.wins[i].buf.to_bytes()
+        var b: List[UInt8]
+        if is_ipynb_path(self.wins[i].path) and self.wins[i].lang_override >= 0:
+            var prev_raw = bytes_to_str(read_file(self.wins[i].path)) if path_exists(self.wins[i].path) else String("")
+            var ipynb_json = percent_text_to_ipynb(
+                bytes_to_str(self.wins[i].buf.to_bytes()),
+                self.wins[i].lang_override == HL_MOJO,
+                prev_raw,
+            )
+            b = str_bytes(ipynb_json)
+        else:
+            b = self.wins[i].buf.to_bytes()
         if not write_file(self.wins[i].path, b):
             raise Error("Could not write " + self.wins[i].path)
         self.wins[i].buf.modified = False
@@ -291,6 +320,7 @@ __extension App:
                 if self.same_shared_buffer(src, j):
                     has_sib = True
                     break
+            self.wins[src].sync_cell_badges()
             self.wins[src].sync_ver = self.wins[src].buf.version
             done.append(src)
             if not has_sib:
@@ -313,6 +343,9 @@ __extension App:
                 self.wins[dst].buf.bps = self.wins[src].buf.bps.copy()
                 self.wins[dst].buf.bp_looks = self.wins[src].buf.bp_looks.copy()
                 self.wins[dst].buf.bp_stamp = self.wins[src].buf.bp_stamp
+                self.wins[dst].buf.cell_badge_rows = self.wins[src].buf.cell_badge_rows.copy()
+                self.wins[dst].buf.cell_badges = self.wins[src].buf.cell_badges.copy()
+                self.wins[dst].sync_cell_badges()
                 self.wins[dst].buf.exec_row = self.wins[src].buf.exec_row
                 self.wins[dst].buf.git_state = self.wins[src].buf.git_state
                 self.wins[dst].buf.git_path = self.wins[src].buf.git_path
@@ -523,3 +556,28 @@ __extension App:
             self.store_history(i)
         self.session_save()
         self.running = False
+
+    def export_ipynb(mut self) raises:
+        """Export the active `# %%` notebook or script to `<stem>.ipynb` (nbformat v4)."""
+        var i = self.top_editor()
+        if i < 0:
+            self.say("Open a # %% notebook or script first")
+            return
+        var p = String(self.wins[i].path)
+        var out_path: String
+        if p.byte_length() > 0:
+            out_path = join_path(dirname(p), stem(p) + ".ipynb")
+        else:
+            var st = stem(self.wins[i].title) if self.wins[i].title.byte_length() > 0 else String("notebook")
+            out_path = join_path(self.cwd, st + ".ipynb")
+        var prev_raw = bytes_to_str(read_file(out_path)) if path_exists(out_path) else String("")
+        var is_mj = self.wins[i].effective_lang() == HL_MOJO
+        var ipynb_json = percent_text_to_ipynb(
+            bytes_to_str(self.wins[i].buf.to_bytes()),
+            is_mj,
+            prev_raw,
+        )
+        if not write_file(out_path, str_bytes(ipynb_json)):
+            self.say("Could not write " + out_path)
+            return
+        self.say("Exported Jupyter notebook: " + out_path)

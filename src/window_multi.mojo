@@ -915,7 +915,7 @@ __extension Window:
     def toggle_comment_multi(mut self):
         """Language-aware line comment toggle (`//` for C/C++/CUDA, `#` otherwise) across
         every unique row covered by any cursor/selection without collapsing multi-cursors."""
-        var pfx_str = comment_prefix_for_lang(lang_for_path(self.path, self.title))
+        var pfx_str = comment_prefix_for_lang(self.effective_lang())
         if pfx_str.byte_length() == 0:
             pfx_str = "#"
         var pfx = decode(pfx_str)

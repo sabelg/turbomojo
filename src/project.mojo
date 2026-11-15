@@ -1,7 +1,7 @@
 """The project around the files being edited: where its `pixi.toml` is and which tasks
 that file defines."""
 from std.collections import List
-from util import decode, to_str, join_path, dirname, path_exists
+from util import decode, to_str, join_path, dirname, basename, path_exists, is_dir, normalize_path, env_or
 
 comptime FIND_UP_MAX = 24
 
@@ -412,3 +412,99 @@ def parse_mru_toml(toml_content: String) -> List[String]:
             var p = String(l[byte=1:l.byte_length() - 1]).replace("\\\"", "\"")
             res.append(p)
     return res^
+
+
+def _is_boundary_dir(d: String, home: String) -> Bool:
+    if d.byte_length() == 0 or d == "/" or d == "/tmp" or d == "/var" or d == "/var/tmp" or d == "/private/tmp":
+        return True
+    if home.byte_length() > 0 and d == home:
+        return True
+    return False
+
+
+def _append_unique_dir(mut out: List[String], dir: String):
+    if dir.byte_length() == 0 or dir == "/" or not is_dir(dir):
+        return
+    var norm = normalize_path(dir)
+    if norm.byte_length() == 0 or norm == "/":
+        return
+    for existing in out:
+        if existing == norm:
+            return
+    out.append(norm)
+
+
+def discover_mojo_project_root(file_path: String) -> String:
+    """Walk upward from `file_path` to discover the nearest enclosing Mojo project root
+    (`.turbomojo.toml`, `turbomojo.toml`, `mojoproject.toml`, `pixi.toml`, `.git`,
+    or parent of an enclosing `src/` or `__init__.mojo` package hierarchy)."""
+    if file_path.byte_length() == 0:
+        return ""
+    var raw_home = env_or("HOME", "")
+    var home = normalize_path(raw_home) if raw_home.byte_length() > 0 else String("")
+    var start = file_path if is_dir(file_path) else dirname(file_path)
+    if start.byte_length() == 0:
+        return ""
+    var d = normalize_path(start)
+    var src_parent = String("")
+    var pkg_parent = String("")
+    for _ in range(FIND_UP_MAX):
+        if _is_boundary_dir(d, ""):
+            break
+        for m in [".turbomojo.toml", "turbomojo.toml", "mojoproject.toml", "pixi.toml"]:
+            if path_exists(join_path(d, String(m))):
+                return d
+        if not _is_boundary_dir(d, home) and path_exists(join_path(d, ".git")):
+            return d
+        if basename(d) == "src":
+            var sp = dirname(d)
+            if not _is_boundary_dir(sp, home):
+                src_parent = sp
+        if path_exists(join_path(d, "__init__.mojo")) or path_exists(join_path(d, "__init__.🔥")):
+            var pp = dirname(d)
+            if not _is_boundary_dir(pp, home):
+                pkg_parent = pp
+        var up = dirname(d)
+        if up == d or up.byte_length() == 0:
+            break
+        d = up
+    if src_parent.byte_length() > 0:
+        return src_parent
+    if pkg_parent.byte_length() > 0:
+        return pkg_parent
+    return ""
+
+
+def discover_auto_include_dirs(file_path: String) -> List[String]:
+    """Return deduplicated auto-discovered `-I` directories for `file_path`
+    (enclosing `src/` roots, `__init__.mojo` package parent, `<project_root>/src`,
+    and `<project_root>`)."""
+    var out = List[String]()
+    if file_path.byte_length() == 0:
+        return out^
+    var raw_home = env_or("HOME", "")
+    var home = normalize_path(raw_home) if raw_home.byte_length() > 0 else String("")
+    var start = file_path if is_dir(file_path) else dirname(file_path)
+    if start.byte_length() == 0:
+        return out^
+    var d = normalize_path(start)
+    for _ in range(FIND_UP_MAX):
+        if _is_boundary_dir(d, ""):
+            break
+        if basename(d) == "src" and is_dir(d):
+            _append_unique_dir(out, d)
+        if path_exists(join_path(d, "__init__.mojo")) or path_exists(join_path(d, "__init__.🔥")):
+            var pp = dirname(d)
+            if not _is_boundary_dir(pp, home):
+                _append_unique_dir(out, pp)
+        var up = dirname(d)
+        if up == d or up.byte_length() == 0:
+            break
+        d = up
+    var root = discover_mojo_project_root(file_path)
+    if root.byte_length() > 0:
+        var rsrc = join_path(root, "src")
+        if is_dir(rsrc):
+            _append_unique_dir(out, rsrc)
+        _append_unique_dir(out, root)
+    return out^

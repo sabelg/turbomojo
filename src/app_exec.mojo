@@ -861,10 +861,7 @@ __extension App:
         elif cmd == CM_TEST_WATCH:
             self.tests_toggle_watch()
         elif cmd == CM_CELL_RESTART:
-            for k in range(len(self.wins)):
-                self.wins[k].cell_badge_rows.clear()
-                self.wins[k].cell_badges.clear()
-            self.say("Cell kernel state reset")
+            self.cell_restart_kernels()
         elif cmd == CM_DEBUG_ATTACH_PID:
             self.debug_attach_pid_open()
         elif cmd == CM_DEBUG_CORE:
@@ -930,6 +927,18 @@ __extension App:
             self.term_next_tab()
         elif cmd == CM_TERM_PREV:
             self.term_prev_tab()
+        elif cmd == CM_EXPORT_IPYNB:
+            self.export_ipynb()
+        elif cmd == CM_CELL_VIEW_PLOT:
+            self.cell_open_plot_preview()
+        elif cmd == CM_MIGRATE_MOJO12:
+            self.migrate_mojo12_file()
+        elif cmd == CM_MIGRATE_MOJO12_PROJECT:
+            self.migrate_mojo12_project()
+        elif cmd == CM_EXTRACT_VAR:
+            self.extract_variable_ask()
+        elif cmd == CM_EXTRACT_FUNC:
+            self.extract_function_ask()
         elif cmd == CM_REFRESH:
             self.scr.force = True
 

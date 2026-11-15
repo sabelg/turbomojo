@@ -1,6 +1,7 @@
 """Tests for `# %%` interactive code cells and Vim command-line history, Tab completion, and global marks."""
 from std.testing import assert_equal, assert_true, TestSuite
 from std.collections import List
+from std.ffi import external_call
 from std.time import perf_counter_ns
 from cells import parse_cells, cell_at_row, build_cell_runner_source
 from buffer import TextBuffer
@@ -54,12 +55,19 @@ def test_cell_parser_and_runner_synthesis_mojo_and_python() raises:
 
 
 def _pump_job(mut app: App) raises:
-    var deadline = Int(perf_counter_ns()) + 5_000_000_000
-    while Int(perf_counter_ns()) < deadline and app.job.active:
-        var fds = List[Int]()
-        fds.append(app.job.fd)
-        _ = wait_readable(fds, 20)
-        app.poll_job()
+    var deadline = Int(perf_counter_ns()) + 10_000_000_000
+    while Int(perf_counter_ns()) < deadline and (app.cell_k_active or app.job.active):
+        if app.cell_k_active:
+            app.cell_kernel_tick()
+            if not app.cell_k_active and not app.job.active:
+                return
+        if app.job.active:
+            var fds = List[Int]()
+            fds.append(app.job.fd)
+            _ = wait_readable(fds, 10)
+            app.poll_job()
+        else:
+            _ = external_call["usleep", Int32](UInt32(10000))
 
 
 def test_live_python_cell_run_and_advance() raises:
@@ -96,6 +104,7 @@ def test_live_python_cell_run_and_advance() raises:
     assert_true(out.find("CELL_RESULT=42") >= 0, out)
     assert_true(out.find("quiet") < 0, "earlier cell stdout suppressed cleanly")
 
+    app.cell_kernels_stop()
     _ = run_system("rm -rf " + shell_quote(d))
 
 
@@ -165,6 +174,7 @@ def test_vim_history_tab_completion_global_marks_and_jumpback() raises:
     assert_equal(to_str(app.vim.cl_text), "noh")
     app.handle_key(KEY_ESC)
 
+    app.cell_kernels_stop()
     _ = run_system("rm -rf " + shell_quote(d))
 
 

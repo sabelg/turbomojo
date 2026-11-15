@@ -247,3 +247,14 @@ The Turbo, Modern and Emacs keymaps stay as they are.
 - [x] P13-08 Complete Vim polish: `:set` option bridging, `:marks`/`:registers`, `gn`/`gN`, `g;`/`g,`, `gv`, `q:`/`q/` history window, and uppercase file marks (`F28`)
 - [x] P13-09 Interactive Git commit graph (`WK_GITLOG`), side-by-side split diff & 3-way conflict resolution, async push/pull/fetch & stash picker, MRU project switcher, and Git worktree manager (`F29`–`F32`)
 - [x] P13-10 Multi-hunk agent diff review, `@doc`/`@symbol` prompt grounding, IPC/MCP co-debugging, Plugin API v2 (`editor/edit`, `diagnostics/set`, manager dialog), multi-tab terminal, SSH/tmux clipboard & port-forward toasts, `.gitignore` explorer/watcher, and extended `--lines` & screen-reader context cues (`F33`–`F40`)
+
+## Phase 14: Terminal notebooks, refactorings & zero-config projects (v2.5)
+
+End-to-end terminal notebook execution, Jupyter `.ipynb` interop & inline plots, zero-config multi-project discovery, structural refactorings & Mojo 1.2 migration assistant, live codegen cursor sync & GPU register pressure badges, and memory-safe CI/release polish.
+
+- [x] P14-01 Persistent non-blocking `mojo repl` & `python3` `# %%` cell kernels (`Ctrl-Enter` / `Ctrl-Shift-Enter`), FD-level prior-cell stdout suppression, `NotebookVirtualDoc` live `mojo-lsp-server` virtualization, exact error-line remapping, and outline cell hierarchy & folding (`src/cells.mojo`, `tests/e2e/test_f12_cell_kernel.mojo`)
+- [x] P14-02 Zero-config upward project & `src/` package root auto-discovery from any `.mojo` / `.🔥` file across LSP, Build, Run, Debug, Test, Codegen, and cell kernels, with per-subproject warm `lsp_pool` keying (`src/project.mojo`, `src/appstate.mojo`, `tests/e2e/test_v25_project_autodiscover.mojo`)
+- [x] P14-03 Bidirectional Jupyter `.ipynb` (nbformat v4) open/save & `CM_EXPORT_IPYNB` plus automatic `matplotlib` / PNG inline terminal plot capture and Kitty / Sixel / half-block preview (`src/ipynb.mojo`, `src/cells.mojo`, `src/app_docs.mojo`, `tests/e2e/test_v25_ipynb_plots.mojo`)
+- [x] P14-04 One-click Mojo 1.2 Migration Assistant (`CM_MIGRATE_MOJO12`, `CM_MIGRATE_MOJO12_PROJECT`, and `Ctrl-.` quick fix) plus `CM_EXTRACT_VAR` and `CM_EXTRACT_FUNC` structural refactorings with string/comment safety and 1-step Undo (`src/refactor.mojo`, `tests/e2e/test_v25_refactor_migrate.mojo`)
+- [x] P14-05 Bidirectional live cursor sync between `WK_EDITOR` and `WK_CODEGEN` (`ASM` / `PTX` / `AMDGCN` / `LLVM IR`), DWARF data-section stripping, and inline GPU/SIMD resource badges (`[⚡ 32 regs | 4.0 KB smem | 0 spills]`) (`src/codegen.mojo`, `src/app_codegen.mojo`, `tests/e2e/test_v25_codegen_sync_gpu.mojo`)
+- [x] P14-06 Release 2.5.0: memory-aware `scripts/check.sh` parallel shard scaling from `/proc/meminfo` (`MemAvailable`), Arch Linux `packaging/PKGBUILD`, regenerated `docs/KEYMAP.md`, `CHANGELOG.md`, `docs/SOURCE.md`, and `help/whats-new.md`

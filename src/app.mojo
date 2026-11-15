@@ -254,6 +254,10 @@ __extension App:
                 fds.append(xf)
             for gf in self.gpu_fds():
                 fds.append(gf)
+            if self.cell_mojo_proc.running and self.cell_mojo_proc.out_fd >= 0:
+                fds.append(self.cell_mojo_proc.out_fd)
+            if self.cell_py_proc.running and self.cell_py_proc.out_fd >= 0:
+                fds.append(self.cell_py_proc.out_fd)
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -310,6 +314,7 @@ __extension App:
             try:
                 self.poll_job()
                 self.poll_aux_job()
+                self.cell_kernel_tick()
             except err:
                 self.log_error(String(err))
                 self.info("Error", String(err))
@@ -319,6 +324,7 @@ __extension App:
             self.stop_job_now()
         if self.aux_job.active:
             self.stop_aux_job_now()
+        self.cell_kernels_stop()
         self.gpu_probe_stop()
         self.gpu_mon_stop()
         self.dbg.finish()           # a program being debugged does not outlive the IDE

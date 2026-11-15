@@ -13,7 +13,21 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter, HL_PYTHON, lang_for_path
-from cells import parse_cells, cell_at_row, build_cell_runner_source, format_cell_divider_badge, CELL_SUCCESS, CELL_ERROR
+from cells import (
+    PYTHON_CELL_DAEMON_SCRIPT,
+    parse_cells,
+    cell_at_row,
+    build_cell_runner_mapped,
+    format_python_cell_packet,
+    format_mojo_repl_packet,
+    parse_cell_kernel_output,
+    remap_cell_runner_output,
+    extract_cell_plots,
+    format_cell_divider_badge,
+    CELL_SUCCESS,
+    CELL_ERROR,
+    CELL_INTERRUPTED,
+)
 from symindex import is_mojo_file
 from signals import own_pid
 from swap import delete_file
@@ -75,6 +89,29 @@ def shown_command(cmd: String) -> String:
     for tail in [" </dev/null", " 2>&1"]:
         c = c.replace(String(tail), "")
     return String(c.strip())
+
+def parse_py_traceback_loc(line: String) -> ErrLoc:
+    """Parse Python traceback location `  File "<path>", line <row>[, ...]`."""
+    var tr = String(line.lstrip())
+    if not tr.startswith("File \""):
+        return ErrLoc("", -1, -1, -1)
+    var marker = "\", line "
+    var mpos = tr.find(marker, 6)
+    if mpos < 6:
+        return ErrLoc("", -1, -1, -1)
+    var fpath = String(tr[byte=6:mpos])
+    if fpath == "<string>" or fpath == "<stdin>" or fpath == "<cell>":
+        return ErrLoc("", -1, -1, -1)
+    var rest = decode(String(tr[byte=mpos + marker.byte_length():]))
+    var k = 0
+    var row = 0
+    while k < len(rest) and is_digit(rest[k]):
+        row = row * 10 + (rest[k] - 48)
+        k += 1
+    if k == 0 or row <= 0:
+        return ErrLoc("", -1, -1, -1)
+    return ErrLoc(fpath, row, 1, -1)
+
 
 __extension App:
     # ======================================================= compile & run
@@ -144,7 +181,8 @@ __extension App:
             var s = to_str(l)
             var is_err = str_contains(s, "error:") and not s.startswith("mojo: ")
             var is_warn = str_contains(s, "warning:")
-            if is_err:
+            var py_loc = parse_py_traceback_loc(s)
+            if is_err or s.startswith("Traceback (most recent call last):"):
                 errors += 1
             if is_warn:
                 warnings += 1
@@ -152,8 +190,14 @@ __extension App:
                 var loc = self.parse_loc(l)
                 if loc.row > 0:
                     loc.msg_line = row
-                    loc.path = abs_path(self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd), loc.path)
+                    if not path_exists(loc.path) and self.find_editor_or_title(loc.path) < 0:
+                        loc.path = abs_path(self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd), loc.path)
                     self.errs.append(loc^)
+            elif py_loc.row > 0:
+                py_loc.msg_line = row
+                if not path_exists(py_loc.path) and self.find_editor_or_title(py_loc.path) < 0:
+                    py_loc.path = abs_path(self.msg_base if self.msg_base.byte_length() > 0 else String(self.cwd), py_loc.path)
+                self.errs.append(py_loc^)
             for c in l:
                 text.append(c)
             text.append(10)
@@ -231,9 +275,24 @@ __extension App:
                 return i
         return -1
 
+    def find_editor_or_title(self, name: String) -> Int:
+        if name.byte_length() == 0:
+            return -1
+        var ei = self.find_editor(name)
+        if ei >= 0:
+            return ei
+        var bname = basename(name)
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_EDITOR and (self.wins[k].title == name or self.wins[k].title == bname):
+                return k
+        return -1
+
     def job_busy(mut self) -> Bool:
         if self.job.active:
             self.say("Compiler is busy - Ctrl-F2 cancels it")
+            return True
+        if self.cell_k_active:
+            self.say("Cell kernel is busy - Ctrl-F2 interrupts it")
             return True
         return False
 
@@ -364,6 +423,14 @@ __extension App:
         if self.fsearch.active:
             self.fsearch.cancel()
             self.finish_file_search()
+            return
+        if self.cell_k_active:
+            if self.cell_k_is_py and self.cell_py_proc.running and self.cell_py_proc.pid > 0 and self.cell_k_interrupt_ns == 0:
+                _ = external_call["kill", Int32](Int32(self.cell_py_proc.pid), Int32(2))
+                self.cell_k_interrupt_ns = Int(perf_counter_ns())
+                self.say("Interrupting Python cell...")
+                return
+            self.cell_kernel_abort("interrupted")
             return
         if not self.job.active:
             if self.aux_job.active:
@@ -632,7 +699,7 @@ __extension App:
         var path = self.wins[i].path
         var dir = dirname(path)
         var exe = join_path(dir, "build/" + stem(path))
-        var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build" + self.include_flags() + " " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
+        var cmd = "cd " + shell_quote(dir) + " && mkdir -p build && exec " + self.mojo_for(path) + " build" + self.include_flags_for(path) + " " + shell_quote(path) + " -o " + shell_quote(exe) + " 2>&1"
         cmd = self.with_env(path, cmd)
         if self.start_job(JOB_BUILD, cmd, path, exe):
             self.panel_write(PG_MESSAGE)
@@ -724,6 +791,16 @@ __extension App:
             mi = self.msg_index()
             if mi >= 0 and e.msg_line < self.wins[mi].buf.count():
                 self.say(to_str(self.wins[mi].buf.line(e.msg_line)))
+        elif e.path.byte_length() > 0:
+            var wi = self.find_editor_or_title(e.path)
+            if wi >= 0:
+                self.jump_mark()
+                self.focus(wi)
+                var t = self.top()
+                self.wins[t].goto(e.row - 1, max(0, e.col - 1))
+                mi = self.msg_index()
+                if mi >= 0 and e.msg_line < self.wins[mi].buf.count():
+                    self.say(to_str(self.wins[mi].buf.line(e.msg_line)))
 
     def format_file(mut self) raises:
         var i = self.top_editor()
@@ -921,9 +998,180 @@ __extension App:
         self.term.enter()
         self.scr.force = True
 
+    def cell_kernels_stop(mut self):
+        """Terminate persistent Mojo and Python cell kernel daemons cleanly."""
+        if self.cell_mojo_proc.running:
+            _ = self.cell_mojo_proc.stop()
+        if self.cell_py_proc.running:
+            _ = self.cell_py_proc.stop()
+        self.cell_k_active = False
+        self.cell_k_interrupt_ns = 0
+        self.cell_k_buf.clear()
+        self.cell_mojo_preamble = ""
+        self.cell_py_preamble = ""
+
+    def cell_restart_kernels(mut self):
+        """Restart both persistent cell kernels, clearing namespace state and inline badges."""
+        if self.job.active and self.job.kind == JOB_CELL:
+            self.stop_job_now()
+        self.cell_kernels_stop()
+        self.cell_mojo_env = ""
+        self.cell_py_env = ""
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_EDITOR:
+                self.wins[k].clear_cell_badges()
+        self.say("Cell kernel restarted")
+
+    def cell_apply_badge(mut self, target_name: String, cell_idx: Int, fallback_hdr: Int, badge: String):
+        """Attach `badge` to the exact `# %%` cell (or row 0 for single-cell buffers),
+        honoring live buffer line shifts even if edits occurred mid-execution."""
+        var ei = self.find_editor_or_title(target_name)
+        if ei < 0:
+            return
+        self.wins[ei].sync_cell_badges()
+        var hdr_row = -1
+        for bi in range(len(self.wins[ei].buf.cell_badge_rows)):
+            if bi < len(self.wins[ei].buf.cell_badges) and self.wins[ei].buf.cell_badges[bi] == "[⟳ running…]":
+                hdr_row = self.wins[ei].buf.cell_badge_rows[bi]
+                break
+        if hdr_row < 0:
+            var cells = parse_cells(self.wins[ei].buf)
+            if cell_idx >= 0 and cell_idx < len(cells):
+                hdr_row = cells[cell_idx].header_row if cells[cell_idx].header_row >= 0 else 0
+            elif fallback_hdr >= 0 and fallback_hdr < self.wins[ei].buf.count():
+                hdr_row = fallback_hdr
+        if hdr_row >= 0 and hdr_row < self.wins[ei].buf.count():
+            self.wins[ei].set_cell_badge(hdr_row, badge)
+            self.sync_shared_buffers(ei)
+
+    def cell_kernel_abort(mut self, reason: String):
+        """Force-stop the active persistent kernel run (on Ctrl-F2 or crash) and report status."""
+        if not self.cell_k_active:
+            return
+        if self.cell_k_is_py:
+            if self.cell_py_proc.running:
+                _ = self.cell_py_proc.stop()
+            self.cell_py_preamble = ""
+            self.cell_py_env = ""
+        else:
+            if self.cell_mojo_proc.running:
+                _ = self.cell_mojo_proc.stop()
+            self.cell_mojo_preamble = ""
+            self.cell_mojo_env = ""
+        var ms = max(0, (Int(perf_counter_ns()) - self.cell_k_t0) // 1000000)
+        var secs = Float64(ms) / 1000.0
+        var dur = (String(ms) + " ms") if ms < 1000 else (String(Int(secs * 10) // 10) + "." + String(Int(secs * 10) % 10) + " s")
+        var title = String(self.cell_k_title)
+        var tpath = String(self.cell_k_path)
+        var cidx = self.cell_k_index
+        var hrow = self.cell_k_header_row
+        var raw_copy = self.cell_k_buf.copy()
+        self.cell_k_active = False
+        self.cell_k_interrupt_ns = 0
+        self.cell_k_buf.clear()
+        var footer = "Cell [" + title + "] " + reason + " after " + dur
+        self.panel_write(PG_MESSAGE)
+        _ = self.fill_messages("Cell [" + title + "] in " + basename(tpath), raw_copy, footer)
+        var badge = format_cell_divider_badge(CELL_INTERRUPTED, ms, reason)
+        self.cell_apply_badge(tpath, cidx, hrow, badge)
+        self.say(footer)
+
+    def cell_kernel_tick(mut self):
+        """Non-blocking poll of persistent Mojo & Python cell kernels from the main event loop."""
+        self.cell_mojo_proc.flush()
+        self.cell_py_proc.flush()
+        if not self.cell_k_active:
+            if self.cell_mojo_proc.running:
+                _ = self.cell_mojo_proc.read_available()
+                _ = self.cell_mojo_proc.take()
+            if self.cell_py_proc.running:
+                _ = self.cell_py_proc.read_available()
+                _ = self.cell_py_proc.take()
+            return
+        var got_bytes = False
+        var proc_dead: Bool
+        if self.cell_k_is_py:
+            _ = self.cell_py_proc.read_available()
+            var chunk = self.cell_py_proc.take()
+            if len(chunk) > 0:
+                got_bytes = True
+                for b in chunk:
+                    self.cell_k_buf.append(b)
+            proc_dead = not self.cell_py_proc.alive() and self.cell_py_proc.eof
+        else:
+            _ = self.cell_mojo_proc.read_available()
+            var chunk = self.cell_mojo_proc.take()
+            if len(chunk) > 0:
+                got_bytes = True
+                for b in chunk:
+                    self.cell_k_buf.append(b)
+            proc_dead = not self.cell_mojo_proc.alive() and self.cell_mojo_proc.eof
+
+        var raw_str = bytes_to_str(self.cell_k_buf)
+        var parsed = parse_cell_kernel_output(
+            raw_str, self.cell_k_seq, self.cell_k_is_py, self.cell_k_path, self.cell_k_code_row
+        )
+        if not parsed[0]:
+            if self.cell_k_interrupt_ns > 0 and Int(perf_counter_ns()) - self.cell_k_interrupt_ns > 400000000:
+                self.cell_kernel_abort("interrupted")
+                return
+            if proc_dead:
+                self.cell_kernel_abort("kernel exited unexpectedly")
+                return
+            if got_bytes and parsed[2].byte_length() > 0:
+                self.panel_write(PG_MESSAGE)
+                _ = self.fill_messages(
+                    "Cell [" + self.cell_k_title + "] in " + basename(self.cell_k_path),
+                    str_bytes(parsed[2]),
+                    "Running cell...",
+                )
+            return
+
+        # Sentinel arrived: cell finished cleanly in persistent kernel!
+        if parsed[1] != CELL_SUCCESS:
+            if self.cell_k_is_py and raw_str.find("__TM_PRE_ERR_" + String(self.cell_k_seq) + "__") >= 0:
+                self.cell_py_preamble = ""
+            elif not self.cell_k_is_py and raw_str.find("__TM_PRE_END_" + String(self.cell_k_seq) + "__") >= 0:
+                var pre_idx = raw_str.find("__TM_PRE_END_" + String(self.cell_k_seq) + "__")
+                var pre_part = String(raw_str[byte=0:pre_idx])
+                if pre_part.find("error: Expression [") >= 0 or pre_part.find("[User] Unhandled exception") >= 0:
+                    self.cell_mojo_preamble = ""
+        var ms = max(0, (Int(perf_counter_ns()) - self.cell_k_t0) // 1000000)
+        var secs = Float64(ms) / 1000.0
+        var dur = (String(ms) + " ms") if ms < 1000 else (String(Int(secs * 10) // 10) + "." + String(Int(secs * 10) % 10) + " s")
+        var ok = parsed[1] == CELL_SUCCESS
+        var title = String(self.cell_k_title)
+        var tpath = String(self.cell_k_path)
+        var cidx = self.cell_k_index
+        var hrow = self.cell_k_header_row
+        self.cell_k_active = False
+        self.cell_k_interrupt_ns = 0
+        self.cell_k_buf.clear()
+        var footer = ("Cell [" + title + "] completed in " + dur) if ok else ("Cell [" + title + "] failed in " + dur)
+        var plot_res = extract_cell_plots(parsed[2])
+        var disp_out = plot_res[0]
+        var n_plots = len(plot_res[1])
+        if n_plots > 0:
+            self.cell_last_plots = plot_res[1].copy()
+            footer += " · " + String(n_plots) + " plot(s) (Text > Open cell plot preview)"
+        self.panel_write(PG_MESSAGE)
+        _ = self.fill_messages("Cell [" + title + "] in " + basename(tpath), str_bytes(disp_out), footer)
+        if not ok and len(self.errs) > 0:
+            var mi = self.msg_index()
+            if mi >= 0:
+                self.wins[mi].cr = self.errs[0].msg_line
+                self.wins[mi].follow = True
+        var preview_clean = extract_cell_plots(parsed[3])[0]
+        var preview = String(preview_clean.strip())
+        if preview.byte_length() == 0:
+            preview = "ok" if ok else "error"
+        var badge = format_cell_divider_badge(CELL_SUCCESS if ok else CELL_ERROR, ms, preview, n_plots)
+        self.cell_apply_badge(tpath, cidx, hrow, badge)
+        self.say(footer)
+
     def run_code_cell(mut self, advance: Bool) raises:
-        """Execute the `# %%` cell at the cursor (synthesizing prior-cell imports/defs
-        and state into a temporary Mojo or Python runner) and stream output to Message."""
+        """Execute the `# %%` cell at the cursor in a persistent non-blocking Mojo or Python
+        kernel (falling back to cumulative standalone runner only if kernel spawn fails)."""
         if self.job_busy():
             return
         var i = self.top_editor()
@@ -937,27 +1185,123 @@ __extension App:
         var ci = cell_at_row(cells, self.wins[i].cr)
         if ci < 0 or ci >= len(cells):
             ci = 0
-        var is_py = lang_for_path(self.wins[i].path, self.wins[i].title) == HL_PYTHON
-        var runner_src = build_cell_runner_source(self.wins[i].buf, cells, ci, is_py)
-        var tmp = env_or("TMPDIR", "/tmp") + "/turbomojo-cell-" + String(own_pid()) + (".py" if is_py else ".mojo")
-        if not write_file(tmp, str_bytes(runner_src)):
-            self.say("Could not write cell runner: " + tmp)
+        var hdr_txt = lower_str(cells[ci].title)
+        if hdr_txt.startswith("[markdown]") or hdr_txt.startswith("[md]") or hdr_txt.startswith("[raw]"):
+            var md_row = cells[ci].header_row if cells[ci].header_row >= 0 else 0
+            self.wins[i].set_cell_badge(md_row, "[✓ markdown]")
+            self.sync_shared_buffers(i)
+            if advance and ci + 1 < len(cells):
+                self.wins[i].goto(cells[ci + 1].start_row, 0)
+            self.say("Markdown cell [" + cells[ci].title + "]")
             return
-        self.cell_tmp_path = tmp
-        self.cell_advance = advance
+        var is_py = self.wins[i].effective_lang() == HL_PYTHON
         var p = self.wins[i].path
         var dir = dirname(p) if p.byte_length() > 0 else String(self.cwd)
         var env_ref = p if p.byte_length() > 0 else dir
+        var env_key = dir + "|" + self.lsp_env_key(env_ref)
+        var label = cells[ci].title
+        var target_name = p if p.byte_length() > 0 else self.wins[i].title
+        var badge_row = cells[ci].header_row if cells[ci].header_row >= 0 else 0
+
+        if is_py:
+            if self.cell_py_proc.running and (not self.cell_py_proc.alive() or self.cell_py_env != env_key):
+                _ = self.cell_py_proc.stop()
+                self.cell_py_preamble = ""
+            if not self.cell_py_proc.running:
+                var py_inner = "cd " + shell_quote(dir) + " && exec python3 -u -c " + shell_quote(PYTHON_CELL_DAEMON_SCRIPT)
+                var py_cmd = "sh -c " + shell_quote(self.with_env(env_ref, py_inner))
+                if self.cell_py_proc.start(py_cmd, ""):
+                    self.cell_py_env = env_key
+                    self.cell_py_preamble = ""
+        else:
+            if self.cell_mojo_proc.running and (not self.cell_mojo_proc.alive() or self.cell_mojo_env != env_key):
+                _ = self.cell_mojo_proc.stop()
+                self.cell_mojo_preamble = ""
+            if not self.cell_mojo_proc.running:
+                var mj_exe = self.mojo_for(env_ref)
+                var imp_setup = self.mojo_repl_import_setup(mj_exe, dir, env_ref)
+                var mj_inner = "cd " + shell_quote(dir) + " && " + imp_setup + "exec " + mj_exe + " repl -O 'settings set show-statusline false'"
+                var mj_cmd = "sh -c " + shell_quote(self.with_env(env_ref, mj_inner))
+                if self.cell_mojo_proc.start(mj_cmd, ""):
+                    self.cell_mojo_env = env_key
+                    self.cell_mojo_preamble = ""
+
+        var use_kernel = self.cell_py_proc.running if is_py else self.cell_mojo_proc.running
+        if use_kernel:
+            self.fsearch.cancel()
+            self.cell_k_seq += 1
+            var seq = self.cell_k_seq
+            var code_row: Int
+            var pre_sig = String("")
+            if cells[0].header_row == -1:
+                var plines = List[String]()
+                for pr in range(cells[0].start_row, cells[0].end_row + 1):
+                    plines.append(to_str(self.wins[i].buf.line(pr)))
+                pre_sig = target_name + "\n" + "\n".join(plines)
+            if is_py:
+                _ = self.cell_py_proc.read_available()
+                _ = self.cell_py_proc.take()
+                if ci > 0 and cells[0].header_row == -1 and pre_sig != self.cell_py_preamble:
+                    var pre_pkt = format_python_cell_packet(self.wins[i].buf, cells[0], seq, target_name, True)
+                    self.cell_py_proc.write(str_bytes(pre_pkt[0]))
+                    self.cell_py_preamble = pre_sig
+                var pkt = format_python_cell_packet(self.wins[i].buf, cells[ci], seq, target_name, False)
+                code_row = pkt[1]
+                self.cell_py_proc.write(str_bytes(pkt[0]))
+                if ci == 0 and cells[0].header_row == -1:
+                    self.cell_py_preamble = pre_sig
+            else:
+                _ = self.cell_mojo_proc.read_available()
+                _ = self.cell_mojo_proc.take()
+                if ci > 0 and cells[0].header_row == -1 and pre_sig != self.cell_mojo_preamble:
+                    var pre_pkt = format_mojo_repl_packet(self.wins[i].buf, cells[0], seq, True)
+                    self.cell_mojo_proc.write(str_bytes(pre_pkt[0]))
+                    self.cell_mojo_preamble = pre_sig
+                var pkt = format_mojo_repl_packet(self.wins[i].buf, cells[ci], seq, False)
+                code_row = pkt[1]
+                self.cell_mojo_proc.write(str_bytes(pkt[0]))
+                if ci == 0 and cells[0].header_row == -1:
+                    self.cell_mojo_preamble = pre_sig
+            self.cell_k_active = True
+            self.cell_k_is_py = is_py
+            self.cell_k_t0 = Int(perf_counter_ns())
+            self.cell_k_path = target_name
+            self.cell_k_title = label
+            self.cell_k_index = ci
+            self.cell_k_header_row = badge_row
+            self.cell_k_code_row = code_row
+            self.cell_k_buf.clear()
+            self.cell_k_interrupt_ns = 0
+            self.cell_advance = advance
+            self.wins[i].set_cell_badge(badge_row, "[⟳ running…]")
+            self.sync_shared_buffers(i)
+            if advance and ci + 1 < len(cells):
+                self.wins[i].goto(cells[ci + 1].start_row, 0)
+            self.panel_write(PG_MESSAGE)
+            _ = self.fill_messages("Cell [" + label + "] in " + basename(target_name), List[UInt8](), "Running cell...")
+            self.say("Running cell [" + label + "] ...")
+            return
+
+        var mapped = build_cell_runner_mapped(self.wins[i].buf, cells, ci, is_py)
+        var tmp = env_or("TMPDIR", "/tmp") + "/turbomojo-cell-" + String(own_pid()) + (".py" if is_py else ".mojo")
+        if not write_file(tmp, str_bytes(mapped.source)):
+            self.say("Could not write cell runner: " + tmp)
+            return
+        self.cell_tmp_path = tmp
+        self.cell_line_map = mapped.line_map.copy()
+        self.cell_k_index = ci
+        self.cell_k_header_row = badge_row
+        self.cell_advance = advance
         var inner: String
         if is_py:
             inner = "cd " + shell_quote(dir) + " && exec python3 " + shell_quote(tmp)
         else:
-            var inc = " -I " + shell_quote(dir) + self.include_flags()
+            var inc = " -I " + shell_quote(dir) + self.include_flags_for(env_ref)
             inner = "cd " + shell_quote(dir) + " && exec " + self.mojo_for(env_ref) + " run" + inc + " " + shell_quote(tmp)
         var cmd = self.with_env(env_ref, inner) + " 2>&1"
-        var label = cells[ci].title
-        var target_name = p if p.byte_length() > 0 else self.wins[i].title
         if self.start_job(JOB_CELL, cmd, target_name, label):
+            self.wins[i].set_cell_badge(badge_row, "[⟳ running…]")
+            self.sync_shared_buffers(i)
             if advance and ci + 1 < len(cells):
                 self.wins[i].goto(cells[ci + 1].start_row, 0)
             self.panel_write(PG_MESSAGE)
@@ -965,6 +1309,7 @@ __extension App:
             self.say("Running cell [" + label + "] ...")
 
     def finish_cell(mut self, status: Int, secs: Float64):
+        var tmp_used = String(self.cell_tmp_path)
         if self.cell_tmp_path.byte_length() > 0:
             delete_file(self.cell_tmp_path)
             self.cell_tmp_path = ""
@@ -978,28 +1323,29 @@ __extension App:
             footer = "Cell [" + self.job.exe + "] completed in " + dur
         else:
             footer = "Cell [" + self.job.exe + "] failed (exit " + String(status >> 8) + ") in " + dur
+        var remapped_raw = remap_cell_runner_output(
+            bytes_to_str(self.job.data), tmp_used, self.job.path, self.cell_line_map
+        )
+        var plot_res = extract_cell_plots(remapped_raw)
+        var remapped = plot_res[0]
+        var n_plots = len(plot_res[1])
+        if n_plots > 0:
+            self.cell_last_plots = plot_res[1].copy()
         self.panel_write(PG_MESSAGE)
-        _ = self.fill_messages("Cell [" + self.job.exe + "] in " + basename(self.job.path), self.job.data.copy(), footer)
-        var ei = self.find_editor(self.job.path)
-        if ei < 0:
-            for k in range(len(self.wins)):
-                if self.wins[k].kind == WK_EDITOR and self.wins[k].title == self.job.path:
-                    ei = k
-                    break
-        if ei >= 0 and not self.job.cancelled:
-            var cells = parse_cells(self.wins[ei].buf)
-            for c in cells:
-                if c.title == self.job.exe:
-                    var out_txt = String(bytes_to_str(self.job.data).strip())
-                    var badge = format_cell_divider_badge(CELL_SUCCESS if ok else CELL_ERROR, ms, out_txt if out_txt.byte_length() > 0 else ("ok" if ok else "error"))
-                    var updated = False
-                    for bi in range(len(self.wins[ei].cell_badge_rows)):
-                        if self.wins[ei].cell_badge_rows[bi] == c.header_row:
-                            self.wins[ei].cell_badges[bi] = badge
-                            updated = True
-                            break
-                    if not updated:
-                        self.wins[ei].cell_badge_rows.append(c.header_row)
-                        self.wins[ei].cell_badges.append(badge)
-                    break
+        _ = self.fill_messages("Cell [" + self.job.exe + "] in " + basename(self.job.path), str_bytes(remapped), footer)
+        if not ok and len(self.errs) > 0:
+            var mi = self.msg_index()
+            if mi >= 0:
+                self.wins[mi].cr = self.errs[0].msg_line
+                self.wins[mi].follow = True
+        var jpath = String(self.job.path)
+        var jcidx = self.cell_k_index
+        var jhrow = self.cell_k_header_row
+        if not self.job.cancelled:
+            var out_txt = String(remapped.strip())
+            var badge = format_cell_divider_badge(CELL_SUCCESS if ok else CELL_ERROR, ms, out_txt if out_txt.byte_length() > 0 else ("ok" if ok else "error"), n_plots)
+            self.cell_apply_badge(jpath, jcidx, jhrow, badge)
+        else:
+            var badge = format_cell_divider_badge(CELL_INTERRUPTED, ms, "cancelled")
+            self.cell_apply_badge(jpath, jcidx, jhrow, badge)
         self.say(footer)

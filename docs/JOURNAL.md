@@ -6427,3 +6427,42 @@ TurboMojo's way of changing settings; Options is).
     `help/whats-new.md`, `src/helpbook.mojo`, `CHANGELOG.md`, `docs/KEYMAP.md`, and
     `docs/SOURCE.md`; tuned `.github/workflows/ci.yml` shard comments and 120-minute
     cold-cache timeout.
+
+## 2026-11-15 · P14-01 P14-02 P14-03 P14-04 P14-05 P14-06 · done
+
+- Terminal notebooks (`P14-01`, `src/cells.mojo`, `src/app_outline.mojo`, `src/app_lsp.mojo`,
+  `tests/e2e/test_f12_cell_kernel.mojo` - 16/16):
+  - Persistent non-blocking `CellKernel` (`mojo repl` and `python3 -iq`) with `CM_CELL_RESTART`
+    and `Ctrl-F2` interrupt, FD-level stdout suppression for prior cells, `NotebookVirtualDoc`
+    live `mojo-lsp-server` virtualization and diagnostic/completion/hover line mapping, exact
+    compiler/REPL/traceback error line remapping, duplicate-title & edit/undo/redo badge row
+    shifting, and `merge_outline_cells` + inner-cell folding.
+- Zero-config per-file project & `src/` auto-discovery (`P14-02`, `src/project.mojo`,
+  `src/appstate.mojo`, `src/app_lsp.mojo`, `tests/e2e/test_v25_project_autodiscover.mojo` - 4/4):
+  - `discover_mojo_project_root` and `discover_auto_include_dirs` walk upward from any `.mojo` /
+    `.🔥` file for `turbomojo.toml`, `pixi.toml`, `mojoproject.toml`, `.git`, and enclosing/sibling
+    `src/` package roots, injecting `-I` flags across LSP, Build, Run, Debug, Test, Codegen, and
+    cell kernels while keying `lsp_pool` per subproject include signature.
+- Jupyter `.ipynb` open/save & inline terminal plots (`P14-03`, `src/ipynb.mojo`, `src/cells.mojo`,
+  `src/app_files.mojo`, `src/app_docs.mojo`, `tests/e2e/test_v25_ipynb_plots.mojo` - 3/3):
+  - Lossless nbformat v4 `.ipynb` <-> `# %%` / `# %% [markdown]` / `# %% [raw]` round-tripping on
+    `open_path` / `save_window` plus `CM_EXPORT_IPYNB`; `MPLBACKEND=Agg` + automatic `matplotlib`
+    PNG plot capture (`__TM_PLOT__ <path>`), `[📊 plot]` cell badges, and `CM_CELL_VIEW_PLOT`
+    Kitty / Sixel / half-block preview in `M_DOCS`.
+- Structural refactorings & Mojo 1.2 Migration Assistant (`P14-04`, `src/refactor.mojo`,
+  `src/app_nav.mojo`, `src/app_dialogs.mojo`, `tests/e2e/test_v25_refactor_migrate.mojo` - 3/3):
+  - `Highlighter`-backed `migrate_mojo12_buffer` (`CM_MIGRATE_MOJO12`, `CM_MIGRATE_MOJO12_PROJECT`,
+    and `Ctrl-.` quick fix) rewrites legacy `fn`, `let`, `alias`, `@parameter` `if`/`for`, `inout`,
+    `owned`, `borrowed`, `@value` + `(Copyable, Movable)`, and bare stdlib imports safely outside
+    comments and strings via `offer_edit()` preview & 1-step Undo; plus `CM_EXTRACT_VAR` and
+    `CM_EXTRACT_FUNC` on selections.
+- Live codegen cursor sync & GPU kernel resource badges (`P14-05`, `src/codegen.mojo`,
+  `src/app_codegen.mojo`, `src/app_draw.mojo`, `tests/e2e/test_v25_codegen_sync_gpu.mojo` - 3/3):
+  - Bidirectional live cursor sync between `WK_EDITOR` and `WK_CODEGEN` without stealing focus,
+    DWARF `.debug_*` / `.rodata` data-section stripping in `--emit=asm`, PTX `.entry`/`.func` and
+    `// file.mojo:line` correlation, and inline `def` header badges (`[⚡ 32 regs | 4.0 KB smem |
+    0 spills]`) parsed from PTX, `ptxas info`, AMDGCN, CPU ASM, and LLVM IR.
+- Release `2.5.0`, memory-safe gate & packaging (`P14-06`, `scripts/check.sh`, `packaging/PKGBUILD`):
+  - `scripts/check.sh` caps default `JOBS` using `/proc/meminfo` (`MemAvailable` / 5 GiB) so
+    parallel shard compilation never swaps or OOMs on 8–32 GiB hosts; added `packaging/PKGBUILD`;
+    bumped version to `2.5.0` and regenerated `docs/KEYMAP.md`, `CHANGELOG.md`, and `docs/SOURCE.md`.

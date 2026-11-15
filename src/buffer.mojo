@@ -140,6 +140,8 @@ struct TextBuffer(Copyable, Movable):
     var folds: List[Int]      # rows of the folded block headers, ascending
     var fold_ends: List[Int]  # last hidden row of each fold (as of fold_version)
     var fold_version: Int
+    var cell_badge_rows: List[Int]
+    var cell_badges: List[String]
     var marks: List[Mark]     # problems shown in this buffer (from the language server)
     var bps: List[Int]        # rows with a breakpoint, ascending; they move with the text
     var bp_looks: List[Int]   # how each is shown (Breakpoint.look)
@@ -205,6 +207,8 @@ struct TextBuffer(Copyable, Movable):
         self.folds = List[Int]()
         self.fold_ends = List[Int]()
         self.fold_version = -1
+        self.cell_badge_rows = List[Int]()
+        self.cell_badges = List[String]()
         self.version = 0
         self.crlf = False
         self.use_tabs = False
@@ -413,6 +417,8 @@ struct TextBuffer(Copyable, Movable):
             self.changes_lost = True       # a different text altogether
         self.folds.clear()
         self.fold_ends.clear()
+        self.cell_badge_rows.clear()
+        self.cell_badges.clear()
         self.lstate.clear()
         self.lstate.append(0)
         self.ldirty_from = -1
@@ -605,6 +611,18 @@ struct TextBuffer(Copyable, Movable):
         self.folds.clear()
         self.fold_ends.clear()
         self.fold_version = -1
+
+    def set_cell_badge(mut self, row: Int, badge: String):
+        for i in range(len(self.cell_badge_rows)):
+            if self.cell_badge_rows[i] == row:
+                self.cell_badges[i] = badge
+                return
+        self.cell_badge_rows.append(row)
+        self.cell_badges.append(badge)
+
+    def clear_cell_badges(mut self):
+        self.cell_badge_rows.clear()
+        self.cell_badges.clear()
 
     def all_text(self) -> List[Int]:
         """The whole text as codepoints, lines separated by "\n"."""
@@ -933,6 +951,10 @@ struct TextBuffer(Copyable, Movable):
             for i in range(len(self.folds)):
                 if self.folds[i] > rr or (self.folds[i] == rr and cc == 0):
                     self.folds[i] += breaks
+        if breaks > 0 and len(self.cell_badge_rows) > 0:
+            for i in range(len(self.cell_badge_rows)):
+                if self.cell_badge_rows[i] > rr or (self.cell_badge_rows[i] == rr and cc == 0):
+                    self.cell_badge_rows[i] += breaks
         self.modified = True
         self.version += 1
         return self.end_of(rr, cc, text)
@@ -979,12 +1001,30 @@ struct TextBuffer(Copyable, Movable):
                 # headers on removed lines lose their fold; the ones below move up
                 var kept = List[Int]()
                 for f in self.folds:
-                    if f <= first:
+                    if f < first or (f == first and (self.is_cell_header(first) or self.foldable(first))):
                         kept.append(f)
+                    elif f == first + breaks and c1 == 0 and c2 == 0:
+                        kept.append(first)
                     elif f > first + breaks:
                         kept.append(f - breaks)
                 self.folds = kept^
                 self.fold_version = -1
+            if breaks > 0 and len(self.cell_badge_rows) > 0:
+                var krows = List[Int]()
+                var kvals = List[String]()
+                for i in range(len(self.cell_badge_rows)):
+                    var br = self.cell_badge_rows[i]
+                    if br < first or (br == first and (br == 0 or self.is_cell_header(first))):
+                        krows.append(br)
+                        kvals.append(self.cell_badges[i])
+                    elif br == first + breaks and self.is_cell_header(first):
+                        krows.append(first)
+                        kvals.append(self.cell_badges[i])
+                    elif br > first + breaks:
+                        krows.append(br - breaks)
+                        kvals.append(self.cell_badges[i])
+                self.cell_badge_rows = krows^
+                self.cell_badges = kvals^
         self.modified = True
         self.version += 1
         return out^

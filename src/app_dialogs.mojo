@@ -536,6 +536,10 @@ __extension App:
             self.debug_attach_start(t)
         elif kind == D_HIERARCHY and b == 0:
             self.hierarchy_go(self.dlg.selected_item())
+        elif kind == D_EXTRACT_VAR and b == 0:
+            self.extract_variable_apply(self.dlg.field_text(0))
+        elif kind == D_EXTRACT_FUNC and b == 0:
+            self.extract_function_apply(self.dlg.field_text(0))
 
     # ------------------------------------------------------------ find / replace
     def current_search(self) -> Search:

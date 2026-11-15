@@ -490,7 +490,7 @@ __extension Window:
                             rb_depth = max(0, rb_depth - 1)
         var rb_colors = List[Int]()
         # find highlighter state at the first visible line
-        var lang = lang_for_path(self.path, self.title)
+        var lang = self.effective_lang()
         var st = self.lex_state_at(self.top)
         scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
         var classes = List[Int]()
@@ -822,10 +822,16 @@ __extension Window:
                             eol_x = scr.text(eol_x, yy, "⟨" + self.dbg_inline_vals[dli] + "⟩  ", pal.msg_note, rowbg)
                             break
                 var drew_cell = False
-                if len(self.cell_badge_rows) > 0 and not scr.plain and eol_x + 8 < cx0 + cls:
-                    for cbi in range(len(self.cell_badge_rows)):
-                        if self.cell_badge_rows[cbi] == r and cbi < len(self.cell_badges):
-                            var cb = String(self.cell_badges[cbi])
+                var use_buf_cb = len(self.buf.cell_badge_rows) > 0
+                var cb_rows_n = len(self.buf.cell_badge_rows) if use_buf_cb else len(self.cell_badge_rows)
+                if cb_rows_n > 0 and not scr.plain and eol_x + 8 < cx0 + cls:
+                    for cbi in range(cb_rows_n):
+                        var cbr = self.buf.cell_badge_rows[cbi] if use_buf_cb else self.cell_badge_rows[cbi]
+                        var cbn = len(self.buf.cell_badges) if use_buf_cb else len(self.cell_badges)
+                        if cbr == r and cbi < cbn:
+                            if use_buf_cb and r > 0 and not self.buf.is_cell_header(r):
+                                break
+                            var cb = String(self.buf.cell_badges[cbi] if use_buf_cb else self.cell_badges[cbi])
                             if cb.byte_length() > 0:
                                 var cbfg = (
                                     pal.msg_ok
@@ -835,7 +841,7 @@ __extension Window:
                                 eol_x = scr.text(eol_x, yy, "  " + cb, cbfg, rowbg)
                                 drew_cell = True
                             break
-                if not drew_cell and (lang == HL_MOJO or lang == HL_PYTHON) and len(ln) >= 4 and ln[0] == 35 and ln[1] == 32 and ln[2] == 37 and ln[3] == 37 and not scr.plain and eol_x + 18 < cx0 + cls:
+                if not drew_cell and (lang == HL_MOJO or lang == HL_PYTHON) and self.buf.is_cell_header(r) and not scr.plain and eol_x + 18 < cx0 + cls:
                     eol_x = scr.text(eol_x, yy, "  [Ctrl-Enter: Run Cell]", pal.msg_note, rowbg)
                 if len(self.bench_badge_rows) > 0 and not scr.plain and eol_x + 8 < cx0 + cls:
                     for bbi in range(len(self.bench_badge_rows)):

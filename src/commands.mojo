@@ -163,6 +163,12 @@ comptime CM_PLUGINS = 293        # Palette: Manage plugins...
 comptime CM_TERM_NEW = 294       # Palette: New terminal tab
 comptime CM_TERM_NEXT = 295      # Palette: Next terminal tab
 comptime CM_TERM_PREV = 296      # Palette: Previous terminal tab
+comptime CM_EXPORT_IPYNB = 297   # Text > Export notebook as .ipynb...
+comptime CM_CELL_VIEW_PLOT = 298 # Text > Open cell plot preview
+comptime CM_MIGRATE_MOJO12 = 299 # Text > Migrate Legacy Mojo -> 1.2...
+comptime CM_MIGRATE_MOJO12_PROJECT = 300 # Palette: Migrate workspace to Mojo 1.2...
+comptime CM_EXTRACT_VAR = 301    # Text > Extract variable...
+comptime CM_EXTRACT_FUNC = 302   # Text > Extract function...
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -963,6 +969,12 @@ def build_registry() -> Registry:
     r.cmd(CM_TERM_NEW, "window.newTerminalTab", "New terminal ta~b~", "Open an additional shell tab in the integrated terminal")
     r.hide(CM_TERM_NEXT, "window.nextTerminalTab", "Next terminal tab", "Switch to the next shell tab in the integrated terminal")
     r.hide(CM_TERM_PREV, "window.prevTerminalTab", "Previous terminal tab", "Switch to the previous shell tab in the integrated terminal")
+    r.cmd(CM_EXPORT_IPYNB, "cells.exportIpynb", "E~x~port notebook as .ipynb...", "Export the active # %% notebook or script to Jupyter nbformat v4 .ipynb")
+    r.cmd(CM_CELL_VIEW_PLOT, "cells.viewPlot", "~O~pen cell plot preview", "View the latest # %% cell PNG plot via Kitty or Sixel terminal graphics")
+    r.cmd(CM_MIGRATE_MOJO12, "refactor.migrateMojo12", "Migrate Legacy Mojo -> ~1~.2...", "Migrate fn, let, alias, @parameter, @value, inout, owned and bare stdlib imports in this file to Mojo 1.2")
+    r.hide(CM_MIGRATE_MOJO12_PROJECT, "refactor.migrateMojo12Project", "Migrate workspace to Mojo 1.2...", "Preview and migrate all legacy Mojo files in the project to Mojo 1.2 with 1-step Undo")
+    r.cmd(CM_EXTRACT_VAR, "refactor.extractVariable", "Extract ~v~ariable...", "Extract the selected single-line expression into a named local variable")
+    r.cmd(CM_EXTRACT_FUNC, "refactor.extractFunction", "Extract ~f~unction...", "Extract the selected statement lines into a helper function with inferred parameters and return value")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")
@@ -1100,6 +1112,12 @@ def build_registry() -> Registry:
     r.item(CM_INDENT_GUIDES)
     r.item(CM_HEX_VIEW)
     r.item(CM_MD_PREVIEW)
+    r.item(CM_EXPORT_IPYNB)
+    r.item(CM_CELL_VIEW_PLOT)
+    r.sep()
+    r.item(CM_EXTRACT_VAR)
+    r.item(CM_EXTRACT_FUNC)
+    r.item(CM_MIGRATE_MOJO12)
 
     r.menu("~S~earch")
     r.item(CM_FIND)

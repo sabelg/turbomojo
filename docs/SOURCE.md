@@ -100,6 +100,7 @@ struct of `appstate.mojo`, one area each.
 | `src/highlight.mojo` | Polyglot syntax highlighter (Mojo, Python, C/C++/CUDA, TOML, JSON, Shell/YAML, Markdown). |
 | `src/inflate.mojo` | Inflate: the zlib / DEFLATE decompressor (RFC 1950, 1951), for PNG pictures. |
 | `src/ipc.mojo` | Portable file-queue IPC between CLI (`tmide --reuse`), MCP (`tmide-mcp`), and a live IDE. |
+| `src/ipynb.mojo` | Jupyter `.ipynb` (nbformat v4) bidirectional converter for TurboMojo `# %%` Terminal Notebooks. |
 | `src/json.mojo` | JSON reader and writer (RFC 8259). |
 | `src/kittygfx.mojo` | Kitty graphics protocol, for pictures in the documentation reader (P10-22b). |
 | `src/layout.mojo` | The tiled layout: a tree of splits whose leaves are tab groups. |
@@ -128,6 +129,7 @@ struct of `appstate.mojo`, one area each.
 | `src/pty.mojo` | A program running on a pseudo-terminal: what the integrated terminal and the REPL run. |
 | `src/puzzlecheck.mojo` | Check my answer for the Mojo GPU Puzzles (P11-10c), as Help > Exercise done? does for the exercises. |
 | `src/pydocs.mojo` | The documentation of the Python libraries a Mojo program uses (P11-14). |
+| `src/refactor.mojo` | Structural refactorings & One-Click Mojo 1.2 Migration Assistant. |
 | `src/regex.mojo` | Regular expressions: a parser, a compiler to a small instruction set, and a Pike VM (Thompson NFA simulation that also tracks capture groups). |
 | `src/report.mojo` | Help > Report a problem (P11-08): a ready-to-file issue text - what to describe, the versions, what the terminal can do (as `tmide --caps` shows), the last crash-log entry and the configuration with anything secret-looking removed. |
 | `src/responsive.mojo` | Responsive layout, first part (P10-16a): what gives way when the terminal or a window is small. |

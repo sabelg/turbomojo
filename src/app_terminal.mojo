@@ -657,7 +657,9 @@ __extension App:
         # and mixes into the output: it is switched off
         var ed = self.active_editor()
         var cur_path = String(self.wins[ed].path) if ed >= 0 and self.wins[ed].path.byte_length() > 0 else join_path(self.cwd, "main.mojo")
-        var inner = "exec " + self.mojo_for(cur_path) + " repl" + self.include_flags() + " -O 'settings set show-statusline false'"
+        var mj_exe = self.mojo_for(cur_path)
+        var imp_setup = self.mojo_repl_import_setup(mj_exe, self.cwd, cur_path)
+        var inner = imp_setup + "exec " + mj_exe + " repl -O 'settings set show-statusline false'"
         argv.append(self.with_env(cur_path, inner))
         return argv^
 

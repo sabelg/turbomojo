@@ -194,6 +194,7 @@ __extension App:
         for it in items:
             if it.row < count:
                 kept.append(OutlineItem(it.name, it.kind, it.row, utf16_to_col(self.wins[ti].buf.line(it.row), it.col), it.depth))
+        kept = merge_outline_cells(kept, self.wins[ti].buf)
         self.outline_items = kept^
         self.outline_from_server = True
         self.outline_show()
@@ -865,7 +866,7 @@ __extension App:
         # Do not block main thread with synchronous run_capture; kick off non-blocking aux_job
         if not self.aux_job.active and self.trust_ok():
             var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
-            var cmd = "cd " + shell_quote(dirname(path)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(path) + " 2>/dev/null"
+            var cmd = "cd " + shell_quote(dirname(path)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags_for(path) + " " + shell_quote(path) + " 2>/dev/null"
             if self.start_aux_job(JOB_DOCS, cmd, path, ""):
                 self.say("Generating Mojo docs...")
         return List[DocEntry]()
@@ -903,7 +904,7 @@ __extension App:
             elif not self.term_probed:
                 if not self.aux_job.active and self.trust_ok():
                     var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
-                    var cmd = "cd " + shell_quote(dirname(f)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(f) + " 2>/dev/null"
+                    var cmd = "cd " + shell_quote(dirname(f)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags_for(f) + " " + shell_quote(f) + " 2>/dev/null"
                     if self.start_aux_job(JOB_DOCS, cmd, f, ""):
                         self.wait_docs_aux_job()
                         if self.docs_known(f):
@@ -913,7 +914,7 @@ __extension App:
             else:
                 if not self.aux_job.active and self.trust_ok():
                     var limit = String("timeout 20 ") if which("timeout").byte_length() > 0 else String("")
-                    var cmd = "cd " + shell_quote(dirname(f)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags() + " " + shell_quote(f) + " 2>/dev/null"
+                    var cmd = "cd " + shell_quote(dirname(f)) + " && " + limit + self.compiler_cmd() + " doc" + self.include_flags_for(f) + " " + shell_quote(f) + " 2>/dev/null"
                     if self.start_aux_job(JOB_DOCS, cmd, f, name):
                         self.say("Generating Mojo docs...")
                         started_async = True
@@ -1026,10 +1027,12 @@ __extension App:
             for c in self.run_cfgs:
                 if c.name == self.run_active:
                     cfg = c.copy()
-        var core = run_core_command(cfg, self.symidx_root(), current, self.mojo_for(current), self.include_flags())
+        var sroot = self.symidx_root()
+        var target_file = abs_path(sroot, cfg.file) if cfg.file.byte_length() > 0 else current
+        var core = run_core_command(cfg, sroot, current, self.mojo_for(target_file), self.include_flags_for(target_file))
         if core.byte_length() == 0:
             return core
-        return self.with_env(current, core)      # (in a project's environment: what pixi added is found)
+        return self.with_env(target_file, core)      # (in a project's environment: what pixi added is found)
 
     def run_configs_dialog(mut self):
         """Run > Run configurations: choose the one Run uses, edit, add, delete."""

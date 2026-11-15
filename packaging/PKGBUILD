@@ -1,0 +1,50 @@
+# Maintainer: TurboMojo Contributors
+pkgname=turbomojo
+pkgver=2.5.0
+pkgrel=1
+pkgdesc="A Turbo C++ style IDE for Mojo in the terminal, written in Mojo"
+arch=('x86_64' 'aarch64')
+url="https://github.com/turbomojo/turbomojo"
+license=('MIT')
+depends=('glibc' 'python')
+optdepends=(
+  'tmux: remote session persistence and TUI testing'
+  'git: inline gutter markers, diff staging, blame, and commit graph'
+)
+source=()
+sha256sums=()
+
+build() {
+  cd "${startdir}/.."
+  mkdir -p build
+  if command -v pixi >/dev/null 2>&1 && [ -f pixi.toml ]; then
+    pixi run build
+  else
+    local mojo_bin="${TURBOMOJO_COMPILER:-mojo}"
+    "$mojo_bin" build -D "TURBOMOJO_MOJO=$("$mojo_bin" --version)" \
+      -I src src/main.mojo -o build/tmide \
+      -Xlinker "${LIBGHOSTTY_VT_A:-/usr/lib/libghostty-vt.a}"
+  fi
+}
+
+check() {
+  cd "${startdir}/.."
+  ./build/tmide --version < /dev/null
+  ./build/tmide --help < /dev/null > /dev/null
+}
+
+package() {
+  cd "${startdir}/.."
+  install -Dm755 build/tmide "${pkgdir}/usr/bin/tmide"
+  install -Dm755 scripts/mcp_server.py "${pkgdir}/usr/bin/tmide-mcp"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -d "${pkgdir}/usr/share/${pkgname}/docs"
+  install -m644 docs/*.md "${pkgdir}/usr/share/${pkgname}/docs/"
+  install -d "${pkgdir}/usr/share/bash-completion/completions"
+  install -d "${pkgdir}/usr/share/zsh/site-functions"
+  install -d "${pkgdir}/usr/share/fish/vendor_completions.d"
+  ./build/tmide --completions bash < /dev/null > "${pkgdir}/usr/share/bash-completion/completions/tmide"
+  ./build/tmide --completions zsh < /dev/null > "${pkgdir}/usr/share/zsh/site-functions/_tmide"
+  ./build/tmide --completions fish < /dev/null > "${pkgdir}/usr/share/fish/vendor_completions.d/tmide.fish"
+}
