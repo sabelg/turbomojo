@@ -340,6 +340,7 @@ def test_real_jupyter_live_execution_magics_and_cmd_mode() raises:
         # 2. Jupyter Command Mode (`Esc` -> `NB:CMD`, `b`, `m`, `y`, `dd`, `Enter` -> `NB:EDIT`)
         app.handle_key(KEY_ESC)
         assert_true(app.wins[ni].nb_cmd_mode)
+        app.status_until = 0
         app.draw()
         assert_true(_screen_text(app).find("NB:CMD") >= 0)
 
