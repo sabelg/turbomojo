@@ -43,6 +43,26 @@ Files are in the Edit, Text and Search menus.
   the cursor; **Enter** opens the full page, **C** copies a code example, **T** tries it
   in a scratch buffer.
 
+## Notebooks & Jupyter (`.ipynb`)
+
+- Open any Jupyter **`.ipynb`** file directly (`tmide notebook.ipynb`, **F3**, or **Ctrl-E**),
+  create a fresh notebook from **≡ > New Jupyter notebook (.ipynb)...**, or write `# %%`
+  and `# %% [markdown]` cell headers in any `.mojo` or `.py` file.
+- **Ctrl-Enter** runs the cell at the cursor in a persistent `mojo repl` or `python3`
+  kernel (**Ctrl-Shift-Enter** runs and advances); virtual output blocks, Tensor / DataFrame
+  summary cards, and `matplotlib` plots (`Text > Open cell plot preview`) render inline.
+- Saving (**F2**) writes valid nbformat v4 `.ipynb` JSON with outputs and plots preserved;
+  Help > Jupyter & notebooks has the full guide.
+
+## Vim mode (`tmide vim`)
+
+- Run `tmide vim [file...]` (or `tmide --vim`, or `:zen` inside Vim keys) for a full-screen,
+  chromeless Vim experience: buffers start on row 0 with `~` EOF markers, a classic two-row
+  Vim statusline + `:`/`/` command bar at the bottom, `<Space>` leader keys (`<Space>f` files,
+  `<Space>g` grep, `<Space>e` explorer, `<Space>b` build, `<Space>x` run, `<Space>c` cell),
+  `:Ex`, `ZZ`/`ZQ`, and full Mojo 1.2 LSP (`gd`, `gr`, `K`, `[d`/`]d`). Press **F10** anytime
+  to open IDE menus.
+
 ## Git
 
 In a repository (in a trusted folder) the gutter marks lines changed since the index,

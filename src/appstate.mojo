@@ -772,6 +772,9 @@ struct App(Movable):
     var cell_last_plots: List[String]
     var cell_k_buf: List[UInt8]
     var cell_k_interrupt_ns: Int
+    var cell_queue_target: String
+    var cell_queue_indices: List[Int]
+    var cell_exec_counter: Int
     var codegen_line_map: List[Int]
     var codegen_base_marks: List[Int]
     var codegen_sync_row: Int
@@ -817,6 +820,7 @@ struct App(Movable):
     var fmt_req_path: String
     var reader_last_scope: String
     var reader_last_wid: Int
+    var vim_zen: Bool          # chromeless full-screen Whole-Vim mode (`tmide vim`)
 
     def __init__(out self):
         self.term = Terminal()
@@ -1416,6 +1420,9 @@ struct App(Movable):
         self.cell_last_plots = List[String]()
         self.cell_k_buf = List[UInt8]()
         self.cell_k_interrupt_ns = 0
+        self.cell_queue_target = ""
+        self.cell_queue_indices = List[Int]()
+        self.cell_exec_counter = 0
         self.codegen_line_map = List[Int]()
         self.codegen_base_marks = List[Int]()
         self.codegen_sync_row = -1
@@ -1461,6 +1468,7 @@ struct App(Movable):
         self.fmt_req_path = ""
         self.reader_last_scope = ""
         self.reader_last_wid = -1
+        self.vim_zen = False
 
     # =================================================================== utils
     def desk_h(self) -> Int:

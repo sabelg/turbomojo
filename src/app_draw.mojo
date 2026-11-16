@@ -1,7 +1,8 @@
 """Drawing the desktop, status line, cursor and popups."""
 from std.collections import List, Dict
 from std.time import perf_counter_ns
-from vim import vim_mode_name, KEYMAP_VIM, VM_INSERT
+from vim import vim_mode_name, KEYMAP_VIM, VM_NORMAL, VM_INSERT, VM_VISUAL, VM_VLINE, VM_BLOCK
+from ipynb import is_ipynb_path
 from app_vimcmd import *
 from std.ffi import external_call
 from term import (
@@ -13,7 +14,7 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from contrast import text_muted, text_disabled, dimmed
-from highlight import Highlighter
+from highlight import Highlighter, HL_MOJO, HL_PYTHON, HL_JSON, HL_MARKDOWN, HL_TOML, HL_C_CUDA
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
@@ -144,6 +145,10 @@ __extension App:
                 right += self.debug_badge() + "  "
             right += self.plugins_status()       # the plugins' status items
             right += self.gpu_status_text()
+            if ti >= 0 and self.wins[ti].is_notebook():
+                var k_lbl = "Mojo" if self.wins[ti].effective_lang() == HL_MOJO else "Py"
+                var m_lbl = "NB:CMD" if (self.keymap != KEYMAP_VIM and self.wins[ti].nb_cmd_mode) else "NB:EDIT"
+                right += k_lbl + " · " + m_lbl + "  "
             if self.keymap == KEYMAP_VIM:
                 right += vim_mode_name(self.vim.mode)      # (Phase 12)
             else:
@@ -199,7 +204,10 @@ __extension App:
         self.bp_sync()              # files opened since show their breakpoints
         self.codegen_sync_cursor()
         self.scr.no_clip()
-        self.scr.fill(0, 1, self.scr.w, self.scr.h - 2, p.desk_ch, p.desk_fg, p.desk_bg)
+        if self.vim_zen:
+            self.scr.fill(0, 0, self.scr.w, max(1, self.scr.h - 2), 32, p.ed_fg, p.ed_bg)
+        else:
+            self.scr.fill(0, 1, self.scr.w, self.scr.h - 2, p.desk_ch, p.desk_fg, p.desk_bg)
         self.git_diff_refresh()
         self.scopes_stale = False
         var n = len(self.wins)
@@ -258,154 +266,161 @@ __extension App:
             if self.wins[i].kind == WK_EXPLAIN and not self.reader:
                 self.explain_draw(i)
             if self.tiled and (self.wins[i].kind == WK_EDITOR or self.wins[i].kind == WK_HEX or self.wins[i].kind == WK_MDPREVIEW):
-                self.draw_tabs(i, i == n - 1)
+                if not self.wins[i].chromeless:
+                    self.draw_tabs(i, i == n - 1)
                 continue                        # panes lie side by side: no shadow
             if i == n - 1 and self.wins[i].w < self.scr.w:
                 self.scr.shadow(self.wins[i].x, self.wins[i].y, self.wins[i].w, self.wins[i].h, p.shadow_fg, p.shadow_bg)
+        if self.vim_zen and self.mode == M_NORMAL and not self.reader:
+            self.draw_vim_zen_welcome()
         if not self.reader:
             self.draw_progress_box()            # beyond ten seconds (never takes the keys)
             self.draw_toasts()                  # (a screen reader gets them on the status line)
             self.draw_chord_box()
-        draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, (self.clock_fixed if self.clock_fixed.byte_length() > 0 else clock_hm()) if self.show_clock and not self.reader else "")
-        # status line
-        var items = List[String]()
-        var cmds = List[Int]()
-        if self.mode == M_DOCS:
-            self.draw_docs()
-            for h in self.docs_hints():
-                items.append(h)
-                cmds.append(CM_NONE)
-        elif self.mode == M_MENU:
-            items.append(self.menus[self.menu_idx].items[self.menu_item].hint)
-            cmds.append(CM_NONE)
-        elif self.mode == M_DIALOG:
-            items.append("~Tab~ Next control")
-            cmds.append(CM_NONE)
-            items.append("~Enter~ Accept")
-            cmds.append(CM_NONE)
-            items.append("~Esc~ Cancel")
-            cmds.append(CM_NONE)
-        elif self.mode == M_HOVER:
-            items.append("~↑↓~ Scroll")
-            cmds.append(CM_NONE)
-            items.append("~Esc~ Close")
-            cmds.append(CM_NONE)
-        elif self.mode == M_PEEK:
-            items.append("~Enter~ Jump")
-            cmds.append(CM_NONE)
-            items.append("~↑↓~ Scroll")
-            cmds.append(CM_NONE)
-            if self.peek_is_hunk:
-                items.append("~S~ Stage")
-                cmds.append(CM_NONE)
-                items.append("~R~ Revert")
-                cmds.append(CM_NONE)
-            elif len(self.peek_paths) > 1:
-                items.append("~Tab~ Next ref")
-                cmds.append(CM_NONE)
-            items.append("~Esc~ Close")
-            cmds.append(CM_NONE)
-        elif self.mode == M_COMPLETE:
-            items.append("~Enter~ Insert")
-            cmds.append(CM_NONE)
-            items.append("~Esc~ Close")
-            cmds.append(CM_NONE)
+        if not self.vim_zen or self.mode == M_MENU:
+            draw_menubar(self.scr, p, self.menus, self.menu_idx if self.mode == M_MENU else -1, (self.clock_fixed if self.clock_fixed.byte_length() > 0 else clock_hm()) if self.show_clock and not self.reader else "")
+        if self.vim_zen and self.mode != M_DOCS and self.mode != M_MENU and self.mode != M_DIALOG:
+            self.draw_vim_zen_bars()
         else:
-            var t = self.top()
-            items.append("~F1~ Help")
-            cmds.append(CM_HELP)
-            if t >= 0 and self.wins[t].kind == WK_EXPLORER:
-                for h in ["~Enter~ Open", "~/~ Filter", "~N~ New file", "~F~ Folder", "~R~ Rename", "~M~ Move", "~Del~ Trash"]:
+            # status line
+            var items = List[String]()
+            var cmds = List[Int]()
+            if self.mode == M_DOCS:
+                self.draw_docs()
+                for h in self.docs_hints():
                     items.append(h)
                     cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_CPU:
-                for h in ["~F7~/~F8~ Step instruction", "~G~ Memory at", "~+~/~-~ Next/prev memory"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_MESSAGE and self.msg_page == PG_PROBLEMS:
-                for h in ["~E~/~W~/~N~ Errors/warnings/notes", "~F~ This file", "~/~ Filter", "~C~ All", "~A~ Ask agent", "~?~ Docs"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_MESSAGE and self.msg_page == PG_MESSAGE:
-                items.append("~/~ Filter")
+            elif self.mode == M_MENU:
+                items.append(self.menus[self.menu_idx].items[self.menu_item].hint)
                 cmds.append(CM_NONE)
-                if self.out_filtered:
-                    items.append("~C~ All")
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_AGENT:
-                for h in ["~Enter~ Send", "~Esc~ Stop / editor", "~PgUp~ Back", "@file:1-9 Mention"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_DOCPANE:
-                for h in ["~Enter~ Open page", "~C~/~T~ Copy/Try", "~Esc~ Back to code", "~PgDn~ Read on"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_EXPLAIN:
-                for h in ["~Esc~ Close", "~F6~ Code", "~C~/~T~ Copy/Try fix", "~A~ Ask agent", "~?~ Docs"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-                if self.explain_python():
-                    items.append("~P~ Coming from Python")
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_BLAME:
-                for h in ["~Enter~ Go to", "~Esc~ Close", self.git_blame_summary()]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_GITLOG:
-                for h in ["~Enter~ Inspect commit", "~Y~ Copy SHA", "~/~ Search", "~B~ Checkout", "~Esc~ Close"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_GIT:
-                for h in ["~Enter~ Open", "~Space~ Stage/unstage", "~D~ Diff", "~C~ Commit", "~L~ Log", "~P~/~p~/~F~ Push/Pull/Fetch", "~Z~ Stash", "~Esc~ Close"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_DIFF:
-                var dh: List[String]
-                if self.gd_proposal:
-                    dh = ["~A~ Accept", "~S~ Accept all (session)", "~R~ Reject", "~V~ Split/Unified", "~Esc~ Later"]
-                elif self.gd_staged:
-                    dh = ["~U~ Unstage", "~V~ Split/Unified", "~Tab~ Changes", "~Esc~ Close"]
-                else:
-                    dh = ["~Enter~ Go to", "~S~ Stage", "~R~ Revert", "~V~ Split/Unified", "~Tab~ Staged", "~Esc~ Close"]
-                for h in dh:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_TESTS:
-                for h in ["~Enter~ Go to", "~R~ Run", "~A~ Run all", "~L~ List", "~T~ Find files"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_TERM:
-                for h in ["~F6~ Back to the editor", "~Shift-PgUp~ Scroll back", "~Alt-F11~ Close", "drag: copy"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_DEBUG:
-                for h in ["~Enter~ Open / go to frame", "~←~ Close", "~=~ Set value", "~Del~ Remove watch"]:
-                    items.append(h)
-                    cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_OUTLINE:
-                items.append("~Enter~ Go to symbol")
+            elif self.mode == M_DIALOG:
+                items.append("~Tab~ Next control")
                 cmds.append(CM_NONE)
-            if t >= 0 and self.wins[t].kind == WK_MESSAGE:
-                items.append("~Enter~ Go to source")
+                items.append("~Enter~ Accept")
                 cmds.append(CM_NONE)
-                items.append("~Alt-F8~ Next msg")
-                cmds.append(CM_NEXTERR)
-                items.append("~F6~ Next window")
-                cmds.append(CM_NEXTWIN)
+                items.append("~Esc~ Cancel")
+                cmds.append(CM_NONE)
+            elif self.mode == M_HOVER:
+                items.append("~↑↓~ Scroll")
+                cmds.append(CM_NONE)
+                items.append("~Esc~ Close")
+                cmds.append(CM_NONE)
+            elif self.mode == M_PEEK:
+                items.append("~Enter~ Jump")
+                cmds.append(CM_NONE)
+                items.append("~↑↓~ Scroll")
+                cmds.append(CM_NONE)
+                if self.peek_is_hunk:
+                    items.append("~S~ Stage")
+                    cmds.append(CM_NONE)
+                    items.append("~R~ Revert")
+                    cmds.append(CM_NONE)
+                elif len(self.peek_paths) > 1:
+                    items.append("~Tab~ Next ref")
+                    cmds.append(CM_NONE)
+                items.append("~Esc~ Close")
+                cmds.append(CM_NONE)
+            elif self.mode == M_COMPLETE:
+                items.append("~Enter~ Insert")
+                cmds.append(CM_NONE)
+                items.append("~Esc~ Close")
+                cmds.append(CM_NONE)
             else:
-                items.append("~F2~ Save")
-                cmds.append(CM_SAVE)
-                items.append("~F3~ Open")
-                cmds.append(CM_OPEN)
-                items.append("~^P~ Commands")
-                cmds.append(CM_PALETTE)
-                items.append("~F9~ Build")
-                cmds.append(CM_BUILD)
-                items.append("~^F9~ Run")
-                cmds.append(CM_RUN)
-            items.append("~F10~ Menu")
-            cmds.append(-1)
-        self.draw_status(items, cmds)
+                var t = self.top()
+                items.append("~F1~ Help")
+                cmds.append(CM_HELP)
+                if t >= 0 and self.wins[t].kind == WK_EXPLORER:
+                    for h in ["~Enter~ Open", "~/~ Filter", "~N~ New file", "~F~ Folder", "~R~ Rename", "~M~ Move", "~Del~ Trash"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_CPU:
+                    for h in ["~F7~/~F8~ Step instruction", "~G~ Memory at", "~+~/~-~ Next/prev memory"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_MESSAGE and self.msg_page == PG_PROBLEMS:
+                    for h in ["~E~/~W~/~N~ Errors/warnings/notes", "~F~ This file", "~/~ Filter", "~C~ All", "~A~ Ask agent", "~?~ Docs"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_MESSAGE and self.msg_page == PG_MESSAGE:
+                    items.append("~/~ Filter")
+                    cmds.append(CM_NONE)
+                    if self.out_filtered:
+                        items.append("~C~ All")
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_AGENT:
+                    for h in ["~Enter~ Send", "~Esc~ Stop / editor", "~PgUp~ Back", "@file:1-9 Mention"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_DOCPANE:
+                    for h in ["~Enter~ Open page", "~C~/~T~ Copy/Try", "~Esc~ Back to code", "~PgDn~ Read on"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_EXPLAIN:
+                    for h in ["~Esc~ Close", "~F6~ Code", "~C~/~T~ Copy/Try fix", "~A~ Ask agent", "~?~ Docs"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                    if self.explain_python():
+                        items.append("~P~ Coming from Python")
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_BLAME:
+                    for h in ["~Enter~ Go to", "~Esc~ Close", self.git_blame_summary()]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_GITLOG:
+                    for h in ["~Enter~ Inspect commit", "~Y~ Copy SHA", "~/~ Search", "~B~ Checkout", "~Esc~ Close"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_GIT:
+                    for h in ["~Enter~ Open", "~Space~ Stage/unstage", "~D~ Diff", "~C~ Commit", "~L~ Log", "~P~/~p~/~F~ Push/Pull/Fetch", "~Z~ Stash", "~Esc~ Close"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_DIFF:
+                    var dh: List[String]
+                    if self.gd_proposal:
+                        dh = ["~A~ Accept", "~S~ Accept all (session)", "~R~ Reject", "~V~ Split/Unified", "~Esc~ Later"]
+                    elif self.gd_staged:
+                        dh = ["~U~ Unstage", "~V~ Split/Unified", "~Tab~ Changes", "~Esc~ Close"]
+                    else:
+                        dh = ["~Enter~ Go to", "~S~ Stage", "~R~ Revert", "~V~ Split/Unified", "~Tab~ Staged", "~Esc~ Close"]
+                    for h in dh:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_TESTS:
+                    for h in ["~Enter~ Go to", "~R~ Run", "~A~ Run all", "~L~ List", "~T~ Find files"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_TERM:
+                    for h in ["~F6~ Back to the editor", "~Shift-PgUp~ Scroll back", "~Alt-F11~ Close", "drag: copy"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_DEBUG:
+                    for h in ["~Enter~ Open / go to frame", "~←~ Close", "~=~ Set value", "~Del~ Remove watch"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_OUTLINE:
+                    items.append("~Enter~ Go to symbol")
+                    cmds.append(CM_NONE)
+                if t >= 0 and self.wins[t].kind == WK_MESSAGE:
+                    items.append("~Enter~ Go to source")
+                    cmds.append(CM_NONE)
+                    items.append("~Alt-F8~ Next msg")
+                    cmds.append(CM_NEXTERR)
+                    items.append("~F6~ Next window")
+                    cmds.append(CM_NEXTWIN)
+                else:
+                    items.append("~F2~ Save")
+                    cmds.append(CM_SAVE)
+                    items.append("~F3~ Open")
+                    cmds.append(CM_OPEN)
+                    items.append("~^P~ Commands")
+                    cmds.append(CM_PALETTE)
+                    items.append("~F9~ Build")
+                    cmds.append(CM_BUILD)
+                    items.append("~^F9~ Run")
+                    cmds.append(CM_RUN)
+                items.append("~F10~ Menu")
+                cmds.append(-1)
+            self.draw_status(items, cmds)
         if self.mode == M_MENU:
             draw_dropdown(self.scr, p, self.menus[self.menu_idx], self.menu_item, self.checked(), self.unavailable_cmds(), self.reader)
         # cursor
@@ -414,7 +429,8 @@ __extension App:
             var cell = self.wins[t].cursor_cell()
             var cx = cell.c
             var cy = cell.r
-            if cx > self.wins[t].x and cx < self.wins[t].x + self.wins[t].w - 1 and cy > self.wins[t].y and cy < self.wins[t].y + self.wins[t].h - 1:
+            var pd_c = self.wins[t].pad()
+            if cx >= self.wins[t].x + pd_c and cx < self.wins[t].x + self.wins[t].w - pd_c and cy >= self.wins[t].y + pd_c and cy < self.wins[t].y + self.wins[t].h - pd_c:
                 self.scr.cx = cx
                 self.scr.cy = cy
                 self.scr.cvis = True
@@ -855,3 +871,197 @@ __extension App:
         var msg = "; ".join(cues)
         self.say(msg)
         return msg
+
+    def draw_vim_zen_welcome(mut self):
+        """Neovim-style centered intro screen when Whole-Vim mode starts on an untouched `[No Name]` buffer."""
+        if len(self.wins) != 1 or self.vim.cl_on or self.vim.mode != VM_NORMAL:
+            return
+        if self.wins[0].kind != WK_EDITOR or self.wins[0].path.byte_length() > 0 or self.wins[0].buf.modified:
+            return
+        if self.wins[0].buf.count() != 1 or self.wins[0].buf.llen(0) != 0:
+            return
+        if self.scr.w < 52 or self.scr.h < 14:
+            return
+        var p = self.pal.copy()
+        var lines = [
+            "TurboMojo " + VERSION + " — Mojo 1.2 Vim Edition",
+            "",
+            "type  :e <file>        open a file or .ipynb notebook",
+            "type  :nb              new interactive Jupyter notebook",
+            "type  <Space>f         fuzzy-find files",
+            "type  <Space>g         search text across project",
+            "type  <Space>e  or  -  toggle file explorer",
+            "type  <Space>b / x     build / run Mojo program",
+            "type  <Space>c         execute # %% notebook cell",
+            "type  F10              open full IDE menu bar",
+            "type  :q<Enter>        exit               :help  guide",
+        ]
+        var y0 = max(2, (self.scr.h - 2 - len(lines)) // 2)
+        for k in range(len(lines)):
+            var ln = String(lines[k])
+            if ln.byte_length() == 0:
+                continue
+            var yy = y0 + k
+            if yy >= self.scr.h - 2:
+                break
+            var xx = max(6, (self.scr.w - cp_len(ln)) // 2)
+            var fg = p.title_fg if k == 0 else p.gutter_fg
+            var end_x = self.scr.text(xx, yy, ln, fg, p.ed_bg)
+            if k == 0 and end_x > xx:
+                self.scr.bold(xx, yy, end_x - xx)
+
+    def draw_vim_zen_bars(mut self):
+        """Render classic 2-row Vim/Neovim statusline (`h - 2`) and command/showcmd bar (`h - 1`)."""
+        var p = self.pal.copy()
+        var y_st = max(0, self.scr.h - 2)
+        var y_cmd = max(0, self.scr.h - 1)
+        self.scr.no_clip()
+        self.scr.fill(0, y_st, self.scr.w, 1, 32, p.status_fg, p.status_bg)
+        self.scr.fill(0, y_cmd, self.scr.w, 1, 32, p.ed_fg, p.ed_bg)
+        self.st_x0.clear()
+        self.st_x1.clear()
+        self.st_cmd.clear()
+
+        # 1. Mode pill on statusline (row h - 2)
+        var mode_lbl = String(" NORMAL ")
+        var pill_bg = p.frame_act
+        var pill_fg = p.ed_bg
+        if self.vim.cl_on:
+            mode_lbl = " COMMAND "
+            pill_bg = p.msg_note
+        elif self.vim.mode == VM_INSERT:
+            mode_lbl = " INSERT "
+            pill_bg = p.msg_ok
+        elif self.vim.mode == VM_VISUAL:
+            mode_lbl = " VISUAL "
+            pill_bg = p.msg_warn
+        elif self.vim.mode == VM_VLINE:
+            mode_lbl = " V-LINE "
+            pill_bg = p.msg_warn
+        elif self.vim.mode == VM_BLOCK:
+            mode_lbl = " V-BLOCK "
+            pill_bg = p.msg_warn
+        var x = self.scr.text(0, y_st, mode_lbl, pill_fg, pill_bg)
+        if x > 0 and not self.scr.plain:
+            self.scr.bold(0, y_st, x)
+
+        # 2. Buffer name, [+], [RO], git branch, diagnostics
+        var ti = self.top_editor()
+        var fname = String("[No Name]")
+        if ti >= 0:
+            if self.wins[ti].path.byte_length() > 0:
+                fname = basename(self.wins[ti].path)
+            elif self.wins[ti].title.byte_length() > 0 and self.wins[ti].title != "Untitled":
+                fname = self.wins[ti].title
+            if self.wins[ti].buf.modified:
+                fname += " [+]"
+            if self.wins[ti].read_only:
+                fname += " [RO]"
+        elif self.top() >= 0:
+            fname = self.wins[self.top()].title
+        x = self.scr.text(x, y_st, "  " + fname, p.status_fg, p.status_bg)
+
+        if self.git.branch.byte_length() > 0 and x + 16 < self.scr.w:
+            var gb = "  git:" + self.git.branch
+            if self.git.ahead > 0:
+                gb += "↑" + String(self.git.ahead)
+            if self.git.behind > 0:
+                gb += "↓" + String(self.git.behind)
+            x = self.scr.text(x, y_st, gb, text_muted(p.status_fg, p.status_bg), p.status_bg)
+
+        if ti >= 0 and len(self.wins[ti].buf.marks) > 0 and x + 14 < self.scr.w:
+            var n_err = 0
+            var n_warn = 0
+            for mk in self.wins[ti].buf.marks:
+                if mk.severity == 1:
+                    n_err += 1
+                elif mk.severity == 2:
+                    n_warn += 1
+            if n_err > 0 or n_warn > 0:
+                var dtxt = "  E:" + String(n_err) + " W:" + String(n_warn)
+                x = self.scr.text(x, y_st, dtxt, p.diag_err if n_err > 0 else p.diag_warn, p.status_bg)
+        elif (self.lsp.active() or self.extra_active()) and x + 10 < self.scr.w:
+            x = self.scr.text(x, y_st, "  LSP", text_muted(p.status_fg, p.status_bg), p.status_bg)
+
+        # 3. Right side of statusline: [buf i/N] | filetype | encoding | line:col | Top/Bot/NN%
+        var ed_total = 0
+        var ed_ord = 0
+        for wi in range(len(self.wins)):
+            if self.wins[wi].kind == WK_EDITOR:
+                ed_total += 1
+                if wi == ti:
+                    ed_ord = ed_total
+        var right = String("")
+        if ed_total > 1:
+            right += "[" + String(ed_ord) + "/" + String(ed_total) + "]  "
+        if ti >= 0:
+            var lg = self.wins[ti].effective_lang()
+            var ft = String("mojo")
+            if is_ipynb_path(self.wins[ti].path) or is_ipynb_path(self.wins[ti].title):
+                ft = "ipynb:mojo" if lg == HL_MOJO else "ipynb:py"
+            elif lg == HL_PYTHON:
+                ft = "python"
+            elif lg == HL_JSON:
+                ft = "json"
+            elif lg == HL_MARKDOWN:
+                ft = "markdown"
+            elif lg == HL_TOML:
+                ft = "toml"
+            elif lg == HL_C_CUDA:
+                ft = "c/cuda"
+            right += ft + "  "
+            right += ("dos" if self.wins[ti].buf.crlf else "unix") + "  "
+            var total_l = max(1, self.wins[ti].buf.count())
+            var rws = self.wins[ti].rows()
+            var pct: String
+            if total_l <= rws:
+                pct = "All"
+            elif self.wins[ti].top <= 0:
+                pct = "Top"
+            elif self.wins[ti].top + rws >= total_l:
+                pct = "Bot"
+            else:
+                pct = String(((self.wins[ti].cr + 1) * 100) // total_l) + "%"
+            right += String(self.wins[ti].cr + 1) + ":" + String(self.wins[ti].vcol(self.wins[ti].cr, self.wins[ti].cc) + 1) + "  " + pct + " "
+        var rx = max(x + 2, self.scr.w - cp_len(right))
+        if rx < self.scr.w:
+            _ = self.scr.text(rx, y_st, right, p.status_fg, p.status_bg)
+
+        # 4. Command / Echo / showcmd bar (row h - 1)
+        if not self.vim.cl_on:
+            var cmd_x = 1
+            if self.vim.rec_reg != 0:
+                var rec_idx = (self.vim.rec_reg - 97) if self.vim.rec_reg >= 97 else (self.vim.rec_reg - 65)
+                var rec_txt = "recording @" + chr(rec_idx + 97) + "  "
+                var rx0 = cmd_x
+                cmd_x = self.scr.text(cmd_x, y_cmd, rec_txt, p.ed_fg, p.ed_bg)
+                if cmd_x > rx0 and not self.scr.plain:
+                    self.scr.bold(rx0, y_cmd, cmd_x - rx0)
+            if self.status_until > now_ns() and self.status.byte_length() > 0:
+                var room = max(8, self.scr.w - cmd_x - 16)
+                var sc = decode(self.status)
+                var smsg = slice_str(sc, 0, room - 1) + "…" if len(sc) > room else self.status
+                _ = self.scr.text(cmd_x, y_cmd, smsg, p.ed_fg, p.ed_bg)
+            elif ti >= 0 and ti == self.top() and self.mode == M_NORMAL and len(self.wins[ti].buf.marks) > 0:
+                var prob = self.wins[ti].buf.mark_text(self.wins[ti].cr)
+                if prob.byte_length() > 0:
+                    var room = max(8, self.scr.w - cmd_x - 16)
+                    var pc = decode(prob)
+                    var pmsg = slice_str(pc, 0, room - 1) + "…" if len(pc) > room else prob
+                    _ = self.scr.text(cmd_x, y_cmd, pmsg, p.diag_err, p.ed_bg)
+            var showcmd = String("")
+            if self.vim.op_n > 0:
+                showcmd += String(self.vim.op_n)
+            if self.vim.op != 0:
+                showcmd += chr(self.vim.op)
+            if self.vim.count > 0:
+                showcmd += String(self.vim.count)
+            if self.vim.pend != 0:
+                if self.vim.pend == 32:
+                    showcmd += "<Space>"
+                elif self.vim.pend == 23:
+                    showcmd += "^W"
+                elif self.vim.pend >= 33 and self.vim.pend < 127:
+                    showcmd += chr(self.vim.pend)
+            if showcmd.byte_length() > 0 and self.scr.w > 20:
+                _ = self.scr.text(max(1, self.scr.w - cp_len(showcmd) - 2), y_cmd, showcmd, p.gutter_fg, p.ed_bg)

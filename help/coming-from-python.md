@@ -160,6 +160,17 @@ def main():
     print(SIZE * 2)
 ```
 
+## Jupyter notebooks & `# %%` cells
+
+TurboMojo opens Jupyter **`.ipynb`** files directly (`tmide notebook.ipynb` or **F3**) for
+both **Mojo** and **Python** kernels, and also runs `# %%` cells in `.mojo` and `.py` files:
+
+- **Ctrl-Enter** executes the current cell (**Ctrl-Shift-Enter** executes and jumps to the
+  next cell); inline virtual outputs show `numpy`, `torch`, `pandas`, `polars`, and Mojo
+  `SIMD` / `Tensor` shape & NaN/Inf cards plus `matplotlib` plots (`Text > Open cell plot preview`).
+- **F2** saves `.ipynb` notebooks back to standard nbformat v4 JSON (including cell outputs);
+  see **Help > Jupyter & notebooks** for details.
+
 ## When something goes wrong
 
 **F1** on a problem explains the message, with a program before and after the fix;

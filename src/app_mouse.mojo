@@ -47,6 +47,7 @@ from app_tests import *
 from app_jobs import *
 from app_input import *
 from app_draw import *
+from cells import parse_cells, cell_at_row
 
 
 __extension App:
@@ -288,7 +289,8 @@ __extension App:
         var wy = self.wins[t].y
         var ww = self.wins[t].w
         var wh = self.wins[t].h
-        if y == wy:
+        var pd = self.wins[t].pad()
+        if not self.wins[t].chromeless and y == wy:
             if x >= wx + 2 and x <= wx + 4:
                 self.close_window(t, NEXT_CLOSE)
                 return
@@ -301,11 +303,11 @@ __extension App:
             self.drag_dx = x - wx
             self.drag_dy = y - wy
             return
-        if x >= wx + ww - 2 and y >= wy + wh - 1:
+        if not self.wins[t].chromeless and x >= wx + ww - 2 and y >= wy + wh - 1:
             if not (self.tiled and self.is_pane_win(self.wins[t].kind)):
                 self.drag = 2
             return
-        if x == wx + ww - 1:
+        if not self.wins[t].chromeless and x == wx + ww - 1:
             # vertical scrollbar
             if y == wy + 1:
                 self.wins[t].scroll(-1)
@@ -320,11 +322,13 @@ __extension App:
                 self.drag = 5
                 self.drag_scroll_wi = t
             return
-        if y == wy + wh - 1 or x == wx:
+        if not self.wins[t].chromeless and (y == wy + wh - 1 or x == wx):
             return
-        if self.wins[t].kind == WK_EDITOR and self.wins[t].minimap and not self.scr.plain and x >= wx + ww - 1 - MINIMAP_W and x < wx + ww - 1:
-            var sy0 = wy + 1
-            var sy1 = wy + wh - 2
+        if self.wins[t].chromeless and self.wins[t].split_sep and x == wx + ww - 1:
+            return
+        if self.wins[t].kind == WK_EDITOR and self.wins[t].minimap and not self.scr.plain and x >= wx + ww - pd - MINIMAP_W and x < wx + ww - pd:
+            var sy0 = wy + pd
+            var sy1 = wy + wh - pd - 1
             var span = max(1, sy1 - sy0)
             var clamped_y = max(sy0, min(sy1, y))
             var tot = max(0, self.wins[t].buf.count() - max(1, self.wins[t].rows()))
@@ -335,18 +339,31 @@ __extension App:
             self.drag_minimap_wi = t
             return
         if self.wins[t].kind != WK_EDITOR:
-            var r = self.wins[t].top + (y - wy - 1)
+            var r = self.wins[t].top + (y - wy - pd)
             if r < self.wins[t].buf.count():
                 if self.wins[t].cr == r:
                     self.message_key(KEY_ENTER)
                 else:
                     self.wins[t].cr = r
             return
-        if self.wins[t].gut > 0 and x > wx and x < wx + self.wins[t].gut and self.wins[t].path.byte_length() > 0:
-            var br = self.wins[t].pos_at_screen_row(y - wy - 1).r
+        var scr_pos = self.wins[t].pos_at_screen_row(max(0, y - wy - pd))
+        var br_click = scr_pos.r
+        if scr_pos.c == 0 and br_click < self.wins[t].buf.count() and self.wins[t].buf.is_cell_header(br_click):
+            var gut_end = wx + pd + self.wins[t].gut
+            var hdr_text_end = gut_end + self.wins[t].buf.llen(br_click)
+            if (x >= wx + pd and x < gut_end) or x >= hdr_text_end + 1:
+                var cells = parse_cells(self.wins[t].buf)
+                var ci = cell_at_row(cells, br_click)
+                if ci >= 0:
+                    self.wins[t].cr = br_click
+                    self.wins[t].cc = 0
+                    self.run_code_cell_by_index(t, ci, False)
+                    return
+        if self.wins[t].gut > 0 and x >= wx + pd and x < wx + pd + self.wins[t].gut - 1 and self.wins[t].path.byte_length() > 0:
+            var br = br_click
             if br < self.wins[t].buf.count():
-                # A click on column wx + 1 at a test-lens row executes that test
-                if x == wx + 1 and len(self.wins[t].test_lens_rows) > 0:
+                # A click on column wx + pd at a test-lens row executes that test
+                if x == wx + pd and len(self.wins[t].test_lens_rows) > 0:
                     var is_lens = False
                     for k in range(len(self.wins[t].test_lens_rows)):
                         if self.wins[t].test_lens_rows[k] == br:
@@ -358,12 +375,13 @@ __extension App:
                 # Otherwise a click on the line number sets or removes a breakpoint
                 self.bp_toggle_at(t, br)
             return
-        if self.wins[t].gut > 0 and x == wx + self.wins[t].gut:
+        if self.wins[t].gut > 0 and x == wx + pd + self.wins[t].gut - 1:
             # the fold marker in the gutter
-            var fr = self.wins[t].pos_at_screen_row(y - wy - 1).r
+            var fr = br_click
             if fr < self.wins[t].buf.count() and (self.wins[t].buf.fold_index(fr) >= 0 or self.wins[t].buf.foldable(fr)):
                 _ = self.wins[t].toggle_fold(fr)
                 return
+        self.wins[t].nb_cmd_mode = False
         var p = self.wins[t].screen_to_pos(x, y)
         if e.key & MOD_ALT != 0:
             self.wins[t].toggle_cursor_at(p.r, p.c)     # Alt-click: one more cursor

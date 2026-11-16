@@ -58,6 +58,7 @@ from app_draw import *
 from app_vim import *
 from app_gpu import *
 from app_codegen import *
+from cells import parse_cells, cell_at_row
 
 
 __extension App:
@@ -186,6 +187,16 @@ __extension App:
         if k == fkey(10):
             self.open_menu(1)
             return
+        var t_pre = self.top()
+        if t_pre >= 0 and self.wins[t_pre].kind == WK_EDITOR and self.wins[t_pre].has_cells():
+            if k == (KEY_ENTER | MOD_SHIFT):
+                self.exec(CM_RUN_CELL_NEXT)
+                return
+            if k == (KEY_ENTER | MOD_ALT) and self.wins[t_pre].is_notebook():
+                if not self.trust_gate(CM_RUN_CELL):
+                    return
+                self.run_code_cell_insert_below()
+                return
         if self.vim_key(k):
             return                              # vim's Normal and Visual keys (Phase 12)
         var cmd = self.shortcut(k)
@@ -213,6 +224,9 @@ __extension App:
         if self.wins[t].kind != WK_EDITOR:
             self.message_key(k)             # the Message and Outline windows: lists
             return
+        if self.keymap != KEYMAP_VIM and self.wins[t].is_notebook() and self.wins[t].nb_cmd_mode:
+            if self.notebook_cmd_key(t, k):
+                return
         self.editor_key(k)
 
     def message_key(mut self, k: Int) raises:
@@ -365,6 +379,13 @@ __extension App:
             self.snip_clear()
             if self.wins[t].has_multi():
                 self.wins[t].collapse()         # first Esc: back to one cursor
+            elif self.wins[t].sel or self.wins[t].hs_on:
+                self.wins[t].sel = False
+                self.wins[t].clear_highlight()
+            elif self.wins[t].is_notebook() and self.keymap != KEYMAP_VIM:
+                self.wins[t].nb_cmd_mode = True
+                self.wins[t].nb_pend = 0
+                self.say("Jupyter Command Mode — Enter:edit  Shift-Enter:run  a/b:add  dd:del  m/y:md/code  00:restart")
             else:
                 self.wins[t].sel = False
                 self.wins[t].clear_highlight()
@@ -373,6 +394,96 @@ __extension App:
             self.maybe_trigger_completion(k)
             self.maybe_trigger_signature(k)
         self.wins[t].follow = True
+
+    def notebook_cmd_key(mut self, t: Int, k: Int) raises -> Bool:
+        """Classic Jupyter Notebook Command Mode (`Esc` inside `.ipynb` buffers)."""
+        var pend = self.wins[t].nb_pend
+        self.wins[t].nb_pend = 0
+        var cells = parse_cells(self.wins[t].buf)
+        var ci = max(0, cell_at_row(cells, self.wins[t].cr)) if len(cells) > 0 else 0
+        if k == KEY_ENTER:
+            self.wins[t].nb_cmd_mode = False
+            if len(cells) > 0 and ci < len(cells):
+                var sr = cells[ci].start_row
+                if sr == cells[ci].header_row and sr + 1 <= cells[ci].end_row:
+                    sr += 1
+                self.wins[t].goto(sr, 0)
+            self.say("Jupyter Edit Mode — Esc for Command Mode")
+            return True
+        if k == KEY_ESC:
+            return True
+        if k == 106 or k == KEY_DOWN:  # j / Down: next cell
+            if ci + 1 < len(cells):
+                var nr = cells[ci + 1].header_row if cells[ci + 1].header_row >= 0 else cells[ci + 1].start_row
+                self.wins[t].goto(nr, 0)
+            return True
+        if k == 107 or k == KEY_UP:    # k / Up: previous cell
+            if ci > 0:
+                var pr = cells[ci - 1].header_row if cells[ci - 1].header_row >= 0 else cells[ci - 1].start_row
+                self.wins[t].goto(pr, 0)
+            return True
+        if k == 97:                    # a: insert cell above
+            self.cell_insert_above()
+            self.wins[t].nb_cmd_mode = True
+            return True
+        if k == 98:                    # b: insert cell below
+            self.cell_insert_below()
+            self.wins[t].nb_cmd_mode = True
+            return True
+        if k == 100:                   # d d: delete cell
+            if pend == 100:
+                self.cell_delete_current()
+                self.wins[t].nb_cmd_mode = True
+            else:
+                self.wins[t].nb_pend = 100
+                self.say("d ... (press d again to delete cell)")
+            return True
+        if k == 48:                    # 0 0: restart kernel
+            if pend == 48:
+                self.cell_restart_kernels()
+            else:
+                self.wins[t].nb_pend = 48
+                self.say("0 ... (press 0 again to restart kernel)")
+            return True
+        if k == 105:                   # i i: interrupt kernel
+            if pend == 105:
+                self.exec(CM_CANCEL)
+            else:
+                self.wins[t].nb_pend = 105
+                self.say("i ... (press i again to interrupt kernel, or Enter to edit cell)")
+            return True
+        if k == 120:                   # x: cut cell
+            self.cell_delete_current()
+            self.wins[t].nb_cmd_mode = True
+            return True
+        if k == 99:                    # c: copy cell
+            self.cell_copy_current()
+            return True
+        if k == 118:                   # v: paste cell below
+            self.cell_paste_below()
+            self.wins[t].nb_cmd_mode = True
+            return True
+        if k == 109:                   # m: convert to Markdown
+            self.cell_set_type(True)
+            self.wins[t].nb_cmd_mode = True
+            return True
+        if k == 121:                   # y: convert to Code
+            self.cell_set_type(False)
+            self.wins[t].nb_cmd_mode = True
+            return True
+        if k == 122:                   # z: undo
+            self.exec(CM_UNDO)
+            return True
+        if k == 111:                   # o: toggle inline outputs
+            self.exec(CM_CELL_INLINE_OUT)
+            return True
+        if k == 108:                   # l: toggle line numbers
+            self.exec(CM_LINENUM)
+            return True
+        if k == 104 or k == 63:        # h / ?: notebook help
+            self.help_page("notebooks.md")
+            return True
+        return True
 
     def window_at(self, x: Int, y: Int) -> Int:
         var i = len(self.wins) - 1

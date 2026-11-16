@@ -16,6 +16,8 @@ def test_the_built_in_pages_are_the_files() raises:
     assert_equal(bytes_to_str(read_file(getcwd() + "/help/guide.md")), HELP_GUIDE)
     assert_equal(bytes_to_str(read_file(getcwd() + "/help/cheatsheet.md")), HELP_CHEATSHEET)
     assert_equal(bytes_to_str(read_file(getcwd() + "/help/whats-new.md")), HELP_WHATS_NEW)
+    assert_equal(bytes_to_str(read_file(getcwd() + "/help/coming-from-python.md")), HELP_PYTHON)
+    assert_equal(bytes_to_str(read_file(getcwd() + "/help/notebooks.md")), HELP_NOTEBOOKS)
     assert_equal(bytes_to_str(read_file(getcwd() + "/help/tutorial.mojo")), HELP_TUTORIAL)
 
 
@@ -77,7 +79,8 @@ def test_the_book_comes_first_and_is_searched() raises:
     assert_equal(lib.pages[5].title, "Coming from Python")
     assert_equal(lib.pages[6].title, "Coming from other editors")
     assert_equal(lib.pages[7].title, "What's new")
-    assert_equal(lib.help_count, 8)
+    assert_equal(lib.pages[8].title, "Notebooks & Jupyter")
+    assert_equal(lib.help_count, 9)
     var idx = DocIndex()
     idx.build(lib)
     var found = False

@@ -149,6 +149,7 @@ struct of `appstate.mojo`, one area each.
 | `src/svgshot.mojo` | The screen as an SVG picture (P11-02): `tmide --screenshot FILE.svg` draws the IDE as it would appear and writes what is in its cells - characters, colours, bold, underlines - as a grid of text, so the README can show it without a screen recorder. |
 | `src/swap.mojo` | Swap files: periodic copies of unsaved buffers, used to recover work after a crash, a power cut or `kill -9`. |
 | `src/symindex.mojo` | An index of the symbols (functions, structs, traits, constants) of every Mojo file of the project, built a slice at a time so the editor never waits for it. |
+| `src/tensor_inspect.mojo` | Live Tensor, SIMD & DataFrame inspector for `# %%` notebooks and the DAP debugger. |
 | `src/term.mojo` | Raw terminal I/O: termios, window size, key + SGR mouse + bracketed paste parsing. |
 | `src/termkeys.mojo` | The bytes a key sends to a program in a terminal, as xterm sends them. |
 | `src/termsession.mojo` | A terminal session: a program on a pty and the emulator keeping its screen (used by the Terminal and Run windows, see app_terminal.mojo). |

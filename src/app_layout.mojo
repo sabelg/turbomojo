@@ -103,16 +103,16 @@ __extension App:
         # the room the panes share: the desktop less the Message and Outline windows
         var w = self.scr.w
         var h = self.desk_h()
+        var y0 = 0 if self.vim_zen else 1
         var mi = self.msg_index()
-        if mi >= 0 and self.wins[mi].y - 1 >= 6:
-            h = self.wins[mi].y - 1
-        var y0 = 1
+        if mi >= 0 and self.wins[mi].y - y0 >= 6:
+            h = self.wins[mi].y - y0
         if self.stack_side_panes(h):
             # a narrow terminal: the side panes are bands above and below the editors
             var xi0 = self.explorer_index()
             if xi0 >= 0:
                 y0 = self.wins[xi0].y + self.wins[xi0].h
-            var bottom = 1 + h
+            var bottom = (0 if self.vim_zen else 1) + h
             for k in range(len(self.wins)):
                 var wk = self.wins[k].kind
                 if (wk == WK_OUTLINE or wk == WK_DOCPANE or wk == WK_AGENT or wk == WK_PANEL) and self.wins[k].stacked:
@@ -126,6 +126,9 @@ __extension App:
         var xi = self.explorer_index()
         if xi >= 0 and w - self.wins[xi].w >= 20 and not self.wins[xi].stacked:
             x0 = self.wins[xi].w
+            if self.vim_zen:
+                self.wins[xi].y = 0
+                self.wins[xi].h = h
         self.lay.place(x0, y0, w - x0, h)
         var zoomed = te >= 0 and self.wins[te].zoomed
         if te >= 0 and self.wins[te].half and not zoomed:
@@ -143,12 +146,16 @@ __extension App:
                         self.wins[i].y = y0
                         self.wins[i].w = w - x0
                         self.wins[i].h = h
+                        self.wins[i].chromeless = self.vim_zen and self.wins[i].kind == WK_EDITOR
+                        self.wins[i].split_sep = False
                     continue
                 self.wins[i].hidden = id != show
                 self.wins[i].x = self.lay.gx[g]
                 self.wins[i].y = self.lay.gy[g]
                 self.wins[i].w = self.lay.gw[g]
                 self.wins[i].h = self.lay.gh[g]
+                self.wins[i].chromeless = self.vim_zen and self.wins[i].kind == WK_EDITOR
+                self.wins[i].split_sep = self.vim_zen and (self.wins[i].x + self.wins[i].w < w)
 
     def stack_side_panes(mut self, h: Int) -> Bool:
         """Tiled layout: on a terminal narrower than STACK_W, the explorer becomes a band

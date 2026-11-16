@@ -166,13 +166,19 @@ __extension App:
         self.persist_option("ui", "theme", toml_quote(self.theme_id))
         self.say("Theme: " + self.pal.name + (" (following the terminal)" if self.theme_id == "auto" else String("")))
 
-    def open_dialog(mut self, dir: String):
-        var d = Dialog(D_OPEN, "Open a File", min(64, self.scr.w - 4), min(22, self.desk_h()))
+    def open_dialog(mut self, dir: String, notebooks_only: Bool = False):
+        var title = "Open Jupyter Notebook (.ipynb)" if notebooks_only else "Open a File"
+        var d = Dialog(D_OPEN, title, min(64, self.scr.w - 4), min(22, self.desk_h()))
         d.fields.append(Field("~N~ame", ""))
         d.list_filter = True
         d.dir = dir
+        d.payload = 1 if notebooks_only else 0
         d.lines.append("Directory: " + dir)
-        var items = list_dir(dir)
+        var raw_items = list_dir(dir)
+        var items = List[String]()
+        for it in raw_items:
+            if not notebooks_only or it == "../" or it.endswith("/") or it.endswith(".ipynb"):
+                items.append(it)
         var data = List[Int]()
         for _ in range(len(items)):
             data.append(0)
@@ -206,8 +212,10 @@ __extension App:
             return
         target = abs_path(self.cwd, target)
         if is_dir(target):
-            self.open_dialog(target)
+            self.open_dialog(target, self.dlg.payload == 1)
             return
+        if self.dlg.payload == 1 and not target.endswith(".ipynb"):
+            target += ".ipynb"
         self.mode = M_NORMAL
         self.open_path(target)
 

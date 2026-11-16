@@ -12,6 +12,7 @@ from std.collections import List
 from std.python import Python, PythonObject
 from buffer import TextBuffer
 from outline import scan_outline, SK_STRUCT, SK_CELL
+from tensor_inspect import PYTHON_TENSOR_INSPECT_HELPER, extract_tensor_cards
 from util import decode, to_str, is_digit, slice_str
 
 comptime CELL_SUCCESS = 0
@@ -20,10 +21,110 @@ comptime CELL_INTERRUPTED = 2
 comptime CELL_SK_STRUCT = SK_STRUCT
 comptime CELL_SK_CELL = SK_CELL
 
+comptime PYTHON_JUPYTER_MAGIC_HELPER = (
+    "import subprocess as __tm_sp, time as __tm_time, shlex as __tm_shlex\n"
+    "def __tm_interp_bang(__s, __ns):\n"
+    "    try:\n"
+    "        return __s.format_map(__ns) if ('{' in __s and '}' in __s) else __s\n"
+    "    except Exception:\n"
+    "        return __s\n"
+    "def __tm_bang(__cmd, __ns):\n"
+    "    __c = __tm_interp_bang(__cmd, __ns)\n"
+    "    __r = __tm_sp.run(__c, shell=True, capture_output=True, text=True)\n"
+    "    if __r.stdout: __tm_sys.stdout.write(__r.stdout)\n"
+    "    if __r.stderr: __tm_sys.stdout.write(__r.stderr)\n"
+    "def __tm_line_magic(__m, __arg, __ns):\n"
+    "    if __m == 'matplotlib':\n"
+    "        return None\n"
+    "    if __m == 'pip':\n"
+    "        __r = __tm_sp.run([__tm_sys.executable, '-m', 'pip'] + __tm_shlex.split(__arg), capture_output=True, text=True)\n"
+    "        if __r.stdout: __tm_sys.stdout.write(__r.stdout)\n"
+    "        if __r.stderr: __tm_sys.stdout.write(__r.stderr)\n"
+    "        return None\n"
+    "    if __m == 'pwd':\n"
+    "        return __tm_os.getcwd()\n"
+    "    if __m == 'cd':\n"
+    "        __p = __tm_os.path.expanduser(__arg.strip()) if __arg.strip() else __tm_os.path.expanduser('~')\n"
+    "        __tm_os.chdir(__p)\n"
+    "        __tm_sys.stdout.write(__tm_os.getcwd() + '\\n')\n"
+    "        return None\n"
+    "    if __m == 'env':\n"
+    "        __a = __arg.strip()\n"
+    "        if '=' in __a:\n"
+    "            __k, __v = __a.split('=', 1)\n"
+    "            __tm_os.environ[__k.strip()] = __v.strip()\n"
+    "            return None\n"
+    "        return dict(__tm_os.environ) if not __a else __tm_os.environ.get(__a)\n"
+    "    if __m in ('who', 'whos'):\n"
+    "        __ks = sorted(k for k in __ns if not k.startswith('_'))\n"
+    "        if __m == 'who':\n"
+    "            __tm_sys.stdout.write(('\\t'.join(__ks) if __ks else 'Interactive namespace is empty.') + '\\n')\n"
+    "        else:\n"
+    "            for __k in __ks:\n"
+    "                __v = __ns[__k]\n"
+    "                __tm_sys.stdout.write(f'{__k:<20} {type(__v).__name__:<16} {repr(__v)[:48]}\\n')\n"
+    "        return None\n"
+    "    if __m == 'reset':\n"
+    "        for __k in [k for k in list(__ns.keys()) if k not in ('__name__', '__file__', '__builtins__')]:\n"
+    "            del __ns[__k]\n"
+    "        return None\n"
+    "    if __m == 'time':\n"
+    "        __t0 = __tm_time.perf_counter()\n"
+    "        try:\n"
+    "            __val = eval(compile(__arg, '<%time>', 'eval'), __ns)\n"
+    "        except SyntaxError:\n"
+    "            exec(compile(__arg, '<%time>', 'exec'), __ns)\n"
+    "            __val = None\n"
+    "        __ms = (__tm_time.perf_counter() - __t0) * 1000.0\n"
+    "        __tm_sys.stdout.write(f'Wall time: {__ms:.2f} ms\\n')\n"
+    "        return __val\n"
+    "    if __m == 'timeit':\n"
+    "        import timeit as __tm_ti\n"
+    "        __loops = 100\n"
+    "        __dt = __tm_ti.timeit(__arg, globals=__ns, number=__loops)\n"
+    "        __us = (__dt / __loops) * 1e6\n"
+    "        __tm_sys.stdout.write((f'{__us:.2f} us' if __us < 1000 else f'{__us/1000.0:.2f} ms') + f' per loop ({__loops} loops)\\n')\n"
+    "        return None\n"
+    "    return None\n"
+    "def __tm_preprocess_lines(__lns):\n"
+    "    __i0 = next((i for i, l in enumerate(__lns) if l.strip() and not l.lstrip().startswith('#')), -1)\n"
+    "    __cm = None\n"
+    "    __carg = ''\n"
+    "    __out = list(__lns)\n"
+    "    if __i0 >= 0 and __out[__i0].lstrip().startswith('%%'):\n"
+    "        __hd = __out[__i0].lstrip()[2:].rstrip('\\r\\n')\n"
+    "        __ps = __hd.split(None, 1)\n"
+    "        __cm = __ps[0] if __ps else ''\n"
+    "        __carg = __ps[1] if len(__ps) > 1 else ''\n"
+    "        __out[__i0] = '\\n'\n"
+    "        if __cm in ('bash', 'sh', 'writefile'):\n"
+    "            return __cm, __carg, ''.join(__out[__i0 + 1:])\n"
+    "    for __idx, __ln in enumerate(__out):\n"
+    "        __st = __ln.lstrip()\n"
+    "        __ind = __ln[:len(__ln) - len(__st)]\n"
+    "        __body = __st.rstrip('\\r\\n')\n"
+    "        if __body.startswith('!') and not __body.startswith('!='):\n"
+    "            __out[__idx] = f'{__ind}__tm_bang({repr(__body[1:].lstrip())}, globals())\\n'\n"
+    "        elif __body.startswith('%') and not __body.startswith('%%'):\n"
+    "            __rest = __body[1:]\n"
+    "            if __rest and (__rest[0].isalpha() or __rest[0] == '_'):\n"
+    "                __mp = __rest.split(None, 1)\n"
+    "                __mn = __mp[0]\n"
+    "                __ma = __mp[1] if len(__mp) > 1 else ''\n"
+    "                if __mn in ('matplotlib', 'pip', 'pwd', 'cd', 'env', 'who', 'whos', 'reset', 'time', 'timeit'):\n"
+    "                    __out[__idx] = f'{__ind}__tm_line_magic({repr(__mn)}, {repr(__ma)}, globals())\\n'\n"
+    "    return __cm, __carg, ''.join(__out)\n"
+    "import builtins as __tm_bi\n"
+    "__tm_bi.__tm_bang = __tm_bang\n"
+    "__tm_bi.__tm_line_magic = __tm_line_magic\n"
+)
+
 comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "import os as __tm_os, sys as __tm_sys, traceback as __tm_tb\n"
     "__tm_os.environ.setdefault('MPLBACKEND', 'Agg')\n"
-    "__tm_ns = {'__name__': '__main__'}\n"
+    + PYTHON_TENSOR_INSPECT_HELPER
+    + PYTHON_JUPYTER_MAGIC_HELPER
+    + "__tm_ns = {'__name__': '__main__'}\n"
     "__tm_failed = -1\n"
     "while True:\n"
     "    __tm_hdr = __tm_sys.stdin.readline()\n"
@@ -40,7 +141,8 @@ comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "    __tm_lns = [__tm_sys.stdin.readline() for _ in range(__tm_n)]\n"
     "    if __tm_seq == __tm_failed:\n"
     "        continue\n"
-    "    __tm_src = ('\\n' * __tm_off) + ''.join(__tm_lns)\n"
+    "    __tm_cm, __tm_carg, __tm_body = __tm_preprocess_lines(__tm_lns)\n"
+    "    __tm_src = ('\\n' * __tm_off) + __tm_body\n"
     "    __tm_ns['__file__'] = __tm_fp\n"
     "    if __tm_is_pre:\n"
     "        __tm_saved = __tm_sys.stdout\n"
@@ -48,7 +150,8 @@ comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "        __tm_err = ''\n"
     "        try:\n"
     "            __tm_sys.stdout = __tm_devnull\n"
-    "            exec(compile(__tm_src, __tm_fp, 'exec'), __tm_ns)\n"
+    "            if __tm_cm not in ('bash', 'sh', 'writefile'):\n"
+    "                exec(compile(__tm_src, __tm_fp, 'exec'), __tm_ns)\n"
     "        except BaseException:\n"
     "            __tm_err = __tm_tb.format_exc()\n"
     "        finally:\n"
@@ -61,7 +164,61 @@ comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "        continue\n"
     "    __tm_st = 0\n"
     "    try:\n"
-    "        exec(compile(__tm_src, __tm_fp, 'exec'), __tm_ns)\n"
+    "        if __tm_cm in ('bash', 'sh'):\n"
+    "            __tm_bang(__tm_body, __tm_ns)\n"
+    "        elif __tm_cm == 'writefile':\n"
+    "            __wf = __tm_os.path.expanduser(__tm_carg.strip())\n"
+    "            with open(__wf, 'w', encoding='utf-8') as __wfh:\n"
+    "                __wfh.write(__tm_body)\n"
+    "            __tm_sys.stdout.write(f'Writing {__wf}\\n')\n"
+    "        else:\n"
+    "            __tm_t0_cm = __tm_time.perf_counter() if __tm_cm == 'time' else 0.0\n"
+    "            __tm_cap_io = None\n"
+    "            __tm_orig_out = __tm_sys.stdout\n"
+    "            if __tm_cm == 'capture':\n"
+    "                import io as __tm_io\n"
+    "                __tm_cap_io = __tm_io.StringIO()\n"
+    "                __tm_sys.stdout = __tm_cap_io\n"
+    "            try:\n"
+    "                __tm_tree = __tm_ast.parse(__tm_src, __tm_fp, 'exec')\n"
+    "                __tm_assigned = []\n"
+    "                for __tm_nd in __tm_tree.body:\n"
+    "                    if isinstance(__tm_nd, __tm_ast.Assign):\n"
+    "                        for __tm_t in __tm_nd.targets:\n"
+    "                            if isinstance(__tm_t, __tm_ast.Name): __tm_assigned.append(__tm_t.id)\n"
+    "                    elif isinstance(__tm_nd, __tm_ast.AnnAssign) and isinstance(__tm_nd.target, __tm_ast.Name):\n"
+    "                        __tm_assigned.append(__tm_nd.target.id)\n"
+    "                __tm_last_val = None\n"
+    "                if __tm_tree.body and isinstance(__tm_tree.body[-1], __tm_ast.Expr):\n"
+    "                    __tm_last_expr = __tm_ast.Expression(__tm_tree.body.pop().value)\n"
+    "                    __tm_ast.fix_missing_locations(__tm_tree)\n"
+    "                    __tm_ast.fix_missing_locations(__tm_last_expr)\n"
+    "                    if __tm_tree.body:\n"
+    "                        exec(compile(__tm_tree, __tm_fp, 'exec'), __tm_ns)\n"
+    "                    __tm_last_val = eval(compile(__tm_last_expr, __tm_fp, 'eval'), __tm_ns)\n"
+    "                else:\n"
+    "                    exec(compile(__tm_tree, __tm_fp, 'exec'), __tm_ns)\n"
+    "            finally:\n"
+    "                if __tm_cap_io is not None:\n"
+    "                    __tm_sys.stdout = __tm_orig_out\n"
+    "            if __tm_cm == 'time':\n"
+    "                __tm_sys.stdout.write(f'Wall time: {(__tm_time.perf_counter() - __tm_t0_cm) * 1000.0:.2f} ms\\n')\n"
+    "            if __tm_cm != 'capture':\n"
+    "                __tm_seen_ids = set()\n"
+    "                for __tm_vn in __tm_assigned:\n"
+    "                    if __tm_vn in __tm_ns and not __tm_vn.startswith('_'):\n"
+    "                        __tm_vo = __tm_ns[__tm_vn]\n"
+    "                        __tm_card = __tm_inspect_obj(__tm_vo)\n"
+    "                        if __tm_card:\n"
+    "                            __tm_seen_ids.add(id(__tm_vo))\n"
+    "                            __tm_sys.stdout.write(f'\\n__TM_CARD__ {__tm_vn}: {__tm_card}\\n')\n"
+    "                if __tm_last_val is not None:\n"
+    "                    __tm_ns['_'] = __tm_last_val\n"
+    "                    __tm_lcard = __tm_inspect_obj(__tm_last_val)\n"
+    "                    if __tm_lcard and id(__tm_last_val) not in __tm_seen_ids:\n"
+    "                        __tm_sys.stdout.write(f'\\n__TM_CARD__ {__tm_lcard}\\n')\n"
+    "                    elif not __tm_lcard:\n"
+    "                        __tm_sys.stdout.write(repr(__tm_last_val) + '\\n')\n"
     "        if 'matplotlib.pyplot' in __tm_sys.modules:\n"
     "            __tm_plt = __tm_sys.modules['matplotlib.pyplot']\n"
     "            for __tm_fn in list(__tm_plt.get_fignums()):\n"
@@ -836,9 +993,14 @@ def parse_cell_kernel_output(
             st = CELL_ERROR
         var body = String(norm[byte=0:pos])
         body = body.replace("\n__TM_PRE_ERR_" + String(seq) + "__", "")
+        var card_res = extract_tensor_cards(body)
+        body = card_res[0]
         while body.endswith("\n"):
             var trimmed_body = String(body[byte=0:body.byte_length() - 1])
             body = trimmed_body
+        while body.startswith("\n"):
+            var trimmed_head = String(body[byte=1:])
+            body = trimmed_head
         var preview = String("")
         if st == CELL_ERROR:
             var blines = body.split("\n")
@@ -849,6 +1011,8 @@ def parse_cell_kernel_output(
                     preview = cand
                     break
                 k -= 1
+        elif len(card_res[1]) > 0 and String(body.strip()) == card_res[1][0]:
+            preview = card_res[1][0]
         else:
             preview = String(body.strip())
         return (True, st, body, preview)
@@ -917,12 +1081,16 @@ def parse_cell_kernel_output(
     while len(out_lines) > 0 and String(out_lines[len(out_lines) - 1].strip()).byte_length() == 0:
         _ = out_lines.pop()
 
-    var display = "\n".join(out_lines)
+    var raw_display = "\n".join(out_lines)
+    var mj_cards = extract_tensor_cards(raw_display)
+    var display = mj_cards[0]
     var preview = String("")
     if st == CELL_ERROR:
         preview = err_summary if err_summary.byte_length() > 0 else display
     elif len(user_lines) > 0:
         preview = "\n".join(user_lines)
+    elif len(mj_cards[1]) > 0:
+        preview = mj_cards[1][0]
     elif len(dump_lines) > 0:
         preview = dump_lines[0]
     return (True, st, display, preview)

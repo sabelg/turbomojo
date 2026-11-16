@@ -22,6 +22,7 @@ The keys used most, with the Modern keymap (the default). Help > Keyboard refere
 | F12, Shift-F12 | Go to definition, find references |
 | Alt-I | Describe the symbol at the cursor |
 | F9 / Ctrl-F9 | Build / run |
+| Ctrl-Enter / Ctrl-Shift-Enter | Run # %% notebook cell / run cell and advance |
 | Shift-F5 | Debug; continue |
 | Ctrl-F8 | Toggle a breakpoint |
 | F7 / F8 / Shift-F8 | (debugging) step in / over / out |

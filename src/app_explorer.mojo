@@ -92,11 +92,12 @@ __extension App:
             self.layout_sync()
             return
         var w = explorer_width(self.scr.w)
+        var y0 = 0 if self.vim_zen else 1
         var h = self.desk_h()
         var mi = self.msg_index()
         if mi >= 0:
-            h = max(6, self.wins[mi].y - 1)
-        var win = Window(WK_EXPLORER, "Files", "", 0, 1, w, h, self.free_number())
+            h = max(6, self.wins[mi].y - y0)
+        var win = Window(WK_EXPLORER, "Files", "", 0, y0, w, h, self.free_number())
         for i in range(len(self.wins)):
             if self.wins[i].kind == WK_EDITOR and self.wins[i].x < w and self.wins[i].x + self.wins[i].w - w >= 20:
                 self.wins[i].w -= w - self.wins[i].x
@@ -181,7 +182,7 @@ __extension App:
             self.wins[xi].follow = True
         self.ex_checked_ns = now_ns()
 
-    def explorer_key(mut self, k: Int) raises -> Bool:
+    def explorer_key(mut self, var k: Int) raises -> Bool:
         """Keys in the explorer window beyond moving the mark. True if the key was used."""
         var t = self.top()
         var row = self.wins[t].cr
@@ -191,6 +192,19 @@ __extension App:
             if te >= 0:
                 self.focus(te)
             return True
+        if k == 45 or k == 113:                 # "-" / "q": close explorer (oil / vinegar feel)
+            self.explorer_toggle()
+            return True
+        if k == 106 and self.keymap == KEYMAP_VIM:  # j
+            self.wins[t].move_vert(1, False)
+            return True
+        if k == 107 and self.keymap == KEYMAP_VIM:  # k
+            self.wins[t].move_vert(-1, False)
+            return True
+        if k == 108 and self.keymap == KEYMAP_VIM:  # l -> right / open
+            k = KEY_RIGHT
+        if k == 104 and self.keymap == KEYMAP_VIM:  # h -> left / collapse
+            k = KEY_LEFT
         if k == KEY_ENTER or k == 32:
             if not has:
                 return True

@@ -16,6 +16,7 @@ bytes to write (`writeMemory`, base64).
 from std.collections import List
 from std.memory import bitcast
 from breakpoints import DataBreakpoint
+from tensor_inspect import summarize_mojo_value
 from util import basename
 
 comptime VK_HEAD = 0         # a title line
@@ -33,6 +34,9 @@ def watch_text(expr: String, ok: Bool, value: String, type: String, error: Strin
             # what Mojo 1.2's debugger answers for anything but a name or a field
             why = "cannot be evaluated (only names and fields: a, a.b)"
         return expr + ": " + why
+    var card = summarize_mojo_value("", type, value)
+    if card.byte_length() > 0:
+        return expr + " = " + card
     var t = nice_type(type)
     var v = nice_value(value)
     if v == t:
@@ -370,6 +374,9 @@ struct VarNode(Copyable, Movable):
             s += "▾ " if self.open else "▸ "
         else:
             s += "  "
+        var card = summarize_mojo_value("", self.type, self.value)
+        if card.byte_length() > 0:
+            return s + self.name + " = " + card
         var t = nice_type(self.type)
         var v = nice_value(self.value)
         if self.has_children() and (v == t or v.byte_length() == 0):

@@ -57,6 +57,7 @@ from app_docs import *
 from dap import *
 from breakpoints import *
 from dbgview import *
+from tensor_inspect import summarize_mojo_value
 from json import json_quote
 from window import WK_DEBUG, WK_CPU
 from cpuview import *
@@ -353,8 +354,9 @@ __extension App:
                     scan_r -= 1
                 if hit_row < 0:
                     continue
-                var val_str = nice_value(nd.value)
-                if cp_len(val_str) > 36:
+                var card = summarize_mojo_value("", nd.type, nd.value)
+                var val_str = card if card.byte_length() > 0 else nice_value(nd.value)
+                if card.byte_length() == 0 and cp_len(val_str) > 36:
                     val_str = slice_str(decode(val_str), 0, 35) + "…"
                 var entry = nd.name + " = " + val_str
                 var existing = -1

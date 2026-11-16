@@ -142,6 +142,11 @@ struct TextBuffer(Copyable, Movable):
     var fold_version: Int
     var cell_badge_rows: List[Int]
     var cell_badges: List[String]
+    var cell_out_rows: List[Int]
+    var cell_out_texts: List[String]
+    var cell_out_errs: List[Bool]
+    var cell_out_plots: List[String]
+    var cell_out_counts: List[Int]
     var marks: List[Mark]     # problems shown in this buffer (from the language server)
     var bps: List[Int]        # rows with a breakpoint, ascending; they move with the text
     var bp_looks: List[Int]   # how each is shown (Breakpoint.look)
@@ -209,6 +214,11 @@ struct TextBuffer(Copyable, Movable):
         self.fold_version = -1
         self.cell_badge_rows = List[Int]()
         self.cell_badges = List[String]()
+        self.cell_out_rows = List[Int]()
+        self.cell_out_texts = List[String]()
+        self.cell_out_errs = List[Bool]()
+        self.cell_out_plots = List[String]()
+        self.cell_out_counts = List[Int]()
         self.version = 0
         self.crlf = False
         self.use_tabs = False
@@ -419,6 +429,11 @@ struct TextBuffer(Copyable, Movable):
         self.fold_ends.clear()
         self.cell_badge_rows.clear()
         self.cell_badges.clear()
+        self.cell_out_rows.clear()
+        self.cell_out_texts.clear()
+        self.cell_out_errs.clear()
+        self.cell_out_plots.clear()
+        self.cell_out_counts.clear()
         self.lstate.clear()
         self.lstate.append(0)
         self.ldirty_from = -1
@@ -623,6 +638,53 @@ struct TextBuffer(Copyable, Movable):
     def clear_cell_badges(mut self):
         self.cell_badge_rows.clear()
         self.cell_badges.clear()
+        self.clear_cell_outputs()
+
+    def set_cell_output(
+        mut self,
+        row: Int,
+        text: String,
+        is_err: Bool,
+        plots_joined: String = "",
+        exec_count: Int = 0,
+    ):
+        for i in range(len(self.cell_out_rows)):
+            if self.cell_out_rows[i] == row:
+                self.cell_out_texts[i] = text
+                self.cell_out_errs[i] = is_err
+                self.cell_out_plots[i] = plots_joined
+                self.cell_out_counts[i] = exec_count
+                return
+        self.cell_out_rows.append(row)
+        self.cell_out_texts.append(text)
+        self.cell_out_errs.append(is_err)
+        self.cell_out_plots.append(plots_joined)
+        self.cell_out_counts.append(exec_count)
+
+    def clear_cell_outputs(mut self):
+        self.cell_out_rows.clear()
+        self.cell_out_texts.clear()
+        self.cell_out_errs.clear()
+        self.cell_out_plots.clear()
+        self.cell_out_counts.clear()
+
+    def cell_end_for_header(self, hdr_row: Int) -> Int:
+        """Return the anchor buffer row where virtual output for `hdr_row` is rendered
+        (the last non-blank line of that cell, or -1 if invalid or folded)."""
+        var count = self.core[].rope.line_count()
+        if hdr_row < 0 or hdr_row >= count:
+            return -1
+        if hdr_row > 0 and not self.is_cell_header(hdr_row):
+            return -1
+        if self.fold_index(hdr_row) >= 0:
+            return -1
+        var jc = hdr_row + 1
+        while jc < count and not self.is_cell_header(jc):
+            jc += 1
+        var end_r = jc - 1
+        while end_r > hdr_row and self.core[].rope.line_len(end_r) == 0:
+            end_r -= 1
+        return end_r
 
     def all_text(self) -> List[Int]:
         """The whole text as codepoints, lines separated by "\n"."""
@@ -955,6 +1017,10 @@ struct TextBuffer(Copyable, Movable):
             for i in range(len(self.cell_badge_rows)):
                 if self.cell_badge_rows[i] > rr or (self.cell_badge_rows[i] == rr and cc == 0):
                     self.cell_badge_rows[i] += breaks
+        if breaks > 0 and len(self.cell_out_rows) > 0:
+            for i in range(len(self.cell_out_rows)):
+                if self.cell_out_rows[i] > rr or (self.cell_out_rows[i] == rr and cc == 0):
+                    self.cell_out_rows[i] += breaks
         self.modified = True
         self.version += 1
         return self.end_of(rr, cc, text)
@@ -1025,6 +1091,32 @@ struct TextBuffer(Copyable, Movable):
                         kvals.append(self.cell_badges[i])
                 self.cell_badge_rows = krows^
                 self.cell_badges = kvals^
+            if breaks > 0 and len(self.cell_out_rows) > 0:
+                var orows = List[Int]()
+                var otexts = List[String]()
+                var oerrs = List[Bool]()
+                var oplots = List[String]()
+                var ocounts = List[Int]()
+                for i in range(len(self.cell_out_rows)):
+                    var obr = self.cell_out_rows[i]
+                    var keep_r = -1
+                    if obr < first or (obr == first and (obr == 0 or self.is_cell_header(first))):
+                        keep_r = obr
+                    elif obr == first + breaks and self.is_cell_header(first):
+                        keep_r = first
+                    elif obr > first + breaks:
+                        keep_r = obr - breaks
+                    if keep_r >= 0:
+                        orows.append(keep_r)
+                        otexts.append(self.cell_out_texts[i])
+                        oerrs.append(self.cell_out_errs[i])
+                        oplots.append(self.cell_out_plots[i])
+                        ocounts.append(self.cell_out_counts[i])
+                self.cell_out_rows = orows^
+                self.cell_out_texts = otexts^
+                self.cell_out_errs = oerrs^
+                self.cell_out_plots = oplots^
+                self.cell_out_counts = ocounts^
         self.modified = True
         self.version += 1
         return out^

@@ -15,6 +15,7 @@ from window import WK_EDITOR, Range
 from layout import L_GROUP, L_ROW, L_COL, RATIO_MIN, RATIO_MAX
 from vim import *
 from vim_motion import *
+from cells import is_cell_marker_str
 from app_input import *
 from app_vimcmd import *
 
@@ -102,6 +103,47 @@ def insert_key_kept(k: Int) -> Bool:
 __extension App:
     def vim_on(self) -> Bool:
         return self.keymap == KEYMAP_VIM
+
+    def enter_vim_zen(mut self, on: Bool) raises:
+        """Enter or leave chromeless Whole-Vim mode (`tmide vim` / `CM_VIM_ZEN`)."""
+        if on:
+            self.vim_zen = True
+            self.tiled = True
+            self.explorer_at_start = False
+            var xi = self.explorer_index()
+            if xi >= 0:
+                self.remove_window(xi)
+            if self.theme_id == "classic" and (self.config_path.byte_length() == 0 or not path_exists(self.config_path)):
+                if self.themes.find("ansi") >= 0:
+                    self.theme_id = "ansi"
+                    self.theme_apply()
+            if self.keymap != KEYMAP_VIM:
+                self.keymap = KEYMAP_VIM
+                self.vim_reset()
+                self.rebuild_keys(False)
+            self.line_numbers = True
+            self.rel_numbers = True
+            for i in range(len(self.wins)):
+                if self.wins[i].kind == WK_EDITOR:
+                    self.wins[i].rel_nums = True
+                    self.wins[i].gut = self.wins[i].gutter_for(True)
+            self.fit_windows()
+            self.scr.force = True
+        else:
+            self.vim_zen = False
+            for i in range(len(self.wins)):
+                self.wins[i].chromeless = False
+                self.wins[i].split_sep = False
+            self.fit_windows()
+            self.scr.force = True
+
+    def toggle_vim_zen(mut self) raises:
+        var next_on = not self.vim_zen
+        self.enter_vim_zen(next_on)
+        if next_on:
+            self.say("Whole-Vim mode on (<Space> leader, :Ex explorer, :zen or F10 for IDE bars)")
+        else:
+            self.say("Whole-Vim mode off — full TurboMojo IDE chrome restored")
 
     def vim_reset(mut self):
         """A fresh start in Normal mode (the keymap was chosen, or left)."""
@@ -631,8 +673,13 @@ __extension App:
             else:
                 self.vim.cur.clear()
                 return False                # PgUp, PgDn, the F-keys...: TurboMojo's
-        elif ch == 32:
-            ch = 108                        # Space: l
+        elif ch == 32 and not (
+            self.vim_zen
+            and self.vim.mode == VM_NORMAL
+            and self.vim.op == 0
+            and (self.vim.pend == 0 or self.vim.pend == 32)
+        ):
+            ch = 108                        # Space: l (unless <Space> leader in vim_zen)
         # a count
         if (ch >= 49 and ch <= 57) or (ch == 48 and self.vim.count > 0):
             self.vim.count = min(self.vim.count * 10 + (ch - 48), 99999)
@@ -922,7 +969,64 @@ __extension App:
     # ----------------------------------------------------------------- Normal
     def vim_normal_key(mut self, t: Int, ch: Int) raises:
         var p = self.vim.pend
-        if p == 91 or p == 93:                      # [d ]d [c ]c [[ ]]
+        if p == 32:                                 # <Space> leader in Whole-Vim mode
+            self.vim.pend = 0
+            self.vim.count = 0
+            if ch == 102 or ch == 32:               # <Space>f / <Space><Space>: Quick open
+                self.exec(CM_QUICK)
+            elif ch == 103 or ch == 47:             # <Space>g / <Space>/: Live grep
+                self.exec(CM_FINDFILES)
+            elif ch == 101:                         # <Space>e: File explorer
+                self.exec(CM_EXPLORER)
+            elif ch == 98:                          # <Space>b: Build
+                self.exec(CM_BUILD)
+            elif ch == 120:                         # <Space>x: Run file
+                self.exec(CM_RUN)
+            elif ch == 99:                          # <Space>c: Run notebook cell
+                self.exec(CM_RUN_CELL)
+            elif ch == 67:                          # <Space>C: Run all cells
+                self.exec(CM_RUN_ALL_CELLS)
+            elif ch == 110:                         # <Space>n: New Jupyter notebook
+                self.exec(CM_NEW_NOTEBOOK)
+            elif ch == 97:                          # <Space>a: Code actions
+                self.exec(CM_ACTIONS)
+            elif ch == 114:                         # <Space>r: Rename symbol
+                self.exec(CM_RENAME)
+            elif ch == 115:                         # <Space>s: Document symbols
+                self.exec(CM_SYMBOL)
+            elif ch == 100:                         # <Space>d: Diagnostics / Problems
+                self.exec(CM_PROBLEMS)
+            elif ch == 116:                         # <Space>t: Terminal
+                self.exec(CM_TERMINAL)
+            elif ch == 107:                         # <Space>k: Docs at cursor
+                self.exec(CM_DOCS)
+            elif ch == 112:                         # <Space>p: Command palette
+                self.exec(CM_PALETTE)
+            elif ch == 122:                         # <Space>z: Toggle Whole-Vim chrome
+                self.exec(CM_VIM_ZEN)
+            else:
+                self.vim_cancel()
+                self.say("No <Space> mapping for: " + chr(ch))
+            return
+        if p == 90:                                 # ZZ (save & close/quit) / ZQ (force quit)
+            self.vim.pend = 0
+            self.vim.count = 0
+            if ch == 90:
+                if self.wins[t].buf.modified:
+                    if not self.save_window(t, NEXT_CLOSE if (self.vim_zen and len(self.wins) == 1) else NEXT_NONE):
+                        return
+                self.close_window(t, NEXT_CLOSE)
+                if self.vim_zen and len(self.wins) == 0:
+                    self.running = False
+            elif ch == 81:
+                self.remove_window(t)
+                if self.vim_zen and len(self.wins) == 0:
+                    self.running = False
+            else:
+                self.vim_cancel()
+                self.say("Not a vim command: Z" + chr(ch))
+            return
+        if p == 91 or p == 93:                      # [d ]d [c ]c [n ]n [[ ]]
             self.vim.pend = 0
             var fwd = p == 93
             var n_sq = self.vim.take_count()
@@ -932,6 +1036,22 @@ __extension App:
             elif ch == 99:
                 for _ in range(n_sq):
                     self.exec(CM_GIT_NEXT if fwd else CM_GIT_PREV)
+            elif ch == 110:                         # [n / ]n: jump to prev / next # %% cell
+                self.jump_mark()
+                var cur_r = self.wins[t].cr
+                var cnt = self.wins[t].buf.count()
+                for _ in range(n_sq):
+                    var step = 1 if fwd else -1
+                    var r = cur_r + step
+                    while r >= 0 and r < cnt:
+                        if is_cell_marker_str(to_str(self.wins[t].buf.line(r))):
+                            cur_r = r
+                            break
+                        r += step
+                self.wins[t].cr = cur_r
+                self.wins[t].cc = 0
+                self.wins[t].sync_want()
+                self.vim_settle(t)
             elif (p == 91 and ch == 91) or (p == 93 and ch == 93):
                 self.jump_mark()
                 var cur_r = self.wins[t].cr
@@ -1015,11 +1135,20 @@ __extension App:
             self.vim_cancel()
             self.say("Not a vim command: " + chr(ch))
             return
+        if self.vim_zen and self.vim.op == 0 and self.vim.count == 0:
+            if ch == 32:                            # <Space>: leader prefix in Whole-Vim mode
+                self.vim.pend = 32
+                return
+            if ch == 45:                            # -: toggle Explorer (vinegar / oil feel)
+                self.exec(CM_EXPLORER)
+                return
         if self.vim_motion_key(t, ch):
             return
         if ch == 58:                                # :
             self.vim.count = 0
             self.vim_cmdline_start(t, ch)
+        elif ch == 90:                              # Z: ZZ / ZQ prefix
+            self.vim.pend = 90
         elif ch == 34:                              # ": a register's name follows
             self.vim.pend = 34
         elif ch == 109:                             # m<a-z>: set mark

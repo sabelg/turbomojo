@@ -14,6 +14,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter, HL_PYTHON, lang_for_path
 from cells import (
+    CodeCell,
     PYTHON_CELL_DAEMON_SCRIPT,
     parse_cells,
     cell_at_row,
@@ -425,6 +426,8 @@ __extension App:
             self.finish_file_search()
             return
         if self.cell_k_active:
+            self.cell_queue_indices.clear()
+            self.cell_queue_target = ""
             if self.cell_k_is_py and self.cell_py_proc.running and self.cell_py_proc.pid > 0 and self.cell_k_interrupt_ns == 0:
                 _ = external_call["kill", Int32](Int32(self.cell_py_proc.pid), Int32(2))
                 self.cell_k_interrupt_ns = Int(perf_counter_ns())
@@ -444,6 +447,8 @@ __extension App:
         if self.job.pid > 0:
             _ = external_call["kill", Int32](Int32(self.job.pid), Int32(15))
         self.job.cancelled = True
+        self.cell_queue_indices.clear()
+        self.cell_queue_target = ""
         self.say("Cancelling...")
 
     def stop_job_now(mut self):
@@ -1015,12 +1020,47 @@ __extension App:
         if self.job.active and self.job.kind == JOB_CELL:
             self.stop_job_now()
         self.cell_kernels_stop()
+        self.cell_queue_indices.clear()
+        self.cell_queue_target = ""
+        self.cell_exec_counter = 0
         self.cell_mojo_env = ""
         self.cell_py_env = ""
         for k in range(len(self.wins)):
             if self.wins[k].kind == WK_EDITOR:
                 self.wins[k].clear_cell_badges()
+                self.wins[k].clear_cell_outputs()
         self.say("Cell kernel restarted")
+
+    def cell_apply_output(
+        mut self,
+        target_name: String,
+        cell_idx: Int,
+        fallback_hdr: Int,
+        text: String,
+        is_err: Bool,
+        plots: List[String],
+    ):
+        """Attach virtual cell output lines and PNG plot references to the executed `# %%` cell."""
+        var ei = self.find_editor_or_title(target_name)
+        if ei < 0:
+            return
+        self.wins[ei].sync_cell_badges()
+        var hdr_row = -1
+        for bi in range(len(self.wins[ei].buf.cell_badge_rows)):
+            if bi < len(self.wins[ei].buf.cell_badges) and self.wins[ei].buf.cell_badges[bi] == "[⟳ running…]":
+                hdr_row = self.wins[ei].buf.cell_badge_rows[bi]
+                break
+        if hdr_row < 0:
+            var cells = parse_cells(self.wins[ei].buf)
+            if cell_idx >= 0 and cell_idx < len(cells):
+                hdr_row = cells[cell_idx].header_row if cells[cell_idx].header_row >= 0 else 0
+            elif fallback_hdr >= 0 and fallback_hdr < self.wins[ei].buf.count():
+                hdr_row = fallback_hdr
+        if hdr_row >= 0 and hdr_row < self.wins[ei].buf.count():
+            self.cell_exec_counter += 1
+            var plot_str = "\n".join(plots)
+            self.wins[ei].set_cell_output(hdr_row, text, is_err, plot_str, self.cell_exec_counter)
+            self.sync_shared_buffers(ei)
 
     def cell_apply_badge(mut self, target_name: String, cell_idx: Int, fallback_hdr: Int, badge: String):
         """Attach `badge` to the exact `# %%` cell (or row 0 for single-cell buffers),
@@ -1069,9 +1109,15 @@ __extension App:
         self.cell_k_active = False
         self.cell_k_interrupt_ns = 0
         self.cell_k_buf.clear()
+        self.cell_queue_indices.clear()
+        self.cell_queue_target = ""
         var footer = "Cell [" + title + "] " + reason + " after " + dur
         self.panel_write(PG_MESSAGE)
         _ = self.fill_messages("Cell [" + title + "] in " + basename(tpath), raw_copy, footer)
+        var raw_txt = String(bytes_to_str(raw_copy).strip())
+        if raw_txt.byte_length() == 0:
+            raw_txt = reason
+        self.cell_apply_output(tpath, cidx, hrow, raw_txt, True, List[String]())
         var badge = format_cell_divider_badge(CELL_INTERRUPTED, ms, reason)
         self.cell_apply_badge(tpath, cidx, hrow, badge)
         self.say(footer)
@@ -1165,9 +1211,305 @@ __extension App:
         var preview = String(preview_clean.strip())
         if preview.byte_length() == 0:
             preview = "ok" if ok else "error"
+        self.cell_apply_output(tpath, cidx, hrow, String(disp_out.rstrip("\r\n")), not ok, plot_res[1].copy())
         var badge = format_cell_divider_badge(CELL_SUCCESS if ok else CELL_ERROR, ms, preview, n_plots)
         self.cell_apply_badge(tpath, cidx, hrow, badge)
         self.say(footer)
+        if ok:
+            self.cell_pump_queue()
+        else:
+            self.cell_queue_indices.clear()
+            self.cell_queue_target = ""
+
+    def toggle_inline_cell_outputs(mut self):
+        """Toggle virtual multi-line output rendering beneath `# %%` notebook cells."""
+        var next_state = True
+        var ed = self.active_editor()
+        if ed >= 0:
+            next_state = not self.wins[ed].inline_cell_outputs
+        for k in range(len(self.wins)):
+            if self.wins[k].kind == WK_EDITOR:
+                self.wins[k].inline_cell_outputs = next_state
+        self.say("Inline cell outputs " + ("on" if next_state else "off"))
+
+    def clear_cell_outputs_cmd(mut self):
+        """Clear virtual inline outputs and divider badges on the active notebook buffer."""
+        var i = self.top_editor()
+        if i < 0:
+            self.say("No open notebook buffer")
+            return
+        self.wins[i].clear_cell_outputs()
+        self.wins[i].clear_cell_badges()
+        self.sync_shared_buffers(i)
+        self.say("Cleared cell outputs")
+
+    def cell_append_bottom(mut self, i: Int):
+        """Append a fresh `# %%` code cell at the bottom of editor `i` and place the cursor inside it."""
+        if i < 0 or i >= len(self.wins) or self.wins[i].read_only:
+            return
+        var last_r = max(0, self.wins[i].buf.count() - 1)
+        var last_txt = to_str(self.wins[i].buf.line(last_r))
+        var g = self.wins[i].new_group()
+        var prefix = "\n\n" if String(last_txt.strip()).byte_length() > 0 else "\n"
+        var ins = prefix + "# %%\n"
+        _ = self.wins[i].buf.insert(last_r, self.wins[i].buf.llen(last_r), decode(ins), self.wins[i].cr, self.wins[i].cc, g)
+        self.wins[i].break_group()
+        var new_r = max(0, self.wins[i].buf.count() - 1)
+        self.wins[i].goto(new_r, 0)
+        self.wins[i].nb_cmd_mode = False
+        self.sync_shared_buffers(i)
+
+    def cell_insert_above(mut self):
+        """Insert a new `# %%` cell above the cell at the cursor (Jupyter `a`)."""
+        var i = self.top_editor()
+        if i < 0 or self.wins[i].read_only:
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        var ci = max(0, cell_at_row(cells, self.wins[i].cr))
+        var r0 = cells[ci].header_row if (len(cells) > 0 and cells[ci].header_row >= 0) else 0
+        var g = self.wins[i].new_group()
+        _ = self.wins[i].buf.insert(r0, 0, decode("# %%\n\n"), self.wins[i].cr, self.wins[i].cc, g)
+        self.wins[i].break_group()
+        self.wins[i].goto(r0 + 1, 0)
+        self.sync_shared_buffers(i)
+        self.say("Inserted cell above")
+
+    def cell_insert_below(mut self):
+        """Insert a new `# %%` cell below the cell at the cursor (Jupyter `b`)."""
+        var i = self.top_editor()
+        if i < 0 or self.wins[i].read_only:
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            self.cell_append_bottom(i)
+            return
+        var ci = max(0, cell_at_row(cells, self.wins[i].cr))
+        var er = min(cells[ci].end_row, max(0, self.wins[i].buf.count() - 1))
+        var end_c = self.wins[i].buf.llen(er)
+        var g = self.wins[i].new_group()
+        _ = self.wins[i].buf.insert(er, end_c, decode("\n# %%\n"), self.wins[i].cr, self.wins[i].cc, g)
+        self.wins[i].break_group()
+        self.wins[i].goto(min(er + 2, self.wins[i].buf.count() - 1), 0)
+        self.sync_shared_buffers(i)
+        self.say("Inserted cell below")
+
+    def _cell_slice_text(self, i: Int, c: CodeCell) -> String:
+        var r0 = c.header_row if c.header_row >= 0 else c.start_row
+        var r1 = min(c.end_row, max(0, self.wins[i].buf.count() - 1))
+        var lines = List[String]()
+        if c.header_row < 0:
+            lines.append("# %%")
+        for r in range(r0, r1 + 1):
+            lines.append(to_str(self.wins[i].buf.line(r)))
+        return "\n".join(lines)
+
+    def cell_copy_current(mut self):
+        """Copy the current `# %%` cell into `nb_clip` (Jupyter `c`)."""
+        var i = self.top_editor()
+        if i < 0:
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            return
+        var ci = max(0, cell_at_row(cells, self.wins[i].cr))
+        self.wins[i].nb_clip = self._cell_slice_text(i, cells[ci])
+        self.say("Copied cell [" + cells[ci].title + "]")
+
+    def cell_paste_below(mut self):
+        """Paste `nb_clip` as a cell below the cursor (Jupyter `v`)."""
+        var i = self.top_editor()
+        if i < 0 or self.wins[i].read_only or self.wins[i].nb_clip.byte_length() == 0:
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        var er = max(0, self.wins[i].buf.count() - 1)
+        if len(cells) > 0:
+            var ci = max(0, cell_at_row(cells, self.wins[i].cr))
+            er = min(cells[ci].end_row, er)
+        var g = self.wins[i].new_group()
+        _ = self.wins[i].buf.insert(er, self.wins[i].buf.llen(er), decode("\n" + self.wins[i].nb_clip), self.wins[i].cr, self.wins[i].cc, g)
+        self.wins[i].break_group()
+        self.wins[i].goto(min(er + 2, self.wins[i].buf.count() - 1), 0)
+        self.sync_shared_buffers(i)
+        self.say("Pasted cell below")
+
+    def cell_delete_current(mut self):
+        """Delete (and store in `nb_clip`) the `# %%` cell at the cursor (Jupyter `dd` / `x`)."""
+        var i = self.top_editor()
+        if i < 0 or self.wins[i].read_only:
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            return
+        var ci = max(0, cell_at_row(cells, self.wins[i].cr))
+        self.wins[i].nb_clip = self._cell_slice_text(i, cells[ci])
+        if len(cells) == 1:
+            self.wins[i].replace_lines_undoable(0, max(0, self.wins[i].buf.count() - 1), "# %%\n")
+            self.wins[i].clear_cell_outputs()
+            self.wins[i].clear_cell_badges()
+            self.wins[i].goto(min(1, self.wins[i].buf.count() - 1), 0)
+            self.sync_shared_buffers(i)
+            self.say("Cleared last cell")
+            return
+        var r0 = cells[ci].header_row if cells[ci].header_row >= 0 else cells[ci].start_row
+        var r1 = min(cells[ci].end_row, max(0, self.wins[i].buf.count() - 1))
+        var g = self.wins[i].new_group()
+        if r1 + 1 < self.wins[i].buf.count():
+            _ = self.wins[i].buf.delete(r0, 0, r1 + 1, 0, self.wins[i].cr, self.wins[i].cc, g)
+        elif r0 > 0:
+            _ = self.wins[i].buf.delete(r0 - 1, self.wins[i].buf.llen(r0 - 1), r1, self.wins[i].buf.llen(r1), self.wins[i].cr, self.wins[i].cc, g)
+        else:
+            _ = self.wins[i].buf.delete(r0, 0, r1, self.wins[i].buf.llen(r1), self.wins[i].cr, self.wins[i].cc, g)
+        self.wins[i].break_group()
+        var target_r = min(r0, max(0, self.wins[i].buf.count() - 1))
+        var new_cells = parse_cells(self.wins[i].buf)
+        var nci = cell_at_row(new_cells, target_r)
+        if nci >= 0 and nci < len(new_cells):
+            target_r = new_cells[nci].start_row
+        self.wins[i].goto(target_r, 0)
+        self.sync_shared_buffers(i)
+        self.say("Deleted cell")
+
+    def cell_set_type(mut self, to_markdown: Bool):
+        """Convert the cell at the cursor to `# %% [markdown]` (`m`) or `# %%` Code (`y`)."""
+        var i = self.top_editor()
+        if i < 0 or self.wins[i].read_only:
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            return
+        var ci = max(0, cell_at_row(cells, self.wins[i].cr))
+        var c = cells[ci].copy()
+        var r0 = c.header_row if c.header_row >= 0 else c.start_row
+        var r1 = min(c.end_row, max(0, self.wins[i].buf.count() - 1))
+        var cur_md = lower_str(c.title).startswith("[markdown]") or lower_str(c.title).startswith("[md]")
+        if cur_md == to_markdown and c.header_row >= 0:
+            self.say("Cell is already " + ("Markdown" if to_markdown else "Code"))
+            return
+        var new_lines = List[String]()
+        new_lines.append("# %% [markdown]" if to_markdown else "# %%")
+        var body_start = (c.header_row + 1) if c.header_row >= 0 else c.start_row
+        for r in range(body_start, r1 + 1):
+            var ln = to_str(self.wins[i].buf.line(r))
+            if to_markdown:
+                if ln.byte_length() == 0:
+                    new_lines.append("#")
+                elif ln.startswith("# ") or ln == "#":
+                    new_lines.append(ln)
+                else:
+                    new_lines.append("# " + ln)
+            else:
+                if ln.startswith("# "):
+                    new_lines.append(String(ln[byte=2:]))
+                elif ln == "#":
+                    new_lines.append("")
+                else:
+                    new_lines.append(ln)
+        self.wins[i].replace_lines_undoable(r0, r1, "\n".join(new_lines))
+        self.wins[i].goto(min(r0 + 1, max(0, self.wins[i].buf.count() - 1)), 0)
+        self.sync_shared_buffers(i)
+        self.say("Cell converted to " + ("Markdown" if to_markdown else "Code"))
+
+    def cell_toggle_markdown(mut self):
+        var i = self.top_editor()
+        if i < 0:
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            return
+        var ci = max(0, cell_at_row(cells, self.wins[i].cr))
+        var is_md = lower_str(cells[ci].title).startswith("[markdown]") or lower_str(cells[ci].title).startswith("[md]")
+        self.cell_set_type(not is_md)
+
+    def cell_restart_and_run_all(mut self) raises:
+        self.cell_restart_kernels()
+        self.run_all_cells()
+
+    def run_code_cell_insert_below(mut self) raises:
+        """Execute current cell and insert a new `# %%` cell directly below it (Jupyter `Alt-Enter`)."""
+        if self.job_busy():
+            return
+        var i = self.top_editor()
+        if i < 0:
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            return
+        var ci = max(0, cell_at_row(cells, self.wins[i].cr))
+        self.cell_queue_indices.clear()
+        self.cell_queue_target = ""
+        self.run_code_cell_by_index(i, ci, False)
+        # Re-read cells and insert below `ci`
+        var after_cells = parse_cells(self.wins[i].buf)
+        if ci < len(after_cells) and not self.wins[i].read_only:
+            var er = min(after_cells[ci].end_row, max(0, self.wins[i].buf.count() - 1))
+            var g = self.wins[i].new_group()
+            _ = self.wins[i].buf.insert(er, self.wins[i].buf.llen(er), decode("\n# %%\n"), self.wins[i].cr, self.wins[i].cc, g)
+            self.wins[i].break_group()
+            self.wins[i].goto(min(er + 2, self.wins[i].buf.count() - 1), 0)
+            self.wins[i].nb_cmd_mode = False
+            self.sync_shared_buffers(i)
+
+    def cell_pump_queue(mut self):
+        """Launch the next queued `# %%` cell when `Run all cells` / `Run cells above` is active."""
+        while len(self.cell_queue_indices) > 0 and not self.cell_k_active and not self.job.active:
+            var ei = self.find_editor_or_title(self.cell_queue_target)
+            if ei < 0:
+                self.cell_queue_indices.clear()
+                self.cell_queue_target = ""
+                return
+            var next_ci = self.cell_queue_indices[0]
+            _ = self.cell_queue_indices.pop(0)
+            var cells = parse_cells(self.wins[ei].buf)
+            if next_ci < 0 or next_ci >= len(cells):
+                continue
+            try:
+                self.run_code_cell_by_index(ei, next_ci, False)
+            except:
+                self.cell_queue_indices.clear()
+                self.cell_queue_target = ""
+                return
+        if len(self.cell_queue_indices) == 0 and not self.cell_k_active and not self.job.active:
+            self.cell_queue_target = ""
+
+    def run_all_cells(mut self) raises:
+        """Execute every `# %%` cell in the active editor sequentially from top to bottom."""
+        if self.job_busy():
+            return
+        var i = self.top_editor()
+        if i < 0:
+            self.say("No open file to run cells from")
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            self.say("Empty buffer")
+            return
+        self.cell_queue_indices.clear()
+        for ci in range(len(cells)):
+            self.cell_queue_indices.append(ci)
+        self.cell_queue_target = self.wins[i].path if self.wins[i].path.byte_length() > 0 else self.wins[i].title
+        self.cell_pump_queue()
+
+    def run_cells_above(mut self) raises:
+        """Execute all `# %%` cells strictly above the cell at the cursor sequentially."""
+        if self.job_busy():
+            return
+        var i = self.top_editor()
+        if i < 0:
+            self.say("No open file to run cells from")
+            return
+        var cells = parse_cells(self.wins[i].buf)
+        if len(cells) == 0:
+            self.say("Empty buffer")
+            return
+        var cur_ci = cell_at_row(cells, self.wins[i].cr)
+        if cur_ci <= 0:
+            self.say("No cells above the cursor")
+            return
+        self.cell_queue_indices.clear()
+        for ci in range(cur_ci):
+            self.cell_queue_indices.append(ci)
+        self.cell_queue_target = self.wins[i].path if self.wins[i].path.byte_length() > 0 else self.wins[i].title
+        self.cell_pump_queue()
 
     def run_code_cell(mut self, advance: Bool) raises:
         """Execute the `# %%` cell at the cursor in a persistent non-blocking Mojo or Python
@@ -1185,13 +1527,25 @@ __extension App:
         var ci = cell_at_row(cells, self.wins[i].cr)
         if ci < 0 or ci >= len(cells):
             ci = 0
+        self.cell_queue_indices.clear()
+        self.cell_queue_target = ""
+        self.run_code_cell_by_index(i, ci, advance)
+
+    def run_code_cell_by_index(mut self, i: Int, ci: Int, advance: Bool) raises:
+        """Execute cell `ci` of editor window `i`."""
+        var cells = parse_cells(self.wins[i].buf)
+        if ci < 0 or ci >= len(cells):
+            return
         var hdr_txt = lower_str(cells[ci].title)
         if hdr_txt.startswith("[markdown]") or hdr_txt.startswith("[md]") or hdr_txt.startswith("[raw]"):
             var md_row = cells[ci].header_row if cells[ci].header_row >= 0 else 0
             self.wins[i].set_cell_badge(md_row, "[✓ markdown]")
             self.sync_shared_buffers(i)
-            if advance and ci + 1 < len(cells):
-                self.wins[i].goto(cells[ci + 1].start_row, 0)
+            if advance:
+                if ci + 1 < len(cells):
+                    self.wins[i].goto(cells[ci + 1].start_row, 0)
+                elif self.wins[i].has_cells():
+                    self.cell_append_bottom(i)
             self.say("Markdown cell [" + cells[ci].title + "]")
             return
         var is_py = self.wins[i].effective_lang() == HL_PYTHON
@@ -1275,8 +1629,11 @@ __extension App:
             self.cell_advance = advance
             self.wins[i].set_cell_badge(badge_row, "[⟳ running…]")
             self.sync_shared_buffers(i)
-            if advance and ci + 1 < len(cells):
-                self.wins[i].goto(cells[ci + 1].start_row, 0)
+            if advance:
+                if ci + 1 < len(cells):
+                    self.wins[i].goto(cells[ci + 1].start_row, 0)
+                elif self.wins[i].has_cells():
+                    self.cell_append_bottom(i)
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages("Cell [" + label + "] in " + basename(target_name), List[UInt8](), "Running cell...")
             self.say("Running cell [" + label + "] ...")
@@ -1302,8 +1659,11 @@ __extension App:
         if self.start_job(JOB_CELL, cmd, target_name, label):
             self.wins[i].set_cell_badge(badge_row, "[⟳ running…]")
             self.sync_shared_buffers(i)
-            if advance and ci + 1 < len(cells):
-                self.wins[i].goto(cells[ci + 1].start_row, 0)
+            if advance:
+                if ci + 1 < len(cells):
+                    self.wins[i].goto(cells[ci + 1].start_row, 0)
+                elif self.wins[i].has_cells():
+                    self.cell_append_bottom(i)
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages("Cell [" + label + "] in " + basename(target_name), List[UInt8](), "Running cell...")
             self.say("Running cell [" + label + "] ...")
@@ -1343,9 +1703,19 @@ __extension App:
         var jhrow = self.cell_k_header_row
         if not self.job.cancelled:
             var out_txt = String(remapped.strip())
+            self.cell_apply_output(jpath, jcidx, jhrow, String(remapped.rstrip("\r\n")), not ok, plot_res[1].copy())
             var badge = format_cell_divider_badge(CELL_SUCCESS if ok else CELL_ERROR, ms, out_txt if out_txt.byte_length() > 0 else ("ok" if ok else "error"), n_plots)
             self.cell_apply_badge(jpath, jcidx, jhrow, badge)
+            self.say(footer)
+            if ok:
+                self.cell_pump_queue()
+            else:
+                self.cell_queue_indices.clear()
+                self.cell_queue_target = ""
         else:
+            self.cell_queue_indices.clear()
+            self.cell_queue_target = ""
+            self.cell_apply_output(jpath, jcidx, jhrow, "cancelled", True, List[String]())
             var badge = format_cell_divider_badge(CELL_INTERRUPTED, ms, "cancelled")
             self.cell_apply_badge(jpath, jcidx, jhrow, badge)
-        self.say(footer)
+            self.say(footer)

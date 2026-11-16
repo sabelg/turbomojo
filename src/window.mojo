@@ -10,7 +10,7 @@ from outline import OutlineItem
 from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT, line_state, scan_states, lang_for_path
-from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width
+from util import is_ident, lower, lower_str, decode, cp_len, to_str, str_contains, char_width
 from search import Search
 from grapheme import cluster_end, cluster_start, cluster_width, ends_with_plain_mark
 
@@ -171,6 +171,15 @@ struct Window(Copyable, Movable):
     var sel_hist: List[Range]
     var buf_id: Int
     var lang_override: Int
+    var inline_cell_outputs: Bool
+    var ghost_text: String
+    var ghost_row: Int
+    var ghost_col: Int
+    var chromeless: Bool
+    var split_sep: Bool
+    var nb_cmd_mode: Bool
+    var nb_pend: Int
+    var nb_clip: String
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
         self.kind = kind
@@ -274,19 +283,95 @@ struct Window(Copyable, Movable):
         self.sel_hist = List[Range]()
         self.buf_id = -1
         self.lang_override = -1
+        self.inline_cell_outputs = True
+        self.ghost_text = ""
+        self.ghost_row = -1
+        self.ghost_col = -1
+        self.chromeless = False
+        self.split_sep = False
+        self.nb_cmd_mode = False
+        self.nb_pend = 0
+        self.nb_clip = ""
+
+    def is_notebook(self) -> Bool:
+        if self.kind != WK_EDITOR:
+            return False
+        var lp = lower_str(self.path)
+        var lt = lower_str(self.title)
+        return lp.endswith(".ipynb") or lt.endswith(".ipynb")
+
+    def has_cells(self) -> Bool:
+        if self.kind != WK_EDITOR:
+            return False
+        if self.is_notebook():
+            return True
+        var lim = min(self.buf.count(), 400)
+        for r in range(lim):
+            if self.buf.is_cell_header(r):
+                return True
+        return False
+
+    def cell_header_for_row(self, r: Int) -> Int:
+        var k = min(r, max(0, self.buf.count() - 1))
+        while k >= 0:
+            if self.buf.is_cell_header(k):
+                return k
+            k -= 1
+        return -1
+
+    def is_markdown_header(self, hdr_row: Int) -> Bool:
+        if hdr_row < 0 or hdr_row >= self.buf.count():
+            return False
+        var s = lower_str(to_str(self.buf.line(hdr_row)))
+        return s.find("[markdown]") >= 0 or s.find("[md]") >= 0 or s.find("[raw]") >= 0
+
+    def cell_exec_count_at_header(self, hdr_row: Int) -> Int:
+        for oi in range(len(self.buf.cell_out_rows)):
+            if self.buf.cell_out_rows[oi] == hdr_row:
+                return self.buf.cell_out_counts[oi] if oi < len(self.buf.cell_out_counts) else 0
+        return 0
+
+    def cell_exec_count_for_end(self, end_row: Int) -> Int:
+        for oi in range(len(self.buf.cell_out_rows)):
+            var hr = self.buf.cell_out_rows[oi]
+            if self.buf.cell_end_for_header(hr) == end_row:
+                return self.buf.cell_out_counts[oi] if oi < len(self.buf.cell_out_counts) else 0
+        return 0
+
+    def replace_lines_undoable(mut self, r1: Int, r2: Int, new_text: String):
+        """Atomically replace inclusive line range `[r1, r2]` with `new_text` (1-step Undo)."""
+        var n = self.buf.count()
+        if n <= 0:
+            return
+        var a = max(0, min(r1, n - 1))
+        var b = max(a, min(r2, n - 1))
+        var g = self.new_group()
+        var end_c = self.buf.llen(b)
+        _ = self.buf.delete(a, 0, b, end_c, self.cr, self.cc, g)
+        if new_text.byte_length() > 0:
+            _ = self.buf.insert(a, 0, decode(new_text), a, 0, g)
+        self.break_group()
+        self.sel = False
+        self.clamp()
+        self.follow = True
 
     def effective_lang(self) -> Int:
         return self.lang_override if self.lang_override >= 0 else lang_for_path(self.path, self.title)
 
     # ------------------------------------------------------------ geometry
+    def pad(self) -> Int:
+        return 0 if self.chromeless else 1
+
     def contains(self, px: Int, py: Int) -> Bool:
         return px >= self.x and px < self.x + self.w and py >= self.y and py < self.y + self.h
 
     def rows(self) -> Int:
-        return max(1, self.h - 2)
+        return max(1, self.h if self.chromeless else self.h - 2)
 
     def cols(self) -> Int:
-        return max(1, self.w - 2 - self.gut - (MINIMAP_W if self.minimap else 0))
+        var border_w = 0 if self.chromeless else 2
+        var sep_w = 1 if (self.chromeless and self.split_sep) else 0
+        return max(1, self.w - border_w - sep_w - self.gut - (MINIMAP_W if self.minimap else 0))
 
     def gutter_for(self, line_numbers: Bool) -> Int:
         if not line_numbers or self.kind != WK_EDITOR:
@@ -297,7 +382,8 @@ struct Window(Copyable, Movable):
             n //= 10
             d += 1
         # a column for the git markers when the file is in a repository
-        return max(d, 3) + 1 + (1 if self.buf.git_state == GB_KNOWN else 0)
+        var base_w = max(d, 5 if self.is_notebook() else 3) + 1 + (1 if self.buf.git_state == GB_KNOWN else 0)
+        return base_w
 
     # ------------------------------------------------------ visual columns
     def tab_title(self, duplicate: Bool = False) -> String:
@@ -421,8 +507,10 @@ struct Window(Copyable, Movable):
             i = e
 
     def rowwise(self) -> Bool:
-        """Screen rows and lines are not one to one (soft wrap or folded blocks)."""
-        return self.wrap or len(self.buf.folds) > 0
+        """Screen rows and lines are not one to one (soft wrap, folded blocks, or inline cell outputs)."""
+        return self.wrap or len(self.buf.folds) > 0 or (
+            self.inline_cell_outputs and self.kind == WK_EDITOR and len(self.buf.cell_out_rows) > 0
+        )
 
     def reveal_cursor(mut self):
         """Open any folded block that hides the cursor."""
@@ -498,14 +586,54 @@ struct Window(Copyable, Movable):
             k -= 1
         return k
 
-    def row_segs(self, r: Int) -> Int:
-        """How many screen rows line r takes."""
+    def text_row_segs(self, r: Int) -> Int:
+        """How many screen rows the text of line r takes (excluding virtual cell outputs)."""
         if not self.wrap:
             return 1
         var starts = List[Int]()
         var vs = List[Int]()
         self.wrap_layout(self.buf.line(r), starts, vs)
         return len(starts)
+
+    def virtual_out_lines_at(self, r: Int) -> Tuple[List[String], Bool]:
+        """Virtual multi-line cell output rows attached beneath buffer row r."""
+        var empty = List[String]()
+        if not self.inline_cell_outputs or self.kind != WK_EDITOR or len(self.buf.cell_out_rows) == 0:
+            return (empty^, False)
+        for oi in range(len(self.buf.cell_out_rows)):
+            var hdr_r = self.buf.cell_out_rows[oi]
+            if self.buf.cell_end_for_header(hdr_r) == r:
+                var raw_lines = List[String]()
+                var txt = self.buf.cell_out_texts[oi] if oi < len(self.buf.cell_out_texts) else String("")
+                var plots_s = self.buf.cell_out_plots[oi] if oi < len(self.buf.cell_out_plots) else String("")
+                var is_err = self.buf.cell_out_errs[oi] if oi < len(self.buf.cell_out_errs) else False
+                if txt.byte_length() > 0:
+                    for ls in txt.split("\n"):
+                        raw_lines.append(String(ls))
+                if plots_s.byte_length() > 0 and not str_contains(txt, "[📊"):
+                    var n_p = 0
+                    for ps in plots_s.split("\n"):
+                        if String(ps).byte_length() > 0:
+                            n_p += 1
+                    if n_p > 0:
+                        raw_lines.append("[📊 " + String(n_p) + " plot(s) ready — Text > Open cell plot preview]")
+                if len(raw_lines) <= 6:
+                    return (raw_lines^, is_err)
+                var clamped = List[String]()
+                for k in range(5):
+                    clamped.append(raw_lines[k])
+                clamped.append("… (+" + String(len(raw_lines) - 5) + " more lines — see Message window)")
+                return (clamped^, is_err)
+        return (empty^, False)
+
+    def virtual_out_rows(self, r: Int) -> Int:
+        if not self.inline_cell_outputs or self.kind != WK_EDITOR or len(self.buf.cell_out_rows) == 0:
+            return 0
+        return len(self.virtual_out_lines_at(r)[0])
+
+    def row_segs(self, r: Int) -> Int:
+        """How many screen rows line r takes (wrapped text segments + virtual cell output rows)."""
+        return self.text_row_segs(r) + self.virtual_out_rows(r)
 
     def col_in_seg(self, r: Int, k: Int, x: Int) -> Int:
         """Character index on screen row k of line r at horizontal offset x."""
@@ -605,11 +733,12 @@ struct Window(Copyable, Movable):
     def cursor_cell(self) -> Pos:
         """Screen position of the cursor as Pos(y, x); y = -1 when it is not in view."""
         var rws = self.rows()
+        var pd = self.pad()
         if not self.rowwise():
             var y = self.cr - self.top
             if y < 0 or y >= rws:
                 return Pos(-1, -1)
-            return Pos(self.y + 1 + y, self.x + 1 + self.gut + self.vcol(self.cr, self.cc) - self.left)
+            return Pos(self.y + pd + y, self.x + pd + self.gut + self.vcol(self.cr, self.cc) - self.left)
         var y = self.screen_row_of(self.cr, self.cc, rws)
         if y < 0 or y >= rws:
             return Pos(-1, -1)
@@ -619,7 +748,7 @@ struct Window(Copyable, Movable):
         var x = self.vcol(self.cr, self.cc) - vs[self.seg_of(starts, self.cc)]
         if not self.wrap:
             x -= self.left
-        return Pos(self.y + 1 + y, self.x + 1 + self.gut + x)
+        return Pos(self.y + pd + y, self.x + pd + self.gut + x)
 
     def set_wrap(mut self, on: Bool):
         self.wrap = on
@@ -754,19 +883,21 @@ struct Window(Copyable, Movable):
         self.follow = False
 
     def screen_to_pos(self, px: Int, py: Int) -> Pos:
-        var sy = py - self.y - 1
+        var pd = self.pad()
+        var sy = py - self.y - pd
         if sy >= 0 and sy < len(self.sticky):
             # a pinned scope header: its own line
             var hr = self.sticky[sy]
-            return Pos(hr, self.col_at_vcol(hr, max(0, px - self.x - 1 - self.gut)))
+            return Pos(hr, self.col_at_vcol(hr, max(0, px - self.x - pd - self.gut)))
         if self.rowwise():
-            var at = self.pos_at_screen_row(max(0, py - self.y - 1))
+            var at = self.pos_at_screen_row(max(0, py - self.y - pd))
             var wr = max(0, min(at.r, self.buf.count() - 1))
             if at.r >= self.buf.count():
                 return Pos(wr, self.buf.llen(wr))
-            return Pos(wr, self.col_in_seg(wr, at.c, max(0, px - self.x - 1 - self.gut) + (0 if self.wrap else self.left)))
-        var r = self.top + (py - self.y - 1)
-        var v = self.left + (px - self.x - 1 - self.gut)
+            var tseg = min(at.c, max(0, self.text_row_segs(wr) - 1))
+            return Pos(wr, self.col_in_seg(wr, tseg, max(0, px - self.x - pd - self.gut) + (0 if self.wrap else self.left)))
+        var r = self.top + (py - self.y - pd)
+        var v = self.left + (px - self.x - pd - self.gut)
         r = max(0, min(r, self.buf.count() - 1))
         var c = self.col_at_vcol(r, max(0, v))
         return Pos(r, c)
@@ -951,7 +1082,7 @@ struct Window(Copyable, Movable):
                         self.cc = self.col_in_seg(self.cr, k - 1, self.want)
                     elif self.buf.prev_row(self.cr) >= 0:
                         self.cr = self.buf.prev_row(self.cr)
-                        self.cc = self.col_in_seg(self.cr, self.row_segs(self.cr) - 1, self.want)
+                        self.cc = self.col_in_seg(self.cr, self.text_row_segs(self.cr) - 1, self.want)
                     else:
                         break
             return
@@ -1273,27 +1404,63 @@ struct Window(Copyable, Movable):
         self.buf.set_cell_badge(row, badge)
         self.sync_cell_badges()
 
+    def set_cell_output(
+        mut self,
+        row: Int,
+        text: String,
+        is_err: Bool,
+        plots_joined: String = "",
+        exec_count: Int = 0,
+    ):
+        self.buf.set_cell_output(row, text, is_err, plots_joined, exec_count)
+        self.sync_cell_badges()
+
+    def clear_cell_outputs(mut self):
+        self.buf.clear_cell_outputs()
+        self.top_seg = 0
+        self.follow = True
+
     def clear_cell_badges(mut self):
         self.buf.clear_cell_badges()
         self.cell_badge_rows.clear()
         self.cell_badges.clear()
+        self.top_seg = 0
 
     def sync_cell_badges(mut self):
-        if len(self.buf.cell_badge_rows) == 0:
-            return
-        var krows = List[Int]()
-        var kvals = List[String]()
         var count = self.buf.count()
-        for i in range(len(self.buf.cell_badge_rows)):
-            var br = self.buf.cell_badge_rows[i]
-            if br >= 0 and br < count and i < len(self.buf.cell_badges):
-                if br == 0 or self.buf.is_cell_header(br):
-                    krows.append(br)
-                    kvals.append(self.buf.cell_badges[i])
-        self.buf.cell_badge_rows = krows.copy()
-        self.buf.cell_badges = kvals.copy()
-        self.cell_badge_rows = krows^
-        self.cell_badges = kvals^
+        if len(self.buf.cell_badge_rows) > 0:
+            var krows = List[Int]()
+            var kvals = List[String]()
+            for i in range(len(self.buf.cell_badge_rows)):
+                var br = self.buf.cell_badge_rows[i]
+                if br >= 0 and br < count and i < len(self.buf.cell_badges):
+                    if br == 0 or self.buf.is_cell_header(br):
+                        krows.append(br)
+                        kvals.append(self.buf.cell_badges[i])
+            self.buf.cell_badge_rows = krows.copy()
+            self.buf.cell_badges = kvals.copy()
+            self.cell_badge_rows = krows^
+            self.cell_badges = kvals^
+        if len(self.buf.cell_out_rows) > 0:
+            var orows = List[Int]()
+            var otexts = List[String]()
+            var oerrs = List[Bool]()
+            var oplots = List[String]()
+            var ocounts = List[Int]()
+            for i in range(len(self.buf.cell_out_rows)):
+                var obr = self.buf.cell_out_rows[i]
+                if obr >= 0 and obr < count and i < len(self.buf.cell_out_texts):
+                    if obr == 0 or self.buf.is_cell_header(obr):
+                        orows.append(obr)
+                        otexts.append(self.buf.cell_out_texts[i])
+                        oerrs.append(self.buf.cell_out_errs[i])
+                        oplots.append(self.buf.cell_out_plots[i])
+                        ocounts.append(self.buf.cell_out_counts[i])
+            self.buf.cell_out_rows = orows^
+            self.buf.cell_out_texts = otexts^
+            self.buf.cell_out_errs = oerrs^
+            self.buf.cell_out_plots = oplots^
+            self.buf.cell_out_counts = ocounts^
 
     def lsp_to_virtual_pos(self, row: Int, col16: Int) -> Tuple[Int, Int]:
         if self.lsp_nb_active and row >= 0 and row < len(self.lsp_nb_b2v_row):

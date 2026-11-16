@@ -10,7 +10,9 @@ from window import WK_EDITOR, Range
 from window_search import *
 from search import Search, make_search
 from dialog import NEXT_NONE, NEXT_CLOSE
-from commands import CM_SAVEALL, CM_SPLIT_DOWN, CM_SPLIT_RIGHT, CM_NEXT_TAB, CM_PREV_TAB, CM_NEXTWIN, CM_PREVWIN
+from highlight import HL_JSON, HL_PYTHON
+from ipynb import is_ipynb_path, percent_text_to_ipynb, IpynbCellOutput
+from commands import CM_SAVEALL, CM_SPLIT_DOWN, CM_SPLIT_RIGHT, CM_NEXT_TAB, CM_PREV_TAB, CM_NEXTWIN, CM_PREVWIN, CM_EXPLORER, CM_RUN_CELL, CM_RUN_ALL_CELLS, CM_VIM_ZEN, CM_NEW_NOTEBOOK
 from vim import *
 from vim_motion import *
 from vim_cmd import *
@@ -206,6 +208,7 @@ __extension App:
                 "write", "quit", "wq", "wall", "qall", "wqa", "edit", "split", "vsplit",
                 "bnext", "bprev", "bdelete", "nohlsearch", "substitute", "delete", "yank",
                 "set", "global", "vglobal", "normal", "vimgrep", "cdo", "cfdo",
+                "Explore", "Ex", "notebook", "nb", "cell", "cells", "zen", "help",
             ]
             for b in builtins:
                 var bs = String(b)
@@ -292,7 +295,9 @@ __extension App:
         """The command line over the status row, with a bar cursor at its end."""
         var p = self.pal.copy()
         var y = self.scr.h - 1
-        self.scr.fill(0, y, self.scr.w, 1, 32, p.status_fg, p.status_bg)
+        var fg = p.ed_fg if self.vim_zen else p.status_fg
+        var bg = p.ed_bg if self.vim_zen else p.status_bg
+        self.scr.fill(0, y, self.scr.w, 1, 32, fg, bg)
         var text = chr(self.vim.cl_kind) + to_str(self.vim.cl_text)
         var room = self.scr.w - 1
         var cps = decode(text)
@@ -302,7 +307,7 @@ __extension App:
             for i in range(len(cps) - room, len(cps)):
                 tail.append(cps[i])
             text = to_str(tail)
-        _ = self.scr.text(0, y, text, p.status_fg, p.status_bg)
+        _ = self.scr.text(0, y, text, fg, bg)
         self.scr.cx = min(cp_len(text), self.scr.w - 1)
         self.scr.cy = y
         self.scr.cvis = True
@@ -452,26 +457,56 @@ __extension App:
                 var path = abs_path(String(self.cwd), x.arg)
                 if path_exists(path) and not x.bang:
                     self.say("E13: File exists (add ! to override): " + path)
-                elif write_file(path, self.wins[t].buf.to_bytes()):
-                    self.say("Written: " + path)
                 else:
-                    self.say("E212: Can't open file for writing: " + path)
+                    var out_bytes: List[UInt8]
+                    if is_ipynb_path(path) and self.wins[t].lang_override != HL_JSON:
+                        var is_mj = (
+                            self._workspace_prefers_mojo(path)
+                            if self.wins[t].lang_override < 0
+                            else (self.wins[t].lang_override != HL_PYTHON)
+                        )
+                        var prev_raw = bytes_to_str(read_file(path)) if path_exists(path) else String("")
+                        var live_outs = self.collect_ipynb_outputs(t)
+                        out_bytes = str_bytes(
+                            percent_text_to_ipynb(bytes_to_str(self.wins[t].buf.to_bytes()), is_mj, prev_raw, live_outs)
+                        )
+                    else:
+                        out_bytes = self.wins[t].buf.to_bytes()
+                    if write_file(path, out_bytes):
+                        if self.wins[t].path.byte_length() == 0:
+                            self.wins[t].path = path
+                            self.wins[t].title = basename(path)
+                            if is_ipynb_path(path) and self.wins[t].lang_override < 0:
+                                self._init_new_ipynb_window(t, path)
+                            self.wins[t].buf.modified = False
+                        self.say("Written: " + path)
+                    else:
+                        self.say("E212: Can't open file for writing: " + path)
         elif name == "wq" or ex_is(name, "xit", 1) or name == "exit":
             var need = name == "wq" or self.wins[t].buf.modified
             if need and not self.save_window(t, NEXT_NONE):
                 return
             self.close_window(t, NEXT_CLOSE)
+            if self.vim_zen and len(self.wins) == 0:
+                self.running = False
         elif ex_is(name, "quit", 1):
             if x.bang:
                 self.remove_window(t)
+                if self.vim_zen and len(self.wins) == 0:
+                    self.running = False
             elif self.wins[t].buf.modified and not self.has_shared_sibling(t):
                 self.say("E37: No write since last change (add ! to override)")
             else:
                 self.close_window(t, NEXT_CLOSE)
+                if self.vim_zen and len(self.wins) == 0:
+                    self.running = False
         elif ex_is(name, "wall", 2):
             self.exec(CM_SAVEALL)
         elif ex_is(name, "qall", 2) or name == "quitall":
-            self.quit()                                      # (it asks about unsaved files)
+            if x.bang:
+                self.running = False
+            else:
+                self.quit()                                      # (it asks about unsaved files)
         elif name == "wqa" or name == "wqall" or ex_is(name, "xall", 2):
             self.exec(CM_SAVEALL)
             self.quit()
@@ -495,10 +530,60 @@ __extension App:
         elif name == "bd" or ex_is(name, "bdelete", 2):
             if x.bang:
                 self.remove_window(t)
+                if self.vim_zen and len(self.wins) == 0:
+                    self.running = False
             elif self.wins[t].buf.modified:
                 self.say("E89: No write since last change for buffer (add ! to override)")
             else:
                 self.close_window(t, NEXT_CLOSE)
+                if self.vim_zen and len(self.wins) == 0:
+                    self.running = False
+        elif name == "Ex" or ex_is(name, "Explore", 2) or name == "Vex" or name == "Lex":
+            if x.arg.byte_length() > 0:
+                var dir_p = abs_path(String(self.cwd), x.arg)
+                if is_dir(dir_p):
+                    self.ex.set_root(dir_p)
+            self.exec(CM_EXPLORER)
+        elif name == "nb" or name == "notebook":
+            if x.arg.byte_length() > 0:
+                var nb_arg = x.arg
+                if nb_arg.find(".") < 0:
+                    nb_arg += ".ipynb"
+                self.open_path(nb_arg)
+            else:
+                self.new_notebook_cmd()
+        elif name == "cell" or name == "runcell":
+            var ca = lower_str(x.arg)
+            if ca == "add" or ca == "below" or ca == "b":
+                self.exec(CM_CELL_INSERT_BELOW)
+            elif ca == "above" or ca == "a":
+                self.exec(CM_CELL_INSERT_ABOVE)
+            elif ca == "del" or ca == "delete" or ca == "d":
+                self.exec(CM_CELL_DELETE)
+            elif ca == "md" or ca == "markdown" or ca == "m":
+                self.cell_set_type(True)
+            elif ca == "code" or ca == "y":
+                self.cell_set_type(False)
+            elif ca == "restart":
+                self.exec(CM_CELL_RESTART)
+            elif ca == "clear":
+                self.exec(CM_CELL_CLEAR_OUT)
+            else:
+                self.exec(CM_RUN_CELL)
+        elif name == "cells" or name == "runall":
+            self.exec(CM_RUN_ALL_CELLS)
+        elif name == "zen" or name == "vimzen":
+            self.exec(CM_VIM_ZEN)
+        elif ex_is(name, "help", 1):
+            var ha = lower_str(x.arg)
+            if ha.find("nb") >= 0 or ha.find("notebook") >= 0 or ha.find("ipynb") >= 0 or ha.find("jupyter") >= 0 or ha.find("cell") >= 0:
+                self.help_page("notebooks.md")
+            elif ha.find("py") >= 0:
+                self.help_page("coming-from-python.md")
+            elif ha.find("key") >= 0 or ha.find("cheat") >= 0 or ha.find("vim") >= 0:
+                self.help_page("cheatsheet.md")
+            else:
+                self.help_page("guide.md")
         elif ex_is(name, "substitute", 1):
             self.vim_substitute(t, r1, r2, x.raw)
         elif ex_is(name, "nohlsearch", 3):

@@ -68,7 +68,7 @@ from app_vim import *
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_BENCH_RUN or cmd == CM_GPU_ROOFLINE or cmd == CM_DEBUG_ATTACH_PID or cmd == CM_DEBUG_CORE or cmd == CM_TERM_NEW or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_RUN_CELL or cmd == CM_RUN_CELL_NEXT or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_BENCH_RUN or cmd == CM_GPU_ROOFLINE or cmd == CM_DEBUG_ATTACH_PID or cmd == CM_DEBUG_CORE or cmd == CM_TERM_NEW or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_RUN_CELL or cmd == CM_RUN_CELL_NEXT or cmd == CM_RUN_ALL_CELLS or cmd == CM_RUN_CELLS_ABOVE or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
@@ -270,6 +270,12 @@ __extension App:
         if cmd == CM_NEW_PROJECT:
             self.new_project_dialog()
             return
+        if cmd == CM_NEW_NOTEBOOK:
+            self.new_notebook_cmd()
+            return
+        if cmd == CM_VIM_ZEN:
+            self.toggle_vim_zen()
+            return
         if cmd == CM_NEW:
             var name = String("NONAME")
             if self.untitled_n < 10:
@@ -279,6 +285,8 @@ __extension App:
             _ = self.new_editor(name, "")
         elif cmd == CM_OPEN:
             self.open_dialog(String(self.cwd))
+        elif cmd == CM_OPEN_NOTEBOOK:
+            self.open_dialog(String(self.cwd), True)
         elif cmd == CM_SAVE:
             var i = self.top_editor()
             if i >= 0:
@@ -525,6 +533,14 @@ __extension App:
             self.run_code_cell(False)
         elif cmd == CM_RUN_CELL_NEXT:
             self.run_code_cell(True)
+        elif cmd == CM_RUN_ALL_CELLS:
+            self.run_all_cells()
+        elif cmd == CM_RUN_CELLS_ABOVE:
+            self.run_cells_above()
+        elif cmd == CM_CELL_INLINE_OUT:
+            self.toggle_inline_cell_outputs()
+        elif cmd == CM_CELL_CLEAR_OUT:
+            self.clear_cell_outputs_cmd()
         elif cmd == CM_TEST:
             self.run_program(True)
         elif cmd == CM_TEST_CURSOR:
@@ -772,6 +788,8 @@ __extension App:
             self.help_page("errors.md")
         elif cmd == CM_HELP_PYTHON:
             self.help_page("coming-from-python.md")
+        elif cmd == CM_HELP_NOTEBOOKS:
+            self.help_page("notebooks.md")
         elif cmd == CM_HELP_NEW:
             self.help_page("whats-new.md")
         elif cmd == CM_HELP_TUTORIAL:
@@ -862,6 +880,16 @@ __extension App:
             self.tests_toggle_watch()
         elif cmd == CM_CELL_RESTART:
             self.cell_restart_kernels()
+        elif cmd == CM_CELL_INSERT_ABOVE:
+            self.cell_insert_above()
+        elif cmd == CM_CELL_INSERT_BELOW:
+            self.cell_insert_below()
+        elif cmd == CM_CELL_DELETE:
+            self.cell_delete_current()
+        elif cmd == CM_CELL_TOGGLE_MD:
+            self.cell_toggle_markdown()
+        elif cmd == CM_CELL_RESTART_RUN_ALL:
+            self.cell_restart_and_run_all()
         elif cmd == CM_DEBUG_ATTACH_PID:
             self.debug_attach_pid_open()
         elif cmd == CM_DEBUG_CORE:

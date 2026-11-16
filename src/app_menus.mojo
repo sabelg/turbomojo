@@ -166,7 +166,7 @@ __extension App:
 
     def toggle_cmds(self) -> List[Int]:
         """The commands that switch something on or off (checked() has those on)."""
-        return [CM_LINENUM, CM_RELNUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_GPU_STATUS, CM_GIT_LINEBLAME, CM_FORMAT_SAVE, CM_INDENT_GUIDES, CM_RAINBOW_BRACKETS, CM_TEST_WATCH, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
+        return [CM_LINENUM, CM_RELNUM, CM_SCREEN_READER, CM_AUTOINDENT, CM_HLLINE, CM_CLOCK, CM_GPU_STATUS, CM_GIT_LINEBLAME, CM_FORMAT_SAVE, CM_INDENT_GUIDES, CM_RAINBOW_BRACKETS, CM_TEST_WATCH, CM_CELL_INLINE_OUT, CM_VIM_ZEN, CM_SHOWWS, CM_WRAP, CM_TILED, CM_SEMANTIC, CM_HINTS, CM_USETABS, CM_CRLF]
 
     def checked(self) -> List[Int]:
         var out = List[Int]()
@@ -200,6 +200,8 @@ __extension App:
             out.append(CM_WRAP)
         if self.tiled:
             out.append(CM_TILED)
+        if self.vim_zen:
+            out.append(CM_VIM_ZEN)
         if self.semantic_on:
             out.append(CM_SEMANTIC)
         if self.quiet_on:
@@ -211,6 +213,8 @@ __extension App:
         if self.codegen_index() >= 0:
             out.append(CM_CODEGEN)
         var ti = self.top_editor()
+        if ti < 0 or self.wins[ti].inline_cell_outputs:
+            out.append(CM_CELL_INLINE_OUT)
         if ti >= 0 and self.wins[ti].buf.use_tabs:
             out.append(CM_USETABS)
         if ti >= 0 and self.wins[ti].buf.crlf:

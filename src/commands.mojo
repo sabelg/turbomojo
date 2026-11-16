@@ -169,6 +169,19 @@ comptime CM_MIGRATE_MOJO12 = 299 # Text > Migrate Legacy Mojo -> 1.2...
 comptime CM_MIGRATE_MOJO12_PROJECT = 300 # Palette: Migrate workspace to Mojo 1.2...
 comptime CM_EXTRACT_VAR = 301    # Text > Extract variable...
 comptime CM_EXTRACT_FUNC = 302   # Text > Extract function...
+comptime CM_CELL_INLINE_OUT = 303 # Compile > Toggle inline cell outputs
+comptime CM_RUN_ALL_CELLS = 304  # Compile > Run all cells (# %%)
+comptime CM_RUN_CELLS_ABOVE = 305 # Text > Run cells above
+comptime CM_CELL_CLEAR_OUT = 306 # Text > Clear cell outputs
+comptime CM_NEW_NOTEBOOK = 307   # File > New Jupyter notebook (.ipynb)...
+comptime CM_HELP_NOTEBOOKS = 308 # Help > Jupyter & notebooks
+comptime CM_VIM_ZEN = 309        # ≡ > Whole-Vim mode (tmide vim)
+comptime CM_CELL_INSERT_ABOVE = 320 # Palette: Insert cell above
+comptime CM_CELL_INSERT_BELOW = 321 # Palette: Insert cell below
+comptime CM_CELL_DELETE = 322       # Palette: Delete cell
+comptime CM_CELL_TOGGLE_MD = 323    # Palette: Toggle Code / Markdown cell
+comptime CM_CELL_RESTART_RUN_ALL = 324 # Palette: Restart kernel & run all cells
+comptime CM_OPEN_NOTEBOOK = 325     # File > Open notebook (.ipynb)...
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -963,7 +976,7 @@ def build_registry() -> Registry:
     r.cmd(CM_GIT_PULL, "git.pull", "Git pu~l~l --rebase", "Pull from upstream remote with --rebase asynchronously")
     r.cmd(CM_GIT_FETCH, "git.fetch", "Git ~f~etch --prune", "Fetch and prune remote tracking branches asynchronously")
     r.cmd(CM_GIT_STASH_LIST, "git.stashList", "Git ~s~tash list...", "Browse, preview, apply, pop, drop or create named git stashes")
-    r.cmd(CM_SWITCH_PROJECT, "file.switchProject", "Switch pro~j~ect...", "Switch to a recent project folder in-place")
+    r.cmd(CM_SWITCH_PROJECT, "file.switchProject", "Switch project ~f~older...", "Switch to a recent project folder in-place")
     r.cmd(CM_GIT_WORKTREE, "git.worktrees", "Git wor~k~trees...", "List, create, prune or switch git worktrees")
     r.cmd(CM_PLUGINS, "options.pluginsManager", "Manage ~p~lugins...", "Inspect running plugins and start, stop or restart them")
     r.cmd(CM_TERM_NEW, "window.newTerminalTab", "New terminal ta~b~", "Open an additional shell tab in the integrated terminal")
@@ -975,6 +988,19 @@ def build_registry() -> Registry:
     r.hide(CM_MIGRATE_MOJO12_PROJECT, "refactor.migrateMojo12Project", "Migrate workspace to Mojo 1.2...", "Preview and migrate all legacy Mojo files in the project to Mojo 1.2 with 1-step Undo")
     r.cmd(CM_EXTRACT_VAR, "refactor.extractVariable", "Extract ~v~ariable...", "Extract the selected single-line expression into a named local variable")
     r.cmd(CM_EXTRACT_FUNC, "refactor.extractFunction", "Extract ~f~unction...", "Extract the selected statement lines into a helper function with inferred parameters and return value")
+    r.cmd(CM_CELL_INLINE_OUT, "cells.toggleInlineOutputs", "Toggle inline cell ~y~ield", "Show or hide virtual multi-line cell output blocks beneath # %% cells")
+    r.cmd(CM_RUN_ALL_CELLS, "cells.runAll", "Run ~q~ueue: all cells (# %%)", "Execute every # %% code cell in sequence from top to bottom")
+    r.cmd(CM_RUN_CELLS_ABOVE, "cells.runAbove", "Run cells a~b~ove", "Execute all # %% code cells above the cursor in sequence")
+    r.cmd(CM_CELL_CLEAR_OUT, "cells.clearOutputs", "~C~lear cell outputs", "Clear inline virtual output blocks and execution badges in the active notebook")
+    r.cmd(CM_NEW_NOTEBOOK, "cells.newNotebook", "New ~J~upyter notebook (.ipynb)...", "Create a new interactive Mojo or Python Jupyter notebook (.ipynb)")
+    r.cmd(CM_OPEN_NOTEBOOK, "cells.openNotebook", "Open noteboo~k~ (.ipynb)...", "Browse and open an existing .ipynb Jupyter notebook (or type a new .ipynb filename)")
+    r.cmd(CM_HELP_NOTEBOOKS, "help.notebooks", "~J~upyter & notebooks", "Guide to opening, running, plotting and saving .ipynb and # %% notebooks")
+    r.cmd(CM_VIM_ZEN, "view.vimZen", "~W~hole-Vim mode (tmide vim)", "Chromeless full-screen Vim experience: row-0 buffer, ~ EOF markers, 2-row Vim statusline + command bar, <Space> leader")
+    r.hide(CM_CELL_INSERT_ABOVE, "cells.insertAbove", "Notebook: Insert cell above", "Insert a new # %% code cell above the cell at the cursor (Jupyter 'a')")
+    r.hide(CM_CELL_INSERT_BELOW, "cells.insertBelow", "Notebook: Insert cell below", "Insert a new # %% code cell below the cell at the cursor (Jupyter 'b')")
+    r.hide(CM_CELL_DELETE, "cells.deleteCell", "Notebook: Delete cell", "Delete the # %% cell at the cursor (Jupyter 'dd')")
+    r.hide(CM_CELL_TOGGLE_MD, "cells.toggleMarkdown", "Notebook: Toggle Code / Markdown cell", "Convert the cell at the cursor between # %% Code and # %% [markdown] (Jupyter 'm' / 'y')")
+    r.hide(CM_CELL_RESTART_RUN_ALL, "cells.restartAndRunAll", "Notebook: Restart kernel & run all cells", "Restart the persistent notebook kernel and execute every # %% cell from top to bottom")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")
@@ -1018,6 +1044,7 @@ def build_registry() -> Registry:
     r.menu("~≡~")
     r.item(CM_ABOUT)
     r.item(CM_PALETTE)
+    r.item(CM_VIM_ZEN)
     r.item(CM_PLUGINS)
     r.sep()
     r.item(CM_AGENT_MODEL)
@@ -1028,6 +1055,7 @@ def build_registry() -> Registry:
     r.item(CM_AGENT_REVERT)
     r.sep()
     r.item(CM_GIT_STASH_LIST)
+    r.item(CM_GIT_WORKTREE)
     r.item(CM_GIT_PUSH)
     r.item(CM_GIT_PULL)
     r.item(CM_GIT_FETCH)
@@ -1044,6 +1072,9 @@ def build_registry() -> Registry:
     r.item(CM_SAVEAS)
     r.item(CM_SAVEALL)
     r.sep()
+    r.item(CM_NEW_NOTEBOOK)
+    r.item(CM_OPEN_NOTEBOOK)
+    r.sep()
     r.item(CM_QUICK)
     r.item(CM_SWITCH_PROJECT)
     r.item(CM_CLOSE)
@@ -1059,7 +1090,6 @@ def build_registry() -> Registry:
     r.item(CM_GIT_PREV)
     r.item(CM_GIT_COMMIT)
     r.item(CM_GIT_BRANCH)
-    r.item(CM_GIT_WORKTREE)
     r.item(CM_GIT_BLAME)
     r.sep()
     r.item(CM_AGENT)
@@ -1114,6 +1144,8 @@ def build_registry() -> Registry:
     r.item(CM_MD_PREVIEW)
     r.item(CM_EXPORT_IPYNB)
     r.item(CM_CELL_VIEW_PLOT)
+    r.item(CM_RUN_CELLS_ABOVE)
+    r.item(CM_CELL_CLEAR_OUT)
     r.sep()
     r.item(CM_EXTRACT_VAR)
     r.item(CM_EXTRACT_FUNC)
@@ -1188,6 +1220,8 @@ def build_registry() -> Registry:
     r.item(CM_BENCH_SAVE)
     r.item(CM_MAX_SERVE)
     r.item(CM_RUN_CELL)
+    r.item(CM_RUN_ALL_CELLS)
+    r.item(CM_CELL_INLINE_OUT)
     r.item(CM_CELL_RESTART)
     r.item(CM_TEST_WATCH)
     r.sep()
@@ -1265,6 +1299,7 @@ def build_registry() -> Registry:
     r.item(CM_HELP)
     r.item(CM_HELP_GUIDE)
     r.item(CM_HELP_CHEAT)
+    r.item(CM_HELP_NOTEBOOKS)
     r.item(CM_HELP_TUTORIAL)
     r.item(CM_EXERCISES)
     r.item(CM_EX_CHECK)

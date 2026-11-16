@@ -10,8 +10,10 @@ from term import (
 )
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
-from highlight import Highlighter, HL_MOJO
-from ipynb import is_ipynb_path, ipynb_to_percent_text, percent_text_to_ipynb
+from highlight import Highlighter, HL_MOJO, HL_PYTHON, HL_JSON
+from ipynb import is_ipynb_path, ipynb_to_percent_text, percent_text_to_ipynb, strip_utf8_bom, IpynbCellOutput, ipynb_b64_decode
+from cells import parse_cells, format_cell_divider_badge, CELL_SUCCESS, CELL_ERROR
+from signals import own_pid
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from hexview import is_binary_data, render_hex_rows
 from markdown import md_render_rich
@@ -56,6 +58,47 @@ from app_plugins import *
 
 __extension App:
     # ================================================================ files
+    def _workspace_prefers_mojo(self, file_path: String) -> Bool:
+        """Heuristic for empty/new `.ipynb` notebooks: True when inside a Mojo workspace."""
+        var base_dir = dirname(file_path) if file_path.byte_length() > 0 else String(self.cwd)
+        if base_dir.byte_length() == 0:
+            base_dir = String(self.cwd)
+        var cur = base_dir
+        for _ in range(5):
+            if path_exists(join_path(cur, "mojoproject.toml")) or path_exists(join_path(cur, "turbomojo.toml")) or path_exists(join_path(cur, "main.mojo")) or path_exists(join_path(cur, "src/main.mojo")):
+                return True
+            var pixi_p = join_path(cur, "pixi.toml")
+            if path_exists(pixi_p):
+                var px = lower_str(bytes_to_str(read_file(pixi_p)))
+                if px.find("mojo") >= 0:
+                    return True
+            var par = dirname(cur)
+            if par == cur or par.byte_length() == 0:
+                break
+            cur = par
+        if path_exists(join_path(base_dir, "pyproject.toml")) or path_exists(join_path(base_dir, "requirements.txt")):
+            return False
+        return True
+
+    def _init_new_ipynb_window(mut self, i: Int, p: String):
+        """Configure window `i` as a fresh interactive `# %%` Jupyter notebook."""
+        var is_mj = self._workspace_prefers_mojo(p)
+        self.wins[i].lang_override = HL_MOJO if is_mj else HL_PYTHON
+        self.wins[i].inline_cell_outputs = True
+        if self.wins[i].buf.count() == 1 and self.wins[i].buf.llen(0) == 0:
+            self.wins[i].buf.load_bytes(str_bytes("# %%\n\n"))
+            self.wins[i].buf.modified = False
+            self.wins[i].cr = 1
+            self.wins[i].cc = 0
+            self.wins[i].top = 0
+
+    def new_notebook_cmd(mut self):
+        """Create a new interactive Jupyter notebook buffer (`notebook.ipynb`)."""
+        var i = self.new_editor("notebook.ipynb", "")
+        self._init_new_ipynb_window(i, join_path(self.cwd, "notebook.ipynb"))
+        var kind_lbl = "Mojo" if self.wins[i].lang_override == HL_MOJO else "Python"
+        self.say("New " + kind_lbl + " Jupyter notebook — Ctrl-Enter runs cell, F2 saves .ipynb")
+
     def open_path(mut self, path: String) raises:
         var p = abs_path(self.cwd, path)
         if path_exists(p) and not is_dir(p) and not self.restoring:
@@ -97,13 +140,40 @@ __extension App:
                 self.say("Binary file detected: opened read-only in hex inspector")
                 return
             var big = len(bytes) > self.large_file_bytes
-            if not big and is_ipynb_path(p):
-                var nb_doc = ipynb_to_percent_text(bytes_to_str(bytes))
+            if is_ipynb_path(p) and len(bytes) <= 256 * 1024 * 1024:
+                var prefer_mj = self._workspace_prefers_mojo(p)
+                var nb_doc = ipynb_to_percent_text(bytes_to_str(bytes), prefer_mj)
                 if nb_doc.ok:
                     self.wins[i].buf.load_bytes(str_bytes(nb_doc.text))
                     self.wins[i].buf.modified = False
                     self.wins[i].buf.large = False
                     self.wins[i].lang_override = nb_doc.lang_id()
+                    self.wins[i].inline_cell_outputs = True
+                    for co in nb_doc.outputs:
+                        var plot_paths = List[String]()
+                        for pi in range(len(co.png_b64)):
+                            var raw_png = ipynb_b64_decode(co.png_b64[pi])
+                            if len(raw_png) > 0:
+                                var pp = env_or("TMPDIR", "/tmp") + "/turbomojo-ipynb-plot-" + String(own_pid()) + "-" + String(co.code_ordinal) + "-" + String(pi) + ".png"
+                                if write_file(pp, raw_png):
+                                    plot_paths.append(pp)
+                        if len(plot_paths) > 0:
+                            self.cell_last_plots = plot_paths.copy()
+                        if co.execution_count > self.cell_exec_counter:
+                            self.cell_exec_counter = co.execution_count
+                        var p_joined = "\n".join(plot_paths)
+                        if co.text.byte_length() > 0 or p_joined.byte_length() > 0 or co.is_error:
+                            self.wins[i].set_cell_output(
+                                co.header_row, co.text, co.is_error, p_joined, co.execution_count
+                            )
+                        var prev_line = co.text if co.text.byte_length() > 0 else ("error" if co.is_error else ("#" + String(co.execution_count)))
+                        var bdg = format_cell_divider_badge(
+                            CELL_ERROR if co.is_error else CELL_SUCCESS,
+                            0,
+                            prev_line,
+                            len(plot_paths),
+                        )
+                        self.wins[i].set_cell_badge(co.header_row, bdg)
                     self.wins[i].cr = 0
                     self.wins[i].cc = 0
                     self.wins[i].top = 0
@@ -113,8 +183,44 @@ __extension App:
                     self.note_disk_state(i)
                     self.wins[i].sync_ver = self.wins[i].buf.version
                     self.plugins_event("open", p)
-                    self.say("Loaded Jupyter notebook (" + ("Mojo" if nb_doc.is_mojo else "Python") + "): " + p)
+                    var n_cells = len(parse_cells(self.wins[i].buf))
+                    self.say("Loaded Jupyter notebook (" + ("Mojo" if nb_doc.is_mojo else "Python") + ", " + String(n_cells) + (" cell" if n_cells == 1 else " cells") + ") — Ctrl-Enter runs cell")
+                    if nb_doc.is_mojo and self.lsp_auto_start and self.lsp_auto_checked and self.log_path.byte_length() > 0 and not self.trust_held and self.trust_ok() and not self.lsp.active():
+                        self.lsp_track(i, now_ns())
                     return
+                var raw_ipynb = strip_utf8_bom(bytes_to_str(bytes))
+                if not String(raw_ipynb.lstrip()).startswith("{"):
+                    var body = raw_ipynb if raw_ipynb.find("# %%") >= 0 else ("# %%\n" + raw_ipynb)
+                    self.wins[i].buf.load_bytes(str_bytes(body))
+                    self.wins[i].buf.modified = False
+                    self.wins[i].buf.large = False
+                    self.wins[i].lang_override = HL_MOJO if prefer_mj else HL_PYTHON
+                    self.wins[i].inline_cell_outputs = True
+                    self.wins[i].cr = 0
+                    self.wins[i].cc = 0
+                    self.wins[i].top = 0
+                    self.wins[i].disk_hash = content_hash(bytes)
+                    self.wins[i].disk_size = len(bytes)
+                    self.apply_editorconfig(i)
+                    self.note_disk_state(i)
+                    self.wins[i].sync_ver = self.wins[i].buf.version
+                    self.plugins_event("open", p)
+                    self.say("Opened plain-text .ipynb as notebook (Save writes valid Jupyter JSON)")
+                    return
+                self.wins[i].buf.load_bytes(bytes)
+                self.wins[i].buf.modified = False
+                self.wins[i].buf.large = big
+                self.wins[i].lang_override = HL_JSON
+                self.wins[i].cr = 0
+                self.wins[i].cc = 0
+                self.wins[i].top = 0
+                self.wins[i].disk_hash = 0 if big else content_hash(bytes)
+                self.wins[i].disk_size = -1 if big else len(bytes)
+                self.apply_editorconfig(i)
+                self.note_disk_state(i)
+                self.wins[i].sync_ver = self.wins[i].buf.version
+                self.say("Invalid .ipynb JSON (" + nb_doc.error + ") — opened raw JSON")
+                return
             self.wins[i].buf.load_bytes(bytes)
             self.wins[i].buf.large = big
             self.wins[i].cr = 0
@@ -128,7 +234,11 @@ __extension App:
             else:
                 self.say("Loaded " + p)
         else:
-            self.say("New file: " + p)
+            if is_ipynb_path(p):
+                self._init_new_ipynb_window(i, p)
+                self.say("New Jupyter notebook (" + ("Mojo" if self.wins[i].lang_override == HL_MOJO else "Python") + "): " + p + " — Ctrl-Enter runs cell")
+            else:
+                self.say("New file: " + p)
         self.apply_editorconfig(i)
         self.note_disk_state(i)
         self.wins[i].sync_ver = self.wins[i].buf.version
@@ -178,12 +288,17 @@ __extension App:
             self.wins[i].buf.encoding = ENC_UTF8
             note = " as UTF-8 (it has characters Latin-1 cannot hold)"
         var b: List[UInt8]
-        if is_ipynb_path(self.wins[i].path) and self.wins[i].lang_override >= 0:
+        if is_ipynb_path(self.wins[i].path) and self.wins[i].lang_override != HL_JSON:
+            if self.wins[i].lang_override < 0:
+                self.wins[i].lang_override = HL_MOJO if self._workspace_prefers_mojo(self.wins[i].path) else HL_PYTHON
+            self.wins[i].inline_cell_outputs = True
             var prev_raw = bytes_to_str(read_file(self.wins[i].path)) if path_exists(self.wins[i].path) else String("")
+            var live_outs = self.collect_ipynb_outputs(i)
             var ipynb_json = percent_text_to_ipynb(
                 bytes_to_str(self.wins[i].buf.to_bytes()),
                 self.wins[i].lang_override == HL_MOJO,
                 prev_raw,
+                live_outs,
             )
             b = str_bytes(ipynb_json)
         else:
@@ -345,6 +460,11 @@ __extension App:
                 self.wins[dst].buf.bp_stamp = self.wins[src].buf.bp_stamp
                 self.wins[dst].buf.cell_badge_rows = self.wins[src].buf.cell_badge_rows.copy()
                 self.wins[dst].buf.cell_badges = self.wins[src].buf.cell_badges.copy()
+                self.wins[dst].buf.cell_out_rows = self.wins[src].buf.cell_out_rows.copy()
+                self.wins[dst].buf.cell_out_texts = self.wins[src].buf.cell_out_texts.copy()
+                self.wins[dst].buf.cell_out_errs = self.wins[src].buf.cell_out_errs.copy()
+                self.wins[dst].buf.cell_out_plots = self.wins[src].buf.cell_out_plots.copy()
+                self.wins[dst].buf.cell_out_counts = self.wins[src].buf.cell_out_counts.copy()
                 self.wins[dst].sync_cell_badges()
                 self.wins[dst].buf.exec_row = self.wins[src].buf.exec_row
                 self.wins[dst].buf.git_state = self.wins[src].buf.git_state
@@ -557,6 +677,49 @@ __extension App:
         self.session_save()
         self.running = False
 
+    def collect_ipynb_outputs(self, i: Int) -> List[IpynbCellOutput]:
+        """Gather live cell outputs, execution counts, and base64 PNG plots from buffer `i`."""
+        var outs = List[IpynbCellOutput]()
+        if i < 0 or i >= len(self.wins) or len(self.wins[i].buf.cell_out_rows) == 0:
+            return outs^
+        var cells = parse_cells(self.wins[i].buf)
+        var code_ord = 0
+        for c in cells:
+            var low_t = lower_str(c.title)
+            if low_t.startswith("[markdown]") or low_t.startswith("[md]") or low_t.startswith("[raw]"):
+                continue
+            var hrow = c.header_row if c.header_row >= 0 else 0
+            for oi in range(len(self.wins[i].buf.cell_out_rows)):
+                if self.wins[i].buf.cell_out_rows[oi] == hrow:
+                    var pngs = List[String]()
+                    var pstr = self.wins[i].buf.cell_out_plots[oi]
+                    if pstr.byte_length() > 0:
+                        for pp_s in pstr.split("\n"):
+                            var pp = String(pp_s.strip())
+                            if pp.byte_length() > 0 and path_exists(pp):
+                                var raw_p = read_file(pp)
+                                if len(raw_p) > 0:
+                                    pngs.append(base64(raw_p))
+                    var clean_lines = List[String]()
+                    for ln_s in self.wins[i].buf.cell_out_texts[oi].split("\n"):
+                        var ln = String(ln_s)
+                        if not ln.startswith("[📊 plot saved: "):
+                            clean_lines.append(ln)
+                    var txt = "\n".join(clean_lines)
+                    outs.append(
+                        IpynbCellOutput(
+                            code_ord,
+                            hrow,
+                            self.wins[i].buf.cell_out_counts[oi],
+                            txt,
+                            self.wins[i].buf.cell_out_errs[oi],
+                            pngs^,
+                        )
+                    )
+                    break
+            code_ord += 1
+        return outs^
+
     def export_ipynb(mut self) raises:
         """Export the active `# %%` notebook or script to `<stem>.ipynb` (nbformat v4)."""
         var i = self.top_editor()
@@ -572,10 +735,12 @@ __extension App:
             out_path = join_path(self.cwd, st + ".ipynb")
         var prev_raw = bytes_to_str(read_file(out_path)) if path_exists(out_path) else String("")
         var is_mj = self.wins[i].effective_lang() == HL_MOJO
+        var live_outs = self.collect_ipynb_outputs(i)
         var ipynb_json = percent_text_to_ipynb(
             bytes_to_str(self.wins[i].buf.to_bytes()),
             is_mj,
             prev_raw,
+            live_outs,
         )
         if not write_file(out_path, str_bytes(ipynb_json)):
             self.say("Could not write " + out_path)

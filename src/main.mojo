@@ -21,12 +21,14 @@ from util import write_file, str_bytes
 from ipc import parse_file_loc, ipc_open_in_running_ide
 
 
-comptime USAGE = """Usage: tmide [FILE|FOLDER]...
+comptime USAGE = """Usage: tmide [vim | --vim] [FILE|FOLDER]...
 
 TurboMojo, a Turbo C++ style IDE for Mojo in the terminal. With no arguments it
 restores the last session (or opens an empty window); FILEs open in editors, a
-FOLDER opens the Open dialog there.
+FOLDER opens the Open dialog there. `tmide vim [FILE]...` (or `--vim`) opens
+chromeless Whole-Vim mode (full-bleed buffer, `~` EOF lines, `<Space>` leader).
 
+  vim, --vim      chromeless Whole-Vim / Neovim mode (`<Space>` leader, `:zen` toggles)
   -h, --help      this text
   -V, --version   the version
   --keys          every command's keys in the three keymaps (docs/KEYMAP.md)
@@ -85,6 +87,9 @@ def screenshot(mut app: App, args: List[String]) raises -> Int:
             else:
                 cmds.append(v)
             k += 2
+        elif a == "--vim" or a == "vim":
+            cmds.append("view.vimZen")
+            k += 1
         else:
             files.append(a)
             k += 1
@@ -215,6 +220,7 @@ def main() raises:
         return
     var lines = env_or("TERM", "") == "dumb"
     var reuse = False
+    var vim_cli = False
     var files = List[String]()
     for k in range(1, len(args)):
         var ak = String(args[k])
@@ -222,6 +228,8 @@ def main() raises:
             lines = True
         elif ak == "--reuse":
             reuse = True
+        elif ak == "--vim" or (k == 1 and ak == "vim"):
+            vim_cli = True
         else:
             files.append(ak)
     if reuse and not lines:
@@ -254,7 +262,8 @@ def main() raises:
     app.ipc_enable(state_dir() + "/ipc")
     app.plugins_dir = config_home() + "/plugins"
     app.plugins_log_dir = state_dir()
-    app.whats_new_check(state_dir() + "/seen-version")
+    if not vim_cli:
+        app.whats_new_check(state_dir() + "/seen-version")
     for f in files:
         try:
             var loc = parse_file_loc(f)
@@ -264,11 +273,11 @@ def main() raises:
                 app.wins[ti].goto(loc.line - 1, max(0, loc.col - 1))
         except e:
             print("cannot open", f, ":", String(e))
-    if len(files) == 0:
+    if len(files) == 0 and not vim_cli:
         # the very first start without a file asks which theme (not with files named:
         # what is typed then is meant for them)
         app.theme_marker = state_dir() + "/theme-asked"
-    if len(files) == 0 and app.restore_session:
+    if len(files) == 0 and app.restore_session and not vim_cli:
         # started without a file: go on where this project was left
         app.session_dir = state_dir() + "/sessions"
         try:
@@ -276,7 +285,12 @@ def main() raises:
         except e:
             print("cannot restore the session:", String(e))
     if app.top_editor() < 0 and (app.top() < 0 or app.wins[app.top()].kind != WK_HEX):
-        app.exec(CM_NEW)
+        if vim_cli:
+            _ = app.new_editor("[No Name]", "")
+        else:
+            app.exec(CM_NEW)
+    if vim_cli:
+        app.enter_vim_zen(True)
     app.plugins_start()             # (they answer in the background)
     app.show_config_warnings()
     app.offer_recovery()
