@@ -9,8 +9,10 @@ ___ulock_wait
 ___ulock_wake
 __availability_version_check
 __exit
+_accept
 _access
 _arc4random_buf
+_bind
 _bzero
 _calloc
 _chdir
@@ -18,6 +20,7 @@ _clock_gettime_nsec_np
 _close
 _close$NOCANCEL
 _closedir
+_connect
 _dup
 _dup2
 _execvp
@@ -49,6 +52,7 @@ _isatty
 _kevent
 _kill
 _kqueue
+_listen
 _localtime_r
 _log
 _logf
@@ -88,6 +92,7 @@ _shm_open
 _shm_unlink
 _sigaction
 _signal
+_socket
 _stat
 _strerror
 _strlen

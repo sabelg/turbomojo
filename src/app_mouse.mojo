@@ -12,7 +12,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, MINIMAP_W, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_DATAGRID, WK_PROFILE, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, MINIMAP_W, ACT_OTHER, ACT_TYPE
 from cellimg import decode_cell_img_line
 from layout import L_ROW, L_COL, RATIO_MIN, RATIO_MAX
 from window_search import *
@@ -48,6 +48,8 @@ from app_tests import *
 from app_jobs import *
 from app_input import *
 from app_draw import *
+from app_v40 import *
+from nb_widgets import parse_cell_widgets
 from cells import parse_cells, cell_at_row
 
 
@@ -325,28 +327,37 @@ __extension App:
                 self.drag = 5
                 self.drag_scroll_wi = t
             return
-        if self.wins[t].kind == WK_IMGVIEW and not self.wins[t].chromeless and y == wy + wh - 1:
+        if self.wins[t].kind == WK_IMGVIEW and not self.wins[t].chromeless and (y == wy + wh - 1 or y == wy + wh - 2):
             var act = self.wins[t].imgview_bar_hit(x, y)
-            if act == 1:
-                self.wins[t].imgview_step_zoom(-1)
-            elif act == 2:
-                self.wins[t].imgview_step_zoom(1)
-            elif act == 3:
-                self.wins[t].imgview_reset_fit()
-            elif act == 4:
-                self.wins[t].imgview_step_plot(-1)
-            elif act == 5:
-                self.wins[t].imgview_step_plot(1)
-            elif act == 6:
-                var cur_p = self.wins[t].imgview_current_path()
-                self.open_plot_in_os_viewer(cur_p)
-            elif act == 7:
-                self.close_window(t, NEXT_CLOSE)
-            elif act == 8:
-                self.wins[t].img_anim_playing = not self.wins[t].img_anim_playing
-                self.wins[t].anim_last_ns = 0
-                self.wins[t].imgview_sync_title()
-            return
+            if act > 0:
+                if act == 1:
+                    self.wins[t].imgview_step_zoom(-1)
+                elif act == 2:
+                    self.wins[t].imgview_step_zoom(1)
+                elif act == 3:
+                    self.wins[t].imgview_reset_fit()
+                elif act == 4:
+                    self.wins[t].imgview_step_plot(-1)
+                elif act == 5:
+                    self.wins[t].imgview_step_plot(1)
+                elif act == 6:
+                    var cur_p = self.wins[t].imgview_current_path()
+                    self.open_plot_in_os_viewer(cur_p)
+                elif act == 7:
+                    self.close_window(t, NEXT_CLOSE)
+                elif act == 8:
+                    self.wins[t].img_anim_playing = not self.wins[t].img_anim_playing
+                    self.wins[t].anim_last_ns = 0
+                    self.wins[t].imgview_sync_title()
+                elif act == 9:
+                    self.save_gif_dialog()
+                elif act >= 1000:
+                    self.wins[t].img_idx = max(0, min(len(self.wins[t].img_paths) - 1, act - 1000))
+                    self.wins[t].img_anim_playing = False
+                    self.wins[t].imgview_sync_title()
+                return
+            if y == wy + wh - 1:
+                return
         if not self.wins[t].chromeless and (y == wy + wh - 1 or x == wx):
             return
         if self.wins[t].chromeless and self.wins[t].split_sep and x == wx + ww - 1:
@@ -425,6 +436,20 @@ __extension App:
             var vidx = scr_pos.c - self.wins[t].text_row_segs(br_click)
             if vidx >= 0 and vidx < len(vlines):
                 var vl = vlines[vidx]
+                if (
+                    str_contains(vl, "[Tensor ")
+                    or str_contains(vl, "[DataFrame ")
+                    or str_contains(vl, "[Polars ")
+                    or str_contains(vl, "[Array ")
+                    or str_contains(vl, "[SIMD ")
+                ):
+                    for oi_dg in range(len(self.wins[t].buf.cell_out_rows)):
+                        var hdr_dg = self.wins[t].buf.cell_out_rows[oi_dg]
+                        if self.wins[t].buf.cell_end_for_header(hdr_dg) == br_click:
+                            var otxt_dg = self.wins[t].buf.cell_out_texts[oi_dg] if oi_dg < len(self.wins[t].buf.cell_out_texts) else vl
+                            var extracted = extract_matrix_or_csv_from_output(otxt_dg, vl)
+                            self.open_datagrid_window(extracted[0], extracted[1])
+                            return
                 if (
                     vl.startswith("\x01IMG\t")
                     or vl.startswith("[📊 ")
@@ -519,6 +544,27 @@ __extension App:
             if fr < self.wins[t].buf.count() and (self.wins[t].buf.fold_index(fr) >= 0 or self.wins[t].buf.foldable(fr)):
                 _ = self.wins[t].toggle_fold(fr)
                 return
+        if br_click < self.wins[t].buf.count() and scr_pos.c == 0 and x > wx + pd + self.wins[t].gut + self.wins[t].buf.llen(br_click) + 1:
+            var wln_click = to_str(self.wins[t].buf.line(br_click))
+            if str_contains(wln_click, "@param") or str_contains(wln_click, "@interact"):
+                var w_cands = parse_cell_widgets(self.wins[t].buf, br_click, br_click)
+                if len(w_cands) > 0:
+                    var eol_wx = wx + pd + self.wins[t].gut + self.wins[t].vcol(br_click, self.wins[t].buf.llen(br_click)) + 4
+                    var rel_wx = x - eol_wx
+                    var delta_w = 1
+                    var ratio_w: Float64 = -1.0
+                    if w_cands[0].kind == 0:  # WIDGET_SLIDER: `⚙ name: [◀ ━━●━━ ▶] val`
+                        var pfx_len = 4 + cp_len(w_cands[0].var_name)
+                        if rel_wx <= pfx_len + 2:
+                            delta_w = -1
+                        elif rel_wx >= pfx_len + 16:
+                            delta_w = 1
+                        else:
+                            ratio_w = Float64(max(0, min(12, rel_wx - (pfx_len + 3)))) / 12.0
+                    elif rel_wx < 8:
+                        delta_w = -1
+                    if self.step_notebook_widget_at(t, br_click, delta_w, ratio_w, True):
+                        return
         self.wins[t].nb_cmd_mode = False
         var p = self.wins[t].screen_to_pos(x, y)
         if e.key & MOD_ALT != 0:

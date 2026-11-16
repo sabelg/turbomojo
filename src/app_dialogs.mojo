@@ -54,6 +54,7 @@ from app_setup import *
 from app_presets import *
 from app_pkginstall import *
 from app_plugins import *
+from app_v40 import *
 from setupcheck import setup_items, setup_needs_attention
 
 
@@ -570,6 +571,32 @@ __extension App:
             var pspec = self.dlg.field_text(0)
             self.plugin_install_button(b, pspec, s)
             self.plugin_install_dialog()
+        elif kind == D_HARPOON:
+            if b == 0:
+                var s = self.dlg.selected_item()
+                if s >= 0 and s < len(self.dlg.item_data) and self.dlg.item_data[s] > 0:
+                    var slot_n = self.dlg.item_data[s]
+                    self.harpoon_jump_slot(slot_n)
+            elif b == 1:
+                self.harpoon_toggle_pin()
+                self.harpoon_open_dialog()
+            elif b == 2:
+                self.harpoon = HarpoonList()
+                self.say("Cleared all Harpoon marks")
+        elif kind == D_SEMANTIC_SEARCH and b == 0:
+            self.semantic_search_run(self.dlg.field_text(0))
+        elif kind == D_WORKTREE_TASK and b == 0:
+            self.worktree_task_run(self.dlg.field_text(0))
+        elif kind == D_LIVE_SHARE and b <= 2:
+            var sock_s = self.dlg.field_text(0)
+            var peer_s = self.dlg.field_text(1)
+            self.live_share_button(b, sock_s, peer_s)
+        elif kind == D_EXPORT_HTML and b == 0:
+            _ = self.export_active_notebook_html(self.dlg.field_text(0))
+        elif kind == D_CONNECT_KERNEL and b == 0:
+            self.connect_kernel_apply(self.dlg.field_text(0))
+        elif kind == D_SAVE_GIF and b == 0:
+            _ = self.save_gif_apply(self.dlg.field_text(0))
 
     # ------------------------------------------------------------ find / replace
     def current_search(self) -> Search:

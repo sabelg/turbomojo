@@ -59,6 +59,7 @@ struct of `appstate.mojo`, one area each.
 | `src/app_terminal.mojo` | The integrated terminal: a shell (Window > Terminal) and the program Run starts, each in a window of its own at the bottom, on a pty with libghostty-vt keeping the screen. |
 | `src/app_tests.mojo` | The test explorer: the project's TestSuite files and their tests, run by file or one at a time, with the place of each failure (see testexp.mojo). |
 | `src/app_tips.mojo` | The tips of src/tips.mojo in the IDE: the editor's keys and the Find dialog feed the rules; a tip comes as a notice, so while you type it waits for the pause (P7-12), and a screen reader hears it then. |
+| `src/app_v40.mojo` | Phase 21–25 IDE integration (`v3.1` → `v4.0.0`). |
 | `src/app_vim.mojo` | The vim interface's keys (Phase 12; see vim.mojo and vim_motion.mojo): Normal, Insert and Visual modes in front of TurboMojo's own bindings. |
 | `src/app_vimcmd.mojo` | The vim interface's command line (P12-03; see vim_cmd.mojo): / and ? search, n N * #, and `:` commands - :w :q :wq :x :e :N :s :%s :d :y :noh and the rest, and TurboMojo's own commands by name (`:build`, `:run`, `:file.save`). |
 | `src/app_watch.mojo` | Reacting to files that were changed by another program while open in the IDE. |
@@ -94,6 +95,7 @@ struct of `appstate.mojo`, one area each.
 | `src/gitdiff.mojo` | The diff view's model: a unified diff of two versions of a file, and what staging, unstaging or reverting one change (hunk) of it makes of them. |
 | `src/glyphs.mojo` | Glyph tiers (`ui.glyphs`): which characters the IDE's own chrome is drawn with. |
 | `src/gpu_occupancy.mojo` | GPU Occupancy Calculator, Shared-Memory 32-Bank Conflict Analyzer, and 32/64-Lane Warp View. |
+| `src/gpu_profiler.mojo` | GPU Per-Line Stall Mapper, Interactive Flamegraph / Multi-Stream Timeline, and LayoutTensor Visualizer. |
 | `src/gpuinfo.mojo` | Which GPU will the program run on? (P11-10a) Mojo programs that use a GPU take the first one the driver lists (CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES change which), so TurboMojo asks the vendor's tool once - nvidia-smi for NVIDIA, rocm-smi for AMD - and shows the answer in `tmide --caps` and, when `ui.gpu_status` is on, on the status line. |
 | `src/grapheme.mojo` | Grapheme clusters: what a user perceives as one character. |
 | `src/grep.mojo` | Find in files: walks a folder and searches every text file, a little at a time so the editor stays responsive (call `step` from the event loop until `done`). |
@@ -118,6 +120,9 @@ struct of `appstate.mojo`, one area each.
 | `src/menu.mojo` | Menu bar structures and drawing. |
 | `src/mojocst.mojo` | Pure-Mojo Concrete Syntax Tree (CST) parser for Mojo 1.2+. |
 | `src/mojover.mojo` | Is the Mojo found the one TurboMojo was built with? (P11-03) |
+| `src/nb_ai_rag.mojo` | Multimodal Notebook AI Context & Vision Payload Builder, Isolated Git-Worktree Background Task Runner, and Hybrid `mojocst` CST + Okapi BM25 Semantic Codebase Search. |
+| `src/nb_export_share.mojo` | Self-contained HTML notebook export and zero-server AF_UNIX collaborative Live Share. |
+| `src/nb_widgets.mojo` | Interactive notebook parameter widgets, virtualized DataGrid & heatmap state, GIF89a LZW encoder, LaTeX/Mermaid renderers, and Jupyter ipykernel bridge. |
 | `src/newproject.mojo` | File > New project (P11-04): a folder with what a Mojo project needs, so that a newcomer does not have to know pixi first - a pixi.toml (the Modular channel, `mojo` as its dependency, `hello` and `test` tasks), a hello.mojo, a test for it and a .gitignore. |
 | `src/notify.mojo` | Notifications: short messages that show for a few seconds at the top right ("toasts") when something finishes or needs attention while you work elsewhere, and are kept in the notification centre (Help > Notifications) with what is running now. |
 | `src/omarchy_sync.mojo` | Live non-invasive Omarchy Linux theme synchronization (`theme = "omarchy"`). |
@@ -168,6 +173,7 @@ struct of `appstate.mojo`, one area each.
 | `src/version.mojo` | TurboMojo's version: the one place it is written (the help book, the About box, `tmide --version`, the What's new notice and the conda package all take it from here). |
 | `src/vim.mojo` | The vim interface (Phase 12): `ui.keymap = "vim"`. |
 | `src/vim_cmd.mojo` | The vim interface's search patterns and `:` command lines (P12-03), worked out on the text alone: vim's pattern syntax turned into TurboMojo's regular expressions (regex.mojo), a `:s` replacement turned into the form Search.replacement expands, and a command line split into its range, name, ! and argument. |
+| `src/vim_cst.mojo` | CST-powered structural Vim text objects, 2-char Flash jump labels, surround edits, Harpoon marks, and change list. |
 | `src/vim_motion.mojo` | The vim interface's motions and text objects (P12-02), worked out on the text alone: where w b e W B E, f t F T, %, { } and the rest go from a position, and what iw aw i" a" i( a( i{ ip and their kin cover. |
 | `src/vt.mojo` | Terminal emulation for the integrated terminal: libghostty-vt (Ghostty's terminal core, MIT, from conda-forge) parses what a program writes - every CSI, SGR with 256 colours and truecolor, the alternate screen, scroll regions, cursor and keyboard modes, wide characters, scrollback - and keeps the screen. |
 | `src/watch.mojo` | Detecting changes made to files by other programs. |

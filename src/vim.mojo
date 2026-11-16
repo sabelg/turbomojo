@@ -43,6 +43,11 @@ struct VimState(Copyable, Movable):
     var op_n: Int           # ...and the count typed before it (0: none)
     var pend: Int           # a key waiting for one more: g, f t F T, r, ", m, ', `, q, @, [, ], z, ^W, cs
     var cs_old: Int         # old delimiter for cs<old><new>
+    var ys_r1: Int
+    var ys_c1: Int
+    var ys_r2: Int
+    var ys_c2: Int
+    var ys_lines: Bool
     var f_kind: Int         # the last f t F T, for ; and , (0: none yet)
     var f_ch: Int
     var cur: List[Int]      # the keys of the command being typed (for .)
@@ -106,6 +111,11 @@ struct VimState(Copyable, Movable):
         self.op_n = 0
         self.pend = 0
         self.cs_old = 0
+        self.ys_r1 = 0
+        self.ys_c1 = 0
+        self.ys_r2 = 0
+        self.ys_c2 = 0
+        self.ys_lines = False
         self.f_kind = 0
         self.f_ch = 0
         self.cur = List[Int]()

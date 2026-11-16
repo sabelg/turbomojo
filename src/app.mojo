@@ -65,6 +65,7 @@ from app_report import *
 from app_gpu import *
 from app_codegen import *
 from app_ipc import *
+from app_v40 import *
 from version import MOJO_BUILT_WITH
 from mojover import mojo_mismatch, mojo_summary
 
@@ -266,6 +267,8 @@ __extension App:
                 fds.append(self.cell_mojo_proc.out_fd)
             if self.cell_py_proc.running and self.cell_py_proc.out_fd >= 0:
                 fds.append(self.cell_py_proc.out_fd)
+            for lf in self.live_share.poll_fds():
+                fds.append(lf)
             _ = wait_readable(fds, self.next_timeout_ms(now_ns(), self.term.pending(), secs_to_next_minute()))
             for sg in self.sig.read_all():
                 self.on_signal(sg)
@@ -319,6 +322,7 @@ __extension App:
                     self.git_tick(now_ns())
                 self.watch_tick(now_ns(), woke)
                 _ = self.ipc_tick()
+                self.live_share_tick()
             except err:
                 self.log_error(String(err))
             try:
@@ -335,6 +339,7 @@ __extension App:
         if self.aux_job.active:
             self.stop_aux_job_now()
         self.cell_kernels_stop()
+        self.live_share.stop()
         self.gpu_probe_stop()
         self.gpu_mon_stop()
         self.fim_stop()

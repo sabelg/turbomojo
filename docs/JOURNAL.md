@@ -6502,3 +6502,41 @@ TurboMojo's way of changing settings; Options is).
     Silicon Metal unified-memory detection, live Omarchy `colors.toml` theme sync (`theme = "omarchy"`),
     `packaging/turbomojo.desktop` + `turbomojo.svg` + `PKGBUILD` (`3.0.0`), and Git/folder Plugin &
     Snippet Hub (`CM_PLUGIN_INSTALL`).
+
+## 2026-11-16 · P21-01 P21-02 P22-01 P23-01 P24-01 P25-01 P25-02 v4.0.0 release · done
+
+- Phase 21 (`P21-01`, `P21-02`, `src/nb_widgets.mojo`, `src/window_draw.mojo`, `src/app_v40.mojo`,
+  `tests/test_nb_widgets.mojo`, `tests/e2e/test_v40_p21_widgets_datagrid_gif.mojo`):
+  - Interactive `# @param` & `@interact` sliders, toggles, and dropdowns inside `.ipynb` / `# %%`
+    buffers (`Alt-Left`/`Alt-Right` + mouse click), virtualized `WK_DATAGRID` sortable table &
+    perceptual Viridis 2D heatmap window (`CM_CELL_DATAGRID`, 8-bin Unicode sparklines, crimson
+    `NaN`/`Inf` cells, CSV export), pure-Mojo multi-frame variable-width LZW **GIF89a** encoder +
+    `WK_IMGVIEW` scrubber & `[g GIF]`, inline `$...$` LaTeX Unicode math & ```` ```mermaid ````
+    diagrams in Markdown cells and `WK_MDPREVIEW`, and `--kernel` external `ipykernel` bridge.
+- Phase 22 (`P22-01`, `src/vim_cst.mojo`, `src/vim_motion.mojo`, `src/app_vim.mojo`,
+  `tests/test_vim_cst.mojo`, `tests/e2e/test_v40_p22_vim_cst_flash.mojo`):
+  - CST structural text objects (`af`/`if`, `ac`/`ic`, `aa`/`ia` with comma-clean `daa`, `aj`/`ij`),
+    2-char smartcase Flash / Leap jump beacons across visible split panes (`gs`, `<Space>j`,
+    `CM_FLASH_JUMP`), `ys`/`yss`/`ds`/`cs` surround operations, Harpoon `1..9` quick-marks (`gm`,
+    `gh`, `g1..g4`, `<Space>m`, `<Space>1..4`), `g;`/`g,` change-list jumps, and live register/macro
+    preview popup.
+- Phase 23 (`P23-01`, `src/gpu_profiler.mojo`, `src/app_codegen.mojo`, `src/app_v40.mojo`,
+  `tests/test_gpu_profiler.mojo`, `tests/e2e/test_v40_p23_gpu_profiler_layout.mojo`):
+  - Per-line `ncu --csv --page source`, `rocprof`, and zero-hardware static PTX/AMDGCN stall gutter
+    badges, interactive `WK_PROFILE` Flamegraph & Multi-Stream GPU Timeline window (`CM_PROFILE_VIEW`)
+    over Chrome Trace JSON & folded stacks, and `LayoutTensor` 32-lane global coalescing + 32-bank
+    XOR swizzle + MAX `Graph` epilogue fusion visualizer (`CM_LAYOUT_VIZ`).
+- Phase 24 (`P24-01`, `src/nb_ai_rag.mojo`, `src/app_nav.mojo`, `src/app_ipc.mojo`,
+  `tests/test_nb_ai_rag.mojo`, `tests/e2e/test_v40_p24_multimodal_ai_rag.mojo`):
+  - Multimodal notebook AI context (`build_notebook_ai_context`, OpenAI vision data-URI requests,
+    and IPC `get_notebook_context`), isolated `/tmp` `git worktree` task runner (`CM_AGENT_WORKTREE_TASK`)
+    with shadow `mojo build` verification before `offer_edit()`, and offline hybrid `mojocst` AST +
+    Okapi BM25 semantic codebase search (`CM_SEMANTIC_SEARCH`).
+- Phase 25 & Release `4.0.0` (`P25-01`, `P25-02`, `src/nb_export_share.mojo`, `src/main.mojo`,
+  `src/version.mojo`, `.github/workflows/release.yml`, `tests/test_nb_export_share.mojo`,
+  `tests/e2e/test_v40_p25_export_share_release.mojo`):
+  - Standalone zero-JS/zero-CDN `.ipynb` / `# %%` → `.html` exporter (`CM_EXPORT_HTML`,
+    `--export-html`) embedding syntax-highlighted cards, collapsible `<details>` code blocks,
+    Tensor badges, and PNG + animated GIF89a outputs; cross-platform non-blocking `AF_UNIX`
+    collaborative Live Share (`CM_LIVE_SHARE`, `--share`, `--connect`); version `4.0.0` across
+    packaging & docs; `scripts/macos-link.sh` (`arm64` Mach-O) verified; `./scripts/check.sh` green.

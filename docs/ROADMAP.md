@@ -285,3 +285,14 @@ Items marked "secondary coverage" or "unverified" above (the compiler's open-sou
 the libghostty-vt release version, tree-sitter grammar upkeep, per-terminal mode support)
 come from single searches and should be confirmed from primary sources before work depends
 on them.
+
+---
+
+## Revision 4 (`v3.1` → `v4.0.0` Completed Milestones, Phases 21–25)
+
+All five post-`v3.0` tracks in `docs/BACKLOG.md` (`P21-01` through `P25-02`) are implemented and verified in `v4.0.0`:
+1. **Phase 21 (`v3.1`)**: Interactive `# @param` / `@interact` notebook widgets, virtualized `WK_DATAGRID` table & 2D Tensor heatmap window, pure-Mojo LZW GIF89a animation export + `WK_IMGVIEW` scrubber, inline LaTeX `$math$` & fenced ```` ```mermaid ```` diagrams, and external `ipykernel` bridge.
+2. **Phase 22 (`v3.2`)**: CST structural Vim text objects (`af`/`if`, `ac`/`ic`, `aa`/`ia`, `aj`/`ij`), 2-char Flash / Leap cross-pane jump beacons, `ys`/`ds`/`cs` surround, Harpoon `1..9` quick-marks, `g;`/`g,` change-list, and live register/macro preview popup.
+3. **Phase 23 (`v3.3`)**: Per-line `ncu`/`rocprof` & static PTX/AMDGCN stall gutter badges, interactive `WK_PROFILE` Flamegraph & Multi-Stream GPU Timeline viewer, and `LayoutTensor` 32-lane coalescing / 32-bank XOR swizzle + MAX `Graph` fusion visualizer.
+4. **Phase 24 (`v3.4`)**: Multimodal notebook AI context (live schemas + tracebacks + PNG plot vision + IPC `get_notebook_context`), isolated `/tmp` `git worktree` shadow-verified task runner, and hybrid `mojocst` AST + Okapi BM25 semantic codebase search.
+5. **Phase 25 (`v4.0.0`)**: Standalone zero-JS/zero-CDN `.ipynb` → `.html` exporter (with embedded PNG & GIF89a animations), zero-server `AF_UNIX` collaborative Live Share (`--share` / `--connect`), and multi-arch GitHub Actions release pipeline (`.github/workflows/release.yml`).

@@ -15,9 +15,11 @@ from window import WK_EDITOR, Range
 from layout import L_GROUP, L_ROW, L_COL, RATIO_MIN, RATIO_MAX
 from vim import *
 from vim_motion import *
+from vim_cst import apply_surround_add, apply_surround_delete, apply_surround_change
 from cells import is_cell_marker_str
 from app_input import *
 from app_vimcmd import *
+from app_v40 import *
 
 comptime CH_G = 103
 comptime CH_I = 105
@@ -27,12 +29,14 @@ comptime OP_C = 99
 comptime OP_Y = 121
 comptime OP_GT = 62
 comptime OP_LT = 60
+comptime OP_YS = 998
 comptime OP_GC = 999
 
 comptime PEND_DS = 1001
 comptime PEND_CS1 = 1002
 comptime PEND_CS2 = 1003
 comptime PEND_VS = 1004
+comptime PEND_YS_CH = 1005
 
 
 def is_find(ch: Int) -> Bool:
@@ -597,7 +601,7 @@ __extension App:
                 self.vim_cancel()
                 self.say("Marks are a..z or A..Z")
             return True
-        if p == PEND_DS or p == PEND_CS1 or p == PEND_CS2 or p == PEND_VS:
+        if p == PEND_DS or p == PEND_CS1 or p == PEND_CS2 or p == PEND_VS or p == PEND_YS_CH:
             self.vim.pend = 0
             if base >= K_BASE:
                 self.vim_cancel()
@@ -611,6 +615,8 @@ __extension App:
                 self.vim_surround_change(t, self.vim.cs_old, base)
             elif p == PEND_VS:
                 self.vim_surround_visual(t, base)
+            elif p == PEND_YS_CH:
+                self.vim_surround_add_span(t, base)
             self.vim_done()
             return True
         if is_find(p) or p == 114 or p == 34:
@@ -680,8 +686,8 @@ __extension App:
             and (self.vim.pend == 0 or self.vim.pend == 32)
         ):
             ch = 108                        # Space: l (unless <Space> leader in vim_zen)
-        # a count
-        if (ch >= 49 and ch <= 57) or (ch == 48 and self.vim.count > 0):
+        # a count (only when not waiting for the second key of a prefix chord like <Space>2 or g1)
+        if self.vim.pend == 0 and ((ch >= 49 and ch <= 57) or (ch == 48 and self.vim.count > 0)):
             self.vim.count = min(self.vim.count * 10 + (ch - 48), 99999)
             self.say(String(self.vim.count))
             return True
@@ -836,6 +842,42 @@ __extension App:
                     self.wins[t].cc = self.vim.gv_cc
                     self.wins[t].sync_want()
                     self.vim_settle(t)
+            elif ch == 115:                                                         # gs: 2-char Flash jump
+                self.vim.count = 0
+                self.flash_jump_start()
+            elif ch == 109 and self.vim.op == 0 and self.vim.mode == VM_NORMAL:     # gm: Harpoon pin
+                self.vim_cancel()
+                self.harpoon_toggle_pin()
+            elif ch == 104 and self.vim.op == 0 and self.vim.mode == VM_NORMAL:     # gh: Harpoon menu
+                self.vim_cancel()
+                self.harpoon_open_dialog()
+            elif ch >= 49 and ch <= 57 and self.vim.op == 0 and self.vim.mode == VM_NORMAL:  # g1..g9: Harpoon slot
+                self.vim_cancel()
+                self.harpoon_jump_slot(ch - 48)
+            elif (ch == 59 or ch == 44) and self.vim.op == 0 and self.vim.mode == VM_NORMAL: # g; / g, change list
+                var n_cl = self.vim.take_count()
+                self.vim_cancel()
+                var moved_cl = False
+                var dest_r = self.wins[t].cr
+                var dest_c = self.wins[t].cc
+                for _ in range(n_cl):
+                    var step_cl = (
+                        self.vim_changes.jump_older(dest_r, dest_c)
+                        if ch == 59
+                        else self.vim_changes.jump_newer()
+                    )
+                    if not step_cl[0]:
+                        break
+                    moved_cl = True
+                    dest_r = step_cl[1]
+                    dest_c = step_cl[2]
+                if moved_cl:
+                    self.wins[t].cr = max(0, min(dest_r, self.wins[t].buf.count() - 1))
+                    self.wins[t].cc = max(0, min(dest_c, self.wins[t].buf.llen(self.wins[t].cr)))
+                    self.wins[t].sync_want()
+                    self.vim_settle(t)
+                else:
+                    self.say("At oldest change" if ch == 59 else "At newest change")
             elif ch == 99 and self.vim.op == 0:                                     # gc
                 if self.vim.mode == VM_NORMAL:
                     self.vim.op = OP_GC
@@ -1002,6 +1044,14 @@ __extension App:
                 self.exec(CM_DOCS)
             elif ch == 112:                         # <Space>p: Command palette
                 self.exec(CM_PALETTE)
+            elif ch == 106:                         # <Space>j: 2-char Flash jump
+                self.exec(CM_FLASH_JUMP)
+            elif ch == 109:                         # <Space>m: Harpoon pin/unpin
+                self.exec(CM_HARPOON_PIN)
+            elif ch == 104:                         # <Space>h: Harpoon quick-marks menu
+                self.exec(CM_HARPOON_MENU)
+            elif ch >= 49 and ch <= 57:             # <Space>1..9: Jump to Harpoon slot 1..9
+                self.harpoon_jump_slot(ch - 48)
             elif ch == 122:                         # <Space>z: Toggle Whole-Vim chrome
                 self.exec(CM_VIM_ZEN)
             else:
@@ -1116,6 +1166,24 @@ __extension App:
             self.vim_apply(t, op, span)
             return
         if self.vim.op != 0:
+            if self.vim.op == OP_Y and ch == 115:
+                # ys<motion><ch> or yss<ch>: surround add operator
+                self.vim.op = OP_YS
+                return
+            if self.vim.op == OP_YS and ch == 115:
+                # yss<ch>: surround current line's non-blank span
+                var r_ys = self.wins[t].cr
+                var ln_ys = self.wins[t].buf.line(r_ys)
+                self.vim.ys_r1 = r_ys
+                self.vim.ys_c1 = first_nonblank(ln_ys)
+                self.vim.ys_r2 = r_ys
+                self.vim.ys_c2 = len(ln_ys)
+                self.vim.ys_lines = False
+                self.vim.op = 0
+                self.vim.op_n = 0
+                self.vim.count = 0
+                self.vim.pend = PEND_YS_CH
+                return
             if (self.vim.op == OP_D or self.vim.op == OP_C) and ch == 115:
                 # ds<ch> / cs<old><new>: surround delete or change
                 var sop = self.vim.op
@@ -1300,6 +1368,8 @@ __extension App:
         self.wins[t].extra.clear()
         if from_insert and self.wins[t].cc > 0:
             self.wins[t].cc -= 1
+        if from_insert:
+            self.vim_changes.record(self.wins[t].cr, self.wins[t].cc)
         self.wins[t].sync_want()
         self.vim_settle(t)
 
@@ -1359,6 +1429,14 @@ __extension App:
 
     def vim_apply(mut self, t: Int, op: Int, s: VimSpan):
         """Operator `op` on span `s`."""
+        if op == OP_YS:
+            self.vim.ys_r1 = s.r1
+            self.vim.ys_c1 = s.c1
+            self.vim.ys_r2 = s.r2
+            self.vim.ys_c2 = s.c2
+            self.vim.ys_lines = s.lines
+            self.vim.pend = PEND_YS_CH
+            return
         var n_lines = s.r2 - s.r1 + 1
         if op == OP_GC:
             self.wins[t].sel = True
@@ -1432,6 +1510,7 @@ __extension App:
             self.wins[t].cc = s.c1
         self.wins[t].sel = False
         self.wins[t].sync_want()
+        self.vim_changes.record(self.wins[t].cr, self.wins[t].cc)
         self.vim_settle(t)
 
     def vim_surround_bounds(self, t: Int, old: Int) -> VimSpan:
@@ -1466,7 +1545,39 @@ __extension App:
             return VimSpan(False, 0, 0, 0, 0, False)
         return VimSpan(True, r, a, r, b + 1, False)
 
+    def vim_surround_add_span(mut self, t: Int, ch: Int):
+        var had = self.wins[t].forced_group
+        if had == 0:
+            self.wins[t].forced_group = self.wins[t].new_group()
+        var pos = apply_surround_add(
+            self.wins[t].buf,
+            self.vim.ys_r1,
+            self.vim.ys_c1,
+            self.vim.ys_r2,
+            self.vim.ys_c2,
+            ch,
+            self.vim.ys_lines,
+        )
+        self.wins[t].forced_group = had
+        self.wins[t].break_group()
+        self.wins[t].cr = max(0, min(pos.r, self.wins[t].buf.count() - 1))
+        self.wins[t].cc = max(0, min(pos.c, self.wins[t].buf.llen(self.wins[t].cr)))
+        self.wins[t].sync_want()
+        self.vim.changed = True
+        self.vim_changes.record(self.wins[t].cr, self.wins[t].cc)
+        self.vim_settle(t)
+
     def vim_surround_del(mut self, t: Int, old: Int):
+        var cst_del = apply_surround_delete(self.wins[t].buf, self.wins[t].cr, self.wins[t].cc, old)
+        if cst_del[0]:
+            self.wins[t].break_group()
+            self.wins[t].cr = max(0, min(cst_del[1].r, self.wins[t].buf.count() - 1))
+            self.wins[t].cc = max(0, min(cst_del[1].c, self.wins[t].buf.llen(self.wins[t].cr)))
+            self.wins[t].sync_want()
+            self.vim.changed = True
+            self.vim_changes.record(self.wins[t].cr, self.wins[t].cc)
+            self.vim_settle(t)
+            return
         var s = self.vim_surround_bounds(t, old)
         if not s.ok:
             return
@@ -1477,9 +1588,20 @@ __extension App:
         self.wins[t].cc = s.c1
         self.wins[t].sync_want()
         self.vim.changed = True
+        self.vim_changes.record(self.wins[t].cr, self.wins[t].cc)
         self.vim_settle(t)
 
     def vim_surround_change(mut self, t: Int, old: Int, new_ch: Int):
+        var cst_chg = apply_surround_change(self.wins[t].buf, self.wins[t].cr, self.wins[t].cc, old, new_ch)
+        if cst_chg[0]:
+            self.wins[t].break_group()
+            self.wins[t].cr = max(0, min(cst_chg[1].r, self.wins[t].buf.count() - 1))
+            self.wins[t].cc = max(0, min(cst_chg[1].c, self.wins[t].buf.llen(self.wins[t].cr)))
+            self.wins[t].sync_want()
+            self.vim.changed = True
+            self.vim_changes.record(self.wins[t].cr, self.wins[t].cc)
+            self.vim_settle(t)
+            return
         var s = self.vim_surround_bounds(t, old)
         if not s.ok:
             return

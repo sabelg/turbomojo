@@ -1,5 +1,46 @@
 # What's new
 
+## 4.0: interactive widgets, DataGrid, CST Vim, GPU flamegraphs, multimodal AI & Live Share
+
+- **Interactive Notebook Widgets, `WK_DATAGRID`, GIF89a Export & LaTeX/Mermaid (`v3.1`)**:
+  - Live `# @param` and `# @interact` sliders, toggles, and dropdowns inside `.ipynb` and `# %%`
+    cells (`Alt-Left` / `Alt-Right` or click `[◀ ━━━●━━━ ▶]` to adjust and re-run live), plus
+    optional external ZeroMQ `ipykernel` connection (`--kernel <conn.json>`).
+  - Virtualized **DataGrid & 2D Tensor Heatmap Window (`WK_DATAGRID`)** clickable from any
+    `[Tensor]`, `[DataFrame]`, `[Polars]`, or `.csv`/`.tsv` buffer (column sort, 8-bin Unicode
+    `▁▂▃▄▅▆▇█` sparklines, perceptual Viridis heatmap with crimson `NaN`/`Inf` cells, CSV export).
+  - Pure-Mojo **GIF89a multi-frame LZW encoder** + clickable timeline scrubber & `[g GIF]` button in
+    `WK_IMGVIEW`, plus inline LaTeX `$math$` Unicode symbols/superscripts and fenced ```` ```mermaid ````
+    rounded-box diagrams in notebook Markdown cells and `WK_MDPREVIEW`.
+- **CST-Powered Vim Text Objects, 2-Char Flash Jump, Surround & Harpoon (`v3.2`)**:
+  - Structural Mojo & Python text objects: `af`/`if` (`def`), `ac`/`ic` (`struct`/`trait`/`class`),
+    `aa`/`ia` (call arguments & parameters with comma-clean `daa`), and `aj`/`ij` (`# %%` cells).
+  - 2-character **Flash / Leap screen jump** (`gs` / `<Space>j` / `Search > Flash 2-char screen jump`)
+    across all visible split panes, `ys`/`yss`/`ds`/`cs` surround operations, Harpoon `1..9`
+    quick-marks (`gm` / `<Space>m`, `g1..g4` / `<Space>1..4`, `gh`), `g;`/`g,` change-list jumps,
+    and a live register/macro preview popup on `"` and `@`.
+- **GPU Per-Line Stall Gutter, `WK_PROFILE` Flamegraphs & `LayoutTensor` / MAX Viz (`v3.3`)**:
+  - Per-line Nsight Compute (`ncu --csv --page source`), `rocprof`, and zero-hardware static
+    PTX/AMDGCN scoreboard/MIO/barrier stall badges directly on editor & `WK_CODEGEN` lines.
+  - Interactive **Flamegraph & Multi-Stream GPU Timeline Window (`WK_PROFILE`)** (`Compile >
+    Flamegraph & zoomable GPU timeline...`) for Chrome Trace JSON (`nsys`, MAX, PyTorch Kineto) and
+    folded stacks (`Enter`/`+` zoom, `0` reset, `t` Flamegraph/Timeline toggle).
+  - **`LayoutTensor` 32-Lane Coalescing, 32-Bank XOR Swizzle & MAX `Graph` Fusion Visualizer**
+    (`Compile > LayoutTensor 32-lane & MAX fusion`).
+- **Multimodal Notebook AI, Isolated Worktree Tasks & Hybrid AST+BM25 Search (`v3.4`)**:
+  - Multimodal notebook context in `Ctrl-Alt-I` and IPC (`get_notebook_context`) combining preceding
+    cell signatures, live Tensor/DataFrame schemas, tracebacks, and base64 PNG plot vision payloads.
+  - Detached `/tmp` `git worktree` task runner (`≡ > Isolated zero-conflict worktree AI task...`)
+    with shadow `mojo build` verification before `offer_edit()`, plus offline hybrid `mojocst` AST +
+    Okapi BM25 semantic search (`Search > Semantic AST+BM25 search...`).
+- **Standalone HTML5 Notebook Export, Zero-Server Live Share & Multi-Arch Releases (`v4.0`)**:
+  - Self-contained zero-JS/zero-CDN `.ipynb` / `# %%` → `.html` exporter (`File > Export standalone
+    HTML5 notebook...` / `tmide --export-html`) with syntax highlighting, collapsible `<details>`
+    code blocks, Tensor cards, and embedded PNG + animated GIF89a media.
+  - Zero-server collaborative **Live Share** over local or `ssh -L` forwarded `AF_UNIX` sockets
+    (`Window > Live Share 0-server Unix socket...` / `--share` / `--connect`) syncing edits, peer
+    cursors, and notebook cell outputs across Linux and macOS.
+
 ## 3.0: GPU occupancy, CST refactorings, verified inline AI, remote compute & Whole-Vim
 
 - **Real Jupyter `.ipynb` & Inline Virtual Notebooks (`v2.6`)**: multi-line virtual output blocks

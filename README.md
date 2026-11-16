@@ -39,7 +39,7 @@ TurboMojo is for the places and habits where a terminal is better:
 | Learning Mojo | Mojo's error messages explained, the manual, the standard library and the GPU puzzles offline, practice copies of the examples | the documentation website |
 | Accessibility | screen-reader mode with a plain line mode, colour-blind-safe themes | VS Code's own, mature screen-reader support |
 | Extensions | plugins & snippet packs from Git/folders (`≡ > Install / update plugin...`) and other language servers | the whole VS Code marketplace |
-| Notebooks, GPU & Vim | real Jupyter `.ipynb` & `# %%` cells (inline virtual outputs, Tensor cards, `%magic`, Kitty/Sixel plots), GPU SM occupancy & 32-bank analyzer, SSH/Docker/Slurm targets, and `tmide vim` Whole-Vim mode | yes (via extensions) |
+| Notebooks, GPU & Vim | card-based Jupyter `.ipynb` (`# @param` live widgets, `WK_DATAGRID` heatmaps, Kitty/Sixel/Quadrant zoom & GIF89a animations, HTML5 export), `WK_PROFILE` GPU flamegraphs & `LayoutTensor`/MAX viz, CST Vim + 2-char Flash jump, multimodal AI, and `AF_UNIX` Live Share | yes (via extensions) |
 
 ## Build & run
 

@@ -63,12 +63,13 @@ from app_input import *
 from app_mouse import *
 from app_draw import *
 from app_vim import *
+from app_v40 import *
 
 
 
 def trust_needed(cmd: Int) -> Bool:
     """Commands that run programs or code that the project folder decides on."""
-    return cmd == CM_AGENT_START or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_BENCH_RUN or cmd == CM_GPU_ROOFLINE or cmd == CM_DEBUG_ATTACH_PID or cmd == CM_DEBUG_CORE or cmd == CM_TERM_NEW or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_RUN_CELL or cmd == CM_RUN_CELL_NEXT or cmd == CM_RUN_ALL_CELLS or cmd == CM_RUN_CELLS_ABOVE or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
+    return cmd == CM_AGENT_START or cmd == CM_AGENT_WORKTREE_TASK or cmd == CM_CONNECT_KERNEL or cmd == CM_BUILD or cmd == CM_CODEGEN or cmd == CM_GPU_PROFILE or cmd == CM_MAX_SERVE or cmd == CM_BENCH_RUN or cmd == CM_GPU_ROOFLINE or cmd == CM_DEBUG_ATTACH_PID or cmd == CM_DEBUG_CORE or cmd == CM_TERM_NEW or cmd == CM_TEST_RUN or cmd == CM_TEST_RUN_ALL or cmd == CM_TEST_LIST or cmd == CM_TEST_CURSOR or cmd == CM_REPL or cmd == CM_REPL_SEND or cmd == CM_RUN or cmd == CM_RUN_CELL or cmd == CM_RUN_CELL_NEXT or cmd == CM_RUN_ALL_CELLS or cmd == CM_RUN_CELLS_ABOVE or cmd == CM_DEBUG or cmd == CM_RUN_CURSOR or cmd == CM_TEST or cmd == CM_FORMAT or cmd == CM_LSP or cmd == CM_TASKS or cmd == CM_TASK_AGAIN or cmd == CM_DOCS
 
 __extension App:
     # ============================================================= commands
@@ -1007,6 +1008,30 @@ __extension App:
             self.select_target_dialog()
         elif cmd == CM_PLUGIN_INSTALL:
             self.plugin_install_dialog()
+        elif cmd == CM_CELL_DATAGRID:
+            self.open_datagrid_window()
+        elif cmd == CM_IMG_SAVE_GIF:
+            self.save_gif_dialog()
+        elif cmd == CM_CONNECT_KERNEL:
+            self.connect_kernel_dialog()
+        elif cmd == CM_FLASH_JUMP:
+            self.flash_jump_start()
+        elif cmd == CM_HARPOON_PIN:
+            self.harpoon_toggle_pin()
+        elif cmd == CM_HARPOON_MENU:
+            self.harpoon_open_dialog()
+        elif cmd == CM_PROFILE_VIEW:
+            self.open_profile_window()
+        elif cmd == CM_LAYOUT_VIZ:
+            self.open_layout_tensor_viz()
+        elif cmd == CM_AGENT_WORKTREE_TASK:
+            self.worktree_task_ask()
+        elif cmd == CM_SEMANTIC_SEARCH:
+            self.semantic_search_dialog()
+        elif cmd == CM_EXPORT_HTML:
+            self.export_html_dialog()
+        elif cmd == CM_LIVE_SHARE:
+            self.live_share_dialog()
 
     def arrange(mut self, tile: Bool):
         var idx = List[Int]()

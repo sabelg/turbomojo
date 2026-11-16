@@ -19,6 +19,7 @@ from std.sys.info import CompilationTarget
 from svgshot import screen_svg
 from util import write_file, str_bytes
 from ipc import parse_file_loc, ipc_open_in_running_ide
+from nb_export_share import export_ipynb_file_to_html
 
 
 comptime USAGE = """Usage: tmide [FILE|FOLDER]...
@@ -42,6 +43,12 @@ chromeless Whole-Vim mode (full-bleed buffer, `~` EOF lines, `<Space>` leader).
                   (also when TERM=dumb; for screen readers and Emacs shells)
   --warm-docs [FOLDER]
                   pre-build the standard library Markdown pages and search cache
+  --export-html IN.ipynb [OUT.html]
+                  export a .ipynb or # %% notebook to a standalone self-contained HTML5 report
+  --kernel CONN.json
+                  connect notebook cell execution to an external Jupyter ipykernel JSON file
+  --share SOCK    host a zero-server AF_UNIX collaborative Live Share session on SOCK
+  --connect SOCK  join a Live Share session at SOCK (local or SSH -L forwarded)
   --completions bash|zsh|fish
                   print shell completion script for tmide
 
@@ -190,6 +197,15 @@ def main() raises:
     app.bp_enable(state_dir() + "/breakpoints")
     app.load_config()
     var args = argv()
+    if len(args) >= 3 and String(args[1]) == "--export-html":
+        var in_nb = String(args[2])
+        var out_html = String(args[3]) if len(args) >= 4 else (stem_without_ext(in_nb) + ".html")
+        var exp = export_ipynb_file_to_html(in_nb, out_html)
+        if not exp[0]:
+            print("export-html error:", exp[1])
+            external_call["exit", NoneType](Int32(1))
+        print("Exported standalone HTML5 notebook -> " + out_html)
+        return
     if len(args) >= 2 and String(args[1]) == "--warm-docs":
         app.help_dir = state_dir() + "/help"
         if len(args) >= 3:
@@ -222,17 +238,33 @@ def main() raises:
     var lines = env_or("TERM", "") == "dumb"
     var reuse = False
     var vim_cli = len(args) > 0 and basename(String(args[0])) == "tmvim"
+    var share_sock = String("")
+    var connect_sock = String("")
     var files = List[String]()
-    for k in range(1, len(args)):
+    var k = 1
+    while k < len(args):
         var ak = String(args[k])
         if ak == "--lines":
             lines = True
+            k += 1
         elif ak == "--reuse":
             reuse = True
+            k += 1
         elif ak == "--vim" or (k == 1 and ak == "vim"):
             vim_cli = True
+            k += 1
+        elif ak == "--kernel" and k + 1 < len(args):
+            app.external_kernel_json = String(args[k + 1])
+            k += 2
+        elif ak == "--share" and k + 1 < len(args):
+            share_sock = String(args[k + 1])
+            k += 2
+        elif ak == "--connect" and k + 1 < len(args):
+            connect_sock = String(args[k + 1])
+            k += 2
         else:
             files.append(ak)
+            k += 1
     if reuse and not lines:
         if ipc_open_in_running_ide(state_dir() + "/ide-state.json", String(app.cwd), files):
             return
@@ -292,6 +324,10 @@ def main() raises:
             app.exec(CM_NEW)
     if vim_cli:
         app.enter_vim_zen(True)
+    if share_sock.byte_length() > 0:
+        _ = app.live_share.start_host(share_sock, env_or("USER", "host"))
+    elif connect_sock.byte_length() > 0:
+        _ = app.live_share.connect_client(connect_sock, env_or("USER", "guest"))
     app.plugins_start()             # (they answer in the background)
     app.show_config_warnings()
     app.offer_recovery()

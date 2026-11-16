@@ -56,6 +56,8 @@ comptime WK_HEX = 17         # virtualized hex editor
 comptime WK_MDPREVIEW = 18   # markdown preview pane
 comptime WK_GITLOG = 19      # git commit graph & history browser
 comptime WK_IMGVIEW = 20     # dedicated floating image zoom window
+comptime WK_DATAGRID = 21    # virtualized DataGrid & 2D Tensor heatmap window
+comptime WK_PROFILE = 22     # interactive Flamegraph & GPU timeline window
 
 comptime ACT_NONE = 0
 comptime ACT_TYPE = 1

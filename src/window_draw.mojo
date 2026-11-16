@@ -22,6 +22,12 @@ from cellimg import (
     CELL_NB_BOT_MARK,
     decode_cell_img_line,
 )
+from nb_widgets import (
+    render_latex_inline,
+    render_mermaid_diagram,
+    parse_cell_widgets,
+    format_widget_bar,
+)
 from window import *
 from window_search import *
 from window_multi import *
@@ -31,6 +37,51 @@ from window_lines import *
 
 def wordish(c: Int) -> Bool:
     return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 or c >= 128
+
+
+def _preprocess_md_math_mermaid(raw: String) -> String:
+    """Convert inline `$...$` LaTeX math and fenced ```mermaid diagrams into rich Unicode blocks."""
+    if raw.find("$") < 0 and raw.find("```mermaid") < 0:
+        return raw
+    var out_lines = List[String]()
+    var in_fence = False
+    var in_mermaid = False
+    var m_lines = List[String]()
+    for ln_slice in raw.split("\n"):
+        var ln = String(ln_slice)
+        var st = String(ln.strip())
+        if st.startswith("```"):
+            if not in_fence:
+                in_fence = True
+                if st.startswith("```mermaid"):
+                    in_mermaid = True
+                    m_lines = List[String]()
+                    continue
+                out_lines.append(ln)
+                continue
+            else:
+                in_fence = False
+                if in_mermaid:
+                    in_mermaid = False
+                    var diag = render_mermaid_diagram("\n".join(m_lines))
+                    out_lines.append("```text")
+                    for dl in diag:
+                        out_lines.append(dl)
+                    out_lines.append("```")
+                    continue
+                out_lines.append(ln)
+                continue
+        if in_mermaid:
+            m_lines.append(ln)
+        elif in_fence:
+            out_lines.append(ln)
+        else:
+            out_lines.append(render_latex_inline(ln))
+    if in_mermaid and len(m_lines) > 0:
+        var diag2 = render_mermaid_diagram("\n".join(m_lines))
+        for dl2 in diag2:
+            out_lines.append(dl2)
+    return "\n".join(out_lines)
 
 
 def _draw_nb_inline_spans(
@@ -45,8 +96,9 @@ def _draw_nb_inline_spans(
     base_bold: Bool = False,
     base_italic: Bool = False,
 ) -> Int:
-    """Render inline Markdown `**bold**` and `` `code` `` spans cleanly without raw markup delimiters."""
-    var cps = decode(text)
+    """Render inline Markdown `**bold**`, `` `code` ``, and `$math$` spans cleanly without raw markup delimiters."""
+    var rendered_txt = render_latex_inline(text) if text.find("$") >= 0 else text
+    var cps = decode(rendered_txt)
     var n = len(cps)
     var i = 0
     var x = x0
@@ -373,7 +425,8 @@ __extension Window:
         scr.fill(self.x + 1, self.y + 1, self.w - 2, self.h - 2, 32, pal.ed_fg, bg)
         var md_w = max(8, self.w - 4)
         var md_links = List[String]()
-        var lines = md_render_rich(to_str(self.buf.all_text()), md_w, hl, md_links, True)
+        var md_src = _preprocess_md_math_mermaid(to_str(self.buf.all_text()))
+        var lines = md_render_rich(md_src, md_w, hl, md_links, True)
         var total_rows = len(lines)
         var r0 = max(0, min(self.top, max(0, total_rows - 1)))
         scr.clip(self.x + 1, self.y + 1, self.w - 2, self.h - 2)
@@ -563,9 +616,19 @@ __extension Window:
         return (fold_x0, fold_x1, run_x0, run_x1, fold_pill, run_pill, stat_pill)
 
     def imgview_bar_hit(self, px: Int, py: Int) -> Int:
-        """Hit-test interactive controls on the bottom frame bar of `WK_IMGVIEW`:
-        1=zoom out, 2=zoom in, 3=fit 100%, 4=prev/step-, 5=next/step+, 6=OS viewer, 7=close, 8=play/pause."""
-        if self.kind != WK_IMGVIEW or self.chromeless or py != self.y + self.h - 1 or self.w < 32:
+        """Hit-test interactive controls on `WK_IMGVIEW`:
+        1=zoom out, 2=zoom in, 3=fit 100%, 4=prev/step-, 5=next/step+, 6=OS viewer,
+        7=close, 8=play/pause, 9=Save GIF, >=1000=(1000 + scrubbed frame index)."""
+        if self.kind != WK_IMGVIEW or self.chromeless or self.w < 32:
+            return 0
+        if len(self.img_paths) > 1 and self.h >= 6 and py == self.y + self.h - 2:
+            var sx0 = self.x + 3
+            var bar_w = max(8, min(44, self.w - 18))
+            if px >= sx0 and px < sx0 + bar_w:
+                var fidx = ((px - sx0) * len(self.img_paths)) // max(1, bar_w)
+                return 1000 + max(0, min(len(self.img_paths) - 1, fidx))
+            return 0
+        if py != self.y + self.h - 1:
             return 0
         var zstr = " " + String(self.img_zoom_pct) + "% "
         var x = self.x + 2
@@ -594,6 +657,10 @@ __extension Window:
             if px >= x and px < x + 8:
                 return 5
             x += 10
+        if len(self.img_paths) > 1 and x + 9 < self.x + self.w - 2:
+            if px >= x and px < x + 7:
+                return 9
+            x += 9
         if x + 10 < self.x + self.w - 2:
             if px >= x and px < x + 10:
                 return 6
@@ -604,12 +671,13 @@ __extension Window:
         return 0
 
     def draw_imgview(self, mut scr: Screen, pal: Palette, active: Bool):
-        """Render dedicated image-only zoom window (`WK_IMGVIEW`) with centered image & bottom controls."""
+        """Render dedicated image-only zoom window (`WK_IMGVIEW`) with centered image, scrubber & bottom controls."""
         var pd = self.pad()
         var ix = self.x + pd
         var iy = self.y + pd
         var iw = max(1, self.w - 2 * pd)
-        var ih = max(1, self.h - 2 * pd)
+        var has_scrub = not self.chromeless and len(self.img_paths) > 1 and self.h >= 6 and self.w >= 32 and not scr.plain
+        var ih = max(1, self.h - 2 * pd - (1 if has_scrub else 0))
         var matte_bg = (
             mix(0x090B10, pal.ed_bg, 38)
             if (pal.ed_bg >= 0 and pal.ed_bg <= 0xFFFFFF)
@@ -636,6 +704,24 @@ __extension Window:
                 self.gfx_cell_h,
             )
         scr.no_clip()
+        if has_scrub:
+            var sy = self.y + self.h - 2
+            var sbg = mix(pal.gutter_bg, pal.ed_bg, 65)
+            scr.fill(ix, sy, iw, 1, 32, pal.ed_fg, sbg)
+            var bar_w = max(8, min(44, self.w - 18))
+            var sx0 = self.x + 3
+            var n_fr = len(self.img_paths)
+            var cur_f = max(0, min(n_fr - 1, self.img_idx))
+            var knob = (cur_f * max(0, bar_w - 1)) // max(1, n_fr - 1)
+            for bx in range(bar_w):
+                var ch_s = 0x25CF if bx == knob else (0x2501 if bx < knob else 0x2500)
+                var fg_s = pal.msg_ok if bx <= knob else pal.gutter_fg
+                scr.put(sx0 + bx, sy, ch_s, fg_s, sbg)
+            var f_info = "  Frame " + String(cur_f + 1) + "/" + String(n_fr) + (
+                (" · " + String(self.img_anim_fps) + " fps") if self.img_anim_fps > 0 else String("")
+            )
+            if sx0 + bar_w + cp_len(f_info) < self.x + self.w - 1:
+                _ = scr.text(sx0 + bar_w, sy, f_info, pal.msg_note, sbg)
         if not self.chromeless and self.w >= 32 and not scr.plain:
             var by = self.y + self.h - 1
             var ffg = pal.frame_act if active else pal.frame_inact
@@ -663,6 +749,9 @@ __extension Window:
                 x = scr.text(x, by, prev_l, pal.title_fg if active else ffg, bg)
                 x += 1
                 x = scr.text(x, by, next_l, pal.title_fg if active else ffg, bg)
+                x += 2
+            if len(self.img_paths) > 1 and x + 9 < self.x + self.w - 2:
+                x = scr.text(x, by, "[g GIF]", pal.msg_ok, bg)
                 x += 2
             if x + 12 < self.x + self.w - 2:
                 x = scr.text(x, by, "[o Viewer]", pal.msg_note, bg)
@@ -1498,8 +1587,21 @@ __extension Window:
                         if self.bench_badge_rows[bbi] == r and bbi < len(self.bench_badges):
                             var bb = String(self.bench_badges[bbi])
                             if bb.byte_length() > 0:
-                                eol_x = scr.text(eol_x, yy, "  " + bb, pal.msg_ok, rowbg)
+                                var bbfg = (
+                                    pal.diag_err
+                                    if str_contains(bb, "▓")
+                                    else (pal.msg_warn if str_contains(bb, "▒") else pal.msg_ok)
+                                )
+                                eol_x = scr.text(eol_x, yy, "  " + bb, bbfg, rowbg)
                             break
+                if (lang == HL_MOJO or lang == HL_PYTHON) and not scr.plain and eol_x + 16 < cx0 + cls:
+                    var raw_wln = to_str(ln)
+                    if str_contains(raw_wln, "@param") or str_contains(raw_wln, "@interact"):
+                        var wlist = parse_cell_widgets(self.buf, r, r)
+                        if len(wlist) > 0:
+                            var wbar = format_widget_bar(wlist[0], 12)
+                            if eol_x + cp_len(wbar) + 2 < cx0 + cls:
+                                eol_x = scr.text(eol_x, yy, "  " + wbar, pal.msg_note, rowbg)
                 if active and r == self.cr and r == self.inline_blame_row and self.inline_blame.byte_length() > 0 and not scr.plain and eol_x + 4 < cx0 + cls:
                     var bx0 = eol_x
                     var bend = scr.text(eol_x, yy, "  " + self.inline_blame, pal.gutter_fg, rowbg)

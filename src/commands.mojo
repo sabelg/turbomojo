@@ -194,6 +194,18 @@ comptime CM_SELECT_TARGET = 334     # Compile > Compute target...
 comptime CM_PLUGIN_INSTALL = 335    # ≡ > Install / update plugin...
 comptime CM_CELL_TOGGLE_CODE = 336  # Palette: Hide / show cell code
 comptime CM_CELL_TOGGLE_ALL_CODE = 337 # Palette: Collapse / expand all cell code
+comptime CM_CELL_DATAGRID = 338     # Palette / Compile: DataGrid & Tensor heatmap
+comptime CM_IMG_SAVE_GIF = 339      # Palette / WK_IMGVIEW: Export animation as GIF89a
+comptime CM_CONNECT_KERNEL = 340    # Palette: Connect external Jupyter ipykernel
+comptime CM_FLASH_JUMP = 341        # Search / Vim gs: 2-char Flash screen jump
+comptime CM_HARPOON_PIN = 342       # Palette / Vim <Space>m: Harpoon pin/unpin
+comptime CM_HARPOON_MENU = 343      # Search / Vim <Space>h: Harpoon quick-marks 1..4
+comptime CM_PROFILE_VIEW = 344      # Compile: Interactive Flamegraph & GPU timeline
+comptime CM_LAYOUT_VIZ = 345        # Compile: LayoutTensor coalescing & MAX Graph fusion
+comptime CM_AGENT_WORKTREE_TASK = 346 # ≡: Isolated git-worktree background AI task
+comptime CM_SEMANTIC_SEARCH = 347   # Search: Hybrid AST + BM25 semantic codebase search
+comptime CM_EXPORT_HTML = 348       # File / Text: Export standalone HTML notebook
+comptime CM_LIVE_SHARE = 349        # Window: Zero-server Unix-socket Live Share
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -1026,6 +1038,18 @@ def build_registry() -> Registry:
     r.bind(CM_FIM_GHOST, alt(93))
     r.cmd(CM_SELECT_TARGET, "compile.selectTarget", "Compute ~t~arget (SSH / Docker / Slurm)...", "Select local, SSH, Docker, Apptainer or Slurm GPU execution target from .turbomojo.toml")
     r.cmd(CM_PLUGIN_INSTALL, "options.pluginInstall", "Install / ~u~pdate plugin...", "Install, pin, update or remove plugins and snippet packs from Git or local folders")
+    r.hide(CM_CELL_DATAGRID, "cells.openDataGrid", "Notebook: DataGrid & Tensor heatmap", "Inspect DataFrame, Polars, CSV or 2D Tensor slices in a virtualized sortable heatmap grid (WK_DATAGRID)")
+    r.hide(CM_IMG_SAVE_GIF, "cells.saveAnimationGif", "Notebook: Export animation as GIF89a...", "Encode multi-frame notebook animation or plot frames to a standalone looping GIF89a file")
+    r.hide(CM_CONNECT_KERNEL, "cells.connectKernel", "Notebook: Connect external Jupyter ipykernel...", "Attach notebook cell execution to an external Jupyter kernel connection JSON file")
+    r.cmd(CM_FLASH_JUMP, "nav.flashJump", "Flash ~2~-char screen jump", "Type 2 characters then a home-row beacon letter to teleport across any visible pane")
+    r.hide(CM_HARPOON_PIN, "nav.harpoonPin", "Harpoon: Pin / unpin file & cell mark", "Pin or unpin the current file and cursor row in Harpoon slots 1..4")
+    r.cmd(CM_HARPOON_MENU, "nav.harpoonMenu", "Harpoon ~4~ quick-marks...", "Jump instantly to pinned files and notebook cells in Harpoon slots 1..9")
+    r.cmd(CM_PROFILE_VIEW, "compile.flamegraphView", "Flamegraph & ~z~oomable GPU timeline...", "Open interactive Flamegraph and multi-stream CUDA/ROCm/MAX Chrome-trace timeline viewer (WK_PROFILE)")
+    r.cmd(CM_LAYOUT_VIZ, "compile.layoutTensorViz", "LayoutTensor ~3~2-lane & MAX fusion", "Simulate 32-lane warp global coalescing, 32-bank XOR swizzling and MAX Graph operator fusion")
+    r.cmd(CM_AGENT_WORKTREE_TASK, "ai.worktreeTask", "Isolated ~z~ero-conflict worktree AI task...", "Run a background patch/refactor command in a detached git worktree with shadow mojo build verification")
+    r.cmd(CM_SEMANTIC_SEARCH, "search.semanticCodebase", "Semantic ~z~ AST+BM25 search...", "Search Mojo structs, functions, docstrings and cells with hybrid CST + Okapi BM25 ranking")
+    r.cmd(CM_EXPORT_HTML, "cells.exportHtml", "Export standalone ~5~ HTML5 notebook...", "Export .ipynb or # %% notebook with syntax highlighting, math and embedded PNG/GIF outputs to self-contained HTML")
+    r.cmd(CM_LIVE_SHARE, "window.liveShare", "Live Share ~0~-server Unix socket...", "Host or join a collaborative multi-cursor & notebook session over a local or SSH-forwarded Unix socket")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")
@@ -1075,6 +1099,7 @@ def build_registry() -> Registry:
     r.sep()
     r.item(CM_INLINE_AI)
     r.item(CM_AI_VERIFY_TOGGLE)
+    r.item(CM_AGENT_WORKTREE_TASK)
     r.item(CM_AGENT_MODEL)
     r.item(CM_AGENT_MODE)
     r.item(CM_AGENT_THINKING)
@@ -1102,6 +1127,7 @@ def build_registry() -> Registry:
     r.sep()
     r.item(CM_NEW_NOTEBOOK)
     r.item(CM_OPEN_NOTEBOOK)
+    r.item(CM_EXPORT_HTML)
     r.sep()
     r.item(CM_QUICK)
     r.item(CM_SWITCH_PROJECT)
@@ -1189,6 +1215,9 @@ def build_registry() -> Registry:
     r.item(CM_AGAIN)
     r.item(CM_FINDFILES)
     r.item(CM_REPLACEFILES)
+    r.item(CM_SEMANTIC_SEARCH)
+    r.item(CM_FLASH_JUMP)
+    r.item(CM_HARPOON_MENU)
     r.sep()
     r.item(CM_GOTO)
     r.item(CM_SYMBOL)
@@ -1249,6 +1278,8 @@ def build_registry() -> Registry:
     r.item(CM_GPU_PROFILE)
     r.item(CM_GPU_ROOFLINE)
     r.item(CM_GPU_OCCUPANCY)
+    r.item(CM_PROFILE_VIEW)
+    r.item(CM_LAYOUT_VIZ)
     r.item(CM_SELECT_TARGET)
     r.item(CM_BENCH_RUN)
     r.item(CM_BENCH_SAVE)
@@ -1327,6 +1358,7 @@ def build_registry() -> Registry:
     r.item(CM_DEBUGWIN)
     r.item(CM_CPUWIN)
     r.item(CM_GPU_WIN)
+    r.item(CM_LIVE_SHARE)
     r.item(CM_WINLIST)
 
     r.menu("~H~elp")

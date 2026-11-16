@@ -13,7 +13,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_DATAGRID, WK_PROFILE, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -58,6 +58,7 @@ from app_draw import *
 from app_vim import *
 from app_gpu import *
 from app_codegen import *
+from app_v40 import *
 from cells import parse_cells, cell_at_row
 
 
@@ -150,6 +151,8 @@ __extension App:
         if self.mode == M_PEEK:
             if self.peek_key(k):
                 return
+        if self.mode == M_NORMAL and self.flash_handle_key(k):
+            return
         if self.mode == M_NORMAL and self.chord == 0 and self.term_key(k):
             return                              # a terminal in front has the keyboard
         if self.mode == M_NORMAL and self.chord == 0 and self.agent_key(k):
@@ -200,6 +203,9 @@ __extension App:
                     return
                 self.run_code_cell_insert_below()
                 return
+            if k == (KEY_LEFT | MOD_ALT) or k == (KEY_RIGHT | MOD_ALT):
+                if self.step_notebook_widget_at(t_pre, self.wins[t_pre].cr, -1 if k == (KEY_LEFT | MOD_ALT) else 1, -1.0, True):
+                    return
         if self.vim_key(k):
             return                              # vim's Normal and Visual keys (Phase 12)
         var cmd = self.shortcut(k)
@@ -268,6 +274,9 @@ __extension App:
             var cur_p = self.wins[t].imgview_current_path()
             self.open_plot_in_os_viewer(cur_p)
             return True
+        if k == 103 or k == 71 or k == 115 or k == 83:  # g / G / s: export animated GIF89a
+            self.save_gif_dialog()
+            return True
         if k == KEY_LEFT or k == 104:               # Left / h: pan left (or prev plot at 100%)
             if self.wins[t].img_zoom_pct > 100:
                 self.wins[t].imgview_pan(-120, 0)
@@ -291,6 +300,10 @@ __extension App:
     def message_key(mut self, k: Int) raises:
         var t = self.top()
         if self.wins[t].kind == WK_IMGVIEW and self.imgview_key(t, k):
+            return
+        if self.wins[t].kind == WK_DATAGRID and self.datagrid_key(t, k):
+            return
+        if self.wins[t].kind == WK_PROFILE and self.profile_key(t, k):
             return
         if self.wins[t].kind == WK_GITLOG and self.git_log_key(k):
             return

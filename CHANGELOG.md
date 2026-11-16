@@ -1,8 +1,30 @@
 # Changelog
 
 What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.md) and the
-day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 3.0.0;
+day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 4.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
+
+## 4.0: Standalone HTML5 Notebook Export, Zero-Server Live Share & Release 4.0 - 2026-11-16
+
+- Self-contained zero-JS/zero-CDN `.ipynb` / `# %%` → `.html` exporter (`CM_EXPORT_HTML`, `--export-html`) with Mojo/Python syntax highlighting, collapsible `<details>` code blocks, Markdown/math, Tensor badges, and embedded base64 PNG + animated GIF89a outputs, plus cross-platform non-blocking `AF_UNIX` collaborative **Live Share** (`CM_LIVE_SHARE`, `--share`, `--connect`) syncing edits, peer cursors, and notebook cell outputs (`src/nb_export_share.mojo`, `tests/test_nb_export_share.mojo`, `tests/e2e/test_v40_p25_export_share_release.mojo`) (P25-01)
+- Bump `TURBOMOJO_VERSION` to `4.0.0` across `src/version.mojo`, `pixi.toml`, `recipe/recipe.yaml`, and `packaging/PKGBUILD`, add multi-arch GitHub Actions `.github/workflows/release.yml`, sync help book & generated docs (`KEYMAP.md`, `CHANGELOG.md`, `SOURCE.md`), verify `scripts/macos-link.sh` (`arm64` Mach-O), and pass full `./scripts/check.sh` gate (`tests/test_release.mojo`, `tests/e2e/test_v40_p25_export_share_release.mojo`) (P25-02)
+
+## 3.4: Multimodal Notebook AI, Isolated Worktree Agents & Hybrid AST+BM25 Search - 2026-11-16
+
+- Multimodal notebook AI context (`build_notebook_ai_context` + OpenAI vision data-URI payloads + IPC `get_notebook_context` combining preceding cell signatures, live Tensor/DataFrame schemas, tracebacks, and PNG/animation frames), detached `/tmp` `git worktree` task runner (`CM_AGENT_WORKTREE_TASK`) with shadow `mojo build` verification before `offer_edit()`, and offline hybrid `mojocst` AST + Okapi BM25 semantic codebase search (`CM_SEMANTIC_SEARCH`) (`src/nb_ai_rag.mojo`, `tests/test_nb_ai_rag.mojo`, `tests/e2e/test_v40_p24_multimodal_ai_rag.mojo`) (P24-01)
+
+## 3.3: GPU Per-Line Stall Profiler, Flamegraph Window & LayoutTensor / MAX Viz - 2026-11-16
+
+- Per-line Nsight Compute (`ncu --csv --page source`), `rocprof`, and zero-hardware static PTX/AMDGCN scoreboard/MIO/barrier stall gutter badges, interactive **Flamegraph & Multi-Stream GPU Timeline Window (`WK_PROFILE`)** (`CM_PROFILE_VIEW`) over Chrome Trace JSON & folded stacks, and **`LayoutTensor` 32-lane global coalescing + 32-bank XOR swizzle + MAX `Graph` epilogue fusion visualizer** (`CM_LAYOUT_VIZ`) (`src/gpu_profiler.mojo`, `tests/test_gpu_profiler.mojo`, `tests/e2e/test_v40_p23_gpu_profiler_layout.mojo`) (P23-01)
+
+## 3.2: CST-Powered Vim Text Objects, 2-Char Flash Jump, Surround & Harpoon - 2026-11-16
+
+- CST structural text objects (`af`/`if` `def`, `ac`/`ic` `struct`/`trait`/`class`, `aa`/`ia` call/signature argument with comma-clean `daa`, `aj`/`ij` `# %%` notebook cell), 2-char smartcase **Flash / Leap** cross-pane jump beacons (`gs`, `<Space>j`, `CM_FLASH_JUMP`), pure-Mojo `ys`/`yss`/`ds`/`cs` surround edits, Harpoon `1..9` quick-marks (`gm`/`gh`/`g1..g4`, `<Space>m`/`<Space>1..4`, `CM_HARPOON_MENU`), `g;`/`g,` change-list jumps, and live register/macro preview popup (`src/vim_cst.mojo`, `tests/test_vim_cst.mojo`, `tests/e2e/test_v40_p22_vim_cst_flash.mojo`) (P22-01)
+
+## 3.1: Interactive Notebook Widgets, DataGrid, GIF89a & LaTeX/Mermaid - 2026-11-16
+
+- Interactive `# @param` & `@interact` terminal sliders, toggles & dropdowns inside `.ipynb` / `# %%` cards (`Alt-Left`/`Alt-Right` + mouse click live cell re-run), virtualized `WK_DATAGRID` sortable table & perceptual Viridis 2D Tensor heatmap window (`CM_CELL_DATAGRID`, 8-bin Unicode sparklines, crimson `NaN`/`Inf` cells, RFC-4180 CSV export) (`src/nb_widgets.mojo`, `tests/test_nb_widgets.mojo`, `tests/e2e/test_v40_p21_widgets_datagrid_gif.mojo`) (P21-01)
+- Pure-Mojo multi-frame variable-width LZW **GIF89a** animated encoder (`encode_gif89a`) + clickable timeline scrubber & `[g GIF]` export in `WK_IMGVIEW` (`CM_IMG_SAVE_GIF`), inline `$...$` LaTeX Unicode math & fenced ```` ```mermaid ```` box-diagram rendering in Markdown cells and `WK_MDPREVIEW`, and external ZeroMQ `ipykernel` client bridge (`--kernel`, `CM_CONNECT_KERNEL`) (`src/nb_widgets.mojo`, `tests/e2e/test_v40_p21_widgets_datagrid_gif.mojo`) (P21-02)
 
 ## 3.0: Cross-platform macOS, Omarchy desktop sync & Plugin Hub - 2026-11-15
 

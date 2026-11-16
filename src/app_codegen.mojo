@@ -29,6 +29,8 @@ from gpu_occupancy import (
     analyze_smem_bank_conflicts,
     format_occupancy_and_bank_report,
 )
+from gpu_profiler import parse_ncu_source_csv, parse_rocprof_trace_lines
+from app_v40 import *
 from outline import scan_outline, scope_path, outline_current, SK_FUNCTION, SK_METHOD
 from app_jobs import *
 from app_outline import *
@@ -286,6 +288,13 @@ __extension App:
             return True
         if k == 114 or k == 82:         # r / R -> refresh
             self.codegen_refresh()
+            return True
+        if k == 115 or k == 83:         # s / S -> overlay static PTX/AMDGCN stall hotspots
+            var ci_s = self.codegen_index()
+            if ci_s >= 0:
+                var asm_txt = to_str(self.wins[ci_s].buf.all_text())
+                self.apply_static_asm_stalls_to_codegen(asm_txt)
+                self.say("Applied static PTX/AMDGCN stall annotations")
             return True
         if k == 102 or k == 70:         # f / F -> toggle filter to enclosing def
             if self.codegen_filter.byte_length() > 0:
@@ -635,6 +644,11 @@ __extension App:
 
         var kernels = parse_ncu_csv_output(csv_text if csv_text.byte_length() > 0 else raw_stderr)
         var stalls = parse_ncu_source_stall_lines(src_csv_text)
+        var rich_stalls = parse_ncu_source_csv(src_csv_text, basename(path))
+        if len(rich_stalls) == 0 and csv_text.byte_length() > 0:
+            rich_stalls = parse_rocprof_trace_lines(csv_text)
+        if len(rich_stalls) > 0:
+            self.apply_stall_annotations_to_editor(path, rich_stalls)
         var ei = self.find_editor(path)
         if ei < 0:
             ei = self.top_editor()

@@ -7,6 +7,7 @@ A motion is exclusive (the character it lands on is not part of an operator's sp
 inclusive (it is) or linewise (whole lines), as vim's `:help exclusive` has it."""
 from std.collections import List
 from buffer import TextBuffer, Pos
+from vim_cst import resolve_cst_text_object
 
 comptime VK_EXCL = 0
 comptime VK_INCL = 1
@@ -889,10 +890,15 @@ def vim_object(buf: TextBuffer, r: Int, c: Int, inner: Bool, ch: Int) -> VimSpan
         return obj_bracket(buf, r, c, inner, 3)
     if ch == 112:                                   # p
         return obj_para(buf, r, inner)
-    if ch == 97:                                    # a (argument)
-        return obj_arg(buf, r, c, inner)
-    if ch == 102:                                   # f (function)
-        return obj_func(buf, r, c, inner)
+    if ch == 97 or ch == 102 or ch == 99 or ch == 106:  # a (arg), f (def), c (struct/trait/class), j (# %% cell)
+        var cst_sp = resolve_cst_text_object(buf, r, c, not inner, ch)
+        if cst_sp.ok:
+            return VimSpan(True, cst_sp.r1, cst_sp.c1, cst_sp.r2, cst_sp.c2, cst_sp.linewise)
+        if ch == 97:
+            return obj_arg(buf, r, c, inner)
+        if ch == 102:
+            return obj_func(buf, r, c, inner)
+        return no_span()
     if ch == 105:                                   # i (indentation)
         return obj_indent(buf, r, inner)
     return no_span()

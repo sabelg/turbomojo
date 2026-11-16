@@ -33,6 +33,8 @@ from lsp import path_to_uri, LSP_READY
 from outline import outline_tag
 from gitdiff import Side, side_hunks, unified
 from svgshot import screen_svg
+from nb_ai_rag import format_notebook_ipc_json
+from app_v40 import *
 
 
 @fieldwise_init
@@ -678,4 +680,22 @@ __extension App:
                 w.kv_str("error", "LSP query timed out")
             w.end_obj()
             return w.text()
+        if op == "get_notebook_context":
+            var nb_wi = self.top_editor()
+            var p_nb = doc.str(doc.get(0, "path"), "")
+            if p_nb.byte_length() > 0:
+                var found_nb = self.find_editor(abs_path(String(self.cwd), p_nb))
+                if found_nb >= 0:
+                    nb_wi = found_nb
+            if nb_wi < 0:
+                return ipc_error_json(req_id, "no open notebook or editor")
+            var ctx_nb = self.active_notebook_ai_context(nb_wi, 2)
+            var w_nb = JsonWriter()
+            w_nb.begin_obj()
+            w_nb.kv_str("id", req_id)
+            w_nb.kv_bool("ok", True)
+            w_nb.key("notebook")
+            w_nb.raw(format_notebook_ipc_json(ctx_nb))
+            w_nb.end_obj()
+            return w_nb.text()
         return ipc_error_json(req_id, "unknown op: " + op)

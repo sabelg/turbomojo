@@ -69,6 +69,7 @@ from app_tests import *
 from app_input import *
 from app_mouse import *
 from app_draw import *
+from app_v40 import *
 
 
 comptime JUMPS_MAX = 100
@@ -1937,6 +1938,11 @@ __extension App:
         for r in range(self.wins[ai].buf.count()):
             all_lines.append(to_str(self.wins[ai].buf.line(r)))
         var path = self.wins[ai].path
+        var full_instr = instr
+        if self.wins[ai].is_notebook() or self.wins[ai].has_cells():
+            var nb_ctx = self.active_notebook_ai_context(ai, 2)
+            if nb_ctx.prompt_block.byte_length() > 0:
+                full_instr = nb_ctx.prompt_block + "\n\nUser instruction: " + instr
         var is_mj = self.wins[ai].effective_lang() == HL_MOJO
         var mojo_cmd = self.mojo_for(path) if path.byte_length() > 0 else self.compiler_cmd()
         var inc = self.include_flags_for(path) if path.byte_length() > 0 else String("")
@@ -1947,7 +1953,7 @@ __extension App:
             all_lines,
             r1,
             r2,
-            instr,
+            full_instr,
             self.ai_verify_edits and is_mj,
             mojo_cmd,
             inc,

@@ -16,7 +16,7 @@ from palette import Palette, theme, THEME_COUNT
 from contrast import text_muted, text_disabled, dimmed
 from highlight import Highlighter, HL_MOJO, HL_PYTHON, HL_JSON, HL_MARKDOWN, HL_TOML, HL_C_CUDA
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_DATAGRID, WK_PROFILE, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -65,6 +65,7 @@ from app_git import *
 from app_jobs import *
 from app_input import *
 from app_mouse import *
+from app_v40 import *
 
 
 def scanline_dim(rgb: Int) -> Int:
@@ -142,6 +143,8 @@ __extension App:
             var tp = target_status_pill(self.active_compute_target())
             if tp.byte_length() > 0 and self.scr.w >= 80:
                 right += tp + "  "
+            if self.live_share.is_active():
+                right += "LIVE:" + String(self.live_share.connected_peer_count()) + "  "
             if self.lsp.active() or self.extra_active():
                 right += "LSP  "
             if self.dbg.active():
@@ -268,6 +271,10 @@ __extension App:
                 self.docpane_draw(i)
             if self.wins[i].kind == WK_EXPLAIN and not self.reader:
                 self.explain_draw(i)
+            if self.wins[i].kind == WK_DATAGRID:
+                self.datagrid_draw(i, i == n - 1)
+            if self.wins[i].kind == WK_PROFILE:
+                self.profile_draw(i, i == n - 1)
             if self.tiled and (self.wins[i].kind == WK_EDITOR or self.wins[i].kind == WK_HEX or self.wins[i].kind == WK_MDPREVIEW):
                 if not self.wins[i].chromeless:
                     self.draw_tabs(i, i == n - 1)
@@ -277,6 +284,9 @@ __extension App:
         if self.vim_zen and self.mode == M_NORMAL and not self.reader:
             self.draw_vim_zen_welcome()
         if not self.reader:
+            self.draw_live_share_cursors()
+            self.draw_flash_beacons()
+            self.draw_vim_reg_popup()
             self.draw_progress_box()            # beyond ten seconds (never takes the keys)
             self.draw_toasts()                  # (a screen reader gets them on the status line)
             self.draw_chord_box()
@@ -337,7 +347,15 @@ __extension App:
                         items.append(h)
                         cmds.append(CM_NONE)
                 elif t >= 0 and self.wins[t].kind == WK_IMGVIEW:
-                    for h in ["~+~/~-~ Zoom", "~0~ Fit", "~←↑↓→~ Pan", "~[~/~]~ Plot", "~O~ Desktop viewer", "~F5~ Full", "~Esc~ Close"]:
+                    for h in ["~+~/~-~ Zoom", "~0~ Fit", "~←↑↓→~ Pan", "~[~/~]~ Plot", "~G~ Save GIF", "~O~ Desktop viewer", "~Esc~ Close"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                elif t >= 0 and self.wins[t].kind == WK_DATAGRID:
+                    for h in ["~↑↓←→~ Cell", "~S~ Sort col", "~M~ Heatmap", "~E~ Export CSV", "~Esc~ Close"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
+                elif t >= 0 and self.wins[t].kind == WK_PROFILE:
+                    for h in ["~↑↓~ Span", "~Enter~/~+~ Zoom in", "~-~ Zoom out", "~0~ Reset", "~T~ Timeline/Flamegraph", "~Esc~ Close"]:
                         items.append(h)
                         cmds.append(CM_NONE)
                 if t >= 0 and self.wins[t].kind == WK_CPU:

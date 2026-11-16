@@ -1,6 +1,6 @@
 # Maintainer: TurboMojo Contributors
 pkgname=turbomojo
-pkgver=3.0.0
+pkgver=4.0.0
 pkgrel=1
 pkgdesc="A high-speed terminal IDE for Mojo 1.2, GPU kernels, Jupyter notebooks, and Whole-Vim mode"
 arch=('x86_64' 'aarch64')

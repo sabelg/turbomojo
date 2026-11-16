@@ -65,6 +65,11 @@ from agentchat import AgentChat
 from agentsvc import AgentTerm, Proposal, RunAsk
 from remote_target import ComputeTarget, default_local_target, parse_compute_targets, target_status_pill
 from omarchy_sync import load_omarchy_palette, omarchy_colors_path, omarchy_watch_dirs
+from nb_widgets import DataGridState
+from vim_cst import FlashTarget, HarpoonList, VimChangeList
+from gpu_profiler import ProfileView
+from nb_ai_rag import SemanticHit
+from nb_export_share import LiveShareSession
 from acp import AcpEvent
 from markdown import MdLine
 from linediff import Hunk
@@ -840,6 +845,20 @@ struct App(Movable):
     var active_target_name: String
     var omarchy_colors_file: String
     var omarchy_sig: FileSig
+    var datagrid: DataGridState
+    var external_kernel_json: String
+    var flash_stage: Int
+    var flash_ch1: Int
+    var flash_targets: List[FlashTarget]
+    var harpoon: HarpoonList
+    var vim_changes: VimChangeList
+    var prof_view: ProfileView
+    var sem_hits: List[SemanticHit]
+    var live_share: LiveShareSession
+    var live_share_last_r: Int
+    var live_share_last_c: Int
+    var live_share_last_ver: Int
+    var wt_task_seq: Int
 
     def __init__(out self):
         self.term = Terminal()
@@ -1506,6 +1525,20 @@ struct App(Movable):
         self.active_target_name = "local"
         self.omarchy_colors_file = ""
         self.omarchy_sig = FileSig()
+        self.datagrid = DataGridState()
+        self.external_kernel_json = ""
+        self.flash_stage = 0
+        self.flash_ch1 = 0
+        self.flash_targets = List[FlashTarget]()
+        self.harpoon = HarpoonList()
+        self.vim_changes = VimChangeList()
+        self.prof_view = ProfileView()
+        self.sem_hits = List[SemanticHit]()
+        self.live_share = LiveShareSession()
+        self.live_share_last_r = -1
+        self.live_share_last_c = -1
+        self.live_share_last_ver = -1
+        self.wt_task_seq = 0
 
     # =================================================================== utils
     def desk_h(self) -> Int:

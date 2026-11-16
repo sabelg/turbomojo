@@ -30,6 +30,8 @@ from cells import (
     CELL_INTERRUPTED,
 )
 from symindex import is_mojo_file
+from nb_widgets import build_ipykernel_bridge_daemon
+from nb_export_share import LiveShareEvent
 from signals import own_pid
 from swap import delete_file
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
@@ -1067,6 +1069,10 @@ __extension App:
             var plot_str = "\n".join(plots)
             self.wins[ei].set_cell_output(hdr_row, text, is_err, plot_str, self.cell_exec_counter)
             self.sync_shared_buffers(ei)
+            if self.live_share.is_active():
+                self.live_share.broadcast(
+                    LiveShareEvent("cell_out", self.live_share.peer_name, target_name, hdr_row, 0, hdr_row, text)
+                )
             if ei == self.top_editor() and len(self.cell_queue_indices) == 0:
                 self.wins[ei].reveal_cell_output(hdr_row, self.cell_advance)
 
@@ -1669,16 +1675,24 @@ __extension App:
         if target_name not in self.cell_warmed_paths:
             self.cell_warmed_paths.append(target_name)
 
-        if is_py:
-            if self.cell_py_proc.running and (not self.cell_py_proc.alive() or self.cell_py_env != env_key):
+        var use_ext_ipy = self.external_kernel_json.byte_length() > 0
+        if is_py or use_ext_ipy:
+            var want_env_key = (env_key + "|ext:" + self.external_kernel_json) if use_ext_ipy else env_key
+            if self.cell_py_proc.running and (not self.cell_py_proc.alive() or self.cell_py_env != want_env_key):
                 _ = self.cell_py_proc.stop()
                 self.cell_py_preamble = ""
             if not self.cell_py_proc.running:
-                var py_inner = "cd " + shell_quote(dir) + " && exec python3 -u -c " + shell_quote(PYTHON_CELL_DAEMON_SCRIPT)
+                var daemon_script = (
+                    build_ipykernel_bridge_daemon(self.external_kernel_json)
+                    if use_ext_ipy
+                    else String(PYTHON_CELL_DAEMON_SCRIPT)
+                )
+                var py_inner = "cd " + shell_quote(dir) + " && exec python3 -u -c " + shell_quote(daemon_script)
                 var py_cmd = "sh -c " + shell_quote(self.with_env(env_ref, py_inner))
                 if self.cell_py_proc.start(py_cmd, ""):
-                    self.cell_py_env = env_key
+                    self.cell_py_env = want_env_key
                     self.cell_py_preamble = ""
+            is_py = True
         else:
             if self.cell_mojo_proc.running and (not self.cell_mojo_proc.alive() or self.cell_mojo_env != env_key):
                 _ = self.cell_mojo_proc.stop()
