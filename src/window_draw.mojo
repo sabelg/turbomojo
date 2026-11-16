@@ -989,9 +989,10 @@ __extension Window:
                                     if str_contains(cb, "✓")
                                     else (pal.diag_err if str_contains(cb, "✗") else pal.msg_note)
                                 )
-                                eol_x = scr.text(eol_x, yy, "  " + cb, cbfg, rowbg)
                                 if is_nb and not self.is_markdown_header(r) and eol_x + 9 < cx0 + cls:
-                                    eol_x = scr.text(eol_x, yy, " [▶ Run]", pal.frame_act, rowbg)
+                                    eol_x = scr.text(eol_x, yy, "  [▶ Run]", pal.frame_act, rowbg)
+                                if eol_x + 6 < cx0 + cls:
+                                    eol_x = scr.text(eol_x, yy, (" " + cb) if is_nb else ("  " + cb), cbfg, rowbg)
                                 drew_cell = True
                             break
                 if not drew_cell and (lang == HL_MOJO or lang == HL_PYTHON) and self.buf.is_cell_header(r) and not scr.plain and eol_x + 18 < cx0 + cls:

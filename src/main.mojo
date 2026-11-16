@@ -21,7 +21,8 @@ from util import write_file, str_bytes
 from ipc import parse_file_loc, ipc_open_in_running_ide
 
 
-comptime USAGE = """Usage: tmide [vim | --vim] [FILE|FOLDER]...
+comptime USAGE = """Usage: tmide [FILE|FOLDER]...
+       tmide [vim | --vim] [FILE]...
 
 TurboMojo, a Turbo C++ style IDE for Mojo in the terminal. With no arguments it
 restores the last session (or opens an empty window); FILEs open in editors, a
@@ -220,7 +221,7 @@ def main() raises:
         return
     var lines = env_or("TERM", "") == "dumb"
     var reuse = False
-    var vim_cli = False
+    var vim_cli = len(args) > 0 and basename(String(args[0])) == "tmvim"
     var files = List[String]()
     for k in range(1, len(args)):
         var ak = String(args[k])

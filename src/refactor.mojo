@@ -14,6 +14,19 @@ from std.collections import List
 from buffer import TextBuffer
 from highlight import Highlighter, HL_MOJO, HL_PYTHON, C_CMT, C_STR
 from lsp import LspEdit, col_to_utf16
+from mojocst import (
+    CstSpan,
+    CstParam,
+    CstDefNode,
+    CstStructNode,
+    CstCallSite,
+    _split_top_level_commas,
+    parse_cst_param,
+    format_cst_param,
+    parse_mojo_cst,
+    find_enclosing_call,
+    find_all_calls_to,
+)
 from util import decode, to_str, slice_str, is_alpha, is_ident, is_digit
 
 
@@ -888,3 +901,546 @@ def extract_function_edits(
     else:
         edits.append(LspEdit(r_start, 0, r_end, end_u16, fn_block + "\n\n" + call_line))
     return ("", edits^)
+
+
+# ============================================================ Phase 17 CST Refactorings
+
+def _span_to_lsp_edit(buf: TextBuffer, sp: CstSpan, new_text: String) -> LspEdit:
+    var l1 = buf.line(sp.r1)
+    var l2 = buf.line(sp.r2)
+    return LspEdit(sp.r1, col_to_utf16(l1, sp.c1), sp.r2, col_to_utf16(l2, sp.c2), new_text)
+
+
+def _needs_expr_parens(expr: String) -> Bool:
+    """True when `expr` contains top-level binary operators / spaces that need `(expr)` when inlined."""
+    var s = String(expr.strip())
+    var cps = decode(s)
+    if len(cps) == 0:
+        return False
+    var depth = 0
+    var in_q = 0
+    var esc = False
+    for i in range(len(cps)):
+        var ch = cps[i]
+        if in_q != 0:
+            if esc:
+                esc = False
+            elif ch == 92:
+                esc = True
+            elif ch == in_q:
+                in_q = 0
+            continue
+        if ch == 34 or ch == 39:
+            in_q = ch
+            continue
+        if ch == 40 or ch == 91 or ch == 123:
+            depth += 1
+            continue
+        if (ch == 41 or ch == 93 or ch == 125) and depth > 0:
+            depth -= 1
+            continue
+        if depth == 0:
+            if ch == 43 or ch == 42 or ch == 47 or ch == 37 or ch == 60 or ch == 62 or ch == 61 or ch == 38 or ch == 124 or ch == 94 or ch == 32:
+                return True
+            if ch == 45 and i > 0:
+                return True
+    return False
+
+
+def _replace_ident_tokens(text: String, names: List[String], values: List[String]) -> String:
+    """Substitute identifier tokens matching `names[k]` with `values[k]` outside strings & `.attr`."""
+    var cps = decode(text)
+    var n = len(cps)
+    var out = String("")
+    var i = 0
+    var in_q = 0
+    var esc = False
+    while i < n:
+        var ch = cps[i]
+        if in_q != 0:
+            out += chr(ch)
+            if esc:
+                esc = False
+            elif ch == 92:
+                esc = True
+            elif ch == in_q:
+                in_q = 0
+            i += 1
+            continue
+        if ch == 34 or ch == 39:
+            in_q = ch
+            out += chr(ch)
+            i += 1
+            continue
+        if is_alpha(ch):
+            var prev_dot = i > 0 and cps[i - 1] == 46
+            var j = i + 1
+            while j < n and is_ident(cps[j]):
+                j += 1
+            var word = slice_str(cps, i, j)
+            var matched = -1
+            if not prev_dot:
+                for k in range(len(names)):
+                    if names[k] == word:
+                        matched = k
+                        break
+            if matched >= 0:
+                var repl = values[matched]
+                var adj_op = (i > 0 and cps[i - 1] != 40 and cps[i - 1] != 44 and cps[i - 1] != 61) or (j < n and cps[j] != 41 and cps[j] != 44)
+                if adj_op and _needs_expr_parens(repl):
+                    out += "(" + repl + ")"
+                else:
+                    out += repl
+            else:
+                out += word
+            i = j
+            continue
+        out += chr(ch)
+        i += 1
+    return out^
+
+
+def swap_call_arguments_edits(
+    buf: TextBuffer, row: Int, col: Int, right: Bool = True
+) -> Tuple[String, List[LspEdit]]:
+    """Swap the call argument at `(row, col)` with its adjacent neighbor."""
+    var edits = List[LspEdit]()
+    var call = find_enclosing_call(buf, row, col)
+    if not call.ok or len(call.arg_spans) < 2:
+        return ("Place cursor inside a call expression with at least 2 arguments", edits^)
+    var n_args = len(call.arg_spans)
+    var cur_idx = 0
+    for k in range(n_args):
+        var sp = call.arg_spans[k].copy()
+        if (row > sp.r1 or (row == sp.r1 and col >= sp.c1)) and (row < sp.r2 or (row == sp.r2 and col <= sp.c2)):
+            cur_idx = k
+            break
+        if row > sp.r2 or (row == sp.r2 and col > sp.c2):
+            cur_idx = min(k + 1, n_args - 1)
+    var idx_a = cur_idx
+    var idx_b = cur_idx + 1 if right else cur_idx - 1
+    if idx_b >= n_args:
+        idx_a = n_args - 2
+        idx_b = n_args - 1
+    elif idx_b < 0:
+        idx_a = 0
+        idx_b = 1
+    if idx_a > idx_b:
+        var tmp = idx_a
+        idx_a = idx_b
+        idx_b = tmp
+    edits.append(_span_to_lsp_edit(buf, call.arg_spans[idx_a], call.arg_texts[idx_b]))
+    edits.append(_span_to_lsp_edit(buf, call.arg_spans[idx_b], call.arg_texts[idx_a]))
+    return ("", edits^)
+
+
+def enclosing_def_signature_info(buf: TextBuffer, row: Int) -> Tuple[String, Int, String]:
+    """Return `(fn_name, def_header_row, non_self_or_full_params_spec)` for the `def` enclosing `row`."""
+    var cst = parse_mojo_cst(buf)
+    var best_idx = -1
+    for i in range(len(cst.defs)):
+        var d = cst.defs[i].copy()
+        if d.header_span.r1 <= row and row <= d.body_span.r2:
+            best_idx = i
+    if best_idx < 0:
+        return ("", -1, "")
+    var d = cst.defs[best_idx].copy()
+    var parts = List[String]()
+    for p in d.params:
+        parts.append(format_cst_param(p))
+    return (d.name, d.header_span.r1, ", ".join(parts))
+
+
+def _rewrite_calls_for_sig(
+    buf: TextBuffer,
+    fn_name: String,
+    old_non_self: List[CstParam],
+    new_non_self: List[CstParam],
+) -> List[LspEdit]:
+    var out = List[LspEdit]()
+    var calls = find_all_calls_to(buf, fn_name)
+    for ci in range(len(calls)):
+        var call = calls[ci].copy()
+        # Map old param name -> provided argument expression at this call site
+        var old_vals = List[String]()
+        for op in old_non_self:
+            old_vals.append(op.default_expr)
+        var pos_i = 0
+        for ai in range(len(call.arg_texts)):
+            var kw = call.arg_kw_names[ai]
+            var raw_arg = call.arg_texts[ai]
+            if kw.byte_length() > 0:
+                var eq = raw_arg.find("=")
+                var val_only = String(raw_arg[byte=eq + 1:].strip()) if eq >= 0 else raw_arg
+                for oi in range(len(old_non_self)):
+                    if old_non_self[oi].name == kw:
+                        old_vals[oi] = val_only
+                        break
+            else:
+                if pos_i < len(old_vals):
+                    old_vals[pos_i] = raw_arg
+                    pos_i += 1
+        var new_args = List[String]()
+        for np in new_non_self:
+            var mapped = String("")
+            for oi in range(len(old_non_self)):
+                if old_non_self[oi].name == np.name:
+                    mapped = old_vals[oi]
+                    break
+            if mapped.byte_length() == 0:
+                mapped = np.default_expr if np.default_expr.byte_length() > 0 else String("0")
+            new_args.append(mapped)
+        var inner_span = CstSpan(call.open_r, call.open_c + 1, call.close_r, call.close_c)
+        out.append(_span_to_lsp_edit(buf, inner_span, ", ".join(new_args)))
+    return out^
+
+
+def change_function_signature_edits(
+    target_path: String,
+    target_buf: TextBuffer,
+    def_row: Int,
+    new_params_spec: String,
+    extra_paths: List[String],
+    extra_bufs: List[TextBuffer],
+) -> Tuple[String, List[String], List[List[LspEdit]]]:
+    """Rewrite a `def` parameter signature and update all matching call sites across project files."""
+    var res_paths = List[String]()
+    var res_edits = List[List[LspEdit]]()
+    var cst = parse_mojo_cst(target_buf)
+    var best_idx = -1
+    for i in range(len(cst.defs)):
+        if cst.defs[i].header_span.r1 <= def_row and def_row <= cst.defs[i].body_span.r2:
+            best_idx = i
+    if best_idx < 0:
+        return ("Place cursor inside a `def` function or method to change its signature", res_paths^, res_edits^)
+    var d = cst.defs[best_idx].copy()
+    var raw_parts = _split_top_level_commas(new_params_spec)
+    var parsed_new = List[CstParam]()
+    var has_new_self = False
+    for rp in raw_parts:
+        if String(rp.strip()).byte_length() == 0:
+            continue
+        var cp = parse_cst_param(rp)
+        if cp.is_self:
+            has_new_self = True
+        parsed_new.append(cp^)
+    if len(d.params) > 0 and d.params[0].is_self and not has_new_self:
+        parsed_new.insert(0, d.params[0].copy())
+
+    var old_non_self = List[CstParam]()
+    for op in d.params:
+        if not op.is_self:
+            old_non_self.append(op.copy())
+    var new_non_self = List[CstParam]()
+    var formatted_params = List[String]()
+    for np in parsed_new:
+        formatted_params.append(format_cst_param(np))
+        if not np.is_self:
+            new_non_self.append(np.copy())
+
+    var self_edits = List[LspEdit]()
+    self_edits.append(_span_to_lsp_edit(target_buf, d.params_span, ", ".join(formatted_params)))
+    for ce in _rewrite_calls_for_sig(target_buf, d.name, old_non_self, new_non_self):
+        # Skip overlap if any call span were inside header (impossible for normal calls)
+        if ce.r1 > d.header_span.r2 or ce.r2 < d.header_span.r1:
+            self_edits.append(ce.copy())
+    res_paths.append(target_path)
+    res_edits.append(self_edits^)
+
+    for k in range(min(len(extra_paths), len(extra_bufs))):
+        if extra_paths[k] == target_path:
+            continue
+        var f_edits = _rewrite_calls_for_sig(extra_bufs[k], d.name, old_non_self, new_non_self)
+        if len(f_edits) > 0:
+            res_paths.append(extra_paths[k])
+            res_edits.append(f_edits^)
+    return ("", res_paths^, res_edits^)
+
+
+def inline_symbol_edits(buf: TextBuffer, row: Int, col: Int) -> Tuple[String, List[LspEdit]]:
+    """Inline either a local `var name = expr` binding or a single-`return` helper function call."""
+    var edits = List[LspEdit]()
+    var nlines = buf.count()
+    if row < 0 or row >= nlines:
+        return ("Invalid cursor line", edits^)
+    var cst = parse_mojo_cst(buf)
+
+    # 1. Check if cursor is on a call site `fn(args)` of a single-return helper in `cst.defs`
+    var call = find_enclosing_call(buf, row, col)
+    if call.ok and call.callee.find(".") < 0:
+        for di in range(len(cst.defs)):
+            var d = cst.defs[di].copy()
+            if d.name == call.callee and (len(d.params) == 0 or not d.params[0].is_self):
+                var ret_expr = String("")
+                var stmt_count = 0
+                for r in range(d.header_span.r2 + 1, min(nlines, d.body_span.r2 + 1)):
+                    var st = String(to_str(buf.line(r)).strip())
+                    if st.byte_length() == 0 or st.startswith("#") or st.startswith('"""'):
+                        continue
+                    stmt_count += 1
+                    if st.startswith("return "):
+                        ret_expr = String(st[byte=7:].strip())
+                if stmt_count == 1 and ret_expr.byte_length() > 0:
+                    var pnames = List[String]()
+                    var pvals = List[String]()
+                    for pi in range(len(d.params)):
+                        pnames.append(d.params[pi].name)
+                        if pi < len(call.arg_texts):
+                            var raw_a = call.arg_texts[pi]
+                            if call.arg_kw_names[pi].byte_length() > 0:
+                                var eq = raw_a.find("=")
+                                if eq >= 0:
+                                    var v_only = String(raw_a[byte=eq + 1:].strip())
+                                    raw_a = v_only
+                            pvals.append(raw_a)
+                        else:
+                            pvals.append(d.params[pi].default_expr)
+                    var inlined = _replace_ident_tokens(ret_expr, pnames, pvals)
+                    edits.append(_span_to_lsp_edit(buf, call.span, inlined))
+                    return ("", edits^)
+
+    # 2. Inline Variable: identify identifier under cursor (or `var x = ...` on `row`)
+    var hl = Highlighter()
+    var lines_cps = List[List[Int]]()
+    var lines_cls = List[List[Int]]()
+    var st = 0
+    for r in range(nlines):
+        var cps = buf.line(r)
+        var cls = List[Int]()
+        st = hl.line(cps, st, cls, HL_MOJO)
+        lines_cps.append(cps^)
+        lines_cls.append(cls^)
+
+    var scope_start = 0
+    var scope_end = nlines - 1
+    for di in range(len(cst.defs)):
+        if cst.defs[di].header_span.r1 <= row and row <= cst.defs[di].body_span.r2:
+            scope_start = cst.defs[di].header_span.r2 + 1
+            scope_end = min(nlines - 1, cst.defs[di].body_span.r2)
+
+    var target_var = String("")
+    var cur_ln = lines_cps[row].copy()
+    var cc = min(col, len(cur_ln))
+    var a = cc
+    var b = cc
+    while a > 0 and is_ident(cur_ln[a - 1]):
+        a -= 1
+    while b < len(cur_ln) and is_ident(cur_ln[b]):
+        b += 1
+    if a < b:
+        var cand = slice_str(cur_ln, a, b)
+        if cand != "var" and cand != "let" and is_valid_ident(cand):
+            target_var = cand
+    if target_var.byte_length() == 0:
+        var fc0 = _first_code_col(cur_ln, lines_cls[row])
+        if fc0 >= 0:
+            var code0 = slice_str(cur_ln, fc0, _code_end_col(cur_ln, lines_cls[row]))
+            if code0.startswith("var ") or code0.startswith("let "):
+                var rest0 = String(code0[byte=4:].lstrip())
+                var rc0 = decode(rest0)
+                var j0 = 0
+                while j0 < len(rc0) and is_ident(rc0[j0]):
+                    j0 += 1
+                if j0 > 0:
+                    target_var = slice_str(rc0, 0, j0)
+    if target_var.byte_length() == 0:
+        return ("Place cursor on a local variable or single-return function call to inline", edits^)
+
+    var decl_row = -1
+    var rhs_expr = String("")
+    for r in range(scope_start, scope_end + 1):
+        var fc = _first_code_col(lines_cps[r], lines_cls[r])
+        if fc < 0:
+            continue
+        var code = slice_str(lines_cps[r], fc, _code_end_col(lines_cps[r], lines_cls[r]))
+        if code.startswith("var ") or code.startswith("let "):
+            var rest = String(code[byte=4:].lstrip())
+            var rc = decode(rest)
+            var j = 0
+            while j < len(rc) and is_ident(rc[j]):
+                j += 1
+            if j > 0 and slice_str(rc, 0, j) == target_var:
+                var eq = rest.find("=")
+                if eq > 0:
+                    decl_row = r
+                    rhs_expr = String(rest[byte=eq + 1:].strip())
+                    break
+    if decl_row < 0 or rhs_expr.byte_length() == 0:
+        return ("Could not find single-line `var " + target_var + " = ...` initializer in scope", edits^)
+
+    # Ensure `target_var` is not mutated after `decl_row`
+    for r in range(decl_row + 1, scope_end + 1):
+        var fc = _first_code_col(lines_cps[r], lines_cls[r])
+        if fc < 0:
+            continue
+        var code = String(slice_str(lines_cps[r], fc, _code_end_col(lines_cps[r], lines_cls[r])).strip())
+        if code.startswith(target_var):
+            var tail = String(code[byte=target_var.byte_length():].lstrip())
+            if (tail.startswith("=") and not tail.startswith("==")) or tail.startswith("+=") or tail.startswith("-=") or tail.startswith("*=") or tail.startswith("/="):
+                return ("Cannot inline '" + target_var + "' because it is reassigned later", edits^)
+
+    # Delete `decl_row` line
+    if decl_row + 1 < nlines:
+        edits.append(LspEdit(decl_row, 0, decl_row + 1, 0, ""))
+    else:
+        edits.append(LspEdit(decl_row, 0, decl_row, col_to_utf16(lines_cps[decl_row], len(lines_cps[decl_row])), ""))
+
+    var names = List[String]()
+    names.append(target_var)
+    var vals = List[String]()
+    vals.append(rhs_expr)
+    var uses = 0
+    for r in range(decl_row + 1, scope_end + 1):
+        var cps = lines_cps[r].copy()
+        var cls = lines_cls[r].copy()
+        var i = 0
+        while i < len(cps):
+            if _is_code_at(cls, i) and is_alpha(cps[i]):
+                var prev_dot = i > 0 and cps[i - 1] == 46
+                var j = i + 1
+                while j < len(cps) and is_ident(cps[j]):
+                    j += 1
+                if not prev_dot and slice_str(cps, i, j) == target_var:
+                    var adj_op = (i > 0 and cps[i - 1] != 40 and cps[i - 1] != 44 and cps[i - 1] != 61 and cps[i - 1] != 32) or True
+                    var prev_non_ws = -1
+                    var p = i - 1
+                    while p >= 0 and (cps[p] == 32 or cps[p] == 9):
+                        p -= 1
+                    if p >= 0:
+                        prev_non_ws = cps[p]
+                    var next_non_ws = -1
+                    var q = j
+                    while q < len(cps) and (cps[q] == 32 or cps[q] == 9):
+                        q += 1
+                    if q < len(cps) and _is_code_at(cls, q):
+                        next_non_ws = cps[q]
+                    var bare_ok = (prev_non_ws == 40 or prev_non_ws == 44 or prev_non_ws == 61 or prev_non_ws == 91 or prev_non_ws < 0) and (next_non_ws == 41 or next_non_ws == 44 or next_non_ws == 93 or next_non_ws < 0)
+                    # Note: `return <expr>` has `prev_non_ws == 110 ('n')` and `next_non_ws < 0`: Check `return ` too!
+                    var prefix_str = String(slice_str(cps, 0, i).strip())
+                    if prefix_str == "return":
+                        bare_ok = next_non_ws < 0
+                    _ = adj_op
+                    var repl = ("(" + rhs_expr + ")") if (_needs_expr_parens(rhs_expr) and not bare_ok) else rhs_expr
+                    edits.append(LspEdit(r, col_to_utf16(cps, i), r, col_to_utf16(cps, j), repl))
+                    uses += 1
+                i = j
+                continue
+            i += 1
+    if uses == 0:
+        return ("No references to '" + target_var + "' found below its declaration", List[LspEdit]())
+    return ("", edits^)
+
+
+def _struct_has_method(s: CstStructNode, mname: String) -> Bool:
+    for m in s.methods:
+        if m.name == mname:
+            return True
+    return False
+
+
+def generate_trait_stubs_edits(buf: TextBuffer, row: Int) -> Tuple[String, String, List[LspEdit]]:
+    """Synthesize missing Mojo 1.2 trait/boilerplate methods (`Writable`, `Equatable`, `Hashable`,
+    `Copyable`, and custom `trait` declarations in the buffer) on the enclosing `struct`."""
+    var edits = List[LspEdit]()
+    var cst = parse_mojo_cst(buf)
+    var si = -1
+    for i in range(len(cst.structs)):
+        if cst.structs[i].header_span.r1 <= row and row <= cst.structs[i].body_span.r2:
+            si = i
+    if si < 0:
+        return ("Place cursor inside a `struct` to generate trait & boilerplate stubs", "", edits^)
+    var s = cst.structs[si].copy()
+    var pad = String("")
+    for _ in range(s.indent + 4):
+        pad += " "
+    var pad2 = pad + "    "
+
+    var blocks = List[String]()
+    var generated_names = List[String]()
+    var want_writable = ("Writable" in s.traits) or (len(s.traits) == 0 and not _struct_has_method(s, "write_to"))
+    if want_writable and not _struct_has_method(s, "write_to"):
+        var wlines = List[String]()
+        wlines.append(pad + "def write_to(self, mut writer: Some[Writer]):")
+        if len(s.fields) == 0:
+            wlines.append(pad2 + 'writer.write("' + s.name + '()")')
+        else:
+            var args = List[String]()
+            args.append('"' + s.name + '("')
+            for fi in range(len(s.fields)):
+                var prefix = (", " if fi > 0 else "") + s.fields[fi].name + "="
+                args.append('"' + prefix + '"')
+                args.append("self." + s.fields[fi].name)
+            args.append('")"')
+            wlines.append(pad2 + "writer.write(" + ", ".join(args) + ")")
+        blocks.append("\n".join(wlines))
+        generated_names.append("write_to")
+
+    if ("Equatable" in s.traits) and not _struct_has_method(s, "__eq__"):
+        var elines = List[String]()
+        elines.append(pad + "def __eq__(self, other: Self) -> Bool:")
+        if len(s.fields) == 0:
+            elines.append(pad2 + "return True")
+        else:
+            var cmps = List[String]()
+            for f in s.fields:
+                cmps.append("self." + f.name + " == other." + f.name)
+            elines.append(pad2 + "return " + " and ".join(cmps))
+        blocks.append("\n".join(elines))
+        generated_names.append("__eq__")
+
+    if ("Hashable" in s.traits) and not _struct_has_method(s, "__hash__"):
+        var hlines = List[String]()
+        hlines.append(pad + "def __hash__[H: Hasher](self, mut hasher: H):")
+        if len(s.fields) == 0:
+            hlines.append(pad2 + "pass")
+        else:
+            for f in s.fields:
+                hlines.append(pad2 + "hasher.update(self." + f.name + ")")
+        blocks.append("\n".join(hlines))
+        generated_names.append("__hash__")
+
+    if ("Copyable" in s.traits) and not _struct_has_method(s, "__init__") and s.deco_start_row == s.header_span.r1:
+        var clines = List[String]()
+        clines.append(pad + "def __init__(out self, *, copy: Self):")
+        if len(s.fields) == 0:
+            clines.append(pad2 + "pass")
+        else:
+            for f in s.fields:
+                clines.append(pad2 + "self." + f.name + " = copy." + f.name)
+        blocks.append("\n".join(clines))
+        generated_names.append("__init__(copy)")
+
+    # Custom traits defined in this buffer
+    for tr_name in s.traits:
+        for ti in range(len(cst.traits)):
+            if cst.traits[ti].name == tr_name:
+                for tm in cst.traits[ti].methods:
+                    if not _struct_has_method(s, tm.name) and not (tm.name in generated_names):
+                        var p_strs = List[String]()
+                        for p in tm.params:
+                            p_strs.append(format_cst_param(p))
+                        var cp_part = String("")
+                        if len(tm.comptime_params) > 0:
+                            var cps_l = List[String]()
+                            for cp in tm.comptime_params:
+                                cps_l.append(format_cst_param(cp))
+                            cp_part = "[" + ", ".join(cps_l) + "]"
+                        var hdr = pad + "def " + tm.name + cp_part + "(" + ", ".join(p_strs) + ")"
+                        if tm.is_raises:
+                            hdr += " raises"
+                        if tm.return_type.byte_length() > 0:
+                            hdr += " -> " + tm.return_type
+                        hdr += ":"
+                        var body_line = pad2 + ('raise Error("not implemented: ' + s.name + "." + tm.name + '")' if tm.is_raises else "pass")
+                        blocks.append(hdr + "\n" + body_line)
+                        generated_names.append(tm.name)
+
+    if len(blocks) == 0:
+        return ("All declared trait methods already exist on struct '" + s.name + "'", "", edits^)
+
+    var end_r = min(buf.count() - 1, s.body_span.r2)
+    var end_u16 = col_to_utf16(buf.line(end_r), len(buf.line(end_r)))
+    var prefix_nl = "\n\n" if String(to_str(buf.line(end_r)).strip()).byte_length() > 0 else "\n"
+    edits.append(LspEdit(end_r, end_u16, end_r, end_u16, prefix_nl + "\n\n".join(blocks)))
+    var title = "Implement missing stubs on " + s.name + " (" + ", ".join(generated_names) + ")"
+    return ("", title, edits^)

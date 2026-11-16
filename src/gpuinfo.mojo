@@ -9,7 +9,7 @@ from std.collections import List
 from util import bytes_to_str, shell_quote
 
 # one shell command for every machine: the first line says which tool answered
-comptime GPU_QUERY = "if command -v nvidia-smi >/dev/null 2>&1; then echo nvidia; nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null; elif command -v rocm-smi >/dev/null 2>&1; then echo rocm; rocm-smi --showproductname --csv 2>/dev/null; else echo none; fi"
+comptime GPU_QUERY = "if command -v nvidia-smi >/dev/null 2>&1; then echo nvidia; nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null; elif command -v rocm-smi >/dev/null 2>&1; then echo rocm; rocm-smi --showproductname --csv 2>/dev/null; elif [ \"$(uname -s)\" = \"Darwin\" ]; then echo metal; system_profiler SPDisplaysDataType 2>/dev/null; sysctl -n hw.memsize 2>/dev/null || true; else echo none; fi"
 
 
 struct GpuInfo(Copyable, Movable):
@@ -32,6 +32,55 @@ def csv_cells(line: String) -> List[String]:
 
 def unknown(v: String) -> Bool:
     return v.byte_length() == 0 or v.startswith("[N/A]") or v == "N/A" or v.startswith("[Not Supported]")
+
+
+@fieldwise_init
+struct _MetalEntry(Copyable, Movable):
+    var chipset: String
+    var cores: String
+    var metal_ver: String
+
+
+def _parse_uint_exact(text: String) -> Int:
+    var t = String(text.strip())
+    if t.byte_length() == 0:
+        return -1
+    var n = 0
+    for b in t.as_bytes():
+        var c = Int(b)
+        if c < 48 or c > 57:
+            return -1
+        n = n * 10 + (c - 48)
+    return n
+
+
+def _parse_metal_lines(lines: List[String]) -> Tuple[List[_MetalEntry], Int]:
+    var entries = List[_MetalEntry]()
+    var mem_bytes = -1
+    var cur_chipset = String("")
+    var cur_cores = String("")
+    var cur_metal = String("")
+    for k in range(1, len(lines)):
+        var ln = lines[k]
+        if ln.startswith("Chipset Model:"):
+            if cur_chipset.byte_length() > 0:
+                entries.append(_MetalEntry(cur_chipset, cur_cores, cur_metal))
+                cur_cores = ""
+                cur_metal = ""
+            cur_chipset = String(String(ln[byte=14:]).strip())
+        elif ln.startswith("Total Number of Cores:"):
+            cur_cores = String(String(ln[byte=22:]).strip())
+        elif ln.startswith("Metal Support:"):
+            cur_metal = String(String(ln[byte=14:]).strip())
+        elif ln.startswith("Metal Family:") and cur_metal.byte_length() == 0:
+            cur_metal = String(String(ln[byte=13:]).strip())
+        elif ln.find(":") < 0 and ln.byte_length() >= 7:
+            var mb = _parse_uint_exact(ln)
+            if mb >= 1048576:
+                mem_bytes = mb
+    if cur_chipset.byte_length() > 0:
+        entries.append(_MetalEntry(cur_chipset, cur_cores, cur_metal))
+    return (entries^, mem_bytes)
 
 
 def parse_gpus(output: String) -> List[GpuInfo]:
@@ -63,6 +112,22 @@ def parse_gpus(output: String) -> List[GpuInfo]:
                 continue
             if col < len(c) and not unknown(c[col]):
                 gpus.append(GpuInfo(c[col]))
+    elif lines[0] == "metal":
+        var parsed_metal = _parse_metal_lines(lines)
+        var mem_txt = String("")
+        if parsed_metal[1] > 0:
+            var gib = (parsed_metal[1] + 536870912) // 1073741824
+            mem_txt = String(gib) + " GiB unified"
+        for i in range(len(parsed_metal[0])):
+            var e = parsed_metal[0][i].copy()
+            var drv = String("")
+            if e.metal_ver.byte_length() > 0 and e.cores.byte_length() > 0:
+                drv = e.metal_ver + " (" + e.cores + " cores)"
+            elif e.metal_ver.byte_length() > 0:
+                drv = e.metal_ver
+            elif e.cores.byte_length() > 0:
+                drv = e.cores + " cores"
+            gpus.append(GpuInfo(e.chipset, mem_txt, drv))
     return gpus^
 
 
@@ -82,11 +147,11 @@ def gpu_line(gpus: List[GpuInfo]) -> String:
 
 
 def gpu_short(gpus: List[GpuInfo]) -> String:
-    """For the status line: "GPU GB10", "GPU H100 80GB HBM3 ×8"; "" with none."""
+    """For the status line: "GPU GB10", "GPU H100 80GB HBM3 ×8", "GPU M3 Max"; "" with none."""
     if len(gpus) == 0:
         return ""
     var name = gpus[0].name
-    for p in ["NVIDIA ", "AMD ", "Radeon "]:
+    for p in ["NVIDIA ", "AMD ", "Radeon ", "Apple "]:
         if name.startswith(String(p)):
             var rest = String(name[byte=String(p).byte_length():])
             name = rest
@@ -96,7 +161,7 @@ def gpu_short(gpus: List[GpuInfo]) -> String:
     return s
 
 
-comptime GPU_TELEMETRY_QUERY = "if command -v nvidia-smi >/dev/null 2>&1; then echo nvidia; nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits 2>/dev/null; echo __PROCS__; nvidia-smi --query-compute-apps=gpu_bus_id,pid,process_name,used_gpu_memory --format=csv,noheader,nounits 2>/dev/null || true; elif command -v rocm-smi >/dev/null 2>&1; then echo rocm; rocm-smi --showuse --showmeminfo vram --showtemp --showpower --csv 2>/dev/null; else echo none; fi"
+comptime GPU_TELEMETRY_QUERY = "if command -v nvidia-smi >/dev/null 2>&1; then echo nvidia; nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader,nounits 2>/dev/null; echo __PROCS__; nvidia-smi --query-compute-apps=gpu_bus_id,pid,process_name,used_gpu_memory --format=csv,noheader,nounits 2>/dev/null || true; elif command -v rocm-smi >/dev/null 2>&1; then echo rocm; rocm-smi --showuse --showmeminfo vram --showtemp --showpower --csv 2>/dev/null; elif [ \"$(uname -s)\" = \"Darwin\" ]; then echo metal; system_profiler SPDisplaysDataType 2>/dev/null; sysctl -n hw.memsize 2>/dev/null || true; else echo none; fi"
 
 
 @fieldwise_init
@@ -195,6 +260,19 @@ def parse_gpu_samples(output: String) -> Tuple[List[GpuSample], List[String]]:
                 elif hdr[j].find("power") >= 0 and pw.byte_length() == 0 and not unknown(c[j]):
                     pw = c[j]
             samples.append(GpuSample(len(samples), nm, util, mu, mt, tc, pw))
+    elif lines[0] == "metal":
+        var parsed_metal = _parse_metal_lines(lines)
+        var total_mib = (parsed_metal[1] // (1024 * 1024)) if parsed_metal[1] > 0 else -1
+        for i in range(len(parsed_metal[0])):
+            var e = parsed_metal[0][i].copy()
+            var extra = String("")
+            if e.cores.byte_length() > 0 and e.metal_ver.byte_length() > 0:
+                extra = " (" + e.cores + " cores, " + e.metal_ver + ")"
+            elif e.cores.byte_length() > 0:
+                extra = " (" + e.cores + " cores)"
+            elif e.metal_ver.byte_length() > 0:
+                extra = " (" + e.metal_ver + ")"
+            samples.append(GpuSample(i, e.chipset + extra, -1, -1, total_mib, -1, ""))
     return (samples^, procs^)
 
 
@@ -245,6 +323,8 @@ def format_gpu_monitor(samples: List[GpuSample], procs: List[String], hist: List
         if s.mem_used_mib >= 0 and s.mem_total_mib > 0:
             var mpct = (s.mem_used_mib * 100) // s.mem_total_mib
             out.append("  VRAM:    " + gpu_bar(mpct, 16) + " " + String(s.mem_used_mib) + " / " + String(s.mem_total_mib) + " MiB (" + String(mpct) + "%)")
+        elif s.mem_total_mib > 0:
+            out.append("  VRAM:    unified / shared host memory (" + String((s.mem_total_mib + 512) // 1024) + " GiB unified)")
         else:
             out.append("  VRAM:    unified / shared host memory")
         var meta = String("")
@@ -667,4 +747,239 @@ def format_roofline_report(data: GpuRooflineData) -> List[String]:
         out.append("  Top Warp Stalls:")
         for st in data.stalls:
             out.append("    - " + st.reason + ": " + _roofline_1dp(st.pct) + "%")
+    return out^
+
+
+# ---------------------------------------------------------------------------
+# Multi-GPU Topology, Slurm Queue & Container Slice (Phase 19)
+# ---------------------------------------------------------------------------
+
+comptime GPU_CLUSTER_QUERY = "echo __TOPO__; if command -v nvidia-smi >/dev/null 2>&1; then nvidia-smi topo -m 2>/dev/null || true; fi; echo __SQUEUE__; if command -v squeue >/dev/null 2>&1; then squeue --me -o \"%.10i %.12P %.18j %.8T %.10M %.6D %R\" 2>/dev/null || true; fi; echo __CGROUP__; if [ -r /sys/fs/cgroup/memory.max ] && [ -r /sys/fs/cgroup/memory.current ]; then mx=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo max); if [ \"$mx\" != \"max\" ] && [ -n \"$mx\" ]; then cat /sys/fs/cgroup/memory.current 2>/dev/null || true; echo \"$mx\"; fi; fi"
+
+
+@fieldwise_init
+struct SlurmJobRow(Copyable, Movable):
+    var job_id: String
+    var partition: String
+    var name: String
+    var state: String
+    var elapsed: String
+    var nodes: String
+    var nodelist: String
+
+
+def _strip_ansi_text(s: String) -> String:
+    if s.find("\x1b") < 0:
+        return s
+    var b = s.as_bytes()
+    var out = List[UInt8]()
+    var i = 0
+    var n = len(b)
+    while i < n:
+        if Int(b[i]) == 27 and i + 1 < n and Int(b[i + 1]) == 91:
+            i += 2
+            while i < n and not (Int(b[i]) >= 64 and Int(b[i]) <= 126):
+                i += 1
+            i += 1
+            continue
+        out.append(b[i])
+        i += 1
+    return bytes_to_str(out)
+
+
+def _pad_cell(s: String, w: Int) -> String:
+    var out = s
+    var cur = s.byte_length()
+    while cur < w:
+        out += " "
+        cur += 1
+    return out
+
+
+def _is_gpu_col_token(tok: String) -> Bool:
+    if not tok.startswith("GPU") or tok.byte_length() < 4:
+        return False
+    var tail = String(tok[byte=3:])
+    return _parse_uint_exact(tail) >= 0
+
+
+def _is_pcie_hop(cell: String) -> Bool:
+    return cell == "PIX" or cell == "PXB" or cell == "PHB" or cell == "NODE" or cell == "SYS"
+
+
+def parse_nvidia_topo_matrix(raw: String) -> List[String]:
+    """Parse `nvidia-smi topo -m` output into aligned GPU-to-GPU interconnect rows and a
+    summary highlighting NVLink (`NV12`, `NV18`, `NV4`) vs PCIe (`PIX`, `PHB`, `SYS`)."""
+    var out = List[String]()
+    var gpu_cols = List[String]()
+    var matrix_rows = List[String]()
+    var nv_links = List[String]()
+    var pcie_links = List[String]()
+
+    for raw_ln in raw.split("\n"):
+        var clean = String(_strip_ansi_text(String(raw_ln)).strip())
+        if clean.byte_length() == 0 or clean == "__TOPO__":
+            continue
+        if clean.startswith("Legend:"):
+            break
+        var toks = _ws_tokens(clean)
+        if len(toks) == 0:
+            continue
+        if len(gpu_cols) == 0:
+            var found_hdr = False
+            for t in toks:
+                if _is_gpu_col_token(t):
+                    gpu_cols.append(t)
+                    found_hdr = True
+                elif found_hdr:
+                    break
+            continue
+        if _is_gpu_col_token(toks[0]):
+            var ngpu = len(gpu_cols)
+            var row_txt = "  " + _pad_cell(toks[0], 7)
+            var limit = min(len(toks) - 1, ngpu)
+            for j in range(limit):
+                var cell = toks[j + 1]
+                row_txt += _pad_cell(cell, 7)
+                if cell.startswith("NV") and cell != "N/A":
+                    if not (cell in nv_links):
+                        nv_links.append(cell)
+                elif _is_pcie_hop(cell):
+                    if not (cell in pcie_links):
+                        pcie_links.append(cell)
+            matrix_rows.append(String(row_txt.rstrip()))
+
+    if len(gpu_cols) == 0 or len(matrix_rows) == 0:
+        return out^
+
+    var hdr_txt = "  " + _pad_cell("", 7)
+    for g in gpu_cols:
+        hdr_txt += _pad_cell(g, 7)
+    out.append(String(hdr_txt.rstrip()))
+    for r in matrix_rows:
+        out.append(r)
+
+    if len(nv_links) > 0 and len(pcie_links) == 0:
+        out.append("  Interconnect: NVLink (" + ", ".join(nv_links) + ") — direct peer-to-peer mesh")
+    elif len(nv_links) > 0 and len(pcie_links) > 0:
+        out.append("  Interconnect: Hybrid NVLink (" + ", ".join(nv_links) + ") + PCIe (" + ", ".join(pcie_links) + ")")
+    elif len(pcie_links) > 0:
+        out.append("  Interconnect: PCIe (" + ", ".join(pcie_links) + ") — no NVLink bridge")
+    else:
+        out.append("  Interconnect: Single GPU (X)")
+    return out^
+
+
+def parse_squeue_rows(raw: String) -> List[SlurmJobRow]:
+    """Parse `squeue` tabular output into `SlurmJobRow` items."""
+    var out = List[SlurmJobRow]()
+    for raw_ln in raw.split("\n"):
+        var ln = String(String(raw_ln).strip())
+        if ln.byte_length() == 0 or ln == "__SQUEUE__":
+            continue
+        var toks = _ws_tokens(ln)
+        if len(toks) < 6:
+            continue
+        if toks[0].upper() == "JOBID":
+            continue
+        var tail = String("")
+        for j in range(6, len(toks)):
+            tail += (" " if tail.byte_length() > 0 else String("")) + toks[j]
+        out.append(
+            SlurmJobRow(
+                toks[0],
+                toks[1],
+                toks[2],
+                toks[3],
+                toks[4],
+                toks[5],
+                tail,
+            )
+        )
+    return out^
+
+
+def parse_cgroup_memory_slice(mem_current: String, mem_max: String) -> String:
+    """Format container cgroup v2 memory slice (`Container RAM: 12.4 / 64.0 GiB (19%)`),
+    or return `""` when `mem_max` is `"max"` / unlimited / bare-metal."""
+    var cur_s = String(mem_current.strip())
+    var max_s = String(mem_max.strip())
+    if cur_s.byte_length() == 0 or max_s.byte_length() == 0 or max_s.lower() == "max":
+        return ""
+    var cur_b = _parse_uint_exact(cur_s)
+    var max_b = _parse_uint_exact(max_s)
+    # 1 << 58 (~256 PiB) guards against kernel unlimited-memory sentinel values
+    if cur_b < 0 or max_b <= 0 or max_b >= (1 << 58):
+        return ""
+    var gib_unit: Float64 = 1073741824.0
+    var cur_gib = Float64(cur_b) / gib_unit
+    var max_gib = Float64(max_b) / gib_unit
+    var pct = (cur_b * 100) // max_b
+    return "Container RAM: " + _roofline_1dp(cur_gib) + " / " + _roofline_1dp(max_gib) + " GiB (" + String(pct) + "%)"
+
+
+def parse_cluster_query_sections(raw: String) -> Tuple[String, String, String, String]:
+    """Split `GPU_CLUSTER_QUERY` output into `(topo_raw, squeue_raw, cgroup_cur, cgroup_max)`."""
+    var section = 0
+    var topo_lines = List[String]()
+    var sq_lines = List[String]()
+    var cg_lines = List[String]()
+    for raw_ln in raw.split("\n"):
+        var ln = String(raw_ln)
+        var st = String(ln.strip())
+        if st == "__TOPO__":
+            section = 1
+            continue
+        if st == "__SQUEUE__":
+            section = 2
+            continue
+        if st == "__CGROUP__":
+            section = 3
+            continue
+        if section == 1:
+            topo_lines.append(ln)
+        elif section == 2:
+            sq_lines.append(ln)
+        elif section == 3 and st.byte_length() > 0:
+            cg_lines.append(st)
+    var cg_cur = cg_lines[0] if len(cg_lines) >= 2 else String("")
+    var cg_max = cg_lines[1] if len(cg_lines) >= 2 else String("")
+    return ("\n".join(topo_lines), "\n".join(sq_lines), cg_cur, cg_max)
+
+
+def format_cluster_topology_section(
+    topo_raw: String,
+    squeue_raw: String,
+    cgroup_cur: String,
+    cgroup_max: String,
+) -> List[String]:
+    """Format a multi-line cluster/topology/container report block for `WK_GPU`."""
+    var out = List[String]()
+    var cg = parse_cgroup_memory_slice(cgroup_cur, cgroup_max)
+    var topo = parse_nvidia_topo_matrix(topo_raw)
+    var jobs = parse_squeue_rows(squeue_raw)
+
+    if cg.byte_length() == 0 and len(topo) == 0 and len(jobs) == 0:
+        return out^
+
+    if cg.byte_length() > 0:
+        out.append("Container Slice")
+        out.append("  " + cg)
+
+    if len(topo) > 0:
+        if len(out) > 0:
+            out.append("")
+        out.append("Multi-GPU Topology")
+        for ln in topo:
+            out.append(ln)
+
+    if len(jobs) > 0:
+        if len(out) > 0:
+            out.append("")
+        out.append("Slurm Queue (" + String(len(jobs)) + (" job)" if len(jobs) == 1 else " jobs)"))
+        for j in jobs:
+            out.append(
+                "  #" + j.job_id + "  " + j.name + "  [" + j.state + "]  "
+                + j.partition + "  " + j.elapsed + "  " + j.nodes + "n  " + j.nodelist
+            )
     return out^

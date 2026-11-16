@@ -724,7 +724,5 @@ struct Terminal(Movable):
                 mods = 0                # a shifted symbol arrives as the symbol itself
             elif (k == KEY_BACKSPACE or k == KEY_ESC) and mods == MOD_SHIFT:
                 mods = 0                # Shift held while correcting a capital letter
-            elif k == KEY_ENTER and (mods & MOD_ALT) == 0:
-                mods = 0                # Shift-Enter and Ctrl-Enter are Enter, as before
         if k != 0:
             evs.append(key_event(k | mods))

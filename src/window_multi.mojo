@@ -9,7 +9,8 @@ of the text and of their line, which an edit before them does not change. All ed
 one step share one undo group."""
 from std.collections import List
 from buffer import TextBuffer, Pos
-from highlight import lang_for_path, comment_prefix_for_lang
+from highlight import HL_MOJO, lang_for_path, comment_prefix_for_lang
+from mojocst import cst_selection_ranges
 from search import Search, make_search
 from util import is_ident, decode
 from window import *
@@ -487,6 +488,12 @@ __extension Window:
         var cur = self.sel_range() if had_sel else Range(self.cr, self.cc, self.cr, self.cc)
         var best = Range(0, 0, 0, 0)
         var found = False
+
+        if self.effective_lang() == HL_MOJO:
+            var orig_r = self.sel_hist[0].r1 if len(self.sel_hist) > 0 else cur.r1
+            var orig_c = self.sel_hist[0].c1 if len(self.sel_hist) > 0 else cur.c1
+            for sp in cst_selection_ranges(self.buf, orig_r, orig_c):
+                self._try_candidate(cur, Range(sp.r1, sp.c1, sp.r2, sp.c2), best, found)
 
         if cur.r1 == cur.r2:
             var r = cur.r1

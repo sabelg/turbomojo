@@ -12,9 +12,10 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter, lang_for_path, HL_MOJO
 from snippets import (
-    mojo_snippets, expand_snippet_full, pos_after_offset,
+    SnippetTemplate, mojo_snippets, expand_snippet_full, pos_after_offset,
     load_toml_snippets, load_vscode_snippets, expand_variables,
 )
+from plugins import load_plugin_snippets
 from config import config_home
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
 from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE, Cur
@@ -476,6 +477,19 @@ __extension App:
                     if not ent.endswith("/") and ent.endswith(".code-snippets"):
                         try:
                             for sn in load_vscode_snippets(join_path(vs_dir, ent)):
+                                self.user_snippets.append(sn.copy())
+                        except:
+                            pass
+        var pdir = self.plugins_dir if self.plugins_dir.byte_length() > 0 else (config_home() + "/plugins")
+        if pdir.byte_length() > 0 and path_exists(pdir):
+            for ps in load_plugin_snippets(pdir):
+                self.user_snippets.append(SnippetTemplate(ps.prefix, ps.prefix, ps.description, ps.body, ps.description))
+            for ent in list_dir(pdir):
+                if ent.endswith("/") and ent != "../":
+                    var sp_toml = join_path(pdir, String(ent[byte=0:ent.byte_length() - 1]) + "/snippets.toml")
+                    if path_exists(sp_toml):
+                        try:
+                            for sn in load_toml_snippets(sp_toml):
                                 self.user_snippets.append(sn.copy())
                         except:
                             pass

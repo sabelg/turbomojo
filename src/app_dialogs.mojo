@@ -92,10 +92,15 @@ __extension App:
         for k in range(self.themes.count()):
             items.append(self.themes.pals[k].name + ("   (light)" if not self.themes.dark[k] else String("")))
             data.append(k)
-            if k == self.theme_idx and self.theme_id != "auto":
+            if k == self.theme_idx and self.theme_id != "auto" and self.theme_id != "omarchy":
                 first = len(items) - 1
+        items.append("Omarchy Live: follow ~/.config/omarchy/current/theme/colors.toml")
+        data.append(-2)
+        var omarchy_at = len(items) - 1
         if self.theme_id == "auto":
             first = auto_at
+        elif self.theme_id == "omarchy":
+            first = omarchy_at
         var d = Dialog(D_THEME, "Welcome to TurboMojo - Colour Theme" if welcome else "Colour Theme", min(72, self.scr.w - 4), min(20, len(items) + (10 if welcome else 8)))
         d.has_list = True
         d.set_items(items^, data^)
@@ -124,7 +129,7 @@ __extension App:
         if sel < 0:
             return
         var k = self.dlg.item_data[sel]
-        var id = String("auto") if k < 0 else (self.themes.ids[k] if k < self.themes.count() else self.theme_id)
+        var id = String("omarchy") if k == -2 else (String("auto") if k < 0 else (self.themes.ids[k] if k < self.themes.count() else self.theme_id))
         if k == THEME_ITEM_MODERN or k == THEME_ITEM_VIM:
             id = PRESET_MODERN_THEME
         if id != self.theme_id:
@@ -158,7 +163,9 @@ __extension App:
             except:
                 pass
             return
-        if k < 0:
+        if k == -2:
+            self.theme_id = "omarchy"
+        elif k < 0:
             self.theme_id = "auto"
         elif k < self.themes.count():
             self.theme_id = self.themes.ids[k]
@@ -508,7 +515,8 @@ __extension App:
                 var env_choice = String(self.dlg.keys[s])
                 self.pixi_env_choose(env_choice)
         elif kind == D_GPU_LANE and b == 0:
-            self.gpu_lane_apply(self.dlg.field_text(0), self.dlg.field_text(1))
+            var mtxt = self.dlg.field_text(2) if len(self.dlg.fields) > 2 else String("")
+            self.gpu_lane_apply(self.dlg.field_text(0), self.dlg.field_text(1), mtxt)
         elif kind == D_MAX_SERVE and b == 0:
             var s = self.dlg.selected_item()
             self.max_serve_run(self.dlg.item_data[s] if s >= 0 else 0, self.dlg.field_text(0))
@@ -548,6 +556,20 @@ __extension App:
             self.extract_variable_apply(self.dlg.field_text(0))
         elif kind == D_EXTRACT_FUNC and b == 0:
             self.extract_function_apply(self.dlg.field_text(0))
+        elif kind == D_CHANGE_SIG and b == 0:
+            self.change_signature_apply(self.dlg.field_text(0))
+        elif kind == D_INLINE_AI and b == 0:
+            self.inline_ai_apply(self.dlg.field_text(0))
+        elif kind == D_SELECT_TARGET and b == 0:
+            var s = self.dlg.selected_item()
+            if s >= 0 and s < len(self.dlg.keys):
+                var tchoice = String(self.dlg.keys[s])
+                self.select_target_apply(tchoice)
+        elif kind == D_PLUGIN_INSTALL and b <= 2:
+            var s = self.dlg.selected_item()
+            var pspec = self.dlg.field_text(0)
+            self.plugin_install_button(b, pspec, s)
+            self.plugin_install_dialog()
 
     # ------------------------------------------------------------ find / replace
     def current_search(self) -> Search:

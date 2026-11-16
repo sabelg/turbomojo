@@ -1327,19 +1327,29 @@ __extension App:
         if not self.dbg.active() or self.dbg.state != DS_STOPPED:
             self.say("Stop the program at a breakpoint first to switch GPU thread/lane")
             return
-        var d = Dialog(D_GPU_LANE, "GPU Thread / Block Focus", min(68, self.scr.w - 4), 13)
+        var def_mask = self.dview.warp_mask_hex
+        if def_mask.byte_length() == 0:
+            def_mask = "0xffffffffffffffff" if self.debug_adapter.lower().find("rocgdb") >= 0 else "0xffffffff"
+        var d = Dialog(D_GPU_LANE, "GPU Thread / Block & Warp Mask", min(70, self.scr.w - 4), 15)
         d.lines.append("Adapter: " + self.debug_adapter)
         d.lines.append("cuda-gdb uses block/thread (x,y,z); rocgdb uses lane x; LLDB selects thread x.")
         d.fields.append(Field("~B~lock (x,y,z)", self.dbg_gpu_block))
         d.fields.append(Field("~T~hread / lane (x,y,z)", self.dbg_gpu_thread))
+        d.fields.append(Field("~A~ctive lane mask (hex)", def_mask))
         d.fields[1].fresh = True
         d.buttons.append("~S~witch")
         d.buttons.append("Cancel")
         self.show(d^)
 
-    def gpu_lane_apply(mut self, block_txt: String, thread_txt: String):
+    def gpu_lane_apply(mut self, block_txt: String, thread_txt: String, mask_txt: String = ""):
         self.dbg_gpu_block = String(block_txt.strip()) if String(block_txt.strip()).byte_length() > 0 else String("0,0,0")
         self.dbg_gpu_thread = String(thread_txt.strip()) if String(thread_txt.strip()).byte_length() > 0 else String("0,0,0")
+        var w = 64 if self.debug_adapter.lower().find("rocgdb") >= 0 else 32
+        var focus_lane = parse_xyz_triple(self.dbg_gpu_thread)[0]
+        var eff_mask = String(mask_txt.strip())
+        if eff_mask.byte_length() > 0 or self.dview.warp_width > 0:
+            self.dview.set_warp_state(eff_mask, w, focus_lane)
+            self.debugwin_show()
         if not self.dbg.active() or self.dbg.state != DS_STOPPED:
             self.say("The program is no longer stopped")
             return

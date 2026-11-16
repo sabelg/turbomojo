@@ -182,6 +182,16 @@ comptime CM_CELL_DELETE = 322       # Palette: Delete cell
 comptime CM_CELL_TOGGLE_MD = 323    # Palette: Toggle Code / Markdown cell
 comptime CM_CELL_RESTART_RUN_ALL = 324 # Palette: Restart kernel & run all cells
 comptime CM_OPEN_NOTEBOOK = 325     # File > Open notebook (.ipynb)...
+comptime CM_GPU_OCCUPANCY = 326     # Compile > GPU hardware occupancy & banks
+comptime CM_SWAP_CALL_ARGS = 327    # Text > Swap call arguments
+comptime CM_CHANGE_SIGNATURE = 328  # Text > Edit function signature...
+comptime CM_INLINE_SYMBOL = 329     # Text > Inline word / function
+comptime CM_IMPL_TRAIT_STUBS = 330  # Text > Implement trait & struct stubs
+comptime CM_INLINE_AI = 331         # ≡ > Inline AI edit / transform...
+comptime CM_AI_VERIFY_TOGGLE = 332  # ≡ > AI yield verified patch mode
+comptime CM_FIM_GHOST = 333         # Palette: Trigger / accept FIM ghost text
+comptime CM_SELECT_TARGET = 334     # Compile > Compute target...
+comptime CM_PLUGIN_INSTALL = 335    # ≡ > Install / update plugin...
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -976,7 +986,7 @@ def build_registry() -> Registry:
     r.cmd(CM_GIT_PULL, "git.pull", "Git pu~l~l --rebase", "Pull from upstream remote with --rebase asynchronously")
     r.cmd(CM_GIT_FETCH, "git.fetch", "Git ~f~etch --prune", "Fetch and prune remote tracking branches asynchronously")
     r.cmd(CM_GIT_STASH_LIST, "git.stashList", "Git ~s~tash list...", "Browse, preview, apply, pop, drop or create named git stashes")
-    r.cmd(CM_SWITCH_PROJECT, "file.switchProject", "Switch project ~f~older...", "Switch to a recent project folder in-place")
+    r.cmd(CM_SWITCH_PROJECT, "file.switchProject", "Switch project (~z~)...", "Switch to a recent project folder in-place")
     r.cmd(CM_GIT_WORKTREE, "git.worktrees", "Git wor~k~trees...", "List, create, prune or switch git worktrees")
     r.cmd(CM_PLUGINS, "options.pluginsManager", "Manage ~p~lugins...", "Inspect running plugins and start, stop or restart them")
     r.cmd(CM_TERM_NEW, "window.newTerminalTab", "New terminal ta~b~", "Open an additional shell tab in the integrated terminal")
@@ -1001,6 +1011,17 @@ def build_registry() -> Registry:
     r.hide(CM_CELL_DELETE, "cells.deleteCell", "Notebook: Delete cell", "Delete the # %% cell at the cursor (Jupyter 'dd')")
     r.hide(CM_CELL_TOGGLE_MD, "cells.toggleMarkdown", "Notebook: Toggle Code / Markdown cell", "Convert the cell at the cursor between # %% Code and # %% [markdown] (Jupyter 'm' / 'y')")
     r.hide(CM_CELL_RESTART_RUN_ALL, "cells.restartAndRunAll", "Notebook: Restart kernel & run all cells", "Restart the persistent notebook kernel and execute every # %% cell from top to bottom")
+    r.cmd(CM_GPU_OCCUPANCY, "compile.gpuOccupancy", "GPU ~h~ardware occupancy & banks", "Model SM/CU warp occupancy limits and inspect 32-bank shared-memory conflicts")
+    r.cmd(CM_SWAP_CALL_ARGS, "refactor.swapCallArgs", "Sw~a~p call arguments", "Swap the call argument at the cursor with its neighbor using the Mojo CST")
+    r.cmd(CM_CHANGE_SIGNATURE, "refactor.changeSignature", "~E~dit function signature...", "Reorder, add or update def parameters and rewrite matching call sites across the project")
+    r.cmd(CM_INLINE_SYMBOL, "refactor.inlineSymbol", "Inline ~w~ord / function", "Inline a local var binding or single-return helper function call with precedence-safe parentheses")
+    r.cmd(CM_IMPL_TRAIT_STUBS, "refactor.implementTraitStubs", "Implement ~t~rait & struct stubs", "Synthesize Writable, Equatable, Hashable, Copyable or custom trait method stubs on the enclosing struct")
+    r.cmd(CM_INLINE_AI, "ai.inlineTransform", "Inline AI ~e~dit / transform...", "Transform the selected code or cursor line with compiler-verified AI diff preview", [ctrl(105) | MOD_ALT])
+    r.cmd(CM_AI_VERIFY_TOGGLE, "ai.toggleVerifyEdits", "AI ~y~ield verified patch mode", "Shadow-compile AI-proposed Mojo edits with mojo build and auto-repair diagnostics before showing the diff")
+    r.hide(CM_FIM_GHOST, "ai.ghostComplete", "AI: Trigger / accept FIM ghost text", "Request or accept Fill-in-the-Middle ghost-text completion from [ai] inline_endpoint")
+    r.bind(CM_FIM_GHOST, alt(93))
+    r.cmd(CM_SELECT_TARGET, "compile.selectTarget", "Compute ~t~arget (SSH / Docker / Slurm)...", "Select local, SSH, Docker, Apptainer or Slurm GPU execution target from .turbomojo.toml")
+    r.cmd(CM_PLUGIN_INSTALL, "options.pluginInstall", "Install / ~u~pdate plugin...", "Install, pin, update or remove plugins and snippet packs from Git or local folders")
     # ---- Window
     r.cmd(CM_ZOOM, "window.zoom", "~Z~oom", "Enlarge the active window: half, full, back as it was", [fkey(5)])
     r.cmd(CM_TILE, "window.tile", "~T~ile", "Arrange windows side by side")
@@ -1046,7 +1067,10 @@ def build_registry() -> Registry:
     r.item(CM_PALETTE)
     r.item(CM_VIM_ZEN)
     r.item(CM_PLUGINS)
+    r.item(CM_PLUGIN_INSTALL)
     r.sep()
+    r.item(CM_INLINE_AI)
+    r.item(CM_AI_VERIFY_TOGGLE)
     r.item(CM_AGENT_MODEL)
     r.item(CM_AGENT_MODE)
     r.item(CM_AGENT_THINKING)
@@ -1149,6 +1173,10 @@ def build_registry() -> Registry:
     r.sep()
     r.item(CM_EXTRACT_VAR)
     r.item(CM_EXTRACT_FUNC)
+    r.item(CM_SWAP_CALL_ARGS)
+    r.item(CM_CHANGE_SIGNATURE)
+    r.item(CM_INLINE_SYMBOL)
+    r.item(CM_IMPL_TRAIT_STUBS)
     r.item(CM_MIGRATE_MOJO12)
 
     r.menu("~S~earch")
@@ -1216,6 +1244,8 @@ def build_registry() -> Registry:
     r.item(CM_CODEGEN)
     r.item(CM_GPU_PROFILE)
     r.item(CM_GPU_ROOFLINE)
+    r.item(CM_GPU_OCCUPANCY)
+    r.item(CM_SELECT_TARGET)
     r.item(CM_BENCH_RUN)
     r.item(CM_BENCH_SAVE)
     r.item(CM_MAX_SERVE)

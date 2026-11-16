@@ -70,6 +70,7 @@ __extension App:
         for a buffer with unsaved changes the user is asked. While another dialog or menu
         is open the question waits (`watch_recheck`)."""
         self.watch_recheck = False
+        _ = self.omarchy_theme_recheck()
         for i in range(len(self.wins)):
             if not self.disk_changed(i):
                 continue

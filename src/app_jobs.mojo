@@ -75,6 +75,7 @@ from app_pkginstall import *
 from gpuinfo import parse_gpus
 from pty import exit_code
 from runreport import uses_gpu, visible_gpu_index, run_gpu_name, run_summary
+from remote_target import remap_remote_output_paths
 from grep import collect_search_files, file_matches_filter, MAX_FILE_BYTES, is_binary
 
 
@@ -152,7 +153,11 @@ __extension App:
         """Put compiler-style output into the page of the bottom panel that is showing
         (the caller chooses the page with panel_page first)."""
         var mi = self.ensure_msg()
-        var all = decode_list(data)
+        var eff_data = data.copy()
+        var tgt = self.active_compute_target()
+        if tgt.kind != "local" and tgt.name != "local":
+            eff_data = str_bytes(remap_remote_output_paths(tgt, self.symidx_root(), bytes_to_str(data)))
+        var all = decode_list(eff_data)
         var text = decode(header)
         text.append(10)
         var head_rows = 1                   # (the header may have the command under it)

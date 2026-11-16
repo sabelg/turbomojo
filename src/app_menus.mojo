@@ -202,6 +202,8 @@ __extension App:
             out.append(CM_TILED)
         if self.vim_zen:
             out.append(CM_VIM_ZEN)
+        if self.ai_verify_edits:
+            out.append(CM_AI_VERIFY_TOGGLE)
         if self.semantic_on:
             out.append(CM_SEMANTIC)
         if self.quiet_on:

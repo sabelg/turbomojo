@@ -1,8 +1,35 @@
 # Changelog
 
 What each version brought, made from the roadmap's finished tasks (docs/BACKLOG.md) and the
-day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 2.5.0;
+day each was done (docs/JOURNAL.md) by `scripts/gen_docs.py`. The current version is 3.0.0;
 docs/JOURNAL.md has, for every task, what changed, how it was checked and what is not done.
+
+## 3.0: Cross-platform macOS, Omarchy desktop sync & Plugin Hub - 2026-11-15
+
+- Mojo 1.2 `IS_MACOS` `kqueue` watcher FFI fix (`src/watch.mojo`), `arm64-apple-macosx14.0` Mach-O compilation & linking (`scripts/macos-link.sh`), and Apple Silicon Metal unified-memory GPU detection (`src/gpuinfo.mojo`) (P20-01)
+- Non-invasive live Omarchy Linux theme sync (`src/omarchy_sync.mojo`, `theme = "omarchy"` watching `~/.config/omarchy/current/theme/colors.toml`), `packaging/turbomojo.desktop`, `packaging/turbomojo.svg`, updated `packaging/PKGBUILD` (`3.0.0`, `tmvim`), and Git/folder Plugin & Snippet Hub (`CM_PLUGIN_INSTALL`, `@ref` pinning, update, remove, `snippets.toml`) (`tests/e2e/test_v30_p20_crossplat_plugins.mojo`) (P20-02)
+
+## 2.10: Remote compute targets & multi-GPU cluster topology - 2026-11-15
+
+- Declarative `[target.<name>]` (`ssh`, `docker`, `apptainer`, `slurm`) compute targets (`CM_SELECT_TARGET`), `[target:...]` status pill, transparent `with_env` sync/dispatch & diagnostic path remapping, and multi-GPU `nvidia-smi topo -m` NVLink/PCIe matrices + `squeue` Slurm queues + container cgroup slices in `WK_GPU` (`src/remote_target.mojo`, `src/gpuinfo.mojo`, `tests/e2e/test_v30_p19_remote_targets.mojo`) (P19-01)
+
+## 2.9: Compiler-verified inline AI & local MAX FIM ghost text - 2026-11-15
+
+- Cursor-anchored `CM_INLINE_AI` (`Ctrl-Alt-I`) transform with Closed-Loop Mojo 1.2 Compiler Verification (`[ai] verify_edits`, `CM_AI_VERIFY_TOGGLE`, shadow `mojo build` + up to 2 self-healing retries) and local OpenAI-compatible (`max serve` / `vLLM` / `ollama`) FIM ghost text (`Tab`, `Ctrl-Right`, `Esc`) (`src/inline_ai.mojo`, `tests/e2e/test_v30_p18_inline_ai_fim.mojo`) (P18-01)
+
+## 2.8: Pure-Mojo CST & deep structural refactorings - 2026-11-15
+
+- Pure-Mojo Concrete Syntax Tree (`src/mojocst.mojo`) over `Highlighter` tokens powering syntax-exact `Expand / Shrink Selection`, `CM_SWAP_CALL_ARGS`, multi-file `CM_CHANGE_SIGNATURE` (`offer_edit()`), precedence-safe `CM_INLINE_SYMBOL` (variable & helper function), and `CM_IMPL_TRAIT_STUBS` (`Writable`, `Equatable`, `Hashable`, `Copyable`, and custom traits) (`tests/e2e/test_v30_p17_cst_refactor.mojo`) (P17-01)
+
+## 2.7: GPU occupancy modeling, bank-conflict analyzer & SIMT warp view - 2026-11-15
+
+- Exact SM/CU hardware occupancy calculator (`sm_80` A100, `sm_86`/`sm_89` Ada, `sm_90` H100, `sm_100`/`sm_120` Blackwell/GB10, `gfx90a`/`gfx942` MI250X/MI300X), static 32-bank shared-memory stride & conflict analyzer (`CM_GPU_OCCUPANCY`), occupancy `%` in GPU badges & `WK_CODEGEN`, and 32/64-lane SIMT warp mask strips + cross-lane watch comparison in `WK_DEBUG` (`src/gpu_occupancy.mojo`, `tests/e2e/test_v30_p16_gpu_occupancy_warp.mojo`) (P16-01)
+
+## 2.6: Inline virtual notebooks, Tensor inspector & Whole-Vim mode - 2026-11-15
+
+- Virtual multi-line cell output blocks in `TextBuffer` / `Window` / `window_draw.mojo` without mutating buffer line numbers, sequential `CM_RUN_ALL_CELLS` / `CM_RUN_CELLS_ABOVE` / `CM_CELL_CLEAR_OUT` cell queue, and bidirectional `.ipynb` `outputs` + `execution_count` persistence (`tests/e2e/test_v30_p15_inline_nb_tensor.mojo`) (P15-01)
+- Live Tensor, SIMD & DataFrame summary cards (`src/tensor_inspect.mojo`) across Python (`numpy`, `torch`, `pandas`, `polars`) and Mojo (`SIMD`, `List`, `LayoutTensor`, `Tensor`) in cell outputs and `WK_DEBUG` (P15-02)
+- Real Jupyter `.ipynb` hardening, `File > New/Open notebook (.ipynb)...`, `Shift-Enter` / `Alt-Enter` / `Esc` Jupyter Command Mode, rendered Markdown cells, IPython `!shell` & `%magic` helpers, `Help > Jupyter & notebooks`, and `tmide vim` / `tmvim` Chromeless Whole-Vim Mode (`tests/e2e/test_v30_p15b_ipynb_vim.mojo`) (P15-03)
 
 ## 2.5: Terminal notebooks, refactorings & zero-config projects - 2026-11-15
 

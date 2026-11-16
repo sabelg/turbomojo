@@ -63,6 +63,8 @@ from problems import Problem, ProblemFilter
 from acp import AcpClient
 from agentchat import AgentChat
 from agentsvc import AgentTerm, Proposal, RunAsk
+from remote_target import ComputeTarget, default_local_target, parse_compute_targets, target_status_pill
+from omarchy_sync import load_omarchy_palette, omarchy_colors_path, omarchy_watch_dirs
 from acp import AcpEvent
 from markdown import MdLine
 from linediff import Hunk
@@ -821,6 +823,21 @@ struct App(Movable):
     var reader_last_scope: String
     var reader_last_wid: Int
     var vim_zen: Bool          # chromeless full-screen Whole-Vim mode (`tmide vim`)
+    var ai_inline_endpoint: String
+    var ai_inline_model: String
+    var ai_api_key_env: String
+    var ai_verify_edits: Bool
+    var ai_ghost_text: Bool
+    var fim_fp: Int
+    var fim_fd: Int
+    var fim_out: List[UInt8]
+    var fim_row: Int
+    var fim_path: String
+    var change_sig_row: Int
+    var compute_targets: List[ComputeTarget]
+    var active_target_name: String
+    var omarchy_colors_file: String
+    var omarchy_sig: FileSig
 
     def __init__(out self):
         self.term = Terminal()
@@ -1469,6 +1486,22 @@ struct App(Movable):
         self.reader_last_scope = ""
         self.reader_last_wid = -1
         self.vim_zen = False
+        self.ai_inline_endpoint = ""
+        self.ai_inline_model = ""
+        self.ai_api_key_env = "OPENAI_API_KEY"
+        self.ai_verify_edits = True
+        self.ai_ghost_text = False
+        self.fim_fp = 0
+        self.fim_fd = -1
+        self.fim_out = List[UInt8]()
+        self.fim_row = -1
+        self.fim_path = ""
+        self.change_sig_row = -1
+        self.compute_targets = List[ComputeTarget]()
+        self.compute_targets.append(default_local_target())
+        self.active_target_name = "local"
+        self.omarchy_colors_file = ""
+        self.omarchy_sig = FileSig()
 
     # =================================================================== utils
     def desk_h(self) -> Int:
@@ -1529,6 +1562,25 @@ struct App(Movable):
             var scheme = self.term.scheme if self.term.scheme != 0 else (self.term.bg_scheme if self.term.bg_scheme != 0 else self.desktop_scheme)
             id = self.theme_light_id if scheme == 2 else self.theme_dark_id
             self.scheme_seen = scheme
+        if id == "omarchy":
+            var cpath = self.omarchy_colors_file if self.omarchy_colors_file.byte_length() > 0 else omarchy_colors_path()
+            var om = load_omarchy_palette(cpath)
+            self.omarchy_sig = file_sig(cpath)
+            if self.omarchy_colors_file.byte_length() > 0:
+                var cdir = dirname(self.omarchy_colors_file)
+                if cdir.byte_length() > 0 and path_exists(cdir):
+                    _ = self.watch.watch_dir(cdir)
+            else:
+                for wd in omarchy_watch_dirs():
+                    _ = self.watch.watch_dir(wd)
+            if om[0]:
+                self.pal = om[1].copy()
+                if self.scanlines_cfg >= 0:
+                    self.pal.scanlines = self.scanlines_cfg == 1
+                if self.quiet_on:
+                    self.pal.syn = quiet_syntax(self.pal)
+                return
+            id = "midnight"
         var k = self.themes.find(id)
         if k < 0:
             self.config_warnings.append("ui.theme: there is no theme \"" + id + "\" (themes: " + ", ".join(self.themes.ids) + ")")
@@ -1539,6 +1591,24 @@ struct App(Movable):
             self.pal.scanlines = self.scanlines_cfg == 1
         if self.quiet_on:
             self.pal.syn = quiet_syntax(self.pal)
+
+    def omarchy_theme_recheck(mut self) -> Bool:
+        """Reload palette live when `theme = "omarchy"` and `colors.toml` changed on disk."""
+        if self.theme_id != "omarchy":
+            return False
+        var cpath = self.omarchy_colors_file if self.omarchy_colors_file.byte_length() > 0 else omarchy_colors_path()
+        var cur_sig = file_sig(cpath)
+        if not cur_sig.same(self.omarchy_sig):
+            self.theme_apply()
+            self.scr.force = True
+            return True
+        return False
+
+    def active_compute_target(self) -> ComputeTarget:
+        for t in self.compute_targets:
+            if t.name == self.active_target_name:
+                return t.copy()
+        return default_local_target()
 
     def desktop_scheme_now(self) -> Int:
         var g = String("")
@@ -1856,6 +1926,11 @@ struct App(Movable):
         self.debug_adapter = env_or("TURBOMOJO_DAP", s.debug_adapter)
         self.agent_command = env_or("TURBOMOJO_AGENT", s.agent)
         self.agent_mode = s.agent_mode
+        self.ai_inline_endpoint = env_or("TURBOMOJO_AI_ENDPOINT", s.ai_inline_endpoint)
+        self.ai_inline_model = env_or("TURBOMOJO_AI_MODEL", s.ai_inline_model)
+        self.ai_api_key_env = s.ai_api_key_env if s.ai_api_key_env.byte_length() > 0 else String("OPENAI_API_KEY")
+        self.ai_verify_edits = s.ai_verify_edits
+        self.ai_ghost_text = s.ai_ghost_text
         self.mcp_names = s.mcp_names.copy()
         self.mcp_cmds = s.mcp_cmds.copy()
         var m_args = List[List[String]]()
@@ -1965,6 +2040,7 @@ struct App(Movable):
                 or settings.debug_adapter != own.debug_adapter
                 or settings.agent != own.agent
                 or settings.plugins != own.plugins
+                or settings.ai_inline_endpoint != own.ai_inline_endpoint
                 or lsp_diff
                 or mcp_diff
             ):
@@ -1973,6 +2049,7 @@ struct App(Movable):
                 settings.debug_adapter = own.debug_adapter
                 settings.agent = own.agent
                 settings.plugins = own.plugins
+                settings.ai_inline_endpoint = own.ai_inline_endpoint
                 settings.lsp_names = own.lsp_names.copy()
                 settings.lsp_cmds = own.lsp_cmds.copy()
                 var exts_copy = List[List[String]]()
@@ -1997,6 +2074,14 @@ struct App(Movable):
                 settings.warnings.append("this folder is not trusted: its tool, agent and language server commands are not used (Options > Folder trust)")
                 self.trust_held = True
         self.apply_settings(settings)
+        var target_src = read_text(self.config_path)
+        if project.byte_length() > 0 and (not self.trust_enforced or self.trust.is_trusted(self.project_dir)):
+            var p_txt = read_text(project)
+            if p_txt.byte_length() > 0:
+                target_src = target_src + "\n" + p_txt
+        var parsed_targets = parse_compute_targets(target_src)
+        self.compute_targets = parsed_targets[1].copy()
+        self.active_target_name = parsed_targets[0]
 
     def show_config_warnings(mut self):
         """Put the first config problem in the status line (all of them go to the log)."""

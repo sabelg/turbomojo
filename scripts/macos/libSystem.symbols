@@ -87,6 +87,7 @@ _setsid
 _shm_open
 _shm_unlink
 _sigaction
+_signal
 _stat
 _strerror
 _strlen

@@ -254,6 +254,8 @@ __extension App:
                 fds.append(xf)
             for gf in self.gpu_fds():
                 fds.append(gf)
+            if self.fim_fd >= 0:
+                fds.append(self.fim_fd)
             if self.cell_mojo_proc.running and self.cell_mojo_proc.out_fd >= 0:
                 fds.append(self.cell_mojo_proc.out_fd)
             if self.cell_py_proc.running and self.cell_py_proc.out_fd >= 0:
@@ -291,6 +293,7 @@ __extension App:
             self.extra_tick(now_ns())
             self.symidx_tick()
             self.gpu_tick()
+            self.fim_tick()
             self.quick_tick()
             self.explorer_tick(now_ns())
             self.git_tick(now_ns())
@@ -305,6 +308,7 @@ __extension App:
             try:
                 var woke = self.watch.drain()
                 if woke:
+                    _ = self.omarchy_theme_recheck()
                     self.git_checked_ns = 0
                     self.git_tick(now_ns())
                 self.watch_tick(now_ns(), woke)
@@ -327,6 +331,7 @@ __extension App:
         self.cell_kernels_stop()
         self.gpu_probe_stop()
         self.gpu_mon_stop()
+        self.fim_stop()
         self.dbg.finish()           # a program being debugged does not outlive the IDE
         _ = self.git_proc.stop()
         self.agent.stop()           # nor the coding agent

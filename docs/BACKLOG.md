@@ -258,3 +258,30 @@ End-to-end terminal notebook execution, Jupyter `.ipynb` interop & inline plots,
 - [x] P14-04 One-click Mojo 1.2 Migration Assistant (`CM_MIGRATE_MOJO12`, `CM_MIGRATE_MOJO12_PROJECT`, and `Ctrl-.` quick fix) plus `CM_EXTRACT_VAR` and `CM_EXTRACT_FUNC` structural refactorings with string/comment safety and 1-step Undo (`src/refactor.mojo`, `tests/e2e/test_v25_refactor_migrate.mojo`)
 - [x] P14-05 Bidirectional live cursor sync between `WK_EDITOR` and `WK_CODEGEN` (`ASM` / `PTX` / `AMDGCN` / `LLVM IR`), DWARF data-section stripping, and inline GPU/SIMD resource badges (`[⚡ 32 regs | 4.0 KB smem | 0 spills]`) (`src/codegen.mojo`, `src/app_codegen.mojo`, `tests/e2e/test_v25_codegen_sync_gpu.mojo`)
 - [x] P14-06 Release 2.5.0: memory-aware `scripts/check.sh` parallel shard scaling from `/proc/meminfo` (`MemAvailable`), Arch Linux `packaging/PKGBUILD`, regenerated `docs/KEYMAP.md`, `CHANGELOG.md`, `docs/SOURCE.md`, and `help/whats-new.md`
+
+## Phase 15: Inline virtual notebooks, Tensor inspector & Whole-Vim mode (v2.6)
+
+- [x] P15-01 Virtual multi-line cell output blocks in `TextBuffer` / `Window` / `window_draw.mojo` without mutating buffer line numbers, sequential `CM_RUN_ALL_CELLS` / `CM_RUN_CELLS_ABOVE` / `CM_CELL_CLEAR_OUT` cell queue, and bidirectional `.ipynb` `outputs` + `execution_count` persistence (`tests/e2e/test_v30_p15_inline_nb_tensor.mojo`)
+- [x] P15-02 Live Tensor, SIMD & DataFrame summary cards (`src/tensor_inspect.mojo`) across Python (`numpy`, `torch`, `pandas`, `polars`) and Mojo (`SIMD`, `List`, `LayoutTensor`, `Tensor`) in cell outputs and `WK_DEBUG`
+- [x] P15-03 Real Jupyter `.ipynb` hardening, `File > New/Open notebook (.ipynb)...`, `Shift-Enter` / `Alt-Enter` / `Esc` Jupyter Command Mode, rendered Markdown cells, IPython `!shell` & `%magic` helpers, `Help > Jupyter & notebooks`, and `tmide vim` / `tmvim` Chromeless Whole-Vim Mode (`tests/e2e/test_v30_p15b_ipynb_vim.mojo`)
+
+## Phase 16: GPU occupancy modeling, bank-conflict analyzer & SIMT warp view (v2.7)
+
+- [x] P16-01 Exact SM/CU hardware occupancy calculator (`sm_80` A100, `sm_86`/`sm_89` Ada, `sm_90` H100, `sm_100`/`sm_120` Blackwell/GB10, `gfx90a`/`gfx942` MI250X/MI300X), static 32-bank shared-memory stride & conflict analyzer (`CM_GPU_OCCUPANCY`), occupancy `%` in GPU badges & `WK_CODEGEN`, and 32/64-lane SIMT warp mask strips + cross-lane watch comparison in `WK_DEBUG` (`src/gpu_occupancy.mojo`, `tests/e2e/test_v30_p16_gpu_occupancy_warp.mojo`)
+
+## Phase 17: Pure-Mojo CST & deep structural refactorings (v2.8)
+
+- [x] P17-01 Pure-Mojo Concrete Syntax Tree (`src/mojocst.mojo`) over `Highlighter` tokens powering syntax-exact `Expand / Shrink Selection`, `CM_SWAP_CALL_ARGS`, multi-file `CM_CHANGE_SIGNATURE` (`offer_edit()`), precedence-safe `CM_INLINE_SYMBOL` (variable & helper function), and `CM_IMPL_TRAIT_STUBS` (`Writable`, `Equatable`, `Hashable`, `Copyable`, and custom traits) (`tests/e2e/test_v30_p17_cst_refactor.mojo`)
+
+## Phase 18: Compiler-verified inline AI & local MAX FIM ghost text (v2.9)
+
+- [x] P18-01 Cursor-anchored `CM_INLINE_AI` (`Ctrl-Alt-I`) transform with Closed-Loop Mojo 1.2 Compiler Verification (`[ai] verify_edits`, `CM_AI_VERIFY_TOGGLE`, shadow `mojo build` + up to 2 self-healing retries) and local OpenAI-compatible (`max serve` / `vLLM` / `ollama`) FIM ghost text (`Tab`, `Ctrl-Right`, `Esc`) (`src/inline_ai.mojo`, `tests/e2e/test_v30_p18_inline_ai_fim.mojo`)
+
+## Phase 19: Remote compute targets & multi-GPU cluster topology (v2.10)
+
+- [x] P19-01 Declarative `[target.<name>]` (`ssh`, `docker`, `apptainer`, `slurm`) compute targets (`CM_SELECT_TARGET`), `[target:...]` status pill, transparent `with_env` sync/dispatch & diagnostic path remapping, and multi-GPU `nvidia-smi topo -m` NVLink/PCIe matrices + `squeue` Slurm queues + container cgroup slices in `WK_GPU` (`src/remote_target.mojo`, `src/gpuinfo.mojo`, `tests/e2e/test_v30_p19_remote_targets.mojo`)
+
+## Phase 20: Cross-platform macOS, Omarchy desktop sync & Plugin Hub (v3.0)
+
+- [x] P20-01 Mojo 1.2 `IS_MACOS` `kqueue` watcher FFI fix (`src/watch.mojo`), `arm64-apple-macosx14.0` Mach-O compilation & linking (`scripts/macos-link.sh`), and Apple Silicon Metal unified-memory GPU detection (`src/gpuinfo.mojo`)
+- [x] P20-02 Non-invasive live Omarchy Linux theme sync (`src/omarchy_sync.mojo`, `theme = "omarchy"` watching `~/.config/omarchy/current/theme/colors.toml`), `packaging/turbomojo.desktop`, `packaging/turbomojo.svg`, updated `packaging/PKGBUILD` (`3.0.0`, `tmvim`), and Git/folder Plugin & Snippet Hub (`CM_PLUGIN_INSTALL`, `@ref` pinning, update, remove, `snippets.toml`) (`tests/e2e/test_v30_p20_crossplat_plugins.mojo`)

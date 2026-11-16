@@ -24,6 +24,11 @@ from gpuinfo import (
     filter_valid_source_stall_lines, check_profiler_permissions,
     build_roofline_cli_command, format_roofline_report,
 )
+from gpu_occupancy import (
+    compute_gpu_occupancy,
+    analyze_smem_bank_conflicts,
+    format_occupancy_and_bank_report,
+)
 from outline import scan_outline, scope_path, outline_current, SK_FUNCTION, SK_METHOD
 from app_jobs import *
 from app_outline import *
@@ -99,6 +104,10 @@ __extension App:
                         break
             if best >= 0:
                 var badge = format_kernel_resource_badge(stats[best])
+                if stats[best].is_gpu and stats[best].regs > 0 and self.gpu_item.byte_length() > 0:
+                    var occ_b = compute_gpu_occupancy(self.gpu_item, stats[best].regs, stats[best].smem_bytes, 256)
+                    if badge.endswith("]") and badge.byte_length() > 2:
+                        badge = String(badge[byte=0:badge.byte_length() - 1]) + " | " + String(occ_b.occupancy_pct_x10 // 10) + "." + String(occ_b.occupancy_pct_x10 % 10) + "% occ]"
                 var updated = False
                 for bi in range(len(self.wins[ei].bench_badge_rows)):
                     if self.wins[ei].bench_badge_rows[bi] == it.row:
@@ -234,6 +243,11 @@ __extension App:
         var corr = parse_asm_with_line_tables(raw, filt) if self.codegen_mode == CG_ASM else parse_llvm_with_line_tables(raw, filt)
         var summary = CodegenSummary(corr.rendered_lines.copy(), corr.simd_ops, corr.spill_ops, corr.total_insns)
         var rendered = format_codegen_header(basename(path), self.codegen_mode, summary, filt)
+        var kstats_hdr = extract_kernel_resources(raw, self.codegen_mode)
+        if len(kstats_hdr) > 0 and kstats_hdr[0].is_gpu and kstats_hdr[0].regs > 0 and len(rendered) > 0:
+            var arch_h = self.gpu_item if self.gpu_item.byte_length() > 0 else String("sm_90")
+            var occ_h = compute_gpu_occupancy(arch_h, kstats_hdr[0].regs, kstats_hdr[0].smem_bytes, 256)
+            rendered[0] = rendered[0] + "  ·  Occupancy: " + String(occ_h.occupancy_pct_x10 // 10) + "." + String(occ_h.occupancy_pct_x10 % 10) + "% (" + occ_h.limiter + ")"
         var lmap = List[Int]()
         if len(corr.rendered_lines) > 0:
             var header_rows = len(rendered) - len(corr.rendered_lines)
@@ -652,3 +666,44 @@ __extension App:
         self.panel_write(PG_MESSAGE)
         _ = self.fill_messages("GPU Kernel Roofline - " + basename(path), str_bytes("\n".join(lines)), summary_msg)
         self.say(summary_msg)
+
+    def gpu_occupancy_open(mut self):
+        """Model SM/CU warp occupancy and 32-bank shared-memory conflicts for the active GPU buffer."""
+        var ti = self.top_editor()
+        if ti < 0:
+            self.say("Open a Mojo or PTX GPU kernel file first")
+            return
+        var path = self.wins[ti].path if self.wins[ti].path.byte_length() > 0 else self.wins[ti].title
+        var src_txt = to_str(self.wins[ti].buf.all_text())
+        var arch = self.gpu_item if self.gpu_item.byte_length() > 0 else String("sm_90")
+        var kname = String("kernel")
+        var items = scan_outline(self.wins[ti].buf)
+        var cur_it = outline_current(items, self.wins[ti].cr)
+        if cur_it >= 0 and cur_it < len(items):
+            kname = items[cur_it].name
+        elif len(items) > 0:
+            kname = items[0].name
+        var regs = 32
+        var smem = 4096
+        var block_threads = 256
+        var kstats = extract_kernel_resources(src_txt, CG_ASM)
+        if len(kstats) > 0:
+            if kstats[0].name.byte_length() > 0:
+                kname = kstats[0].name
+            if kstats[0].regs > 0:
+                regs = kstats[0].regs
+            if kstats[0].smem_bytes > 0:
+                smem = kstats[0].smem_bytes
+        var sites = analyze_smem_bank_conflicts(src_txt)
+        var report_lines = format_occupancy_and_bank_report(basename(path), arch, kname, regs, smem, block_threads, sites)
+        var n_conf = 0
+        for s in sites:
+            if s.conflict_ways > 1:
+                n_conf += 1
+                if self.wins[ti].path.byte_length() > 0:
+                    report_lines.append(self.wins[ti].path + ":" + String(s.line_no) + ":1: warning: " + String(s.conflict_ways) + "-way shared-memory bank conflict on " + s.expr + " (" + s.hint + ")")
+        var occ = compute_gpu_occupancy(arch, regs, smem, block_threads)
+        var summary = "GPU occupancy: " + String(occ.occupancy_pct_x10 // 10) + "." + String(occ.occupancy_pct_x10 % 10) + "% (" + occ.limiter + ") · " + String(n_conf) + " bank conflict(s)"
+        self.panel_write(PG_MESSAGE)
+        _ = self.fill_messages("GPU Occupancy & Bank Analyzer - " + basename(path), str_bytes("\n".join(report_lines)), summary)
+        self.say(summary)

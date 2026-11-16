@@ -21,6 +21,7 @@ from app_outline import *
 from pydocs import dotted_at, python_target, python_bindings, pydoc_command, pydoc_markdown
 from app_lsp import *
 from newproject import np_pixi_toml, np_platform, np_mojo_spec, np_name_problem
+from remote_target import wrap_target_command, format_target_picker_label
 
 
 __extension App:
@@ -118,9 +119,45 @@ __extension App:
 
     def with_env(self, path: String, cmd: String) -> String:
         var m = self.env_manifest(path)
-        if m.byte_length() == 0:
-            return cmd
-        return in_env(cmd, self.pixi_cmd, m, self.active_pixi_env())
+        var base = cmd if m.byte_length() == 0 else in_env(cmd, self.pixi_cmd, m, self.active_pixi_env())
+        var tgt = self.active_compute_target()
+        if tgt.kind != "local" and tgt.name != "local":
+            var root = self.symidx_root()
+            return wrap_target_command(tgt, root, base, True)
+        return base
+
+    def select_target_dialog(mut self):
+        """Open `D_SELECT_TARGET` picker for `.turbomojo.toml` `[target.<name>]` compute targets."""
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        var sel_idx = 0
+        for i in range(len(self.compute_targets)):
+            var is_act = self.compute_targets[i].name == self.active_target_name
+            if is_act:
+                sel_idx = i
+            items.append(format_target_picker_label(self.compute_targets[i], is_act))
+            data.append(i)
+            keys.append(self.compute_targets[i].name)
+        var d = Dialog(D_SELECT_TARGET, "Select Compute Target", min(74, self.scr.w - 4), min(20, max(10, len(items) + 7)))
+        d.lines.append("Dispatches Build, Run, std.benchmark, Codegen & Roofline to target:")
+        d.set_items(items^, data^)
+        d.keys = keys^
+        d.list_sel = sel_idx
+        d.buttons.append("~S~elect")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def select_target_apply(mut self, name: String):
+        var chosen = String(name.strip())
+        if chosen.byte_length() == 0:
+            return
+        for t in self.compute_targets:
+            if t.name == chosen:
+                self.active_target_name = chosen
+                self.say("Active compute target: " + t.name + " [" + t.kind + "]")
+                return
+        self.say("Unknown compute target: " + chosen)
 
     # ------------------------------------------------------------- the offer
     def pkg_check(mut self, output: String, file: String, after: Int) -> Bool:

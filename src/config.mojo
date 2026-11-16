@@ -218,6 +218,11 @@ struct Settings(Copyable, Movable):
     var format_on_save: Bool
     var pixi_env: String
     var lsp_auto_start: Bool
+    var ai_inline_endpoint: String
+    var ai_inline_model: String
+    var ai_api_key_env: String
+    var ai_verify_edits: Bool
+    var ai_ghost_text: Bool
     var warnings: List[String]
 
     def __init__(out self):
@@ -292,6 +297,11 @@ struct Settings(Copyable, Movable):
         self.format_on_save = False
         self.pixi_env = "default"
         self.lsp_auto_start = True
+        self.ai_inline_endpoint = ""
+        self.ai_inline_model = ""
+        self.ai_api_key_env = "OPENAI_API_KEY"
+        self.ai_verify_edits = True
+        self.ai_ghost_text = False
         self.warnings = List[String]()
 
     def take_bool(mut self, doc: TomlDoc, key: String, current: Bool) -> Bool:
@@ -580,13 +590,18 @@ struct Settings(Copyable, Movable):
                 self.mcp_args.append(args.copy())
                 self.mcp_env_keys.append(env_k^)
                 self.mcp_env_vals.append(env_v^)
+        self.ai_inline_endpoint = doc.get_str("ai.inline_endpoint", self.ai_inline_endpoint)
+        self.ai_inline_model = doc.get_str("ai.inline_model", self.ai_inline_model)
+        self.ai_api_key_env = doc.get_str("ai.api_key_env", self.ai_api_key_env)
+        self.ai_verify_edits = self.take_bool(doc, "ai.verify_edits", self.ai_verify_edits)
+        self.ai_ghost_text = self.take_bool(doc, "ai.ghost_text", self.ai_ghost_text)
         # point out likely typos
         var known = List[String]()
-        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_blame", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.indent_guides", "editor.rainbow_brackets", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.format_on_save", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.lsp_auto_start", "tools.pixi_env", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.test_watch", "tools.include_paths", "tools.docs_paths", "tools.docs_home"]:
+        for k in ["ui.theme", "ui.theme_dark", "ui.theme_light", "ui.scanlines", "ui.screen_reader", "ui.reduced_motion", "ui.language", "ui.key_hints", "ui.tips", "ui.keymap", "ui.layout", "ui.restore_session", "ui.explorer", "ui.gpu_status", "ui.line_blame", "ui.line_numbers", "ui.highlight_line", "ui.clock", "ui.hyperlinks", "ui.hyperlink_format", "ui.glyphs", "ui.images", "ui.dim_unfocused", "ui.run_in_terminal", "ui.show_whitespace", "editor.auto_indent", "editor.soft_wrap", "editor.semantic_colors", "editor.quiet_colors", "editor.inlay_hints", "editor.auto_pairs", "editor.breadcrumbs", "editor.sticky_scroll", "editor.minimap", "editor.minimap_style", "editor.highlight_word", "editor.relative_numbers", "editor.indent_guides", "editor.rainbow_brackets", "editor.persistent_undo", "editor.trim_trailing_whitespace", "editor.format_on_save", "editor.rulers", "editor.tab_width", "editor.indent_size", "editor.large_file_mb", "tools.compiler", "tools.lsp_server", "tools.lsp_auto_start", "tools.pixi_env", "tools.debug_adapter", "tools.agent", "tools.agent_mode", "tools.plugins", "tools.test_watch", "tools.include_paths", "tools.docs_paths", "tools.docs_home", "ai.inline_endpoint", "ai.inline_model", "ai.api_key_env", "ai.verify_edits", "ai.ghost_text"]:
             known.append(String(k))
         for k in doc.keys:
-            if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp.") or k.startswith("mcp."):
-                continue                # [run.<name>] tables are the run configurations
+            if k.startswith("keys.") or k.startswith("run.") or k.startswith("lsp.") or k.startswith("mcp.") or k.startswith("target."):
+                continue                # [run.<name>], [lsp.<name>], [mcp.<name>], [target.<name>] tables
             if not (k in known):
                 var msg = "unknown setting " + k
                 if not (msg in self.warnings):

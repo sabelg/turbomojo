@@ -6466,3 +6466,39 @@ TurboMojo's way of changing settings; Options is).
   - `scripts/check.sh` caps default `JOBS` using `/proc/meminfo` (`MemAvailable` / 5 GiB) so
     parallel shard compilation never swaps or OOMs on 8–32 GiB hosts; added `packaging/PKGBUILD`;
     bumped version to `2.5.0` and regenerated `docs/KEYMAP.md`, `CHANGELOG.md`, and `docs/SOURCE.md`.
+
+## 2026-11-15 · P15-01 P15-02 P15-03 P16-01 P17-01 P18-01 P19-01 P20-01 P20-02 Release v3.0.0 · done
+
+- Phase 15 & 15B (`P15-01`, `P15-02`, `P15-03`, `src/tensor_inspect.mojo`, `src/ipynb.mojo`,
+  `src/cells.mojo`, `src/window_draw.mojo`, `src/app_vim.mojo`, `tests/e2e/test_v30_p15_inline_nb_tensor.mojo`,
+  `tests/e2e/test_v30_p15b_ipynb_vim.mojo`):
+  - Virtual multi-line cell outputs beneath `# %%` cells, sequential cell execution queue, live
+    Tensor / SIMD / DataFrame summary cards, `File > New/Open notebook (.ipynb)...`, `Shift-Enter`
+    auto-cell creation, `Esc` Jupyter Command Mode, rendered Markdown cells, IPython `!shell` &
+    `%magic` helpers, `Help > Jupyter & notebooks`, and `tmide vim` / `tmvim` Whole-Vim mode.
+- Phase 16 (`P16-01`, `src/gpu_occupancy.mojo`, `src/app_codegen.mojo`, `src/dbgview.mojo`,
+  `src/app_debug.mojo`, `tests/e2e/test_v30_p16_gpu_occupancy_warp.mojo`):
+  - Exact SM/CU occupancy tables across Ampere, Ada, Hopper, Blackwell, and CDNA2/3, static 32-bank
+    shared-memory conflict analyzer (`CM_GPU_OCCUPANCY`), occupancy `%` in GPU badges & `WK_CODEGEN`,
+    and 32/64-lane SIMT active-predicate mask strips + cross-lane scalar watches in `WK_DEBUG`.
+- Phase 17 (`P17-01`, `src/mojocst.mojo`, `src/refactor.mojo`, `src/window_multi.mojo`,
+  `src/app_nav.mojo`, `tests/e2e/test_v30_p17_cst_refactor.mojo`):
+  - Pure-Mojo Concrete Syntax Tree parser over `Highlighter` classifications, concentric CST
+    selection expansion, `CM_SWAP_CALL_ARGS`, multi-file `CM_CHANGE_SIGNATURE` via `offer_edit()`,
+    precedence-safe `CM_INLINE_SYMBOL`, and `CM_IMPL_TRAIT_STUBS` + quick-fix integration.
+- Phase 18 (`P18-01`, `src/inline_ai.mojo`, `src/app_nav.mojo`, `src/app_input.mojo`,
+  `tests/e2e/test_v30_p18_inline_ai_fim.mojo`):
+  - `CM_INLINE_AI` (`Ctrl-Alt-I`) with Closed-Loop Mojo 1.2 Compiler Verification (shadow `mojo build`
+    + up to 2 self-healing repair retries) and local OpenAI-compatible FIM ghost-text completions
+    (`Tab` full accept, `Ctrl-Right` word accept, `Esc` dismiss).
+- Phase 19 (`P19-01`, `src/remote_target.mojo`, `src/gpuinfo.mojo`, `src/app_pkginstall.mojo`,
+  `src/app_gpu.mojo`, `tests/e2e/test_v30_p19_remote_targets.mojo`):
+  - Declarative `[target.<name>]` (`ssh`, `docker`, `apptainer`, `slurm`) targets (`CM_SELECT_TARGET`),
+    status pill, transparent `with_env` sync/dispatch, remote path remapping, and multi-GPU NVLink/PCIe
+    topology + `squeue` + container cgroup slices in `WK_GPU`.
+- Phase 20 & Release `3.0.0` (`P20-01`, `P20-02`, `src/watch.mojo`, `src/omarchy_sync.mojo`,
+  `src/plugins.mojo`, `packaging/`, `tests/e2e/test_v30_p20_crossplat_plugins.mojo`):
+  - `IS_MACOS` `kqueue` FFI fix + `scripts/macos-link.sh` `arm64` Mach-O link verification, Apple
+    Silicon Metal unified-memory detection, live Omarchy `colors.toml` theme sync (`theme = "omarchy"`),
+    `packaging/turbomojo.desktop` + `turbomojo.svg` + `PKGBUILD` (`3.0.0`), and Git/folder Plugin &
+    Snippet Hub (`CM_PLUGIN_INSTALL`).

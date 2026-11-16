@@ -139,6 +139,9 @@ __extension App:
             var sp = self.ssh_pill()
             if sp.byte_length() > 0 and self.scr.w >= 96:
                 right += sp + "  "
+            var tp = target_status_pill(self.active_compute_target())
+            if tp.byte_length() > 0 and self.scr.w >= 80:
+                right += tp + "  "
             if self.lsp.active() or self.extra_active():
                 right += "LSP  "
             if self.dbg.active():

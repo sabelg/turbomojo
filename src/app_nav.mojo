@@ -11,7 +11,24 @@ from term import (
 from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter, HL_MOJO, lang_for_path, C_CMT, C_STR
-from refactor import migrate_mojo12_buffer, extract_variable_edits, extract_function_edits
+from refactor import (
+    migrate_mojo12_buffer,
+    extract_variable_edits,
+    extract_function_edits,
+    swap_call_arguments_edits,
+    enclosing_def_signature_info,
+    change_function_signature_edits,
+    inline_symbol_edits,
+    generate_trait_stubs_edits,
+)
+from inline_ai import (
+    run_verified_inline_transform,
+    build_fim_curl_command,
+    parse_openai_response_text,
+    sanitize_fim_ghost_text,
+    ghost_accept_word,
+)
+from platform import make_nonblocking
 from snippets import synthesize_mojo_quickfixes
 from symindex import FileIndex, is_mojo_file
 from outline import scan_outline
@@ -966,6 +983,10 @@ __extension App:
                     )
                 a.edit_json = "{\"changes\":{" + json_quote(uri) + ":[" + ",".join(parts) + "]}}"
                 out.append(a^)
+            var stub_res = generate_trait_stubs_edits(self.wins[ai].buf, cr)
+            if stub_res[0].byte_length() == 0 and len(stub_res[2]) > 0:
+                var se = stub_res[2][0].copy()
+                out.append(self.make_local_action(path, stub_res[1], se.r1, se.c1, se.r2, se.c2, se.text, False))
         return out^
 
     def show_actions_dialog(mut self):
@@ -1719,3 +1740,357 @@ __extension App:
             "Extract statements into '" + clean + "'",
             "Extracted function '" + clean + "'",
         )
+
+    # ======================================== Phase 17 CST Refactorings
+    def swap_call_args_cmd(mut self):
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open an editor first")
+            return
+        if self.wins[ai].read_only:
+            self.say("Buffer is read-only")
+            return
+        var res = swap_call_arguments_edits(self.wins[ai].buf, self.wins[ai].cr, self.wins[ai].cc, True)
+        if res[0].byte_length() > 0:
+            self.say(res[0])
+            return
+        self.apply_local_buffer_edits(
+            ai,
+            res[1],
+            "Swap Call Arguments",
+            "Swap Call Arguments",
+            "Swap call arguments at cursor",
+            "Swapped call arguments",
+        )
+
+    def change_signature_ask(mut self):
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open a Mojo file first")
+            return
+        if self.wins[ai].read_only:
+            self.say("Buffer is read-only")
+            return
+        var info = enclosing_def_signature_info(self.wins[ai].buf, self.wins[ai].cr)
+        if info[1] < 0:
+            self.say("Place cursor inside a `def` function or method to change its signature")
+            return
+        self.change_sig_row = info[1]
+        var d = Dialog(D_CHANGE_SIG, "Change Signature: def " + info[0], min(74, self.scr.w - 4), 9)
+        d.lines.append("Edit parameter list (reorder, add defaults, or update mut/var conventions):")
+        var f = Field("~P~arameters", info[2])
+        f.fresh = False
+        d.fields.append(f^)
+        d.buttons.append("~R~efactor")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def change_signature_apply(mut self, spec: String) raises:
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("No active editor")
+            return
+        var target_row = self.change_sig_row if self.change_sig_row >= 0 else self.wins[ai].cr
+        var tpath = String(self.wins[ai].path)
+        var extra_paths = List[String]()
+        var extra_bufs = List[TextBuffer]()
+        if tpath.byte_length() > 0:
+            var root = self.symidx_root()
+            var all_files = collect_search_files(root, "")
+            for k in range(len(self.wins)):
+                if self.wins[k].kind == WK_EDITOR and self.wins[k].path.byte_length() > 0 and self.wins[k].path != tpath:
+                    if is_mojo_file(self.wins[k].path) and not (self.wins[k].path in extra_paths):
+                        extra_paths.append(self.wins[k].path)
+                        var tb = TextBuffer()
+                        tb.load(self.wins[k].buf.all_text())
+                        extra_bufs.append(tb^)
+            for fp in all_files:
+                if fp != tpath and is_mojo_file(fp) and not (fp in extra_paths):
+                    var raw = read_file(fp)
+                    if len(raw) > 0 and len(raw) <= MAX_FILE_BYTES and not is_binary(raw):
+                        extra_paths.append(fp)
+                        var tb2 = TextBuffer()
+                        tb2.load_bytes(raw)
+                        extra_bufs.append(tb2^)
+        var res = change_function_signature_edits(
+            tpath if tpath.byte_length() > 0 else self.wins[ai].title,
+            self.wins[ai].buf,
+            target_row,
+            spec,
+            extra_paths,
+            extra_bufs,
+        )
+        if res[0].byte_length() > 0:
+            self.say(res[0])
+            return
+        if tpath.byte_length() == 0:
+            self.apply_local_buffer_edits(
+                ai,
+                res[2][0],
+                "Change Signature",
+                "Change Signature",
+                "Update function signature and call sites",
+                "Updated function signature",
+            )
+            return
+        self.snapshot_versions()
+        var fpaths = res[1].copy()
+        var fedits = res[2].copy()
+        var we = WorkspaceEdit()
+        for fi in range(len(fpaths)):
+            for ed in fedits[fi]:
+                we.add(fpaths[fi], ed)
+        self.offer_edit(
+            we^,
+            "Change Signature",
+            "Change Function Signature",
+            "Update signature and project call sites",
+            "Updated signature across " + count_of(len(fpaths), "file"),
+        )
+
+    def inline_symbol_cmd(mut self):
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open an editor first")
+            return
+        if self.wins[ai].read_only:
+            self.say("Buffer is read-only")
+            return
+        var res = inline_symbol_edits(self.wins[ai].buf, self.wins[ai].cr, self.wins[ai].cc)
+        if res[0].byte_length() > 0:
+            self.say(res[0])
+            return
+        self.apply_local_buffer_edits(
+            ai,
+            res[1],
+            "Inline Symbol",
+            "Inline Symbol",
+            "Inline variable or helper function",
+            "Inlined symbol",
+        )
+
+    def implement_trait_stubs_cmd(mut self):
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open a Mojo file first")
+            return
+        if self.wins[ai].read_only:
+            self.say("Buffer is read-only")
+            return
+        var res = generate_trait_stubs_edits(self.wins[ai].buf, self.wins[ai].cr)
+        if res[0].byte_length() > 0:
+            self.say(res[0])
+            return
+        self.apply_local_buffer_edits(
+            ai,
+            res[2],
+            "Implement Stubs",
+            "Implement Trait & Struct Stubs",
+            res[1],
+            res[1],
+        )
+
+    # ======================================== Phase 18 Inline AI & FIM Ghost Text
+    def toggle_ai_verify_edits(mut self):
+        self.ai_verify_edits = not self.ai_verify_edits
+        self.persist_option("ai", "verify_edits", "true" if self.ai_verify_edits else "false")
+        self.say("AI Verified Patch Mode (mojo build auto-repair): " + ("on" if self.ai_verify_edits else "off"))
+
+    def inline_ai_ask(mut self):
+        var ai = self.active_editor()
+        if ai < 0:
+            self.say("Open an editor first")
+            return
+        if self.wins[ai].read_only:
+            self.say("Buffer is read-only")
+            return
+        var scope_note = "Selected lines" if self.wins[ai].has_sel() else ("Line " + String(self.wins[ai].cr + 1))
+        var vnote = "on (shadow mojo build + up to 2 auto-repairs)" if self.ai_verify_edits else "off"
+        var d = Dialog(D_INLINE_AI, "Inline AI Transform (" + scope_note + ")", min(72, self.scr.w - 4), 10)
+        d.lines.append("Verified Patch Mode: " + vnote)
+        d.lines.append("Endpoint: " + (self.ai_inline_endpoint if self.ai_inline_endpoint.byte_length() > 0 else String("(configure [ai] inline_endpoint in .turbomojo.toml)")))
+        var f = Field("~I~nstruction", "")
+        f.fresh = True
+        d.fields.append(f^)
+        d.buttons.append("~T~ransform")
+        d.buttons.append("~C~ancel")
+        self.show(d^)
+
+    def inline_ai_apply(mut self, instruction: String):
+        var ai = self.active_editor()
+        if ai < 0:
+            return
+        var instr = String(instruction.strip())
+        if instr.byte_length() == 0:
+            self.say("Enter a transformation instruction")
+            return
+        if self.ai_inline_endpoint.byte_length() == 0:
+            self.say("Set [ai] inline_endpoint = \"http://localhost:8000/v1\" in .turbomojo.toml (e.g. max serve / ollama)")
+            return
+        var r1 = self.wins[ai].cr
+        var r2 = self.wins[ai].cr
+        if self.wins[ai].has_sel():
+            var sr = self.wins[ai].sel_range()
+            r1 = sr.r1
+            r2 = sr.r2 - 1 if (sr.c2 == 0 and sr.r2 > sr.r1) else sr.r2
+        var all_lines = List[String]()
+        for r in range(self.wins[ai].buf.count()):
+            all_lines.append(to_str(self.wins[ai].buf.line(r)))
+        var path = self.wins[ai].path
+        var is_mj = self.wins[ai].effective_lang() == HL_MOJO
+        var mojo_cmd = self.mojo_for(path) if path.byte_length() > 0 else self.compiler_cmd()
+        var inc = self.include_flags_for(path) if path.byte_length() > 0 else String("")
+        var vres = run_verified_inline_transform(
+            self.ai_inline_endpoint,
+            self.ai_inline_model,
+            path,
+            all_lines,
+            r1,
+            r2,
+            instr,
+            self.ai_verify_edits and is_mj,
+            mojo_cmd,
+            inc,
+            2,
+        )
+        if not vres.ok:
+            self.say("Inline AI error: " + vres.diagnostics)
+            return
+        var end_u16 = col_to_utf16(self.wins[ai].buf.line(r2), self.wins[ai].buf.llen(r2))
+        var edits = List[LspEdit]()
+        edits.append(LspEdit(r1, 0, r2, end_u16, vres.replacement))
+        var status_tag = (
+            "verified by mojo build (" + String(vres.attempts) + (" attempt)" if vres.attempts == 1 else " attempts)")
+            if vres.compiler_verified
+            else ("unverified (" + String(vres.attempts) + " attempts)")
+        )
+        self.apply_local_buffer_edits(
+            ai,
+            edits,
+            "Inline AI",
+            "Inline AI Transform (" + status_tag + ")",
+            "Apply AI transform: " + instr,
+            "Applied AI transform (" + status_tag + ")",
+        )
+
+    def fim_stop(mut self):
+        if self.fim_fd >= 0:
+            _ = external_call["pclose", Int32](self.fim_fp)
+            self.fim_fd = -1
+            self.fim_fp = 0
+            self.fim_out.clear()
+
+    def fim_trigger_or_accept(mut self):
+        var ai = self.active_editor()
+        if ai < 0 or self.wins[ai].read_only:
+            return
+        if self.wins[ai].ghost_text.byte_length() > 0 and self.wins[ai].ghost_row == self.wins[ai].cr:
+            _ = self.fim_accept_full(ai)
+            return
+        if self.ai_inline_endpoint.byte_length() == 0:
+            self.say("Set [ai] inline_endpoint in .turbomojo.toml for local MAX / ollama ghost completions")
+            return
+        self.fim_stop()
+        var r = self.wins[ai].cr
+        var c = self.wins[ai].cc
+        var pre_parts = List[String]()
+        for pr in range(max(0, r - 25), r):
+            pre_parts.append(to_str(self.wins[ai].buf.line(pr)))
+        var cur_ln = self.wins[ai].buf.line(r)
+        pre_parts.append(slice_str(cur_ln, 0, min(c, len(cur_ln))))
+        var suf_parts = List[String]()
+        suf_parts.append(slice_str(cur_ln, min(c, len(cur_ln)), len(cur_ln)))
+        for sr in range(r + 1, min(self.wins[ai].buf.count(), r + 15)):
+            suf_parts.append(to_str(self.wins[ai].buf.line(sr)))
+        var req_f = env_or("TMPDIR", "/tmp") + "/turbomojo-fim-" + String(own_pid()) + ".json"
+        var cmd = build_fim_curl_command(
+            self.ai_inline_endpoint,
+            self.ai_inline_model,
+            "\n".join(pre_parts),
+            "\n".join(suf_parts),
+            req_f,
+        )
+        var fp = popen_read("(" + cmd + "; rm -f " + shell_quote(req_f) + ") </dev/null")
+        if fp == 0:
+            return
+        self.fim_fp = fp
+        self.fim_fd = Int(external_call["fileno", Int32](fp))
+        make_nonblocking(self.fim_fd)
+        self.fim_out.clear()
+        self.fim_row = r
+        self.fim_path = self.wins[ai].path if self.wins[ai].path.byte_length() > 0 else self.wins[ai].title
+
+    def fim_tick(mut self):
+        if self.fim_fd < 0:
+            return
+        var buf = List[UInt8](length=4096, fill=0)
+        var eof = False
+        for _ in range(16):
+            var n = external_call["read", Int](Int32(self.fim_fd), buf.unsafe_ptr(), Int(4096))
+            if n > 0:
+                for k in range(n):
+                    self.fim_out.append(buf[k])
+            else:
+                eof = n == 0
+                break
+        if not eof:
+            return
+        _ = external_call["pclose", Int32](self.fim_fp)
+        self.fim_fd = -1
+        self.fim_fp = 0
+        var raw_json = bytes_to_str(self.fim_out)
+        self.fim_out.clear()
+        var parsed = parse_openai_response_text(raw_json)
+        if parsed.byte_length() == 0:
+            return
+        var ei = self.find_editor_or_title(self.fim_path)
+        if ei < 0 or self.wins[ei].cr != self.fim_row:
+            return
+        var cur_ln = self.wins[ei].buf.line(self.fim_row)
+        var suffix = slice_str(cur_ln, min(self.wins[ei].cc, len(cur_ln)), len(cur_ln))
+        var clean = sanitize_fim_ghost_text(parsed, suffix)
+        if clean.byte_length() > 0:
+            self.wins[ei].ghost_text = clean
+            self.wins[ei].ghost_row = self.fim_row
+
+    def fim_accept_full(mut self, t: Int) -> Bool:
+        if t < 0 or t >= len(self.wins) or self.wins[t].ghost_text.byte_length() == 0 or self.wins[t].ghost_row != self.wins[t].cr:
+            return False
+        var txt = self.wins[t].ghost_text
+        self.wins[t].ghost_text = ""
+        self.wins[t].ghost_row = -1
+        var g = self.wins[t].new_group()
+        var pos = self.wins[t].buf.insert(self.wins[t].cr, self.wins[t].cc, decode(txt), self.wins[t].cr, self.wins[t].cc, g)
+        self.wins[t].cr = pos.r
+        self.wins[t].cc = pos.c
+        self.wins[t].sync_want()
+        self.wins[t].break_group()
+        self.sync_shared_buffers(t)
+        return True
+
+    def fim_accept_word(mut self, t: Int) -> Bool:
+        if t < 0 or t >= len(self.wins) or self.wins[t].ghost_text.byte_length() == 0 or self.wins[t].ghost_row != self.wins[t].cr:
+            return False
+        var sp = ghost_accept_word(self.wins[t].ghost_text)
+        if sp[0].byte_length() == 0:
+            self.wins[t].ghost_text = ""
+            self.wins[t].ghost_row = -1
+            return False
+        self.wins[t].ghost_text = sp[1]
+        if sp[1].byte_length() == 0:
+            self.wins[t].ghost_row = -1
+        var g = self.wins[t].new_group()
+        var pos = self.wins[t].buf.insert(self.wins[t].cr, self.wins[t].cc, decode(sp[0]), self.wins[t].cr, self.wins[t].cc, g)
+        self.wins[t].cr = pos.r
+        self.wins[t].cc = pos.c
+        self.wins[t].sync_want()
+        self.wins[t].break_group()
+        self.sync_shared_buffers(t)
+        return True
+
+    def fim_dismiss(mut self, t: Int) -> Bool:
+        if t < 0 or t >= len(self.wins) or self.wins[t].ghost_text.byte_length() == 0:
+            return False
+        self.wins[t].ghost_text = ""
+        self.wins[t].ghost_row = -1
+        return True

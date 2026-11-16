@@ -11,8 +11,8 @@ from window import Window, WK_GPU, RM_NONE, RM_OK, RM_DIM
 from term import KEY_ESC
 from util import *
 from gpuinfo import (
-    GPU_QUERY, GPU_TELEMETRY_QUERY, GpuSample, parse_gpus, gpu_short,
-    parse_gpu_samples, format_gpu_monitor,
+    GPU_QUERY, GPU_TELEMETRY_QUERY, GPU_CLUSTER_QUERY, GpuSample, parse_gpus, gpu_short,
+    parse_gpu_samples, format_gpu_monitor, parse_cluster_query_sections, format_cluster_topology_section,
 )
 
 
@@ -94,7 +94,10 @@ __extension App:
     def gpu_mon_poll_start(mut self):
         if self.gpu_mon_fd >= 0:
             return
-        var fp = popen_read("(" + self.gpu_mon_query + ") 2>/dev/null </dev/null")
+        var full_q = self.gpu_mon_query
+        if self.gpu_mon_query == GPU_TELEMETRY_QUERY:
+            full_q = self.gpu_mon_query + "; " + GPU_CLUSTER_QUERY
+        var fp = popen_read("(" + full_q + ") 2>/dev/null </dev/null")
         if fp == 0:
             return
         self.gpu_mon_fp = fp
@@ -124,14 +127,26 @@ __extension App:
             _ = external_call["pclose", Int32](self.gpu_mon_fp)
             self.gpu_mon_fd = -1
             self.gpu_mon_fp = 0
-            var parsed = parse_gpu_samples(bytes_to_str(self.gpu_mon_out))
+            var raw_mon = bytes_to_str(self.gpu_mon_out)
+            var topo_split = raw_mon.find("__TOPO__\n")
+            var telem_part = String(raw_mon[byte=0:topo_split]) if topo_split >= 0 else raw_mon
+            var cluster_part = String(raw_mon[byte=topo_split:]) if topo_split >= 0 else String("")
+            var parsed = parse_gpu_samples(telem_part)
             while len(self.gpu_mon_hist) < len(parsed[0]):
                 self.gpu_mon_hist.append(List[Int]())
             for i in range(len(parsed[0])):
                 self.gpu_mon_hist[i].append(parsed[0][i].util_pct)
                 if len(self.gpu_mon_hist[i]) > 20:
                     _ = self.gpu_mon_hist[i].pop(0)
-            self.gpuwin_render(format_gpu_monitor(parsed[0], parsed[1], self.gpu_mon_hist))
+            var out_lines = format_gpu_monitor(parsed[0], parsed[1], self.gpu_mon_hist)
+            if cluster_part.byte_length() > 0:
+                var sec = parse_cluster_query_sections(cluster_part)
+                var extra = format_cluster_topology_section(sec[0], sec[1], sec[2], sec[3])
+                if len(extra) > 0:
+                    out_lines.append("")
+                    for el in extra:
+                        out_lines.append(el)
+            self.gpuwin_render(out_lines)
             return
         if now - self.gpu_mon_last_ns >= GPU_MON_INTERVAL_NS:
             self.gpu_mon_poll_start()

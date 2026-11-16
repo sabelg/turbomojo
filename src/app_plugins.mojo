@@ -10,7 +10,7 @@ from json import Json, JsonWriter, json_quote
 from rpc import RpcMessage, RPC_RESPONSE, RPC_ERROR, RPC_REQUEST, RPC_NOTIFICATION
 from plugins import *
 from buffer import Mark
-from dialog import Dialog, D_PLUGINS
+from dialog import Dialog, Field, D_PLUGINS, D_PLUGIN_INSTALL
 from notify import NL_INFO, NL_DONE, NL_WARN, NL_ERROR
 from window import Window, ACT_OTHER, WK_EDITOR, WK_PANEL
 from term import KEY_ENTER, KEY_ESC
@@ -565,3 +565,76 @@ __extension App:
             self.plugins_on = True
             self.plugins_start()
             self.say("Reloading plugins...")
+
+    def plugin_install_dialog(mut self):
+        """Open the Plugin & Snippet Hub dialog (`D_PLUGIN_INSTALL`)."""
+        var pdir = self.plugins_dir if self.plugins_dir.byte_length() > 0 else (config_home() + "/plugins")
+        self.plugins_dir = pdir
+        var items = List[String]()
+        var data = List[Int]()
+        var keys = List[String]()
+        if path_exists(pdir):
+            for ent in list_dir(pdir):
+                if ent.endswith("/") and ent != "../":
+                    var slug = String(ent[byte=0:ent.byte_length() - 1])
+                    var vinfo = validate_plugin_dir(pdir + "/" + slug)
+                    if vinfo.ok:
+                        var snip_tag = " [snippets]" if vinfo.has_snippets else ""
+                        items.append(vinfo.name + "  v" + vinfo.version + snip_tag)
+                        data.append(len(items) - 1)
+                        keys.append(vinfo.name)
+        if len(items) == 0:
+            items.append("  (no plugins installed yet in " + pdir + ")")
+            data.append(-1)
+            keys.append("")
+        var d = Dialog(D_PLUGIN_INSTALL, "Plugin & Snippet Hub", min(78, max(48, self.scr.w - 4)), min(20, max(12, len(items) + 9)))
+        d.lines.append("Enter a Git repo URL or local folder (append @tag or @commit to pin):")
+        var f = Field("~S~ource URL / path", "")
+        f.fresh = True
+        d.fields.append(f^)
+        d.set_items(items^, data^)
+        d.keys = keys^
+        d.buttons.append("~I~nstall")
+        d.buttons.append("~U~pdate")
+        d.buttons.append("~R~emove")
+        d.buttons.append("~C~lose")
+        self.show(d^)
+
+    def plugin_install_button(mut self, b: Int, spec: String, sel: Int):
+        var pdir = self.plugins_dir if self.plugins_dir.byte_length() > 0 else (config_home() + "/plugins")
+        self.plugins_dir = pdir
+        if b == 0:
+            var res = install_plugin(spec, pdir)
+            if res.ok:
+                self.user_snippets_loaded = False
+                self.plugins_stop()
+                if self.plugins_on:
+                    self.plugins_start()
+                    self.rebuild_keys(False)
+            self.say(res.message)
+        elif b == 1 or b == 2:
+            var name = String("")
+            if sel >= 0 and sel < len(self.dlg.keys):
+                name = self.dlg.keys[sel]
+            if name.byte_length() == 0:
+                name = String(spec.strip())
+            if name.byte_length() == 0:
+                self.say("Select an installed plugin first")
+                return
+            if b == 1:
+                var ures = update_plugin(name, pdir)
+                if ures[0]:
+                    self.user_snippets_loaded = False
+                    self.plugins_stop()
+                    if self.plugins_on:
+                        self.plugins_start()
+                        self.rebuild_keys(False)
+                self.say(ures[1])
+            else:
+                self.plugins_stop()
+                var rres = remove_plugin(name, pdir)
+                self.user_snippets_loaded = False
+                if self.plugins_on:
+                    self.plugins_start()
+                    self.rebuild_keys(False)
+                self.say(rres[1])

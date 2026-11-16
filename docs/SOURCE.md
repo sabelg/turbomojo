@@ -92,6 +92,7 @@ struct of `appstate.mojo`, one area each.
 | `src/git.mojo` | Git, as the editor sees it: which repository a file is in, what `git status` says about the files (for the explorer), and the commands that ask git for them. |
 | `src/gitdiff.mojo` | The diff view's model: a unified diff of two versions of a file, and what staging, unstaging or reverting one change (hunk) of it makes of them. |
 | `src/glyphs.mojo` | Glyph tiers (`ui.glyphs`): which characters the IDE's own chrome is drawn with. |
+| `src/gpu_occupancy.mojo` | GPU Occupancy Calculator, Shared-Memory 32-Bank Conflict Analyzer, and 32/64-Lane Warp View. |
 | `src/gpuinfo.mojo` | Which GPU will the program run on? (P11-10a) Mojo programs that use a GPU take the first one the driver lists (CUDA_VISIBLE_DEVICES / HIP_VISIBLE_DEVICES change which), so TurboMojo asks the vendor's tool once - nvidia-smi for NVIDIA, rocm-smi for AMD - and shows the answer in `tmide --caps` and, when `ui.gpu_status` is on, on the status line. |
 | `src/grapheme.mojo` | Grapheme clusters: what a user perceives as one character. |
 | `src/grep.mojo` | Find in files: walks a folder and searches every text file, a little at a time so the editor stays responsive (call `step` from the event loop until `done`). |
@@ -99,6 +100,7 @@ struct of `appstate.mojo`, one area each.
 | `src/hexview.mojo` | Virtualized 16-byte/row Hex + ASCII Inspector (WK_HEX) and Binary File Safety Guard. |
 | `src/highlight.mojo` | Polyglot syntax highlighter (Mojo, Python, C/C++/CUDA, TOML, JSON, Shell/YAML, Markdown). |
 | `src/inflate.mojo` | Inflate: the zlib / DEFLATE decompressor (RFC 1950, 1951), for PNG pictures. |
+| `src/inline_ai.mojo` | Inline AI Transform (`Ctrl-Alt-I` / `CM_INLINE_AI`), Closed-Loop Mojo 1.2 Compiler Auto-Verification ("Verified Patch Mode"), and Local `max serve` FIM Ghost-Text Client. |
 | `src/ipc.mojo` | Portable file-queue IPC between CLI (`tmide --reuse`), MCP (`tmide-mcp`), and a live IDE. |
 | `src/ipynb.mojo` | Jupyter `.ipynb` (nbformat v4) bidirectional converter for TurboMojo `# %%` Terminal Notebooks. |
 | `src/json.mojo` | JSON reader and writer (RFC 8259). |
@@ -113,9 +115,11 @@ struct of `appstate.mojo`, one area each.
 | `src/markdown.mojo` | Markdown to styled text lines, for hover windows and documentation panels. |
 | `src/marks.mojo` | OSC 133 marks ("semantic prompts", FinalTerm's sequences) around a program run. |
 | `src/menu.mojo` | Menu bar structures and drawing. |
+| `src/mojocst.mojo` | Pure-Mojo Concrete Syntax Tree (CST) parser for Mojo 1.2+. |
 | `src/mojover.mojo` | Is the Mojo found the one TurboMojo was built with? (P11-03) |
 | `src/newproject.mojo` | File > New project (P11-04): a folder with what a Mojo project needs, so that a newcomer does not have to know pixi first - a pixi.toml (the Modular channel, `mojo` as its dependency, `hello` and `test` tasks), a hello.mojo, a test for it and a .gitignore. |
 | `src/notify.mojo` | Notifications: short messages that show for a few seconds at the top right ("toasts") when something finishes or needs attention while you work elsewhere, and are kept in the notification centre (Help > Notifications) with what is running now. |
+| `src/omarchy_sync.mojo` | Live non-invasive Omarchy Linux theme synchronization (`theme = "omarchy"`). |
 | `src/outline.mojo` | The outline of a file: its functions, structs, traits and constants as a tree. |
 | `src/palette.mojo` | Colour themes. |
 | `src/pkginstall.mojo` | Install what a program uses (P11-13). |
@@ -131,6 +135,7 @@ struct of `appstate.mojo`, one area each.
 | `src/pydocs.mojo` | The documentation of the Python libraries a Mojo program uses (P11-14). |
 | `src/refactor.mojo` | Structural refactorings & One-Click Mojo 1.2 Migration Assistant. |
 | `src/regex.mojo` | Regular expressions: a parser, a compiler to a small instruction set, and a Pike VM (Thompson NFA simulation that also tracks capture groups). |
+| `src/remote_target.mojo` | Remote compute targets (SSH, Docker, Apptainer, and Slurm) for executing builds, tests, benchmarks, and GPU workloads while keeping the TUI local and responsive. |
 | `src/report.mojo` | Help > Report a problem (P11-08): a ready-to-file issue text - what to describe, the versions, what the terminal can do (as `tmide --caps` shows), the last crash-log entry and the configuration with anything secret-looking removed. |
 | `src/responsive.mojo` | Responsive layout, first part (P10-16a): what gives way when the terminal or a window is small. |
 | `src/rope.mojo` | Rope: text stored as UTF-8 chunks in a B-tree whose nodes carry summaries. |

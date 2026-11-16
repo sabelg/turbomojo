@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TurboMojo
+GenericName=Mojo IDE
+Comment=High-speed terminal IDE for Mojo 1.2, GPU kernels, and Jupyter notebooks
+Exec=tmide %F
+TryExec=tmide
+Icon=turbomojo
+Terminal=true
+Categories=Development;IDE;TextEditor;
+MimeType=text/x-mojo;text/x-python;application/x-ipynb+json;
+Keywords=mojo;gpu;jupyter;vim;ide;terminal;
+StartupWMClass=turbomojo

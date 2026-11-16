@@ -281,10 +281,12 @@ def test_csi_u_shift_only_types_the_character() raises:
     assert_equal(key_of("\x1b[63;2u"), 63)                             # "?" stays "?"
     assert_equal(key_of("\x1b[32;2u"), 32)                             # Shift-Space is a space
     assert_equal(key_of("\x1b[233u"), 233)                             # beyond ASCII
-    # Shift held while pressing these keys must not disable them
+    # Shift held while pressing Backspace or Esc must not disable them;
+    # Shift-Enter and Ctrl-Enter preserve modifiers for notebook cells & agent multi-line input.
     assert_equal(key_of("\x1b[127;2u"), KEY_BACKSPACE)
-    assert_equal(key_of("\x1b[13;2u"), KEY_ENTER)
-    assert_equal(key_of("\x1b[13;5u"), KEY_ENTER)
+    assert_equal(key_of("\x1b[13;2u"), KEY_ENTER | MOD_SHIFT)
+    assert_equal(key_of("\x1b[13;5u"), KEY_ENTER | MOD_CTRL)
+    assert_equal(key_of("\x1b[13;6u"), KEY_ENTER | MOD_CTRL | MOD_SHIFT)
     assert_equal(key_of("\x1b[27;2u"), KEY_ESC)
 
 

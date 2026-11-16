@@ -16,6 +16,7 @@ bytes to write (`writeMemory`, base64).
 from std.collections import List
 from std.memory import bitcast
 from breakpoints import DataBreakpoint
+from gpu_occupancy import parse_warp_lane_mask, format_warp_lane_strip, format_warp_watch_values
 from tensor_inspect import summarize_mojo_value
 from util import basename
 
@@ -407,6 +408,11 @@ struct DebugView(Copyable, Movable):
     var watch_shown: List[String]   # how each is shown now
     var data_bps: List[DataBreakpoint]
     var scope_handle: Int
+    var warp_mask: UInt64
+    var warp_width: Int
+    var warp_focus_lane: Int
+    var warp_mask_hex: String
+    var warp_watch_lines: List[String]
 
     def __init__(out self):
         self.frames = List[FrameRow]()
@@ -420,6 +426,26 @@ struct DebugView(Copyable, Movable):
         self.watch_shown = List[String]()
         self.data_bps = List[DataBreakpoint]()
         self.scope_handle = 0
+        self.warp_mask = 0
+        self.warp_width = 0
+        self.warp_focus_lane = 0
+        self.warp_mask_hex = ""
+        self.warp_watch_lines = List[String]()
+
+    def set_warp_state(mut self, raw_mask: String, width: Int = 32, focus_lane: Int = 0):
+        var parsed = parse_warp_lane_mask(raw_mask, width)
+        self.warp_mask = parsed[0]
+        self.warp_width = parsed[1]
+        self.warp_focus_lane = max(0, min(focus_lane, self.warp_width - 1))
+        self.warp_mask_hex = raw_mask if raw_mask.byte_length() > 0 else ("0xffffffffffffffff" if self.warp_width == 64 else "0xffffffff")
+
+    def set_warp_watch(mut self, var_name: String, lane_values: List[String]):
+        var formatted = format_warp_watch_values(var_name, lane_values, self.warp_focus_lane)
+        for i in range(len(self.warp_watch_lines)):
+            if self.warp_watch_lines[i].startswith(var_name + " ["):
+                self.warp_watch_lines[i] = formatted
+                return
+        self.warp_watch_lines.append(formatted)
 
     def clear(mut self):
         self.frames.clear()
@@ -532,6 +558,20 @@ struct DebugView(Copyable, Movable):
             out.append(("► " if k == self.sel else "  ") + f.name + "   " + place)
             self.rows_kind.append(VK_FRAME)
             self.rows_index.append(k)
+        if self.warp_width > 0:
+            out.append("")
+            self.rows_kind.append(VK_NOTE)
+            self.rows_index.append(-1)
+            out.append("SIMT Warp Lanes")
+            self.rows_kind.append(VK_HEAD)
+            self.rows_index.append(-1)
+            out.append("  " + format_warp_lane_strip(self.warp_mask, self.warp_width, self.warp_focus_lane))
+            self.rows_kind.append(VK_NOTE)
+            self.rows_index.append(-1)
+            for wl in self.warp_watch_lines:
+                out.append("  " + wl)
+                self.rows_kind.append(VK_NOTE)
+                self.rows_index.append(-1)
         if len(self.watches) > 0:
             out.append("")
             self.rows_kind.append(VK_NOTE)

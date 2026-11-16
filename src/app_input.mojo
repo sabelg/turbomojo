@@ -316,6 +316,18 @@ __extension App:
         var base = k & ~MOD_SHIFT
         var none = List[Int]()
         var word = ctl or (k & MOD_ALT) != 0
+        if self.wins[t].ghost_text.byte_length() > 0 and self.wins[t].ghost_row == self.wins[t].cr:
+            if k == KEY_TAB and self.wins[t].cc == self.wins[t].buf.llen(self.wins[t].cr):
+                if self.fim_accept_full(t):
+                    return
+            if k == (KEY_RIGHT | MOD_CTRL) and not shift and self.wins[t].cc == self.wins[t].buf.llen(self.wins[t].cr):
+                if self.fim_accept_word(t):
+                    return
+            if k == KEY_ESC:
+                if self.fim_dismiss(t):
+                    return
+            self.wins[t].ghost_text = ""
+            self.wins[t].ghost_row = -1
         if shift and ctl and (k & MOD_ALT) != 0:
             # Ctrl+Shift+Alt+arrows: column (box) selection
             var arrow = k & ~(MOD_SHIFT | MOD_CTRL | MOD_ALT)
@@ -356,7 +368,7 @@ __extension App:
         elif base == (KEY_END | MOD_CTRL):
             self.wins[t].collapse()
             self.wins[t].end(shift, True)
-        elif k == KEY_ENTER:
+        elif k == KEY_ENTER or k == (KEY_ENTER | MOD_SHIFT):
             self.wins[t].multi(OP_NEWLINE, 0, self.auto_indent, False, none)
         elif k == KEY_BACKSPACE:
             self.wins[t].multi(OP_BACK, 0, False, False, none)
@@ -393,6 +405,8 @@ __extension App:
             self.wins[t].multi(OP_TYPE, k, self.insert_mode, False, none)
             self.maybe_trigger_completion(k)
             self.maybe_trigger_signature(k)
+            if self.ai_ghost_text and self.ai_inline_endpoint.byte_length() > 0 and self.wins[t].cc == self.wins[t].buf.llen(self.wins[t].cr):
+                self.fim_trigger_or_accept()
         self.wins[t].follow = True
 
     def notebook_cmd_key(mut self, t: Int, k: Int) raises -> Bool:

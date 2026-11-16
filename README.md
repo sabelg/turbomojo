@@ -38,8 +38,8 @@ TurboMojo is for the places and habits where a terminal is better:
 | Setup | nothing to configure once Mojo is installed: finds `mojo` and its language server | install the editor and the extension |
 | Learning Mojo | Mojo's error messages explained, the manual, the standard library and the GPU puzzles offline, practice copies of the examples | the documentation website |
 | Accessibility | screen-reader mode with a plain line mode, colour-blind-safe themes | VS Code's own, mature screen-reader support |
-| Extensions | plugins in Mojo (commands, status items, panels) and other language servers | the whole VS Code marketplace |
-| Notebooks, GUI previews | `# %%` & Jupyter `.ipynb` notebooks (Mojo & Python) with Kitty/Sixel cell plots; no web GUI previews | yes |
+| Extensions | plugins & snippet packs from Git/folders (`≡ > Install / update plugin...`) and other language servers | the whole VS Code marketplace |
+| Notebooks, GPU & Vim | real Jupyter `.ipynb` & `# %%` cells (inline virtual outputs, Tensor cards, `%magic`, Kitty/Sixel plots), GPU SM occupancy & 32-bank analyzer, SSH/Docker/Slurm targets, and `tmide vim` Whole-Vim mode | yes (via extensions) |
 
 ## Build & run
 

@@ -1,5 +1,34 @@
 # What's new
 
+## 3.0: GPU occupancy, CST refactorings, verified inline AI, remote compute & Whole-Vim
+
+- **Real Jupyter `.ipynb` & Inline Virtual Notebooks (`v2.6`)**: multi-line virtual output blocks
+  beneath `# %%` cells without shifting buffer line numbers, `Shift-Enter` / `Alt-Enter` / `Esc`
+  Jupyter Command Mode (`a`/`b`/`dd`/`m`/`y`/`00`), rendered Markdown cells, IPython `!shell` &
+  `%magic` support, `File > New/Open notebook (.ipynb)...`, sequential cell execution queue, and
+  live Tensor / SIMD / DataFrame shape & NaN/Inf summary cards in cells and `WK_DEBUG`.
+- **Chromeless Whole-Vim Mode (`tmide vim` / `tmvim`)**: full-screen row-0 Vim layout (`~` EOF
+  markers, 2-row classic Vim statusline + `:`/`/` command bar, `<Space>` leader chords, `ZZ`/`ZQ`,
+  `:Ex`, `:nb`, `:cell`, `:zen`, and auto-exit on closing the last buffer).
+- **GPU Occupancy Modeling, 32-Bank Conflicts & SIMT Warp View (`v2.7`)**: hardware-exact SM/CU
+  occupancy tables (`sm_80` A100, `sm_89` Ada, `sm_90` H100, `sm_100`/`sm_120` Blackwell/GB10,
+  `gfx90a`/`gfx942` MI250X/MI300X), static 32-bank shared-memory stride & bank-conflict analyzer
+  (`Compile > GPU hardware occupancy & banks`), occupancy `%` in GPU badges & `WK_CODEGEN`, and
+  32/64-lane SIMT active-predicate mask strips + cross-lane scalar watch comparison in `WK_DEBUG`.
+- **Pure-Mojo CST & Deep Structural Refactorings (`v2.8`)**: zero-dependency `src/mojocst.mojo`
+  parser powering concentric syntax-aware Expand/Shrink Selection, Swap Call Arguments, multi-file
+  Change Function Signature (`offer_edit()`), precedence-safe Inline Variable / Function, and
+  one-click `Writable` / `Equatable` / `Hashable` / `Copyable` & custom `trait` stub synthesis.
+- **Compiler-Verified Inline AI & Local `MAX` FIM Ghost Text (`v2.9`)**: `Ctrl-Alt-I` inline AI
+  transform with Closed-Loop Mojo 1.2 Compiler Verification (shadow `mojo build` + up to 2
+  self-healing repair retries) and local OpenAI-compatible (`max serve` / `vLLM` / `ollama`) FIM
+  ghost text (`Tab` accept all, `Ctrl-Right` accept word, `Esc` dismiss).
+- **Remote Compute Targets, `macOS` (`osx-arm64`), Omarchy Sync & Plugin Hub (`v3.0`)**:
+  declarative `[target.<name>]` (`ssh`, `docker`, `apptainer`, `slurm`) dispatch & diagnostic path
+  remapping, NVLink/PCIe topology + `squeue` + container cgroup slices in `WK_GPU`, `arm64` macOS
+  `kqueue` & Apple Silicon Metal unified-memory detection, live Omarchy Linux `colors.toml` theme
+  sync (`theme = "omarchy"`), `.desktop`/SVG/Arch packaging, and Git/folder Plugin & Snippet Hub.
+
 ## 2.5: notebooks, refactorings & zero-config projects
 
 - **Terminal Notebooks & Jupyter `.ipynb`**: persistent non-blocking `mojo repl` and `python3`

@@ -114,9 +114,10 @@ struct Watcher(Copyable, Movable):
             return False
         var d = String(dir)
         comptime if IS_MACOS:
-            var dfd = external_call["open", Int32](d.as_c_string_span(), Int32(0)) # O_RDONLY
+            var dfd = external_call["openat", Int32](Int32(-2), d.as_c_string_span(), Int32(0x8000), Int32(0)) # AT_FDCWD=-2, O_EVTONLY on Darwin
             if Int(dfd) < 0:
                 return False
+            _ = external_call["fcntl", Int32](dfd, Int32(2), Int32(1)) # F_SETFD, FD_CLOEXEC
             var ev = List[UInt8](length=32, fill=0)
             # ident = dfd (8 bytes @ 0)
             for i in range(4):
@@ -128,7 +129,9 @@ struct Watcher(Copyable, Movable):
             ev[10] = 0x25
             # fflags = NOTE_WRITE | NOTE_DELETE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_RENAME = 0x2F @ 12
             ev[12] = 0x2F
-            var res = external_call["kevent", Int32](Int32(self.fd), ev.unsafe_ptr(), Int32(1), Pointer[UInt8, MutAnyOrigin](unsafe_from_address=0), Int32(0), Pointer[UInt8, MutAnyOrigin](unsafe_from_address=0))
+            var out_ev = List[UInt8](length=32, fill=0)
+            var ts = List[UInt8](length=16, fill=0)
+            var res = external_call["kevent", Int32](Int32(self.fd), ev.unsafe_ptr(), Int32(1), out_ev.unsafe_ptr(), Int32(0), ts.unsafe_ptr())
             if Int(res) < 0:
                 _ = external_call["close", Int32](dfd)
                 return False
@@ -149,9 +152,10 @@ struct Watcher(Copyable, Movable):
         if self.fd < 0:
             return False
         comptime if IS_MACOS:
+            var chg = List[UInt8](length=32, fill=0)
             var ev = List[UInt8](length=32 * 16, fill=0)
             var ts = List[UInt8](length=16, fill=0) # zero timeout
-            var n = external_call["kevent", Int32](Int32(self.fd), Pointer[UInt8, MutAnyOrigin](unsafe_from_address=0), Int32(0), ev.unsafe_ptr(), Int32(16), ts.unsafe_ptr())
+            var n = external_call["kevent", Int32](Int32(self.fd), chg.unsafe_ptr(), Int32(0), ev.unsafe_ptr(), Int32(16), ts.unsafe_ptr())
             return Int(n) > 0
         else:
             var buf = List[UInt8](length=4096, fill=0)

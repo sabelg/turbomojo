@@ -1,15 +1,15 @@
 # Maintainer: TurboMojo Contributors
 pkgname=turbomojo
-pkgver=2.5.0
+pkgver=3.0.0
 pkgrel=1
-pkgdesc="A Turbo C++ style IDE for Mojo in the terminal, written in Mojo"
+pkgdesc="A high-speed terminal IDE for Mojo 1.2, GPU kernels, Jupyter notebooks, and Whole-Vim mode"
 arch=('x86_64' 'aarch64')
-url="https://github.com/turbomojo/turbomojo"
+url="https://github.com/sabelg/turbomojo"
 license=('MIT')
 depends=('glibc' 'python')
 optdepends=(
   'tmux: remote session persistence and TUI testing'
-  'git: inline gutter markers, diff staging, blame, and commit graph'
+  'git: inline gutter markers, diff staging, blame, commit graph, and plugin install'
 )
 source=()
 sha256sums=()
@@ -36,7 +36,10 @@ check() {
 package() {
   cd "${startdir}/.."
   install -Dm755 build/tmide "${pkgdir}/usr/bin/tmide"
+  ln -sf tmide "${pkgdir}/usr/bin/tmvim"
   install -Dm755 scripts/mcp_server.py "${pkgdir}/usr/bin/tmide-mcp"
+  install -Dm644 packaging/turbomojo.desktop "${pkgdir}/usr/share/applications/turbomojo.desktop"
+  install -Dm644 packaging/turbomojo.svg "${pkgdir}/usr/share/icons/hicolor/scalable/apps/turbomojo.svg"
   install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
   install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
   install -d "${pkgdir}/usr/share/${pkgname}/docs"

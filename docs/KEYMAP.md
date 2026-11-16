@@ -6,13 +6,14 @@ after the other (Ctrl-K B). A dash: no key in that keymap - the menus and the co
 palette (Ctrl-P, then >) have every command. Your own keys (`[keys]` in the config file)
 come on top; Help > Keyboard reference (F1) shows the keys as you have them.
 
-This file is made by `tmide --keys` (TurboMojo 2.5.0).
+This file is made by `tmide --keys` (TurboMojo 3.0.0).
 
 ## System (≡)
 
 | Command | Modern | Turbo | Emacs |
 |---|---|---|---|
 | Command palette | Ctrl-P | Ctrl-P | Alt-X |
+| Inline AI edit / transform | Ctrl-Alt-I | Ctrl-Alt-I | Ctrl-Alt-I |
 
 ## File
 
@@ -181,6 +182,7 @@ This file is made by `tmide --keys` (TurboMojo 2.5.0).
 | Send to REPL | Ctrl-F10 | Ctrl-F10 | Ctrl-F10 |
 | Mention in agent prompt | Shift-F11 | Shift-F11 | Shift-F11 |
 | Run code cell and advance (# %%) | Ctrl-Shift-Enter | Ctrl-Shift-Enter | Ctrl-Shift-Enter |
+| AI: Trigger / accept FIM ghost text | Alt-] | Alt-] | Alt-] |
 
 ## Always
 

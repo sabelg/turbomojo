@@ -969,6 +969,26 @@ __extension App:
             self.extract_function_ask()
         elif cmd == CM_REFRESH:
             self.scr.force = True
+        elif cmd == CM_GPU_OCCUPANCY:
+            self.gpu_occupancy_open()
+        elif cmd == CM_SWAP_CALL_ARGS:
+            self.swap_call_args_cmd()
+        elif cmd == CM_CHANGE_SIGNATURE:
+            self.change_signature_ask()
+        elif cmd == CM_INLINE_SYMBOL:
+            self.inline_symbol_cmd()
+        elif cmd == CM_IMPL_TRAIT_STUBS:
+            self.implement_trait_stubs_cmd()
+        elif cmd == CM_INLINE_AI:
+            self.inline_ai_ask()
+        elif cmd == CM_AI_VERIFY_TOGGLE:
+            self.toggle_ai_verify_edits()
+        elif cmd == CM_FIM_GHOST:
+            self.fim_trigger_or_accept()
+        elif cmd == CM_SELECT_TARGET:
+            self.select_target_dialog()
+        elif cmd == CM_PLUGIN_INSTALL:
+            self.plugin_install_dialog()
 
     def arrange(mut self, tile: Bool):
         var idx = List[Int]()
