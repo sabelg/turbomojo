@@ -8,9 +8,9 @@ from std.time import perf_counter_ns
 from ipynb import is_ipynb_path, ipynb_to_percent_text, percent_text_to_ipynb
 from json import json_parse, J_ARR, J_OBJ
 from highlight import HL_MOJO, HL_PYTHON
-from window import ACT_TYPE
+from window import ACT_TYPE, WK_IMGVIEW
 from app import App
-from appstate import M_DOCS
+from appstate import M_NORMAL
 from commands import CM_SAVE, CM_RUN_CELL, CM_EXPORT_IPYNB, CM_CELL_VIEW_PLOT
 from signals import own_pid
 from swap import delete_file
@@ -216,7 +216,8 @@ def test_v25_m2_03_live_cell_plot_capture_badge_and_terminal_graphics_preview() 
     assert_true(six.byte_length() > 20)
 
     app.exec(CM_CELL_VIEW_PLOT)
-    assert_equal(app.mode, M_DOCS)
+    assert_equal(app.mode, M_NORMAL)
+    assert_equal(app.wins[app.top()].kind, WK_IMGVIEW)
     app.draw()
     assert_true(app.status.find("Showing 1 cell plot(s)") >= 0, app.status)
 

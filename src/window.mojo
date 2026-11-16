@@ -3,6 +3,7 @@
 Search and bracket matching are in window_search.mojo, drawing in window_draw.mojo
 (both extend Window; import them with `from ... import *`)."""
 from std.collections import List
+from std.memory import ArcPointer
 from buffer import TextBuffer, Pos, TAB_WIDTH, replace_all_text_diff
 from watch import FileSig
 from git import GB_KNOWN
@@ -10,9 +11,21 @@ from outline import OutlineItem
 from screen import Screen
 from palette import Palette
 from highlight import Highlighter, C_TEXT, line_state, scan_states, lang_for_path
-from util import is_ident, lower, lower_str, decode, cp_len, to_str, str_contains, char_width
+from util import is_ident, lower, lower_str, decode, cp_len, to_str, str_contains, char_width, basename
 from search import Search
 from grapheme import cluster_end, cluster_start, cluster_width, ends_with_plain_mark
+from cellimg import (
+    InlineImageCache,
+    CELL_NB_HDR_MARK,
+    CELL_NB_SUB_MARK,
+    CELL_NB_BOT_MARK,
+    NB_IMG_QUADRANT,
+    is_anim_spec,
+    parse_anim_spec,
+    read_png_header_size,
+    cell_image_grid_size,
+    encode_cell_img_line,
+)
 
 comptime WK_EDITOR = 0
 comptime LEX_BUDGET = 4000     # lines re-scanned after an edit before giving up on rejoining
@@ -42,6 +55,7 @@ comptime WK_CODEGEN = 16     # Mojo generated assembly / LLVM IR inspector
 comptime WK_HEX = 17         # virtualized hex editor
 comptime WK_MDPREVIEW = 18   # markdown preview pane
 comptime WK_GITLOG = 19      # git commit graph & history browser
+comptime WK_IMGVIEW = 20     # dedicated floating image zoom window
 
 comptime ACT_NONE = 0
 comptime ACT_TYPE = 1
@@ -180,6 +194,23 @@ struct Window(Copyable, Movable):
     var nb_cmd_mode: Bool
     var nb_pend: Int
     var nb_clip: String
+    var gfx_kitty: Bool
+    var gfx_mode: Int
+    var gfx_tmux: Bool
+    var gfx_cell_w: Int
+    var gfx_cell_h: Int
+    var img_cache: ArcPointer[InlineImageCache]
+    var img_paths: List[String]
+    var img_label: String
+    var img_idx: Int
+    var img_zoom_pct: Int
+    var img_pan_x: Int
+    var img_pan_y: Int
+    var img_anim_fps: Int
+    var img_anim_playing: Bool
+    var anim_playing: Bool
+    var anim_tick_count: Int
+    var anim_last_ns: Int
 
     def __init__(out self, kind: Int, title: String, path: String, x: Int, y: Int, w: Int, h: Int, number: Int):
         self.kind = kind
@@ -292,6 +323,146 @@ struct Window(Copyable, Movable):
         self.nb_cmd_mode = False
         self.nb_pend = 0
         self.nb_clip = ""
+        self.gfx_kitty = False
+        self.gfx_mode = NB_IMG_QUADRANT
+        self.gfx_tmux = False
+        self.gfx_cell_w = 10
+        self.gfx_cell_h = 20
+        self.img_cache = ArcPointer(InlineImageCache())
+        self.img_paths = List[String]()
+        self.img_label = ""
+        self.img_idx = 0
+        self.img_zoom_pct = 100
+        self.img_pan_x = 500
+        self.img_pan_y = 500
+        self.img_anim_fps = 0
+        self.img_anim_playing = True
+        self.anim_playing = True
+        self.anim_tick_count = 0
+        self.anim_last_ns = 0
+
+    def imgview_current_path(self) -> String:
+        if len(self.img_paths) == 0:
+            return self.path
+        var idx = max(0, min(self.img_idx, len(self.img_paths) - 1))
+        return self.img_paths[idx]
+
+    def imgview_sync_title(mut self):
+        var p = self.imgview_current_path()
+        var sz = read_png_header_size(p)
+        var raw_base = basename(p)
+        if (
+            raw_base.startswith("turbomojo-ipynb-")
+            or raw_base.startswith("turbomojo-plot-")
+            or raw_base.startswith("turbomojo-anim-")
+            or raw_base.startswith("turbomojo-live-")
+            or raw_base.startswith("turbomojo-gif-")
+        ):
+            raw_base = "Notebook Animation" if self.img_anim_fps > 0 else "Notebook Plot"
+        var base = self.img_label if self.img_label.byte_length() > 0 else raw_base
+        var dims = (" · " + String(sz[0]) + "×" + String(sz[1]) + " px") if (sz[0] > 0 and sz[1] > 0) else String("")
+        var ftag = (" · " + String(self.img_anim_fps) + " fps") if self.img_anim_fps > 0 else String("")
+        var ztag = " · " + String(self.img_zoom_pct) + "%"
+        var cur_1 = max(0, min(self.img_idx, len(self.img_paths) - 1)) + 1
+        var ptag = (
+            (
+                " [Frame " + String(cur_1) + "/" + String(len(self.img_paths)) + ("" if self.img_anim_playing else " ⏸") + "]"
+                if self.img_anim_fps > 0
+                else (" [" + String(cur_1) + "/" + String(len(self.img_paths)) + "]")
+            )
+            if len(self.img_paths) > 1
+            else String("")
+        )
+        self.title = base + dims + ftag + ztag + ptag
+
+    def imgview_reset_fit(mut self):
+        self.img_zoom_pct = 100
+        self.img_pan_x = 500
+        self.img_pan_y = 500
+        self.imgview_sync_title()
+
+    def imgview_step_zoom(mut self, dir: Int):
+        var steps: List[Int] = [100, 150, 225, 350, 500]
+        var cur = 0
+        for k in range(len(steps)):
+            if steps[k] <= self.img_zoom_pct:
+                cur = k
+        var nxt = max(0, min(len(steps) - 1, cur + (1 if dir > 0 else -1)))
+        self.img_zoom_pct = steps[nxt]
+        if self.img_zoom_pct <= 100:
+            self.img_pan_x = 500
+            self.img_pan_y = 500
+        self.imgview_sync_title()
+
+    def imgview_pan(mut self, dx_pm: Int, dy_pm: Int):
+        if self.img_zoom_pct <= 100:
+            return
+        self.img_pan_x = max(0, min(1000, self.img_pan_x + dx_pm))
+        self.img_pan_y = max(0, min(1000, self.img_pan_y + dy_pm))
+
+    def imgview_step_plot(mut self, delta: Int):
+        var n = len(self.img_paths)
+        if n <= 1:
+            return
+        self.img_idx = (self.img_idx + delta + n) % n
+        self.path = self.img_paths[self.img_idx]
+        if self.img_anim_fps > 0:
+            self.img_anim_playing = False
+            self.imgview_sync_title()
+        else:
+            self.imgview_reset_fit()
+
+    def visible_anim_fps(self) -> Int:
+        """Return max FPS of any playing animation currently visible in this window (`0` if none/paused)."""
+        if self.hidden:
+            return 0
+        if self.kind == WK_IMGVIEW:
+            if self.img_anim_fps > 0 and self.img_anim_playing and len(self.img_paths) > 1:
+                return self.img_anim_fps
+            return 0
+        if self.kind != WK_EDITOR or not self.inline_cell_outputs or not self.anim_playing:
+            return 0
+        var max_fps = 0
+        var rws = self.rows()
+        for oi in range(len(self.buf.cell_out_rows)):
+            if oi >= len(self.buf.cell_out_plots):
+                break
+            var pstr = self.buf.cell_out_plots[oi]
+            if pstr.find("ANIM|") < 0:
+                continue
+            var hr = self.buf.cell_out_rows[oi]
+            var er = self.buf.cell_end_for_header(hr)
+            if er < 0 or er < self.top - 4:
+                continue
+            if self.screen_row_of(er, 0, rws + 8) >= rws + 4:
+                continue
+            for ps in pstr.split("\n"):
+                var sp = String(ps.strip())
+                if is_anim_spec(sp):
+                    var pa = parse_anim_spec(sp)
+                    if pa[0] and len(pa[2]) > 1 and pa[1] > max_fps:
+                        max_fps = pa[1]
+        return max_fps
+
+    def step_anim(mut self, now_ns_val: Int) -> Bool:
+        """Advance playing animation frame when due; returns True if the visible frame changed."""
+        var fps = self.visible_anim_fps()
+        if fps <= 0:
+            return False
+        var period_ns = max(16_000_000, 1_000_000_000 // fps)
+        if self.anim_last_ns != 0 and now_ns_val - self.anim_last_ns < period_ns:
+            return False
+        self.anim_last_ns = now_ns_val
+        if self.kind == WK_IMGVIEW:
+            var n = len(self.img_paths)
+            if n > 1:
+                self.img_idx = (self.img_idx + 1) % n
+                self.path = self.img_paths[self.img_idx]
+                self.imgview_sync_title()
+                return True
+            return False
+        self.anim_tick_count += 1
+        return True
 
     def is_notebook(self) -> Bool:
         if self.kind != WK_EDITOR:
@@ -337,6 +508,82 @@ struct Window(Copyable, Movable):
             if self.buf.cell_end_for_header(hr) == end_row:
                 return self.buf.cell_out_counts[oi] if oi < len(self.buf.cell_out_counts) else 0
         return 0
+
+    def clean_cell_title(self, hdr_row: Int) -> String:
+        """Extract clean cell title from `# %% [Title]` or `# %% Title` without raw `# %%` prefix."""
+        if hdr_row < 0 or hdr_row >= self.buf.count():
+            return ""
+        var raw_ln = String(to_str(self.buf.line(hdr_row)).strip())
+        if not raw_ln.startswith("#"):
+            return ""
+        var after_h = String(raw_ln[byte=1:].lstrip())
+        if not after_h.startswith("%%"):
+            return ""
+        var rest = String(after_h[byte=2:].strip())
+        var low = lower_str(rest)
+        if low.startswith("[markdown]") or low.startswith("[md]") or low.startswith("[raw]"):
+            var cb = rest.find("]")
+            return String(rest[byte=cb + 1:].strip()) if cb >= 0 else String("")
+        if rest.startswith("[") and rest.endswith("]") and rest.byte_length() >= 2:
+            return String(rest[byte=1 : rest.byte_length() - 1].strip())
+        return rest
+
+    def toggle_cell_code_fold(mut self, row: Int) -> Bool:
+        """Collapse or expand the `# %%` cell containing `row`, keeping `Out [k]` & images visible."""
+        self.buf.sync_folds()
+        var hdr = self.cell_header_for_row(row)
+        if hdr < 0:
+            return False
+        if self.buf.fold_index(hdr) >= 0:
+            var ok = self.buf.set_fold(hdr, False)
+            self.follow = True
+            return ok
+        if not self.buf.set_fold(hdr, True):
+            return False
+        self.extra.clear()
+        if self.buf.hidden_by(self.cr) >= 0:
+            self.sel = False
+            self.cr = hdr
+            self.cc = 0
+            self.sync_want()
+        if self.buf.hidden_by(self.top) >= 0:
+            self.top = self.buf.hidden_by(self.top)
+            self.top_seg = 0
+        self.follow = True
+        return True
+
+    def toggle_all_cell_code_folds(mut self) -> Int:
+        """Collapse all `# %%` code cells (leaving Markdown prose readable and inline `Out [k]`
+        + images visible!), or expand all if every foldable code cell is already collapsed."""
+        self.buf.sync_folds()
+        var count = self.buf.count()
+        var code_hdrs = List[Int]()
+        var any_unfolded = False
+        for r in range(count):
+            if self.buf.is_cell_header(r) and not self.is_markdown_header(r) and self.buf.foldable(r):
+                code_hdrs.append(r)
+                if self.buf.fold_index(r) < 0:
+                    any_unfolded = True
+        if len(code_hdrs) == 0:
+            return 0
+        var folded_n = 0
+        for hr in code_hdrs:
+            if any_unfolded:
+                if self.buf.set_fold(hr, True):
+                    folded_n += 1
+            else:
+                _ = self.buf.set_fold(hr, False)
+        self.extra.clear()
+        if self.buf.hidden_by(self.cr) >= 0:
+            self.sel = False
+            self.cr = self.buf.hidden_by(self.cr)
+            self.cc = 0
+            self.sync_want()
+        if self.buf.hidden_by(self.top) >= 0:
+            self.top = self.buf.hidden_by(self.top)
+            self.top_seg = 0
+        self.follow = True
+        return folded_n
 
     def replace_lines_undoable(mut self, r1: Int, r2: Int, new_text: String):
         """Atomically replace inclusive line range `[r1, r2]` with `new_text` (1-step Undo)."""
@@ -596,34 +843,143 @@ struct Window(Copyable, Movable):
         return len(starts)
 
     def virtual_out_lines_at(self, r: Int) -> Tuple[List[String], Bool]:
-        """Virtual multi-line cell output rows attached beneath buffer row r."""
+        """Virtual multi-line cell output rows (text + inline PNG plots) attached beneath buffer row r."""
         var empty = List[String]()
         if not self.inline_cell_outputs or self.kind != WK_EDITOR or len(self.buf.cell_out_rows) == 0:
             return (empty^, False)
         for oi in range(len(self.buf.cell_out_rows)):
             var hdr_r = self.buf.cell_out_rows[oi]
             if self.buf.cell_end_for_header(hdr_r) == r:
-                var raw_lines = List[String]()
                 var txt = self.buf.cell_out_texts[oi] if oi < len(self.buf.cell_out_texts) else String("")
                 var plots_s = self.buf.cell_out_plots[oi] if oi < len(self.buf.cell_out_plots) else String("")
                 var is_err = self.buf.cell_out_errs[oi] if oi < len(self.buf.cell_out_errs) else False
+                var exec_c = self.buf.cell_out_counts[oi] if oi < len(self.buf.cell_out_counts) else 0
+
+                var valid_plots = List[String]()
+                var plot_sizes = List[Tuple[Int, Int]]()
+                var plot_caps = List[String]()
+                if plots_s.byte_length() > 0:
+                    for ps in plots_s.split("\n"):
+                        var pp = String(ps.strip())
+                        if pp.byte_length() > 0 and len(valid_plots) < 4:
+                            if is_anim_spec(pp):
+                                var pa = parse_anim_spec(pp)
+                                if pa[0] and len(pa[2]) > 0:
+                                    var nf = len(pa[2])
+                                    var f_i = self.anim_tick_count % nf
+                                    var cur_fp = pa[2][f_i]
+                                    var sz_a = read_png_header_size(cur_fp)
+                                    if sz_a[0] > 0 and sz_a[1] > 0:
+                                        valid_plots.append(cur_fp)
+                                        plot_sizes.append(sz_a)
+                                        var play_pill = "[⏸ Pause]" if self.anim_playing else "[▶ Play]"
+                                        plot_caps.append(
+                                            "🎬 "
+                                            + String(sz_a[0])
+                                            + "×"
+                                            + String(sz_a[1])
+                                            + "px · Frame "
+                                            + String(f_i + 1)
+                                            + "/"
+                                            + String(nf)
+                                            + " · "
+                                            + String(pa[1])
+                                            + " fps · "
+                                            + play_pill
+                                            + " — click image to zoom"
+                                        )
+                                continue
+                            var sz = read_png_header_size(pp)
+                            if sz[0] > 0 and sz[1] > 0:
+                                valid_plots.append(pp)
+                                plot_sizes.append(sz)
+                                plot_caps.append("")
+
+                var np = len(valid_plots)
+                var text_lines = List[String]()
                 if txt.byte_length() > 0:
                     for ls in txt.split("\n"):
-                        raw_lines.append(String(ls))
-                if plots_s.byte_length() > 0 and not str_contains(txt, "[📊"):
-                    var n_p = 0
-                    for ps in plots_s.split("\n"):
-                        if String(ps).byte_length() > 0:
-                            n_p += 1
-                    if n_p > 0:
-                        raw_lines.append("[📊 " + String(n_p) + " plot(s) ready — Text > Open cell plot preview]")
-                if len(raw_lines) <= 6:
-                    return (raw_lines^, is_err)
-                var clamped = List[String]()
-                for k in range(5):
-                    clamped.append(raw_lines[k])
-                clamped.append("… (+" + String(len(raw_lines) - 5) + " more lines — see Message window)")
-                return (clamped^, is_err)
+                        var s = String(ls)
+                        if np > 0 and (
+                            s.startswith("[📊 plot saved: ")
+                            or (s.startswith("<") and s.endswith(">") and s.byte_length() <= 96)
+                        ):
+                            continue
+                        text_lines.append(s)
+                if plots_s.byte_length() > 0 and np == 0 and not str_contains(txt, "[📊"):
+                    text_lines.append("[📊 plot output — Text > Open cell plot preview]")
+
+                var out_rows = List[String]()
+                var is_nb = self.is_notebook()
+                if is_nb and (len(text_lines) > 0 or np > 0):
+                    var out_lbl = ("Out [" + String(exec_c) + "]") if exec_c > 0 else String("Out")
+                    if np == 1 and len(text_lines) == 0:
+                        var pw0 = plot_sizes[0][0]
+                        var ph0 = plot_sizes[0][1]
+                        var gsz0 = cell_image_grid_size(
+                            pw0, ph0, self.cols(), 1, self.gfx_cell_w, self.gfx_cell_h, self.rows()
+                        )
+                        var cap0 = (
+                            plot_caps[0]
+                            if plot_caps[0].byte_length() > 0
+                            else ("📊 " + String(pw0) + "×" + String(ph0) + "px — click image to zoom")
+                        )
+                        out_rows.append(String(CELL_NB_HDR_MARK) + out_lbl + "\t" + cap0)
+                        for ri in range(gsz0[1]):
+                            out_rows.append(encode_cell_img_line(valid_plots[0], ri, gsz0[1], gsz0[0]))
+                        out_rows.append(String(CELL_NB_BOT_MARK))
+                        return (out_rows^, is_err)
+                    out_rows.append(String(CELL_NB_HDR_MARK) + out_lbl + "\t")
+
+                if len(text_lines) <= 6:
+                    for tl in text_lines:
+                        out_rows.append(tl)
+                else:
+                    for k in range(5):
+                        out_rows.append(text_lines[k])
+                    out_rows.append("… (+" + String(len(text_lines) - 5) + " more lines — see Message window)")
+
+                for pi in range(np):
+                    var pp = valid_plots[pi]
+                    var pw = plot_sizes[pi][0]
+                    var ph = plot_sizes[pi][1]
+                    var acap = plot_caps[pi]
+                    var gsz = cell_image_grid_size(
+                        pw, ph, self.cols(), np, self.gfx_cell_w, self.gfx_cell_h, self.rows()
+                    )
+                    if is_nb:
+                        var sub_lbl = (
+                            acap
+                            if acap.byte_length() > 0
+                            else (
+                                "📊 "
+                                + (("Plot " + String(pi + 1) + " · ") if np > 1 else String(""))
+                                + String(pw)
+                                + "×"
+                                + String(ph)
+                                + "px — click image to zoom"
+                            )
+                        )
+                        out_rows.append(String(CELL_NB_SUB_MARK) + sub_lbl)
+                    else:
+                        out_rows.append(
+                            ("[" + acap + "]")
+                            if acap.byte_length() > 0
+                            else (
+                                "[📊 "
+                                + basename(pp)
+                                + " · "
+                                + String(pw)
+                                + "×"
+                                + String(ph)
+                                + "px — click image to zoom]"
+                            )
+                        )
+                    for ri in range(gsz[1]):
+                        out_rows.append(encode_cell_img_line(pp, ri, gsz[1], gsz[0]))
+                if is_nb and len(out_rows) > 0:
+                    out_rows.append(String(CELL_NB_BOT_MARK))
+                return (out_rows^, is_err)
         return (empty^, False)
 
     def virtual_out_rows(self, r: Int) -> Int:
@@ -1002,6 +1358,78 @@ struct Window(Copyable, Movable):
         # center the target line
         self.top = max(0, self.cr - self.rows() // 2)
         self.break_group()
+
+    def goto_cell(mut self, r: Int, c: Int = 0):
+        """Move cursor smoothly to cell row `r` without recentering `self.top` away from outputs above."""
+        self.extra.clear()
+        self.sel = False
+        self.sel_hist.clear()
+        self.cr = r
+        self.cc = c
+        self.clamp()
+        self.sync_want()
+        self.follow = True
+        self.break_group()
+
+    def reveal_cell_output(mut self, hdr_row: Int, keep_cursor: Bool):
+        """Adjust `(top, top_seg)` when a cell finishes so its `Out [k]` + inline image is visible
+        in the viewport (alongside the next cell's cursor when `keep_cursor` is True on `Shift-Enter`)."""
+        self.buf.sync_folds()
+        var out_r = self.buf.cell_end_for_header(hdr_row)
+        if out_r < 0 or out_r >= self.buf.count():
+            return
+        var v_rows = self.virtual_out_rows(out_r)
+        if v_rows <= 0:
+            return
+        var rws = self.rows()
+        if rws <= 3:
+            return
+        var t_segs = self.text_row_segs(out_r)
+        if keep_cursor and self.cr >= out_r:
+            self.ensure_visible()
+            var starts = List[Int]()
+            var vs = List[Int]()
+            self.wrap_layout(self.buf.line(self.cr), starts, vs)
+            var cur_seg = self.seg_of(starts, self.cc)
+            # Screen rows from `(out_r, t_segs - 1)` down to `(self.cr, cur_seg)` inclusive
+            var dist = 1 + v_rows
+            if self.cr > out_r:
+                var rr = self.buf.next_row(out_r)
+                while rr < self.cr and dist <= rws + 64:
+                    dist += self.row_segs(rr)
+                    rr = self.buf.next_row(rr)
+                dist += cur_seg + 1
+            if dist <= rws - 1:
+                var out_hidden_above = out_r < self.top or (out_r == self.top and self.top_seg >= t_segs)
+                var cur_y = self.screen_row_of(self.cr, self.cc, rws)
+                if out_hidden_above or cur_y < 0 or cur_y >= rws:
+                    self.top = out_r
+                    self.top_seg = max(0, t_segs - 1)
+                    var spare = max(0, (rws - 1) - dist)
+                    if spare > 0:
+                        self.advance_top(-min(spare, 3))
+                    self.follow = False
+            else:
+                self.top = self.cr
+                self.top_seg = cur_seg
+                self.advance_top(-max(1, rws - 2))
+                self.follow = False
+            return
+
+        # `Ctrl-Enter` or `[▶ Run]` click: bring the newly rendered `Out [k]` + image into view!
+        var anchor_y = self.screen_row_of(out_r, 0, rws + v_rows + 8)
+        var out_bot_y = anchor_y + t_segs + v_rows - 1
+        if anchor_y < 0 or out_bot_y >= rws:
+            self.top = out_r
+            self.top_seg = max(0, t_segs - 1)
+            var room_above = max(0, rws - (1 + v_rows) - 1)
+            if room_above > 0:
+                self.advance_top(-min(room_above, 6))
+            if self.cr >= hdr_row and self.cr <= out_r and self.screen_row_of(self.cr, self.cc, rws) < 0:
+                self.cr = out_r
+                self.cc = 0
+                self.sync_want()
+            self.follow = False
 
     # ----------------------------------------------------------- movement
     def move_left(mut self, shift: Bool, word: Bool):
@@ -1417,6 +1845,7 @@ struct Window(Copyable, Movable):
 
     def clear_cell_outputs(mut self):
         self.buf.clear_cell_outputs()
+        self.img_cache[].clear(self.gfx_tmux)
         self.top_seg = 0
         self.follow = True
 

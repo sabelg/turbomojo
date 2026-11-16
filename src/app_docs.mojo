@@ -16,7 +16,7 @@ from png import png_decode
 from sixel import sixel_encode, scale_to, fit_pixels
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_IMGVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -486,28 +486,35 @@ __extension App:
         the page has its old cells sent again (that wipes it); one wholly on the page,
         with nothing drawn over it, is drawn when it moved or its cells were rewritten."""
         self.gfx_emit = ""
-        if not self.gfx_sixel:
-            return
-        for k in range(len(self.doc_images)):
-            var cols = self.doc_img_size[k] >> 16
-            var rows = self.doc_img_size[k] & 0xFFFF
-            var at = self.doc_img_at[k]
-            var cur = at if at >= 0 and self.doc_img_vis[k] == rows and (at >> 16) + rows < self.scr.h else -1
-            var old = self.doc_img_shown[k]
-            if old >= 0 and old != cur:
-                self.scr.invalidate(old & 0xFFFF, old >> 16, cols, rows)
-            if cur >= 0:
-                var x = cur & 0xFFFF
-                var y = cur >> 16
-                if not self.scr.blank_in(x, y, cols, rows, self.gfx_page_bg):
-                    self.doc_img_shown[k] = -1      # something lies over it: drawn when it goes
-                elif old != cur or self.scr.changed_in(x, y, cols, rows):
-                    self.gfx_emit += "\x1b[" + String(y + 1) + ";" + String(x + 1) + "H" + self.doc_img_sixel[k]
-                    self.doc_img_shown[k] = cur
-            else:
-                self.doc_img_shown[k] = -1
-            self.doc_img_at[k] = -1
-            self.doc_img_vis[k] = 0
+        if self.gfx_sixel:
+            for k in range(len(self.doc_images)):
+                var cols = self.doc_img_size[k] >> 16
+                var rows = self.doc_img_size[k] & 0xFFFF
+                var at = self.doc_img_at[k]
+                var cur = at if at >= 0 and self.doc_img_vis[k] == rows and (at >> 16) + rows < self.scr.h else -1
+                var old = self.doc_img_shown[k]
+                if old >= 0 and old != cur:
+                    self.scr.invalidate(old & 0xFFFF, old >> 16, cols, rows)
+                if cur >= 0:
+                    var x = cur & 0xFFFF
+                    var y = cur >> 16
+                    if not self.scr.blank_in(x, y, cols, rows, self.gfx_page_bg):
+                        self.doc_img_shown[k] = -1      # something lies over it: drawn when it goes
+                    elif old != cur or self.scr.changed_in(x, y, cols, rows):
+                        self.gfx_emit += "\x1b[" + String(y + 1) + ";" + String(x + 1) + "H" + self.doc_img_sixel[k]
+                        self.doc_img_shown[k] = cur
+                else:
+                    self.doc_img_shown[k] = -1
+                self.doc_img_at[k] = -1
+                self.doc_img_vis[k] = 0
+        for wi in range(len(self.wins)):
+            if (self.wins[wi].kind == WK_EDITOR or self.wins[wi].kind == WK_IMGVIEW) and not self.wins[wi].hidden:
+                var nb_ovl = self.wins[wi].img_cache[].prepare_overlays(self.scr, self.gfx_tmux)
+                if nb_ovl.byte_length() > 0:
+                    self.gfx_emit += nb_ovl
+                if self.wins[wi].img_cache[].pending_out.byte_length() > 0:
+                    self.gfx_out += self.wins[wi].img_cache[].pending_out
+                    self.wins[wi].img_cache[].pending_out = ""
 
     def sixel_take(mut self) -> String:
         """After the frame: the sixel pictures to send, then the cursor back where the
@@ -1313,39 +1320,117 @@ __extension App:
         self.doc_path = ""
         self.say(result)
 
-    def cell_open_plot_preview(mut self):
-        """Render the latest captured `# %%` cell PNG plot(s) via TurboMojo's Kitty/Sixel
-        terminal graphics viewer (`M_DOCS`)."""
+    def open_plot_in_os_viewer(mut self, path: String):
+        """Launch `path` in a detached native desktop image viewer (`imv` / `open` / `xdg-open`)."""
+        if path.byte_length() == 0 or not path_exists(path):
+            self.say("Image file is not on disk")
+            return
+        var q = shell_quote(path)
+        var cmd = (
+            "(if command -v imv >/dev/null 2>&1 && [ -n \"${WAYLAND_DISPLAY:-}${DISPLAY:-}\" ]; then nohup imv "
+            + q
+            + " >/dev/null 2>&1 & elif command -v xdg-open >/dev/null 2>&1 && [ -n \"${WAYLAND_DISPLAY:-}${DISPLAY:-}\" ]; then nohup xdg-open "
+            + q
+            + " >/dev/null 2>&1 & elif command -v open >/dev/null 2>&1; then nohup open "
+            + q
+            + " >/dev/null 2>&1 & else exit 3; fi)"
+        )
+        var rc = run_system(cmd)
+        if rc == 0:
+            self.say("Opened image in desktop viewer: " + basename(path))
+        else:
+            self.osc52(decode(path))
+            self.say("No GUI display detected — copied image path to clipboard: " + path)
+
+    def cell_open_plot_preview(mut self, initial_idx: Int = 0, label: String = "", start_frame: Int = 0):
+        """Open a dedicated floating Image Zoom Window (`WK_IMGVIEW`) solely for the plot(s) or animation,
+        supporting live playback (`Space` play/pause), `+/-` pan & zoom, `←/→` frame/plot step, and `Esc` close."""
+        from cellimg import is_anim_spec, parse_anim_spec
         if len(self.cell_last_plots) == 0:
             self.say("No cell plots captured yet - run a # %% plot cell first")
             return
-        var md_lines = List[String]()
-        md_lines.append("# Notebook Cell Plots")
-        md_lines.append("")
-        var shown = 0
-        for k in range(len(self.cell_last_plots)):
-            var pp = self.cell_last_plots[k]
-            if not path_exists(pp):
-                continue
-            shown += 1
-            var dims = String("")
-            var pic = png_decode(read_file(pp))
-            if pic.ok:
-                dims = " (" + String(pic.w) + "x" + String(pic.h) + " px)"
-            md_lines.append("## Plot " + String(shown) + ": `" + basename(pp) + "`" + dims)
-            md_lines.append("")
-            md_lines.append("![Plot " + String(shown) + "](" + pp + ")")
-            md_lines.append("")
-        if shown == 0:
+        var valid = List[String]()
+        var mapped_idx = 0
+        var anim_fps = 0
+        var safe_init = max(0, min(initial_idx, len(self.cell_last_plots) - 1))
+        var chosen = self.cell_last_plots[safe_init]
+        if is_anim_spec(chosen):
+            var pa = parse_anim_spec(chosen)
+            if pa[0]:
+                anim_fps = pa[1]
+                for fp in pa[2]:
+                    if path_exists(fp):
+                        valid.append(fp)
+                if len(valid) > 0:
+                    mapped_idx = max(0, start_frame) % len(valid)
+        else:
+            for k in range(len(self.cell_last_plots)):
+                var pp = self.cell_last_plots[k]
+                if is_anim_spec(pp):
+                    var pa_k = parse_anim_spec(pp)
+                    if pa_k[0] and len(pa_k[2]) > 0 and path_exists(pa_k[2][0]):
+                        if k == safe_init:
+                            mapped_idx = len(valid)
+                        valid.append(pa_k[2][0])
+                elif path_exists(pp):
+                    if k == safe_init:
+                        mapped_idx = len(valid)
+                    valid.append(pp)
+        if len(valid) == 0:
             self.say("Plot image file is no longer on disk")
             return
-        var md_path = env_or("TMPDIR", "/tmp") + "/turbomojo-cell-plots-" + String(own_pid()) + ".md"
-        if not write_file(md_path, str_bytes("\n".join(md_lines) + "\n")):
-            self.say("Could not write plot preview page")
-            return
-        if not self.doc_loaded:
-            self.docs_load()
-        self.mode = M_DOCS
-        self.doc_focus = 1
-        self.docs_show(md_path, "", True)
-        self.say("Showing " + String(shown) + " cell plot(s) - Esc returns to editor")
+        var dh = self.desk_h()
+        var ww = min(max(24, self.scr.w - 4), max(56, (self.scr.w * 88) // 100))
+        var wh = min(max(10, dh - 2), max(18, (dh * 88) // 100))
+        var wx = max(0, (self.scr.w - ww) // 2)
+        var wy = (0 if self.vim_zen else 1) + max(0, (dh - wh) // 2)
+
+        var existing = -1
+        for wi in range(len(self.wins)):
+            if self.wins[wi].kind == WK_IMGVIEW:
+                existing = wi
+                break
+        if existing >= 0:
+            self.wins[existing].img_cache[].invalidate_shown(self.scr)
+            self.wins[existing].img_cache[].clear(self.gfx_tmux)
+            if self.wins[existing].img_cache[].pending_out.byte_length() > 0:
+                self.gfx_out += self.wins[existing].img_cache[].pending_out
+                self.wins[existing].img_cache[].pending_out = ""
+            self.wins[existing].img_paths = valid.copy()
+            self.wins[existing].img_idx = mapped_idx
+            self.wins[existing].path = valid[mapped_idx]
+            self.wins[existing].img_label = label
+            self.wins[existing].img_anim_fps = anim_fps
+            self.wins[existing].img_anim_playing = anim_fps > 0
+            self.wins[existing].anim_last_ns = 0
+            self.wins[existing].hidden = False
+            self.wins[existing].imgview_reset_fit()
+            self.focus(existing)
+        else:
+            var w = Window(WK_IMGVIEW, "Image", valid[mapped_idx], wx, wy, ww, wh, 0)
+            w.read_only = True
+            w.wid = self.next_wid
+            self.next_wid += 1
+            w.img_paths = valid.copy()
+            w.img_idx = mapped_idx
+            w.img_label = label
+            w.img_anim_fps = anim_fps
+            w.img_anim_playing = anim_fps > 0
+            w.imgview_reset_fit()
+            self.wins.append(w^)
+            self.focus(len(self.wins) - 1)
+        self.mode = M_NORMAL
+        if anim_fps > 0:
+            self.say(
+                "Playing animation ("
+                + String(len(valid))
+                + " frames @ "
+                + String(anim_fps)
+                + " fps) — Space pause · [/] step · +/- zoom · Esc close"
+            )
+        else:
+            self.say(
+                "Showing "
+                + String(len(valid))
+                + " cell plot(s) — +/- zoom · arrows pan · o desktop viewer · Esc close"
+            )

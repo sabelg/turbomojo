@@ -13,7 +13,7 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_EXPLAIN, WK_DOCPANE, WK_PANEL, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -188,8 +188,11 @@ __extension App:
             self.open_menu(1)
             return
         var t_pre = self.top()
-        if t_pre >= 0 and self.wins[t_pre].kind == WK_EDITOR and self.wins[t_pre].has_cells():
+        if t_pre >= 0 and self.wins[t_pre].kind == WK_EDITOR and (self.wins[t_pre].has_cells() or self.wins[t_pre].is_notebook()):
             if k == (KEY_ENTER | MOD_SHIFT):
+                if self.keymap == KEYMAP_VIM and (self.vim.mode == VM_VISUAL or self.vim.mode == VM_VLINE or self.vim.mode == VM_BLOCK):
+                    self.vim.mode = VM_NORMAL
+                    self.wins[t_pre].sel = False
                 self.exec(CM_RUN_CELL_NEXT)
                 return
             if k == (KEY_ENTER | MOD_ALT) and self.wins[t_pre].is_notebook():
@@ -229,8 +232,66 @@ __extension App:
                 return
         self.editor_key(k)
 
+    def imgview_key(mut self, t: Int, k: Int) -> Bool:
+        """Keyboard handler for the dedicated Image Zoom Window (`WK_IMGVIEW`)."""
+        if k == KEY_ESC or k == 113 or k == 81:     # Esc / q / Q: close image window
+            self.close_window(t, NEXT_CLOSE)
+            return True
+        if k == 43 or k == 61:                      # + / =: zoom in
+            self.wins[t].imgview_step_zoom(1)
+            return True
+        if k == 45 or k == 95:                      # - / _: zoom out
+            self.wins[t].imgview_step_zoom(-1)
+            return True
+        if k == 48 or k == 102 or k == 70 or k == 114:  # 0 / f / r: reset fit 100%
+            self.wins[t].imgview_reset_fit()
+            return True
+        if k == 32 and self.wins[t].img_anim_fps > 0 and len(self.wins[t].img_paths) > 1:
+            self.wins[t].img_anim_playing = not self.wins[t].img_anim_playing
+            self.wins[t].anim_last_ns = 0
+            self.wins[t].imgview_sync_title()
+            return True
+        if k == KEY_ENTER or k == 32:               # Enter (or Space on static image): quick-zoom toggle (100% <-> 225%)
+            if self.wins[t].img_zoom_pct > 100:
+                self.wins[t].imgview_reset_fit()
+            else:
+                self.wins[t].img_zoom_pct = 225
+                self.wins[t].imgview_sync_title()
+            return True
+        if k == 91 or k == 44 or k == 112 or k == 80:   # [ / , / p: previous plot or step back 1 frame
+            self.wins[t].imgview_step_plot(-1)
+            return True
+        if k == 93 or k == 46 or k == 110 or k == 78:   # ] / . / n: next plot or step forward 1 frame
+            self.wins[t].imgview_step_plot(1)
+            return True
+        if k == 111 or k == 79:                     # o / O: pop out in OS desktop image viewer
+            var cur_p = self.wins[t].imgview_current_path()
+            self.open_plot_in_os_viewer(cur_p)
+            return True
+        if k == KEY_LEFT or k == 104:               # Left / h: pan left (or prev plot at 100%)
+            if self.wins[t].img_zoom_pct > 100:
+                self.wins[t].imgview_pan(-120, 0)
+            else:
+                self.wins[t].imgview_step_plot(-1)
+            return True
+        if k == KEY_RIGHT or k == 108:              # Right / l: pan right (or next plot at 100%)
+            if self.wins[t].img_zoom_pct > 100:
+                self.wins[t].imgview_pan(120, 0)
+            else:
+                self.wins[t].imgview_step_plot(1)
+            return True
+        if k == KEY_UP or k == 107:                 # Up / k: pan up
+            self.wins[t].imgview_pan(0, -120)
+            return True
+        if k == KEY_DOWN or k == 106:               # Down / j: pan down
+            self.wins[t].imgview_pan(0, 120)
+            return True
+        return True
+
     def message_key(mut self, k: Int) raises:
         var t = self.top()
+        if self.wins[t].kind == WK_IMGVIEW and self.imgview_key(t, k):
+            return
         if self.wins[t].kind == WK_GITLOG and self.git_log_key(k):
             return
         if self.wins[t].kind == WK_TESTS and self.tests_key(k):
@@ -397,7 +458,7 @@ __extension App:
             elif self.wins[t].is_notebook() and self.keymap != KEYMAP_VIM:
                 self.wins[t].nb_cmd_mode = True
                 self.wins[t].nb_pend = 0
-                self.say("Jupyter Command Mode — Enter:edit  Shift-Enter:run  a/b:add  dd:del  m/y:md/code  00:restart")
+                self.say("Jupyter Command Mode — Enter:edit  Shift-Enter:run  f/F:hide code  a/b:add  dd:del  m/y:md/code")
             else:
                 self.wins[t].sel = False
                 self.wins[t].clear_highlight()
@@ -418,23 +479,32 @@ __extension App:
         if k == KEY_ENTER:
             self.wins[t].nb_cmd_mode = False
             if len(cells) > 0 and ci < len(cells):
+                var hr_e = cells[ci].header_row
+                if hr_e >= 0 and self.wins[t].buf.fold_index(hr_e) >= 0:
+                    _ = self.wins[t].buf.set_fold(hr_e, False)
                 var sr = cells[ci].start_row
                 if sr == cells[ci].header_row and sr + 1 <= cells[ci].end_row:
                     sr += 1
-                self.wins[t].goto(sr, 0)
+                self.wins[t].goto_cell(sr, 0)
             self.say("Jupyter Edit Mode — Esc for Command Mode")
             return True
         if k == KEY_ESC:
             return True
+        if k == 102 or k == KEY_TAB:   # f / Tab: toggle hiding current cell's code
+            self.exec(CM_CELL_TOGGLE_CODE)
+            return True
+        if k == 70 or k == (KEY_TAB | MOD_SHIFT):  # F / Shift-Tab: compact view (collapse/expand all code cells)
+            self.exec(CM_CELL_TOGGLE_ALL_CODE)
+            return True
         if k == 106 or k == KEY_DOWN:  # j / Down: next cell
             if ci + 1 < len(cells):
                 var nr = cells[ci + 1].header_row if cells[ci + 1].header_row >= 0 else cells[ci + 1].start_row
-                self.wins[t].goto(nr, 0)
+                self.wins[t].goto_cell(nr, 0)
             return True
         if k == 107 or k == KEY_UP:    # k / Up: previous cell
             if ci > 0:
                 var pr = cells[ci - 1].header_row if cells[ci - 1].header_row >= 0 else cells[ci - 1].start_row
-                self.wins[t].goto(pr, 0)
+                self.wins[t].goto_cell(pr, 0)
             return True
         if k == 97:                    # a: insert cell above
             self.cell_insert_above()

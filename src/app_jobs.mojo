@@ -1019,6 +1019,7 @@ __extension App:
         self.cell_k_buf.clear()
         self.cell_mojo_preamble = ""
         self.cell_py_preamble = ""
+        self.cell_warmed_paths.clear()
 
     def cell_restart_kernels(mut self):
         """Restart both persistent cell kernels, clearing namespace state and inline badges."""
@@ -1066,6 +1067,8 @@ __extension App:
             var plot_str = "\n".join(plots)
             self.wins[ei].set_cell_output(hdr_row, text, is_err, plot_str, self.cell_exec_counter)
             self.sync_shared_buffers(ei)
+            if ei == self.top_editor() and len(self.cell_queue_indices) == 0:
+                self.wins[ei].reveal_cell_output(hdr_row, self.cell_advance)
 
     def cell_apply_badge(mut self, target_name: String, cell_idx: Int, fallback_hdr: Int, badge: String):
         """Attach `badge` to the exact `# %%` cell (or row 0 for single-cell buffers),
@@ -1170,10 +1173,43 @@ __extension App:
                 self.cell_kernel_abort("kernel exited unexpectedly")
                 return
             if got_bytes and parsed[2].byte_length() > 0:
+                # Stream live `__TM_FRAME__ <png>` / `__TM_LIVE_FRAME__ <png>` frames in real time!
+                var latest_f = String("")
+                var clean_part = List[String]()
+                for pln_s in parsed[2].split("\n"):
+                    var pln = String(pln_s)
+                    var ptr = String(pln.strip())
+                    if ptr.startswith("__TM_FRAME__ ") or ptr.startswith("__TM_LIVE_FRAME__ "):
+                        var foff = 13 if ptr.startswith("__TM_FRAME__ ") else 18
+                        var cand_f = String(ptr[byte=foff:].strip())
+                        if cand_f.byte_length() > 0 and path_exists(cand_f):
+                            latest_f = cand_f
+                    else:
+                        clean_part.append(pln)
+                if latest_f.byte_length() > 0 and latest_f != self.cell_live_last_frame:
+                    self.cell_live_last_frame = latest_f
+                    var ei_l = self.find_editor_or_title(self.cell_k_path)
+                    if ei_l >= 0 and self.cell_k_header_row >= 0 and self.cell_k_header_row < self.wins[ei_l].buf.count():
+                        var part_txt = String("\n".join(clean_part).rstrip("\r\n"))
+                        self.wins[ei_l].set_cell_output(
+                            self.cell_k_header_row,
+                            part_txt,
+                            False,
+                            latest_f,
+                            max(1, self.cell_exec_counter + 1),
+                        )
+                        self.sync_shared_buffers(ei_l)
+                    for wi_l in range(len(self.wins)):
+                        if self.wins[wi_l].kind == 20:  # WK_IMGVIEW
+                            self.wins[wi_l].img_paths.clear()
+                            self.wins[wi_l].img_paths.append(latest_f)
+                            self.wins[wi_l].img_idx = 0
+                            self.wins[wi_l].path = latest_f
+                            self.wins[wi_l].imgview_sync_title()
                 self.panel_write(PG_MESSAGE)
                 _ = self.fill_messages(
                     "Cell [" + self.cell_k_title + "] in " + basename(self.cell_k_path),
-                    str_bytes(parsed[2]),
+                    str_bytes("\n".join(clean_part)),
                     "Running cell...",
                 )
             return
@@ -1431,7 +1467,7 @@ __extension App:
 
     def run_code_cell_insert_below(mut self) raises:
         """Execute current cell and insert a new `# %%` cell directly below it (Jupyter `Alt-Enter`)."""
-        if self.job_busy():
+        if self.job.active and self.job_busy():
             return
         var i = self.top_editor()
         if i < 0:
@@ -1440,9 +1476,17 @@ __extension App:
         if len(cells) == 0:
             return
         var ci = max(0, cell_at_row(cells, self.wins[i].cr))
-        self.cell_queue_indices.clear()
-        self.cell_queue_target = ""
-        self.run_code_cell_by_index(i, ci, False)
+        var tname = self.wins[i].path if self.wins[i].path.byte_length() > 0 else self.wins[i].title
+        if self.cell_k_active:
+            var badge_r = cells[ci].header_row if cells[ci].header_row >= 0 else 0
+            self.wins[i].set_cell_badge(badge_r, "[⋯ queued]")
+            self.cell_queue_target = tname
+            self.cell_queue_indices.append(ci)
+            self.sync_shared_buffers(i)
+        else:
+            self.cell_queue_indices.clear()
+            self.cell_queue_target = ""
+            self.run_code_cell_by_index(i, ci, False)
         # Re-read cells and insert below `ci`
         var after_cells = parse_cells(self.wins[i].buf)
         if ci < len(after_cells) and not self.wins[i].read_only:
@@ -1516,10 +1560,26 @@ __extension App:
         self.cell_queue_target = self.wins[i].path if self.wins[i].path.byte_length() > 0 else self.wins[i].title
         self.cell_pump_queue()
 
+    def _advance_after_cell_trigger(mut self, i: Int, ci: Int, cells: List[CodeCell], cur_hdr: Int):
+        """Move cursor to the next cell smoothly (preserving collapsed folds & keeping outputs in view)."""
+        if ci + 1 < len(cells):
+            var nh = cells[ci + 1].header_row
+            var target_r = (
+                nh
+                if (nh >= 0 and (self.wins[i].buf.fold_index(nh) >= 0 or self.wins[i].nb_cmd_mode))
+                else cells[ci + 1].start_row
+            )
+            self.wins[i].goto_cell(target_r, 0)
+        elif self.wins[i].has_cells() or self.wins[i].is_notebook():
+            self.cell_append_bottom(i)
+        if cur_hdr >= 0:
+            self.wins[i].reveal_cell_output(cur_hdr, True)
+
     def run_code_cell(mut self, advance: Bool) raises:
         """Execute the `# %%` cell at the cursor in a persistent non-blocking Mojo or Python
-        kernel (falling back to cumulative standalone runner only if kernel spawn fails)."""
-        if self.job_busy():
+        kernel (queuing seamlessly on rapid `Shift-Enter` and auto-warming saved prerequisite
+        cells on cold `.ipynb` starts)."""
+        if self.job.active and self.job_busy():
             return
         var i = self.top_editor()
         if i < 0:
@@ -1527,11 +1587,59 @@ __extension App:
             return
         var cells = parse_cells(self.wins[i].buf)
         if len(cells) == 0:
+            if self.wins[i].is_notebook():
+                self.cell_append_bottom(i)
+                return
             self.say("Empty buffer")
             return
         var ci = cell_at_row(cells, self.wins[i].cr)
         if ci < 0 or ci >= len(cells):
             ci = 0
+        var tname = self.wins[i].path if self.wins[i].path.byte_length() > 0 else self.wins[i].title
+
+        # Rapid Shift-Enter / Ctrl-Enter while a cell is already executing: queue & advance!
+        if self.cell_k_active:
+            var hdr_q = cells[ci].header_row if cells[ci].header_row >= 0 else 0
+            if not self.wins[i].is_markdown_header(hdr_q):
+                self.wins[i].set_cell_badge(hdr_q, "[⋯ queued]")
+                self.sync_shared_buffers(i)
+            self.cell_queue_target = tname
+            self.cell_queue_indices.append(ci)
+            if advance:
+                self._advance_after_cell_trigger(i, ci, cells, hdr_q)
+            self.say("Queued cell [" + cells[ci].title + "] (" + String(len(self.cell_queue_indices)) + " queued)")
+            return
+
+        # Cold-kernel jump-in on a saved `.ipynb`: if no cell in this notebook has run in the
+        # live kernel yet and preceding code cells had saved `execution_count > 0`, warm them first!
+        var is_py = self.wins[i].effective_lang() == HL_PYTHON
+        var kern_alive = (self.cell_py_proc.running and self.cell_py_proc.alive()) if is_py else (self.cell_mojo_proc.running and self.cell_mojo_proc.alive())
+        if not kern_alive:
+            self.cell_warmed_paths.clear()
+        if ci > 0 and self.wins[i].is_notebook() and tname not in self.cell_warmed_paths:
+            var prereqs = List[Int]()
+            for pk in range(ci):
+                var phdr = cells[pk].header_row if cells[pk].header_row >= 0 else 0
+                if not self.wins[i].is_markdown_header(phdr) and self.wins[i].cell_exec_count_at_header(phdr) > 0:
+                    prereqs.append(pk)
+            if len(prereqs) > 0:
+                self.cell_warmed_paths.append(tname)
+                self.cell_queue_indices.clear()
+                for pk in prereqs:
+                    var phdr = cells[pk].header_row if cells[pk].header_row >= 0 else 0
+                    self.wins[i].set_cell_badge(phdr, "[⋯ queued]")
+                    self.cell_queue_indices.append(pk)
+                var chdr = cells[ci].header_row if cells[ci].header_row >= 0 else 0
+                if not self.wins[i].is_markdown_header(chdr):
+                    self.wins[i].set_cell_badge(chdr, "[⋯ queued]")
+                self.cell_queue_indices.append(ci)
+                self.cell_queue_target = tname
+                self.sync_shared_buffers(i)
+                if advance:
+                    self._advance_after_cell_trigger(i, ci, cells, chdr)
+                self.cell_pump_queue()
+                return
+
         self.cell_queue_indices.clear()
         self.cell_queue_target = ""
         self.run_code_cell_by_index(i, ci, advance)
@@ -1547,10 +1655,7 @@ __extension App:
             self.wins[i].set_cell_badge(md_row, "[✓ markdown]")
             self.sync_shared_buffers(i)
             if advance:
-                if ci + 1 < len(cells):
-                    self.wins[i].goto(cells[ci + 1].start_row, 0)
-                elif self.wins[i].has_cells():
-                    self.cell_append_bottom(i)
+                self._advance_after_cell_trigger(i, ci, cells, md_row)
             self.say("Markdown cell [" + cells[ci].title + "]")
             return
         var is_py = self.wins[i].effective_lang() == HL_PYTHON
@@ -1561,6 +1666,8 @@ __extension App:
         var label = cells[ci].title
         var target_name = p if p.byte_length() > 0 else self.wins[i].title
         var badge_row = cells[ci].header_row if cells[ci].header_row >= 0 else 0
+        if target_name not in self.cell_warmed_paths:
+            self.cell_warmed_paths.append(target_name)
 
         if is_py:
             if self.cell_py_proc.running and (not self.cell_py_proc.alive() or self.cell_py_env != env_key):
@@ -1630,15 +1737,13 @@ __extension App:
             self.cell_k_header_row = badge_row
             self.cell_k_code_row = code_row
             self.cell_k_buf.clear()
+            self.cell_live_last_frame = ""
             self.cell_k_interrupt_ns = 0
             self.cell_advance = advance
             self.wins[i].set_cell_badge(badge_row, "[⟳ running…]")
             self.sync_shared_buffers(i)
             if advance:
-                if ci + 1 < len(cells):
-                    self.wins[i].goto(cells[ci + 1].start_row, 0)
-                elif self.wins[i].has_cells():
-                    self.cell_append_bottom(i)
+                self._advance_after_cell_trigger(i, ci, cells, badge_row)
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages("Cell [" + label + "] in " + basename(target_name), List[UInt8](), "Running cell...")
             self.say("Running cell [" + label + "] ...")
@@ -1665,10 +1770,7 @@ __extension App:
             self.wins[i].set_cell_badge(badge_row, "[⟳ running…]")
             self.sync_shared_buffers(i)
             if advance:
-                if ci + 1 < len(cells):
-                    self.wins[i].goto(cells[ci + 1].start_row, 0)
-                elif self.wins[i].has_cells():
-                    self.cell_append_bottom(i)
+                self._advance_after_cell_trigger(i, ci, cells, badge_row)
             self.panel_write(PG_MESSAGE)
             _ = self.fill_messages("Cell [" + label + "] in " + basename(target_name), List[UInt8](), "Running cell...")
             self.say("Running cell [" + label + "] ...")

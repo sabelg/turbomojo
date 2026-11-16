@@ -4,7 +4,7 @@ from std.collections import List
 from buffer import TextBuffer, Pos, TAB_WIDTH
 from screen import Screen, UL_CURLY, UL_DASHED, UL_DOTTED
 from palette import Palette, mix
-from highlight import Highlighter, C_TEXT, C_DEF, lang_for_path, HL_MOJO, HL_PYTHON
+from highlight import Highlighter, C_TEXT, C_STR, C_DEF, lang_for_path, HL_MOJO, HL_PYTHON
 from util import is_ident, lower, decode, cp_len, to_str, str_contains, char_width, slice_str
 from grapheme import cluster_end
 from git import GB_KNOWN, GS_NONE, GS_CONFLICT, GS_DELETED, GS_UNTRACKED, GS_ADDED
@@ -15,6 +15,13 @@ from markdown import (
 )
 from vim_motion import is_code_mask, active_scope_range, ScopeRange
 from search import MatchSpan
+from cellimg import (
+    CELL_IMG_MARK,
+    CELL_NB_HDR_MARK,
+    CELL_NB_SUB_MARK,
+    CELL_NB_BOT_MARK,
+    decode_cell_img_line,
+)
 from window import *
 from window_search import *
 from window_multi import *
@@ -24,6 +31,104 @@ from window_lines import *
 
 def wordish(c: Int) -> Bool:
     return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 or c >= 128
+
+
+def _draw_nb_inline_spans(
+    mut scr: Screen,
+    x0: Int,
+    y: Int,
+    x_lim: Int,
+    text: String,
+    base_fg: Int,
+    rowbg: Int,
+    pal: Palette,
+    base_bold: Bool = False,
+    base_italic: Bool = False,
+) -> Int:
+    """Render inline Markdown `**bold**` and `` `code` `` spans cleanly without raw markup delimiters."""
+    var cps = decode(text)
+    var n = len(cps)
+    var i = 0
+    var x = x0
+    var code_bg = mix(pal.gutter_bg, rowbg, 75)
+    while i < n and x < x_lim:
+        # Inline `` `code` `` span
+        if cps[i] == 96:
+            var j = i + 1
+            while j < n and cps[j] != 96:
+                j += 1
+            if j < n and j > i + 1:
+                var code_txt = slice_str(cps, i + 1, j)
+                var x1 = scr.text(x, y, code_txt, pal.syn[C_STR], code_bg)
+                x = x1
+                i = j + 1
+                continue
+        # Inline `**bold**` span
+        if i + 1 < n and cps[i] == 42 and cps[i + 1] == 42:
+            var j = i + 2
+            while j + 1 < n and not (cps[j] == 42 and cps[j + 1] == 42):
+                j += 1
+            if j + 1 < n and j > i + 2:
+                var bold_txt = slice_str(cps, i + 2, j)
+                var bx0 = x
+                x = scr.text(x, y, bold_txt, pal.title_fg if not base_bold else base_fg, rowbg)
+                if x > bx0:
+                    scr.bold(bx0, y, x - bx0)
+                i = j + 2
+                continue
+        var at = x
+        x = scr.draw_cp(x, y, cps[i], base_fg, rowbg)
+        if x > at:
+            if base_bold:
+                scr.bold(at, y, x - at)
+            elif base_italic:
+                scr.italic(at, y, x - at)
+        i += 1
+    return x
+
+
+def _draw_nb_markdown_line(
+    mut scr: Screen,
+    x0: Int,
+    y: Int,
+    cls: Int,
+    md_raw: String,
+    pal: Palette,
+    rowbg: Int,
+):
+    """Render a single `.ipynb` Markdown cell body line with rich headings, rules, quotes, bullets & spans."""
+    var x_lim = x0 + max(1, cls - 1)
+    var trimmed = String(md_raw.strip())
+    if trimmed == "---" or trimmed == "***" or trimmed == "___":
+        var rule_ch = 45 if scr.glyphs == GLYPHS_ASCII else 0x2500
+        var rule_w = max(8, min(cls - 4, 72))
+        var rule_fg = mix(pal.gutter_fg, rowbg, 50)
+        for rx in range(x0, min(x_lim, x0 + rule_w)):
+            scr.put(rx, y, rule_ch, rule_fg, rowbg)
+        return
+    if md_raw.startswith("### "):
+        _ = _draw_nb_inline_spans(scr, x0, y, x_lim, String(md_raw[byte=4:]), pal.msg_note, rowbg, pal, True, False)
+        return
+    if md_raw.startswith("## "):
+        _ = _draw_nb_inline_spans(scr, x0, y, x_lim, String(md_raw[byte=3:]), pal.msg_note, rowbg, pal, True, False)
+        return
+    if md_raw.startswith("# "):
+        _ = _draw_nb_inline_spans(scr, x0, y, x_lim, String(md_raw[byte=2:]), pal.syn[C_DEF], rowbg, pal, True, False)
+        return
+    if md_raw.startswith("- ") or md_raw.startswith("* "):
+        var bx = scr.text(x0, y, "  • ", pal.frame_act, rowbg)
+        _ = _draw_nb_inline_spans(scr, bx, y, x_lim, String(md_raw[byte=2:]), pal.ed_fg, rowbg, pal)
+        return
+    if md_raw.byte_length() >= 3 and Int(md_raw.as_bytes()[0]) >= 49 and Int(md_raw.as_bytes()[0]) <= 57 and Int(md_raw.as_bytes()[1]) == 46 and Int(md_raw.as_bytes()[2]) == 32:
+        var nx = scr.text(x0, y, "  " + String(md_raw[byte=0:3]), pal.frame_act, rowbg)
+        _ = _draw_nb_inline_spans(scr, nx, y, x_lim, String(md_raw[byte=3:]), pal.ed_fg, rowbg, pal)
+        return
+    if md_raw.startswith("> "):
+        var qbar = "| " if scr.glyphs == GLYPHS_ASCII else "  ▎ "
+        var qx = scr.text(x0, y, qbar, pal.msg_note, rowbg)
+        _ = _draw_nb_inline_spans(scr, qx, y, x_lim, String(md_raw[byte=2:]), mix(pal.ed_fg, pal.gutter_fg, 72), rowbg, pal, False, True)
+        return
+    _ = _draw_nb_inline_spans(scr, x0, y, x_lim, md_raw, pal.ed_fg, rowbg, pal)
 
 
 def word_at(line: List[Int], col: Int) -> List[Int]:
@@ -395,11 +500,183 @@ __extension Window:
                 var g = 0x25A0 if yy == ty else tick_ch
                 scr.put(sx, yy, g, tick_col[k], pal.scroll_bg)
 
+    def _nb_status_pill(self, r: Int) -> String:
+        var use_buf_cb = len(self.buf.cell_badge_rows) > 0
+        var cb_rows_n = len(self.buf.cell_badge_rows) if use_buf_cb else len(self.cell_badge_rows)
+        for cbi in range(cb_rows_n):
+            var cbr = self.buf.cell_badge_rows[cbi] if use_buf_cb else self.cell_badge_rows[cbi]
+            var cbn = len(self.buf.cell_badges) if use_buf_cb else len(self.cell_badges)
+            if cbr == r and cbi < cbn:
+                var cb = String(self.buf.cell_badges[cbi] if use_buf_cb else self.cell_badges[cbi])
+                if str_contains(cb, "running"):
+                    return " ⟳ running "
+                if str_contains(cb, "queued"):
+                    return " ⋯ queued "
+                if str_contains(cb, "✗"):
+                    return " ✗ error "
+                if str_contains(cb, "✓"):
+                    var inner = cb
+                    if inner.startswith("[") and inner.endswith("]") and inner.byte_length() >= 2:
+                        var unbr = String(inner[byte=1 : inner.byte_length() - 1])
+                        inner = unbr
+                    var dot_i = inner.find("·")
+                    if dot_i >= 0:
+                        var pre_dot = String(inner[byte=0:dot_i].strip())
+                        inner = pre_dot
+                    if inner == "✓ 0 ms" or inner == "✓":
+                        return " ✓ "
+                    if cp_len(inner) <= 14:
+                        return " " + inner + " "
+                    return " ✓ "
+        return ""
+
+    def nb_card_action_spans(self, r: Int) -> Tuple[Int, Int, Int, Int, String, String, String]:
+        """Return `(fold_x0, fold_x1, run_x0, run_x1, fold_pill, run_pill, stat_pill)` in screen x coords."""
+        var pd = self.pad()
+        var cx0 = self.x + pd + self.gut
+        var cls = self.cols()
+        var card_x1 = cx0 + max(12, cls - 1) - 1
+        var stat_pill = self._nb_status_pill(r)
+        var rx = card_x1 - 1
+        if stat_pill.byte_length() > 0 and rx - cp_len(stat_pill) > cx0 + 18:
+            rx -= cp_len(stat_pill)
+        else:
+            stat_pill = ""
+        var run_pill = String(" [▶ Run] ")
+        var run_x1 = rx
+        var run_x0 = rx - cp_len(run_pill)
+        rx = run_x0
+        var fi = self.buf.fold_index(r)
+        var fold_pill = String("")
+        var fold_x0 = -1
+        var fold_x1 = -1
+        if fi >= 0 and fi < len(self.buf.fold_ends):
+            var hidden = max(1, self.buf.fold_ends[fi] - r)
+            fold_pill = " [▸ +" + String(hidden) + (" line] " if hidden == 1 else " lines] ")
+        elif self.buf.foldable(r):
+            fold_pill = " [▾ Hide code] "
+        if fold_pill.byte_length() > 0 and rx - cp_len(fold_pill) > cx0 + 14:
+            fold_x1 = rx
+            fold_x0 = rx - cp_len(fold_pill)
+        else:
+            fold_pill = ""
+        return (fold_x0, fold_x1, run_x0, run_x1, fold_pill, run_pill, stat_pill)
+
+    def imgview_bar_hit(self, px: Int, py: Int) -> Int:
+        """Hit-test interactive controls on the bottom frame bar of `WK_IMGVIEW`:
+        1=zoom out, 2=zoom in, 3=fit 100%, 4=prev/step-, 5=next/step+, 6=OS viewer, 7=close, 8=play/pause."""
+        if self.kind != WK_IMGVIEW or self.chromeless or py != self.y + self.h - 1 or self.w < 32:
+            return 0
+        var zstr = " " + String(self.img_zoom_pct) + "% "
+        var x = self.x + 2
+        if self.img_anim_fps > 0 and len(self.img_paths) > 1:
+            var play_lbl = " [⏸ Pause] " if self.img_anim_playing else " [▶ Play]  "
+            var pw = cp_len(play_lbl)
+            if px >= x and px < x + pw:
+                return 8
+            x += pw
+        var w_minus = 4  # " [-]"
+        if px >= x and px < x + w_minus:
+            return 1
+        x += w_minus + cp_len(zstr)
+        var w_plus = 4   # "[+] "
+        if px >= x and px < x + w_plus:
+            return 2
+        x += w_plus + 1
+        var w_fit = 7    # "[0 Fit]"
+        if px >= x and px < x + w_fit:
+            return 3
+        x += w_fit + 2
+        if len(self.img_paths) > 1 and x + 16 < self.x + self.w - 2:
+            if px >= x and px < x + 8:
+                return 4
+            x += 9
+            if px >= x and px < x + 8:
+                return 5
+            x += 10
+        if x + 10 < self.x + self.w - 2:
+            if px >= x and px < x + 10:
+                return 6
+            x += 12
+        if x + 11 < self.x + self.w - 2:
+            if px >= x and px < x + 11:
+                return 7
+        return 0
+
+    def draw_imgview(self, mut scr: Screen, pal: Palette, active: Bool):
+        """Render dedicated image-only zoom window (`WK_IMGVIEW`) with centered image & bottom controls."""
+        var pd = self.pad()
+        var ix = self.x + pd
+        var iy = self.y + pd
+        var iw = max(1, self.w - 2 * pd)
+        var ih = max(1, self.h - 2 * pd)
+        var matte_bg = (
+            mix(0x090B10, pal.ed_bg, 38)
+            if (pal.ed_bg >= 0 and pal.ed_bg <= 0xFFFFFF)
+            else pal.ed_bg
+        )
+        scr.clip(ix, iy, iw, ih)
+        scr.fill(ix, iy, iw, ih, 32, pal.ed_fg, matte_bg)
+        var p = self.imgview_current_path()
+        if p.byte_length() > 0:
+            self.img_cache[].draw_zoomed_view(
+                scr,
+                ix,
+                iy,
+                iw,
+                ih,
+                matte_bg,
+                p,
+                self.img_zoom_pct,
+                self.img_pan_x,
+                self.img_pan_y,
+                self.gfx_mode,
+                self.gfx_tmux,
+                self.gfx_cell_w,
+                self.gfx_cell_h,
+            )
+        scr.no_clip()
+        if not self.chromeless and self.w >= 32 and not scr.plain:
+            var by = self.y + self.h - 1
+            var ffg = pal.frame_act if active else pal.frame_inact
+            var bg = pal.ed_bg
+            var x = self.x + 2
+            if self.img_anim_fps > 0 and len(self.img_paths) > 1:
+                var plbl = " [⏸ Pause] " if self.img_anim_playing else " [▶ Play]  "
+                var pcol = pal.msg_warn if not self.img_anim_playing else pal.msg_ok
+                var px1 = scr.text(x, by, plbl, pcol, bg)
+                if px1 > x:
+                    scr.bold(x, by, px1 - x)
+                x = px1
+            x = scr.text(x, by, " [-]", pal.title_fg if active else ffg, bg)
+            var z0 = x
+            x = scr.text(x, by, " " + String(self.img_zoom_pct) + "% ", pal.msg_ok, bg)
+            if active and x > z0:
+                scr.bold(z0, by, x - z0)
+            x = scr.text(x, by, "[+] ", pal.title_fg if active else ffg, bg)
+            x += 1
+            x = scr.text(x, by, "[0 Fit]", pal.msg_note if self.img_zoom_pct > 100 else ffg, bg)
+            x += 2
+            if len(self.img_paths) > 1 and x + 18 < self.x + self.w - 2:
+                var prev_l = "[◀ Step]" if self.img_anim_fps > 0 else "[◀ Prev]"
+                var next_l = "[Step ▶]" if self.img_anim_fps > 0 else "[Next ▶]"
+                x = scr.text(x, by, prev_l, pal.title_fg if active else ffg, bg)
+                x += 1
+                x = scr.text(x, by, next_l, pal.title_fg if active else ffg, bg)
+                x += 2
+            if x + 12 < self.x + self.w - 2:
+                x = scr.text(x, by, "[o Viewer]", pal.msg_note, bg)
+                x += 2
+            if x + 13 < self.x + self.w - 2:
+                _ = scr.text(x, by, "[Esc Close]", ffg, bg)
+
     # --------------------------------------------------------------- draw
     def draw(
         self, mut scr: Screen, pal: Palette, hl: Highlighter, active: Bool, hl_line: Bool, insert_mode: Bool, show_ws: Bool
     ):
-        var is_special_ed = self.kind == WK_HEX or self.kind == WK_MDPREVIEW
+        if self.kind == WK_EDITOR or self.kind == WK_IMGVIEW:
+            self.img_cache[].begin_frame()
+        var is_special_ed = self.kind == WK_HEX or self.kind == WK_MDPREVIEW or self.kind == WK_IMGVIEW
         var is_msg = self.kind != WK_EDITOR and not is_special_ed       # the Message and Outline windows are lists
         var plain = is_msg or self.buf.large      # no syntax colours
         var bg = pal.msg_bg if is_msg else pal.ed_bg
@@ -410,7 +687,11 @@ __extension Window:
         if not self.chromeless:
             scr.frame(self.x, self.y, self.w, self.h, active, ffg, bg)
             # title
-            var ro_tag = String(" [HEX READ-ONLY] ") if self.kind == WK_HEX else (String(" [READ-ONLY] ") if self.read_only else String(""))
+            var ro_tag = (
+                String(" [HEX READ-ONLY] ")
+                if self.kind == WK_HEX
+                else (String(" [READ-ONLY] ") if (self.read_only and self.kind != WK_IMGVIEW) else String(""))
+            )
             var t = " " + self.title + self.crumbs + ro_tag + (" (large file) " if self.buf.large else (" " if ro_tag.byte_length() == 0 else ""))
             var tl = cp_len(t)
             var tx = self.x + max(1, (self.w - tl) // 2)
@@ -454,6 +735,9 @@ __extension Window:
             return
         if self.kind == WK_MDPREVIEW:
             self.draw_mdpreview(scr, pal, hl, active)
+            return
+        if self.kind == WK_IMGVIEW:
+            self.draw_imgview(scr, pal, active)
             return
 
         var rws = self.rows()
@@ -559,30 +843,145 @@ __extension Window:
             if seg >= len(starts):
                 var vi = seg - len(starts)
                 var vline = v_lines[vi] if vi < len(v_lines) else String("")
+                var card_x0 = (cx0 - 1) if self.gut > 0 else cx0
+                var card_x1 = cx0 + max(12, cls - 1) - 1
+                var is_cur_out = is_nb and active and row_cell_hdr >= 0 and row_cell_hdr == cur_cell_hdr
+                var out_bcol = (
+                    pal.diag_err
+                    if v_is_err
+                    else (
+                        (pal.msg_note if self.nb_cmd_mode else pal.frame_act)
+                        if is_cur_out
+                        else mix(pal.gutter_fg, bg, 65)
+                    )
+                )
                 if self.gut > 0:
                     scr.fill(self.x + pd, yy, self.gut, 1, 32, pal.gutter_fg, pal.gutter_bg)
-                    if vi == 0 and self.gut >= 5 and not scr.plain:
-                        var out_ec = self.cell_exec_count_for_end(r)
-                        var out_lbl = ("[" + String(out_ec) + "]") if out_ec > 0 else String("Out")
-                        if cp_len(out_lbl) < self.gut:
-                            _ = scr.text(self.x + pd, yy, out_lbl, pal.diag_err if v_is_err else pal.msg_note, pal.gutter_bg)
-                    var rail_ch = 124 if scr.glyphs == GLYPHS_ASCII else 0x2502
-                    var rail_fg = pal.diag_err if v_is_err else pal.msg_ok
-                    scr.put(self.x + pd + self.gut - 1, yy, rail_ch, rail_fg, pal.gutter_bg)
-                var vbg = mix(pal.diag_err if v_is_err else pal.curline_bg, bg, 18 if v_is_err else 55)
-                var vfg = pal.ed_fg
-                if v_is_err:
-                    vfg = pal.diag_err
-                elif str_contains(vline, "⚠ "):
-                    vfg = pal.msg_warn
-                elif vline.startswith("[") or str_contains(vline, "[Tensor ") or str_contains(vline, "[Array ") or str_contains(vline, "[SIMD ") or str_contains(vline, "[DataFrame ") or str_contains(vline, "[Polars ") or str_contains(vline, "[📊"):
-                    vfg = pal.msg_note
-                elif vline.startswith("… (+"):
-                    vfg = pal.gutter_fg
-                scr.clip(cx0, yy, cls, 1)
-                scr.fill(cx0, yy, cls, 1, 32, vfg, vbg)
-                _ = scr.text(cx0, yy, "  " + vline, vfg, vbg)
-                scr.clip(self.x + pd, self.y + pd, max(1, inner_w), max(1, inner_h))
+                    if not is_nb:
+                        if vi == 0 and self.gut >= 5 and not scr.plain:
+                            var out_ec = self.cell_exec_count_for_end(r)
+                            var out_lbl = ("[" + String(out_ec) + "]") if out_ec > 0 else String("Out")
+                            if cp_len(out_lbl) < self.gut:
+                                _ = scr.text(self.x + pd, yy, out_lbl, pal.diag_err if v_is_err else pal.msg_note, pal.gutter_bg)
+                        var rail_ch = 124 if scr.glyphs == GLYPHS_ASCII else 0x2502
+                        var rail_fg = pal.diag_err if v_is_err else pal.msg_ok
+                        scr.put(self.x + pd + self.gut - 1, yy, rail_ch, rail_fg, pal.gutter_bg)
+
+                var vbg = mix(pal.diag_err if v_is_err else pal.curline_bg, bg, 16 if v_is_err else (35 if is_nb else 55))
+                if is_nb and not scr.plain:
+                    var hz = 45 if scr.glyphs == GLYPHS_ASCII else 0x2500
+                    var vt = 124 if scr.glyphs == GLYPHS_ASCII else 0x2502
+                    scr.clip(self.x + pd, yy, max(1, inner_w), 1)
+                    if vline.startswith(String(CELL_NB_HDR_MARK)):
+                        var rest_h = String(vline[byte=String(CELL_NB_HDR_MARK).byte_length() :])
+                        var hp = rest_h.split("\t")
+                        var out_tag = String(hp[0]) if len(hp) > 0 else String("Out")
+                        var cap_tag = String(hp[1]) if len(hp) > 1 else String("")
+                        scr.fill(cx0, yy, cls, 1, 32, pal.ed_fg, bg)
+                        for bx in range(card_x0, card_x1 + 1):
+                            scr.put(bx, yy, hz, out_bcol, vbg)
+                        scr.put(card_x0, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x251C, out_bcol, vbg)
+                        scr.put(card_x1, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x2524, out_bcol, vbg)
+                        var ox = scr.text(cx0 + 1, yy, " " + out_tag + " ", pal.diag_err if v_is_err else pal.msg_ok, vbg)
+                        if ox > cx0 + 1:
+                            scr.bold(cx0 + 1, yy, ox - (cx0 + 1))
+                        if cap_tag.byte_length() > 0:
+                            var cap_disp = " " + cap_tag + " "
+                            var cap_x = max(ox + 2, card_x1 - 1 - cp_len(cap_disp))
+                            if cap_x + cp_len(cap_disp) <= card_x1:
+                                _ = scr.text(cap_x, yy, cap_disp, pal.msg_note, vbg)
+                    elif vline.startswith(String(CELL_NB_SUB_MARK)):
+                        var sub_cap = String(vline[byte=String(CELL_NB_SUB_MARK).byte_length() :])
+                        var sub_hz = 45 if scr.glyphs == GLYPHS_ASCII else 0x254C
+                        scr.fill(cx0, yy, cls, 1, 32, pal.ed_fg, bg)
+                        for bx in range(card_x0, card_x1 + 1):
+                            scr.put(bx, yy, sub_hz, mix(out_bcol, vbg, 55), vbg)
+                        scr.put(card_x0, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x251C, out_bcol, vbg)
+                        scr.put(card_x1, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x2524, out_bcol, vbg)
+                        if cx0 + 2 + cp_len(sub_cap) < card_x1:
+                            _ = scr.text(cx0 + 1, yy, " " + sub_cap + " ", pal.msg_note, vbg)
+                    elif vline == String(CELL_NB_BOT_MARK):
+                        scr.fill(cx0, yy, cls, 1, 32, pal.ed_fg, bg)
+                        for bx in range(card_x0, card_x1 + 1):
+                            scr.put(bx, yy, hz, out_bcol, bg)
+                        scr.put(card_x0, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x2570, out_bcol, bg)
+                        scr.put(card_x1, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x256F, out_bcol, bg)
+                    else:
+                        var vfg = pal.ed_fg
+                        if v_is_err:
+                            vfg = pal.diag_err
+                        elif str_contains(vline, "⚠ "):
+                            vfg = pal.msg_warn
+                        elif vline.startswith("[") or str_contains(vline, "[Tensor ") or str_contains(vline, "[Array ") or str_contains(vline, "[SIMD ") or str_contains(vline, "[DataFrame ") or str_contains(vline, "[Polars ") or str_contains(vline, "[📊"):
+                            vfg = pal.msg_note
+                        elif vline.startswith("… (+"):
+                            vfg = pal.gutter_fg
+                        scr.fill(cx0, yy, cls, 1, 32, pal.ed_fg, bg)
+                        var inner_card_w = max(1, card_x1 - cx0)
+                        scr.fill(cx0, yy, inner_card_w, 1, 32, vfg, vbg)
+                        scr.put(card_x0, yy, vt, out_bcol, vbg)
+                        scr.put(card_x1, yy, vt, out_bcol, vbg)
+                        scr.clip(cx0, yy, inner_card_w, 1)
+                        if vline.startswith(String(CELL_IMG_MARK)):
+                            var dec_img = decode_cell_img_line(vline)
+                            if dec_img[0]:
+                                self.img_cache[].draw_image_row(
+                                    scr,
+                                    cx0 + 2,
+                                    yy,
+                                    max(0, inner_card_w - 3),
+                                    vbg,
+                                    dec_img[1],
+                                    dec_img[2],
+                                    dec_img[3],
+                                    dec_img[4],
+                                    self.gfx_mode,
+                                    self.gfx_tmux,
+                                    self.gfx_cell_w,
+                                    self.gfx_cell_h,
+                                    r * 64 + max(0, vi - dec_img[2]),
+                                    self.y + pd,
+                                    self.y + pd + rws,
+                                )
+                        else:
+                            _ = scr.text(cx0 + 1, yy, " " + vline, vfg, vbg)
+                    scr.clip(self.x + pd, self.y + pd, max(1, inner_w), max(1, inner_h))
+                else:
+                    var vfg = pal.ed_fg
+                    if v_is_err:
+                        vfg = pal.diag_err
+                    elif str_contains(vline, "⚠ "):
+                        vfg = pal.msg_warn
+                    elif vline.startswith("[") or str_contains(vline, "[Tensor ") or str_contains(vline, "[Array ") or str_contains(vline, "[SIMD ") or str_contains(vline, "[DataFrame ") or str_contains(vline, "[Polars ") or str_contains(vline, "[📊"):
+                        vfg = pal.msg_note
+                    elif vline.startswith("… (+"):
+                        vfg = pal.gutter_fg
+                    scr.clip(cx0, yy, cls, 1)
+                    scr.fill(cx0, yy, cls, 1, 32, vfg, vbg)
+                    if vline.startswith(String(CELL_IMG_MARK)):
+                        var dec_img = decode_cell_img_line(vline)
+                        if dec_img[0]:
+                            self.img_cache[].draw_image_row(
+                                scr,
+                                cx0 + 2,
+                                yy,
+                                max(0, cls - 2),
+                                vbg,
+                                dec_img[1],
+                                dec_img[2],
+                                dec_img[3],
+                                dec_img[4],
+                                self.gfx_mode,
+                                self.gfx_tmux,
+                                self.gfx_cell_w,
+                                self.gfx_cell_h,
+                                r * 64 + max(0, vi - dec_img[2]),
+                                self.y + pd,
+                                self.y + pd + rws,
+                            )
+                    else:
+                        _ = scr.text(cx0, yy, "  " + vline, vfg, vbg)
+                    scr.clip(self.x + pd, self.y + pd, max(1, inner_w), max(1, inner_h))
                 seg += 1
                 if seg >= len(starts) + len(v_lines):
                     var nr_v = self.buf.next_row(r)
@@ -642,109 +1041,157 @@ __extension Window:
                 scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
             elif is_nb and self.buf.is_cell_header(r) and not scr.plain:
                 var is_cur_hdr = active and r == cur_cell_hdr
-                rowbg = mix(pal.msg_note if self.nb_cmd_mode else pal.frame_act, bg, 20 if is_cur_hdr else 0)
-                if not is_cur_hdr:
-                    rowbg = mix(pal.gutter_bg, bg, 50)
+                if self.is_markdown_header(r) and (not active or self.nb_cmd_mode or row_cell_hdr != cur_cell_hdr):
+                    rowbg = bg
+                else:
+                    rowbg = mix(pal.msg_note if self.nb_cmd_mode else pal.frame_act, bg, 18 if is_cur_hdr else 0)
+                    if not is_cur_hdr:
+                        rowbg = mix(pal.gutter_bg, bg, 52)
+                scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
+            elif is_nb and row_cell_hdr >= 0 and r > row_cell_hdr and not self.is_markdown_header(row_cell_hdr) and not scr.plain:
+                rowbg = (
+                    pal.curline_bg
+                    if (hl_line and active and r == self.cr and not self.nb_cmd_mode)
+                    else mix(pal.gutter_bg, bg, 40)
+                )
                 scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
             elif hl_line and active and r == self.cr and not (is_nb and self.nb_cmd_mode):
                 rowbg = pal.curline_bg
                 scr.fill(cx0, yy, cls, 1, 32, rowfg, rowbg)
+            var render_md_cell = (
+                is_nb
+                and not scr.plain
+                and seg == 0
+                and off == 0
+                and not self.has_sel()
+                and row_cell_hdr >= 0
+                and r > row_cell_hdr
+                and self.is_markdown_header(row_cell_hdr)
+                and (not active or self.nb_cmd_mode or row_cell_hdr != cur_cell_hdr or (self.cr == row_cell_hdr and self.cc == 0))
+            )
+            var render_md_hdr = (
+                is_nb
+                and not scr.plain
+                and seg == 0
+                and off == 0
+                and not self.has_sel()
+                and self.buf.is_cell_header(r)
+                and self.is_markdown_header(r)
+                and (not active or self.nb_cmd_mode or row_cell_hdr != cur_cell_hdr or (self.cr == row_cell_hdr and self.cc == 0))
+            )
+            var render_code_hdr = (
+                is_nb
+                and not scr.plain
+                and seg == 0
+                and off == 0
+                and not self.has_sel()
+                and self.buf.is_cell_header(r)
+                and not self.is_markdown_header(r)
+                and not (active and not self.nb_cmd_mode and r == self.cr and self.cc > 0)
+            )
             if self.gut > 0:
-                var num = String(r + 1) if seg == 0 else String("")
-                if seg == 0 and self.rel_nums and r != self.cr and not is_msg:
-                    num = String(r - self.cr if r > self.cr else self.cr - r)   # (vim: its own number on the cursor's line)
-                var fold_mark = 32
-                if seg == 0 and not is_msg:
-                    if self.buf.fold_index(r) >= 0:
-                        fold_mark = 0x25B8          # folded: points at the hidden block
-                    elif self.buf.foldable(r):
-                        fold_mark = 0x25BE
-                var git_col = self.buf.git_state == GB_KNOWN
-                var pad = self.gut - (2 if git_col else 1) - cp_len(num)
-                var s = String("")
-                for _ in range(pad):
-                    s += " "
-                s += num + ("  " if git_col else " ")
-                var num_fg = pal.frame_act if r == self.cr and active else pal.gutter_fg
-                var sev = self.buf.mark_severity(r) if len(self.buf.marks) > 0 else 0
-                if sev == 1:
-                    num_fg = pal.diag_err           # a problem on this line
-                elif sev == 2:
-                    num_fg = pal.diag_warn
-                elif sev > 2:
-                    num_fg = pal.diag_note
-                _ = scr.text(self.x + pd, yy, s, num_fg, pal.gutter_bg)
-                if seg == 0 and sev > 0 and pad >= 1:
-                    # and a letter before the number: the colour is not the only sign
-                    scr.put(self.x + pd, yy, 69 if sev == 1 else (87 if sev == 2 else 105), num_fg, pal.gutter_bg)   # E W i
-                elif seg == 0 and not is_msg and pad >= 1 and len(self.test_lens_rows) > 0:
-                    for tli in range(len(self.test_lens_rows)):
-                        if self.test_lens_rows[tli] == r and tli < len(self.test_lens_states):
-                            var ts = self.test_lens_states[tli]
-                            var tch = 0x2713 if ts == 2 else (0x2717 if ts == 3 else 0x25B7)
-                            var tfg = pal.msg_ok if ts == 2 else (pal.diag_err if ts == 3 else pal.gutter_fg)
-                            scr.put(self.x + pd, yy, tch, tfg, pal.gutter_bg)
-                            break
-                elif seg == 0 and not is_msg and pad >= 1 and len(self.cov_rows) > 0:
-                    for cvi in range(len(self.cov_rows)):
-                        if self.cov_rows[cvi] == r:
-                            var cs = self.cov_states[cvi] if cvi < len(self.cov_states) else 0
-                            var cch = 0x2713 if cs > 0 else 0x00B7
-                            var cfg_cov = pal.msg_ok if cs > 0 else pal.diag_err
-                            scr.put(self.x + pd, yy, cch, cfg_cov, pal.gutter_bg)
-                            break
-                if seg == 0 and not is_msg and len(self.buf.bps) > 0:
-                    var look = self.buf.bp_look(r)
-                    if look == 1 or look == 3:
-                        # a breakpoint: the line number in the alarm colour, with its sign
-                        _ = scr.text(self.x + pd, yy, s, pal.gutter_bg, pal.diag_err)
-                        if pad >= 1:
-                            scr.put(self.x + pd, yy, 0x25CF if look == 1 else 0x25C6, pal.gutter_bg, pal.diag_err)
-                    elif look > 0:
-                        # switched off, or not placed by the debugger: only an outline
-                        _ = scr.text(self.x + pd, yy, s, pal.diag_err, pal.gutter_bg)
-                        if pad >= 1:
-                            scr.put(self.x + pd, yy, 0x25CB if look == 2 else 0x25CC, pal.diag_err, pal.gutter_bg)
-                if git_col and seg == 0 and r < len(self.buf.git_marks) and self.buf.git_marks[r] != LM_NONE:
-                    # since the index: + added, ~ changed, ‾ removed above, _ removed below
-                    var gm = Int(self.buf.git_marks[r])
-                    var gch = 0x2B if gm == LM_ADDED else (0x7E if gm == LM_CHANGED else (0x203E if gm == LM_DELETED_ABOVE else 0x5F))
-                    var gfg = pal.git_add if gm == LM_ADDED else (pal.git_mod if gm == LM_CHANGED else pal.git_del)
-                    scr.put(self.x + pd + self.gut - 2, yy, gch, gfg, pal.gutter_bg)
-                if seg == 0 and r == self.buf.exec_row:
-                    scr.put(self.x + pd + self.gut - 1, yy, 0x25BA, pal.msg_sel_bg, pal.gutter_bg)   # ►
-                elif is_nb and seg == 0 and self.buf.is_cell_header(r) and self.gut >= 5 and not scr.plain:
-                    var prompt_lbl: String
-                    var prompt_fg: Int
-                    if self.is_markdown_header(r):
-                        prompt_lbl = " MD "
-                        prompt_fg = pal.msg_note
-                    else:
-                        var is_running_cell = False
-                        for cbi in range(len(self.buf.cell_badge_rows)):
-                            if self.buf.cell_badge_rows[cbi] == r and cbi < len(self.buf.cell_badges) and str_contains(self.buf.cell_badges[cbi], "running"):
-                                is_running_cell = True
+                if render_md_cell or render_md_hdr:
+                    scr.fill(self.x + pd, yy, self.gut, 1, 32, pal.gutter_fg, pal.gutter_bg)
+                    if active and row_cell_hdr >= 0 and row_cell_hdr == cur_cell_hdr and self.nb_cmd_mode:
+                        var crail_m = 124 if scr.glyphs == GLYPHS_ASCII else 0x2503
+                        scr.put(self.x + pd + self.gut - 1, yy, crail_m, pal.msg_note, pal.gutter_bg)
+                else:
+                    var num = String(r + 1) if seg == 0 else String("")
+                    if seg == 0 and self.rel_nums and r != self.cr and not is_msg:
+                        num = String(r - self.cr if r > self.cr else self.cr - r)
+                    var fold_mark = 32
+                    if seg == 0 and not is_msg:
+                        if self.buf.fold_index(r) >= 0:
+                            fold_mark = 0x25B8
+                        elif self.buf.foldable(r):
+                            fold_mark = 0x25BE
+                    var git_col = self.buf.git_state == GB_KNOWN
+                    var pad = self.gut - (2 if git_col else 1) - cp_len(num)
+                    var s = String("")
+                    for _ in range(pad):
+                        s += " "
+                    s += num + ("  " if git_col else " ")
+                    var num_fg = pal.frame_act if r == self.cr and active else pal.gutter_fg
+                    var sev = self.buf.mark_severity(r) if len(self.buf.marks) > 0 else 0
+                    if sev == 1:
+                        num_fg = pal.diag_err
+                    elif sev == 2:
+                        num_fg = pal.diag_warn
+                    elif sev > 2:
+                        num_fg = pal.diag_note
+                    _ = scr.text(self.x + pd, yy, s, num_fg, pal.gutter_bg)
+                    if seg == 0 and sev > 0 and pad >= 1:
+                        scr.put(self.x + pd, yy, 69 if sev == 1 else (87 if sev == 2 else 105), num_fg, pal.gutter_bg)
+                    elif seg == 0 and not is_msg and pad >= 1 and len(self.test_lens_rows) > 0:
+                        for tli in range(len(self.test_lens_rows)):
+                            if self.test_lens_rows[tli] == r and tli < len(self.test_lens_states):
+                                var ts = self.test_lens_states[tli]
+                                var tch = 0x2713 if ts == 2 else (0x2717 if ts == 3 else 0x25B7)
+                                var tfg = pal.msg_ok if ts == 2 else (pal.diag_err if ts == 3 else pal.gutter_fg)
+                                scr.put(self.x + pd, yy, tch, tfg, pal.gutter_bg)
                                 break
-                        var ec_h = self.cell_exec_count_at_header(r)
-                        if is_running_cell:
-                            prompt_lbl = "[*]"
-                            prompt_fg = pal.msg_warn
-                        elif ec_h > 0:
-                            prompt_lbl = "[" + String(ec_h) + "]"
-                            prompt_fg = pal.msg_ok
+                    elif seg == 0 and not is_msg and pad >= 1 and len(self.cov_rows) > 0:
+                        for cvi in range(len(self.cov_rows)):
+                            if self.cov_rows[cvi] == r:
+                                var cs = self.cov_states[cvi] if cvi < len(self.cov_states) else 0
+                                var cch = 0x2713 if cs > 0 else 0x00B7
+                                var cfg_cov = pal.msg_ok if cs > 0 else pal.diag_err
+                                scr.put(self.x + pd, yy, cch, cfg_cov, pal.gutter_bg)
+                                break
+                    if seg == 0 and not is_msg and len(self.buf.bps) > 0:
+                        var look = self.buf.bp_look(r)
+                        if look == 1 or look == 3:
+                            _ = scr.text(self.x + pd, yy, s, pal.gutter_bg, pal.diag_err)
+                            if pad >= 1:
+                                scr.put(self.x + pd, yy, 0x25CF if look == 1 else 0x25C6, pal.gutter_bg, pal.diag_err)
+                        elif look > 0:
+                            _ = scr.text(self.x + pd, yy, s, pal.diag_err, pal.gutter_bg)
+                            if pad >= 1:
+                                scr.put(self.x + pd, yy, 0x25CB if look == 2 else 0x25CC, pal.diag_err, pal.gutter_bg)
+                    if git_col and seg == 0 and r < len(self.buf.git_marks) and self.buf.git_marks[r] != LM_NONE:
+                        var gm = Int(self.buf.git_marks[r])
+                        var gch = 0x2B if gm == LM_ADDED else (0x7E if gm == LM_CHANGED else (0x203E if gm == LM_DELETED_ABOVE else 0x5F))
+                        var gfg = pal.git_add if gm == LM_ADDED else (pal.git_mod if gm == LM_CHANGED else pal.git_del)
+                        scr.put(self.x + pd + self.gut - 2, yy, gch, gfg, pal.gutter_bg)
+                    if seg == 0 and r == self.buf.exec_row:
+                        scr.put(self.x + pd + self.gut - 1, yy, 0x25BA, pal.msg_sel_bg, pal.gutter_bg)
+                    elif is_nb and seg == 0 and self.buf.is_cell_header(r) and self.gut >= 5 and not scr.plain:
+                        if render_code_hdr:
+                            scr.fill(self.x + pd, yy, self.gut - 1, 1, 32, pal.gutter_fg, pal.gutter_bg)
+                            if fold_mark != 32:
+                                scr.put(self.x + pd + self.gut - 2, yy, fold_mark, pal.frame_act if fold_mark == 0x25B8 else pal.gutter_fg, pal.gutter_bg)
                         else:
-                            prompt_lbl = "[ ]"
-                            prompt_fg = pal.frame_act
-                    scr.fill(self.x + pd, yy, self.gut - 1, 1, 32, prompt_fg, pal.gutter_bg)
-                    var px1 = scr.text(self.x + pd, yy, prompt_lbl, prompt_fg, pal.gutter_bg)
-                    if px1 > self.x + pd:
-                        scr.bold(self.x + pd, yy, px1 - (self.x + pd))
-                elif fold_mark != 32:
-                    scr.put(self.x + pd + self.gut - 1, yy, fold_mark, pal.frame_act if fold_mark == 0x25B8 else pal.gutter_fg, pal.gutter_bg)
-                if is_nb and active and row_cell_hdr >= 0 and row_cell_hdr == cur_cell_hdr and not scr.plain:
-                    var crail = 124 if scr.glyphs == GLYPHS_ASCII else 0x2503
-                    var crail_fg = pal.msg_note if self.nb_cmd_mode else pal.msg_ok
-                    scr.put(self.x + pd + self.gut - 1, yy, crail, crail_fg, pal.gutter_bg)
+                            var prompt_lbl: String
+                            var prompt_fg: Int
+                            if self.is_markdown_header(r):
+                                prompt_lbl = " MD "
+                                prompt_fg = pal.msg_note
+                            else:
+                                var is_running_cell = False
+                                for cbi in range(len(self.buf.cell_badge_rows)):
+                                    if self.buf.cell_badge_rows[cbi] == r and cbi < len(self.buf.cell_badges) and (str_contains(self.buf.cell_badges[cbi], "running") or str_contains(self.buf.cell_badges[cbi], "queued")):
+                                        is_running_cell = True
+                                        break
+                                var ec_h = self.cell_exec_count_at_header(r)
+                                if is_running_cell:
+                                    prompt_lbl = "[*]"
+                                    prompt_fg = pal.msg_warn
+                                elif ec_h > 0:
+                                    prompt_lbl = "[" + String(ec_h) + "]"
+                                    prompt_fg = pal.msg_ok
+                                else:
+                                    prompt_lbl = "[ ]"
+                                    prompt_fg = pal.frame_act
+                            scr.fill(self.x + pd, yy, self.gut - 1, 1, 32, prompt_fg, pal.gutter_bg)
+                            var px1 = scr.text(self.x + pd, yy, prompt_lbl, prompt_fg, pal.gutter_bg)
+                            if px1 > self.x + pd:
+                                scr.bold(self.x + pd, yy, px1 - (self.x + pd))
+                    elif fold_mark != 32:
+                        scr.put(self.x + pd + self.gut - 1, yy, fold_mark, pal.frame_act if fold_mark == 0x25B8 else pal.gutter_fg, pal.gutter_bg)
+                    if is_nb and active and row_cell_hdr >= 0 and row_cell_hdr == cur_cell_hdr and not scr.plain and not render_code_hdr:
+                        var crail = 124 if scr.glyphs == GLYPHS_ASCII else 0x2503
+                        var crail_fg = pal.msg_note if self.nb_cmd_mode else pal.msg_ok
+                        scr.put(self.x + pd + self.gut - 1, yy, crail, crail_fg, pal.gutter_bg)
             var n = len(ln)
             scr.clip(cx0, self.y + pd, cls, max(1, inner_h))
             var v = v0
@@ -772,52 +1219,92 @@ __extension Window:
             var wi = 0
             if len(wword) > 0 and n >= len(wword) and n <= 20000:
                 ws = word_spans(ln, wword)
-            var render_md_cell = (
-                is_nb
-                and not scr.plain
-                and seg == 0
-                and off == 0
-                and not self.has_sel()
-                and row_cell_hdr >= 0
-                and r > row_cell_hdr
-                and self.is_markdown_header(row_cell_hdr)
-                and (not active or self.nb_cmd_mode or row_cell_hdr != cur_cell_hdr)
-            )
-            if render_md_cell:
+            if render_md_hdr:
+                var md_title = self.clean_cell_title(r)
+                var mx_end = cx0
+                if md_title.byte_length() > 0:
+                    mx_end = scr.text(cx0, yy, md_title, pal.msg_note, rowbg)
+                    if mx_end > cx0:
+                        scr.bold(cx0, yy, mx_end - cx0)
+                if active and row_cell_hdr == cur_cell_hdr and self.nb_cmd_mode:
+                    var m_pill = "[Markdown · Enter to edit]"
+                    var m_px = max(mx_end + 2, cx0 + max(0, cls - 2 - cp_len(m_pill)))
+                    if m_px + cp_len(m_pill) < cx0 + cls:
+                        _ = scr.text(m_px, yy, m_pill, pal.gutter_fg, rowbg)
+            elif render_code_hdr:
+                var card_x0 = (cx0 - 1) if self.gut > 0 else cx0
+                var card_x1 = cx0 + max(12, cls - 1) - 1
+                var is_cur_c = active and r == cur_cell_hdr
+                var cbcol = (
+                    (pal.msg_note if self.nb_cmd_mode else pal.frame_act)
+                    if is_cur_c
+                    else mix(pal.gutter_fg, bg, 68)
+                )
+                var hz_c = 45 if scr.glyphs == GLYPHS_ASCII else 0x2500
+                var is_fold_hdr = self.buf.fold_index(r) >= 0 and len(v_lines) == 0
+                scr.clip(self.x + pd, yy, max(1, inner_w), 1)
+                scr.fill(cx0, yy, cls, 1, 32, pal.ed_fg, bg)
+                for bx in range(card_x0, card_x1 + 1):
+                    scr.put(bx, yy, hz_c, cbcol, rowbg)
+                scr.put(card_x0, yy, 43 if scr.glyphs == GLYPHS_ASCII else (0x2550 if is_fold_hdr else 0x256D), cbcol, rowbg)
+                scr.put(card_x1, yy, 43 if scr.glyphs == GLYPHS_ASCII else (0x2550 if is_fold_hdr else 0x256E), cbcol, rowbg)
+                var is_run_hdr = False
+                for cbi in range(len(self.buf.cell_badge_rows)):
+                    if self.buf.cell_badge_rows[cbi] == r and cbi < len(self.buf.cell_badges) and (
+                        str_contains(self.buf.cell_badges[cbi], "running")
+                        or str_contains(self.buf.cell_badges[cbi], "queued")
+                    ):
+                        is_run_hdr = True
+                        break
+                var ec_c = self.cell_exec_count_at_header(r)
+                var in_lbl = " In [*] " if is_run_hdr else ((" In [" + String(ec_c) + "] ") if ec_c > 0 else String(" In [ ] "))
+                var in_fg = pal.msg_warn if is_run_hdr else (pal.msg_ok if ec_c > 0 else pal.frame_act)
+                var lx = scr.text(cx0 + 1, yy, in_lbl, in_fg, rowbg)
+                if lx > cx0 + 1:
+                    scr.bold(cx0 + 1, yy, lx - (cx0 + 1))
+                var spans_c = self.nb_card_action_spans(r)
+                var fold_x0 = spans_c[0]
+                var run_x0 = spans_c[2]
+                var run_x1 = spans_c[3]
+                var fold_pill = spans_c[4]
+                var run_pill = spans_c[5]
+                var stat_pill = spans_c[6]
+                var right_stop = fold_x0 if fold_x0 >= 0 else run_x0
+                var ctitle = self.clean_cell_title(r)
+                if ctitle.byte_length() > 0 and lx + 3 < right_stop:
+                    var max_t = max(1, right_stop - (lx + 3))
+                    var tcps = decode(ctitle)
+                    if len(tcps) > max_t:
+                        ctitle = slice_str(tcps, 0, max(1, max_t - 1)) + "…"
+                    var tx0 = lx + 1
+                    var tx1 = scr.text(tx0, yy, " " + ctitle + " ", pal.title_fg, rowbg)
+                    if tx1 > tx0:
+                        scr.bold(tx0, yy, tx1 - tx0)
+                if fold_x0 >= 0 and fold_pill.byte_length() > 0:
+                    var fp_fg = pal.msg_note if self.buf.fold_index(r) >= 0 else pal.gutter_fg
+                    var fx1 = scr.text(fold_x0, yy, fold_pill, fp_fg, rowbg)
+                    if self.buf.fold_index(r) >= 0 and fx1 > fold_x0:
+                        scr.bold(fold_x0, yy, fx1 - fold_x0)
+                var rx1 = scr.text(run_x0, yy, run_pill, pal.frame_act, rowbg)
+                if is_cur_c and rx1 > run_x0:
+                    scr.bold(run_x0, yy, rx1 - run_x0)
+                if stat_pill.byte_length() > 0 and run_x1 + cp_len(stat_pill) <= card_x1:
+                    var sfg = (
+                        pal.msg_ok
+                        if str_contains(stat_pill, "✓")
+                        else (pal.diag_err if str_contains(stat_pill, "✗") else pal.msg_warn)
+                    )
+                    _ = scr.text(run_x1, yy, stat_pill, sfg, rowbg)
+                scr.clip(cx0, self.y + pd, cls, max(1, inner_h))
+            elif render_md_cell:
                 var md_raw_ln = to_str(ln)
                 var md_raw = md_raw_ln
                 if md_raw_ln.startswith("# "):
                     md_raw = String(md_raw_ln[byte=2:])
                 elif md_raw_ln == "#":
                     md_raw = ""
-                var md_fg = pal.ed_fg
-                var md_bold = False
-                var md_italic = False
-                var md_disp = md_raw
-                if md_raw.startswith("### "):
-                    md_disp = String(md_raw[byte=4:])
-                    md_fg = pal.msg_note
-                    md_bold = True
-                elif md_raw.startswith("## "):
-                    md_disp = String(md_raw[byte=3:])
-                    md_fg = pal.msg_note
-                    md_bold = True
-                elif md_raw.startswith("# "):
-                    md_disp = String(md_raw[byte=2:])
-                    md_fg = pal.syn[C_DEF]
-                    md_bold = True
-                elif md_raw.startswith("- ") or md_raw.startswith("* "):
-                    md_disp = "  • " + String(md_raw[byte=2:])
-                elif md_raw.startswith("> "):
-                    md_disp = "│ " + String(md_raw[byte=2:])
-                    md_fg = pal.gutter_fg
-                    md_italic = True
-                var mx1 = scr.text(cx0, yy, md_disp, md_fg, rowbg)
-                if md_bold and mx1 > cx0:
-                    scr.bold(cx0, yy, mx1 - cx0)
-                elif md_italic and mx1 > cx0:
-                    scr.italic(cx0, yy, mx1 - cx0)
-            for c in range(s0, 0 if render_md_cell else s1):
+                _draw_nb_markdown_line(scr, cx0, yy, cls, md_raw, pal, rowbg)
+            for c in range(s0, 0 if (render_md_cell or render_md_hdr or render_code_hdr) else s1):
                 if v >= lim:
                     break
                 if c < nextc:
@@ -944,7 +1431,9 @@ __extension Window:
                         scr.set_bg(rx, yy, pal.ruler_bg)
             # a folded block: say how much is hidden behind its header
             var fi = self.buf.fold_index(r) if not is_msg else -1
-            if fi >= 0 and s1 == n and fi < len(self.buf.fold_ends) and v + 2 >= off and v + 2 < lim:
+            if render_code_hdr or render_md_hdr:
+                pass
+            elif fi >= 0 and s1 == n and fi < len(self.buf.fold_ends) and v + 2 >= off and v + 2 < lim:
                 var hidden = self.buf.fold_ends[fi] - r
                 _ = scr.text(cx0 + v + 1 - off, yy, " ⋯ " + String(hidden) + (" line " if hidden == 1 else " lines "), pal.gutter_fg, pal.gutter_bg)
             elif s1 == n and not is_msg and v + 2 >= off and v + 4 < lim:
@@ -1018,6 +1507,43 @@ __extension Window:
                         scr.italic(bx0, yy, bend - bx0)
                         scr.dim(bx0, yy, bend - bx0)
             scr.clip(self.x + pd, self.y + pd, max(1, inner_w), max(1, inner_h))
+            if (
+                is_nb
+                and not scr.plain
+                and off == 0
+                and row_cell_hdr >= 0
+                and r > row_cell_hdr
+                and not self.is_markdown_header(row_cell_hdr)
+            ):
+                var card_x0 = (cx0 - 1) if self.gut > 0 else cx0
+                var card_x1 = cx0 + max(12, cls - 1) - 1
+                var is_cur_b = active and row_cell_hdr == cur_cell_hdr
+                var bbcol = (
+                    (pal.msg_note if self.nb_cmd_mode else pal.frame_act)
+                    if is_cur_b
+                    else mix(pal.gutter_fg, bg, 68)
+                )
+                var nr_chk = self.buf.next_row(r)
+                var is_cell_last = (
+                    len(v_lines) == 0
+                    and seg == len(starts) - 1
+                    and (nr_chk >= self.buf.count() or self.buf.is_cell_header(nr_chk))
+                )
+                if card_x1 + 1 < cx0 + cls:
+                    scr.fill(card_x1 + 1, yy, (cx0 + cls) - (card_x1 + 1), 1, 32, pal.ed_fg, bg)
+                if is_cell_last and n == 0 and not (active and r == self.cr and not self.nb_cmd_mode):
+                    var hz_b = 45 if scr.glyphs == GLYPHS_ASCII else 0x2500
+                    for bx in range(card_x0, card_x1 + 1):
+                        scr.put(bx, yy, hz_b, bbcol, bg)
+                    scr.put(card_x0, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x2570, bbcol, bg)
+                    scr.put(card_x1, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x256F, bbcol, bg)
+                elif is_cell_last:
+                    scr.put(card_x0, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x2570, bbcol, rowbg)
+                    scr.put(card_x1, yy, 43 if scr.glyphs == GLYPHS_ASCII else 0x256F, bbcol, rowbg)
+                else:
+                    var vt_b = 124 if scr.glyphs == GLYPHS_ASCII else 0x2502
+                    scr.put(card_x0, yy, vt_b, bbcol, rowbg)
+                    scr.put(card_x1, yy, vt_b, bbcol, rowbg)
             seg += 1
             if seg >= len(starts) + len(v_lines):
                 var nr = self.buf.next_row(r)

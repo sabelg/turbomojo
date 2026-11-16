@@ -192,6 +192,8 @@ comptime CM_AI_VERIFY_TOGGLE = 332  # ≡ > AI yield verified patch mode
 comptime CM_FIM_GHOST = 333         # Palette: Trigger / accept FIM ghost text
 comptime CM_SELECT_TARGET = 334     # Compile > Compute target...
 comptime CM_PLUGIN_INSTALL = 335    # ≡ > Install / update plugin...
+comptime CM_CELL_TOGGLE_CODE = 336  # Palette: Hide / show cell code
+comptime CM_CELL_TOGGLE_ALL_CODE = 337 # Palette: Collapse / expand all cell code
 comptime CM_HINTS = 157
 comptime CM_OUTLINE = 158
 comptime CM_WSYMBOL = 159
@@ -1011,6 +1013,8 @@ def build_registry() -> Registry:
     r.hide(CM_CELL_DELETE, "cells.deleteCell", "Notebook: Delete cell", "Delete the # %% cell at the cursor (Jupyter 'dd')")
     r.hide(CM_CELL_TOGGLE_MD, "cells.toggleMarkdown", "Notebook: Toggle Code / Markdown cell", "Convert the cell at the cursor between # %% Code and # %% [markdown] (Jupyter 'm' / 'y')")
     r.hide(CM_CELL_RESTART_RUN_ALL, "cells.restartAndRunAll", "Notebook: Restart kernel & run all cells", "Restart the persistent notebook kernel and execute every # %% cell from top to bottom")
+    r.hide(CM_CELL_TOGGLE_CODE, "cells.toggleCodeFold", "Notebook: Hide / show cell code", "Collapse or expand the active # %% cell's code while keeping Out [k] and inline images visible (Jupyter 'f' / Tab)")
+    r.hide(CM_CELL_TOGGLE_ALL_CODE, "cells.toggleAllCodeFolds", "Notebook: Collapse / expand all cell code", "Toggle compact notebook presentation view: collapse all # %% code cells while keeping Markdown prose, Out [k], and images visible (Jupyter 'F')")
     r.cmd(CM_GPU_OCCUPANCY, "compile.gpuOccupancy", "GPU ~h~ardware occupancy & banks", "Model SM/CU warp occupancy limits and inspect 32-bank shared-memory conflicts")
     r.cmd(CM_SWAP_CALL_ARGS, "refactor.swapCallArgs", "Sw~a~p call arguments", "Swap the call argument at the cursor with its neighbor using the Mojo CST")
     r.cmd(CM_CHANGE_SIGNATURE, "refactor.changeSignature", "~E~dit function signature...", "Reorder, add or update def parameters and rewrite matching call sites across the project")

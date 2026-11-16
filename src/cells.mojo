@@ -120,11 +120,100 @@ comptime PYTHON_JUPYTER_MAGIC_HELPER = (
 )
 
 comptime PYTHON_CELL_DAEMON_SCRIPT = (
-    "import os as __tm_os, sys as __tm_sys, traceback as __tm_tb\n"
+    "import os as __tm_os, sys as __tm_sys, traceback as __tm_tb, linecache as __tm_lc, warnings as __tm_warn\n"
     "__tm_os.environ.setdefault('MPLBACKEND', 'Agg')\n"
+    "__tm_warn.filterwarnings('ignore', message='.*FigureCanvasAgg is non-interactive.*')\n"
     + PYTHON_TENSOR_INSPECT_HELPER
     + PYTHON_JUPYTER_MAGIC_HELPER
-    + "__tm_ns = {'__name__': '__main__'}\n"
+    + "__tm_disp_items = []\n"
+    "__tm_live_mode = [False]\n"
+    "__tm_live_seq = [0]\n"
+    "__tm_live_cnt = [0]\n"
+    "def __tm_clear_output(wait=False):\n"
+    "    __tm_live_mode[0] = True\n"
+    "def __tm_save_single_png_bytes(__obj, __pp):\n"
+    "    if callable(getattr(__obj, 'savefig', None)):\n"
+    "        __obj.savefig(__pp, dpi=110, bbox_inches='tight')\n"
+    "        return True\n"
+    "    __rp = getattr(__obj, '_repr_png_', None)\n"
+    "    if callable(__rp):\n"
+    "        __b = __rp()\n"
+    "        if isinstance(__b, str):\n"
+    "            import base64 as __tm_b64\n"
+    "            __b = __tm_b64.b64decode(__b)\n"
+    "        if isinstance(__b, (bytes, bytearray)) and len(__b) > 24:\n"
+    "            with open(__pp, 'wb') as __fh: __fh.write(__b)\n"
+    "            return True\n"
+    "    __mod = getattr(type(__obj), '__module__', '')\n"
+    "    if __mod.startswith('PIL.') and callable(getattr(__obj, 'save', None)):\n"
+    "        __obj.save(__pp, format='PNG')\n"
+    "        return True\n"
+    "    if type(__obj).__name__ == 'Image' and isinstance(getattr(__obj, 'data', None), (bytes, bytearray)):\n"
+    "        with open(__pp, 'wb') as __fh: __fh.write(__obj.data)\n"
+    "        return True\n"
+    "    return False\n"
+    "def __tm_display(*__objs):\n"
+    "    for __o in __objs:\n"
+    "        if __tm_live_mode[0]:\n"
+    "            __tm_live_cnt[0] += 1\n"
+    "            __lpp = f'{__tm_os.environ.get(\"TMPDIR\", \"/tmp\")}/turbomojo-live-{__tm_os.getpid()}-{__tm_live_seq[0]}-{__tm_live_cnt[0]}.png'\n"
+    "            try:\n"
+    "                if __tm_save_single_png_bytes(__o, __lpp):\n"
+    "                    __tm_sys.stdout.write(f'\\n__TM_FRAME__ {__lpp}\\n')\n"
+    "                    __tm_sys.stdout.flush()\n"
+    "                    continue\n"
+    "            except Exception:\n"
+    "                pass\n"
+    "        __tm_disp_items.append(__o)\n"
+    "__tm_bi.display = __tm_display\n"
+    "__tm_bi.clear_output = __tm_clear_output\n"
+    "try:\n"
+    "    import IPython.display as __tm_ipd\n"
+    "    __tm_ipd.clear_output = __tm_clear_output\n"
+    "    __tm_ipd.display = __tm_display\n"
+    "except Exception:\n"
+    "    pass\n"
+    "def __tm_try_save_png_obj(__obj, __seq, __tag):\n"
+    "    if __obj is None: return False\n"
+    "    try:\n"
+    "        __mod = getattr(type(__obj), '__module__', '')\n"
+    "        if 'matplotlib.animation' in __mod and hasattr(__obj, '_fig') and callable(getattr(__obj, 'new_frame_seq', None)):\n"
+    "            __fps = max(4, min(30, int(round(1000.0 / max(20.0, float(getattr(__obj, '_interval', 80)))))))\n"
+    "            __frames = []\n"
+    "            if callable(getattr(__obj, '_init_draw', None)): __obj._init_draw()\n"
+    "            for __fi, __fd in enumerate(__obj.new_frame_seq()):\n"
+    "                if __fi >= 40: break\n"
+    "                __obj._draw_next_frame(__fd, False)\n"
+    "                __fp = f'{__tm_os.environ.get(\"TMPDIR\", \"/tmp\")}/turbomojo-anim-{__tm_os.getpid()}-{__seq}-{__tag}-{__fi}.png'\n"
+    "                __obj._fig.savefig(__fp, dpi=105, bbox_inches='tight')\n"
+    "                __frames.append(__fp)\n"
+    "                __tm_sys.stdout.write(f'\\n__TM_FRAME__ {__fp}\\n')\n"
+    "                __tm_sys.stdout.flush()\n"
+    "            if 'matplotlib.pyplot' in __tm_sys.modules:\n"
+    "                __tm_sys.modules['matplotlib.pyplot'].close(__obj._fig)\n"
+    "            if __frames:\n"
+    "                __tm_sys.stdout.write(f'\\n__TM_ANIM__ {__fps} ' + ' '.join(__frames) + '\\n')\n"
+    "                return True\n"
+    "        if __mod.startswith('PIL.') and getattr(__obj, 'is_animated', False) and int(getattr(__obj, 'n_frames', 1)) > 1:\n"
+    "            __dur = max(25, int((getattr(__obj, 'info', {}) or {}).get('duration', 80) or 80))\n"
+    "            __fps = max(4, min(30, int(round(1000.0 / __dur))))\n"
+    "            __frames = []\n"
+    "            for __fi in range(min(40, int(__obj.n_frames))):\n"
+    "                __obj.seek(__fi)\n"
+    "                __fp = f'{__tm_os.environ.get(\"TMPDIR\", \"/tmp\")}/turbomojo-gif-{__tm_os.getpid()}-{__seq}-{__tag}-{__fi}.png'\n"
+    "                __obj.convert('RGBA').save(__fp, format='PNG')\n"
+    "                __frames.append(__fp)\n"
+    "            if __frames:\n"
+    "                __tm_sys.stdout.write(f'\\n__TM_ANIM__ {__fps} ' + ' '.join(__frames) + '\\n')\n"
+    "                return True\n"
+    "        __pp = f'{__tm_os.environ.get(\"TMPDIR\", \"/tmp\")}/turbomojo-plot-{__tm_os.getpid()}-{__seq}-{__tag}.png'\n"
+    "        if __tm_save_single_png_bytes(__obj, __pp):\n"
+    "            __tm_sys.stdout.write(f'\\n__TM_PLOT__ {__pp}\\n')\n"
+    "            return True\n"
+    "    except Exception:\n"
+    "        pass\n"
+    "    return False\n"
+    "__tm_ns = {'__name__': '__main__', 'display': __tm_display, 'clear_output': __tm_clear_output}\n"
     "__tm_failed = -1\n"
     "while True:\n"
     "    __tm_hdr = __tm_sys.stdin.readline()\n"
@@ -143,6 +232,7 @@ comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "        continue\n"
     "    __tm_cm, __tm_carg, __tm_body = __tm_preprocess_lines(__tm_lns)\n"
     "    __tm_src = ('\\n' * __tm_off) + __tm_body\n"
+    "    __tm_lc.cache[__tm_fp] = (len(__tm_src), None, __tm_src.splitlines(True), __tm_fp)\n"
     "    __tm_ns['__file__'] = __tm_fp\n"
     "    if __tm_is_pre:\n"
     "        __tm_saved = __tm_sys.stdout\n"
@@ -163,6 +253,10 @@ comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "            __tm_sys.stdout.flush()\n"
     "        continue\n"
     "    __tm_st = 0\n"
+    "    __tm_disp_items.clear()\n"
+    "    __tm_live_mode[0] = False\n"
+    "    __tm_live_seq[0] = __tm_seq\n"
+    "    __tm_live_cnt[0] = 0\n"
     "    try:\n"
     "        if __tm_cm in ('bash', 'sh'):\n"
     "            __tm_bang(__tm_body, __tm_ns)\n"
@@ -204,6 +298,11 @@ comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "            if __tm_cm == 'time':\n"
     "                __tm_sys.stdout.write(f'Wall time: {(__tm_time.perf_counter() - __tm_t0_cm) * 1000.0:.2f} ms\\n')\n"
     "            if __tm_cm != 'capture':\n"
+    "                for __tm_di, __tm_do in enumerate(list(__tm_disp_items)):\n"
+    "                    if not __tm_try_save_png_obj(__tm_do, __tm_seq, f'd{__tm_di}'):\n"
+    "                        __tm_dcard = __tm_inspect_obj(__tm_do)\n"
+    "                        if __tm_dcard: __tm_sys.stdout.write(f'\\n__TM_CARD__ {__tm_dcard}\\n')\n"
+    "                        else: __tm_sys.stdout.write(repr(__tm_do) + '\\n')\n"
     "                __tm_seen_ids = set()\n"
     "                for __tm_vn in __tm_assigned:\n"
     "                    if __tm_vn in __tm_ns and not __tm_vn.startswith('_'):\n"
@@ -214,11 +313,12 @@ comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "                            __tm_sys.stdout.write(f'\\n__TM_CARD__ {__tm_vn}: {__tm_card}\\n')\n"
     "                if __tm_last_val is not None:\n"
     "                    __tm_ns['_'] = __tm_last_val\n"
-    "                    __tm_lcard = __tm_inspect_obj(__tm_last_val)\n"
-    "                    if __tm_lcard and id(__tm_last_val) not in __tm_seen_ids:\n"
-    "                        __tm_sys.stdout.write(f'\\n__TM_CARD__ {__tm_lcard}\\n')\n"
-    "                    elif not __tm_lcard:\n"
-    "                        __tm_sys.stdout.write(repr(__tm_last_val) + '\\n')\n"
+    "                    if not __tm_try_save_png_obj(__tm_last_val, __tm_seq, 'last'):\n"
+    "                        __tm_lcard = __tm_inspect_obj(__tm_last_val)\n"
+    "                        if __tm_lcard and id(__tm_last_val) not in __tm_seen_ids:\n"
+    "                            __tm_sys.stdout.write(f'\\n__TM_CARD__ {__tm_lcard}\\n')\n"
+    "                        elif not __tm_lcard:\n"
+    "                            __tm_sys.stdout.write(repr(__tm_last_val) + '\\n')\n"
     "        if 'matplotlib.pyplot' in __tm_sys.modules:\n"
     "            __tm_plt = __tm_sys.modules['matplotlib.pyplot']\n"
     "            for __tm_fn in list(__tm_plt.get_fignums()):\n"
@@ -229,7 +329,10 @@ comptime PYTHON_CELL_DAEMON_SCRIPT = (
     "            __tm_plt.close('all')\n"
     "    except BaseException:\n"
     "        __tm_st = 1\n"
-    "        __tm_tb.print_exc(file=__tm_sys.stdout)\n"
+    "        __tm_et, __tm_ev, __tm_etr = __tm_sys.exc_info()\n"
+    "        if __tm_etr is not None and __tm_etr.tb_next is not None:\n"
+    "            __tm_etr = __tm_etr.tb_next\n"
+    "        __tm_sys.stdout.write(''.join(__tm_tb.format_exception(__tm_et, __tm_ev, __tm_etr)))\n"
     "    __tm_sys.stdout.write(f'\\n__TM_CELL_END_{__tm_seq}_{__tm_st}__\\n')\n"
     "    __tm_sys.stdout.flush()\n"
 )
@@ -1167,12 +1270,31 @@ struct CellKernel(Movable):
         return CellResult(CELL_INTERRUPTED, "", "KeyboardInterrupt", 1)
 
 
+def _parse_fps_token(tok: String) -> Tuple[Bool, Int]:
+    var s = String(tok[byte=4:]) if tok.startswith("fps=") else tok
+    if s.byte_length() == 0:
+        return (False, 16)
+    var v = 0
+    for b in s.as_bytes():
+        if b < 48 or b > 57:
+            return (False, 16)
+        v = v * 10 + (Int(b) - 48)
+    return (True, max(1, min(60, v)))
+
+
 def extract_cell_plots(text: String) -> Tuple[String, List[String]]:
-    """Extract `__TM_PLOT__ <png_path>` markers from cell output into `(clean_text, plot_paths)`."""
+    """Extract `__TM_PLOT__`, `__TM_ANIM__`, and `__TM_FRAME__` markers into `(clean_text, plot_specs)`."""
     var plots = List[String]()
-    if text.find("__TM_PLOT__ ") < 0:
+    if (
+        text.find("__TM_PLOT__ ") < 0
+        and text.find("__TM_ANIM__ ") < 0
+        and text.find("__TM_FRAME__ ") < 0
+        and text.find("__TM_LIVE_FRAME__ ") < 0
+    ):
         return (text, plots^)
     var out_lines = List[String]()
+    var frame_stream = List[String]()
+    var has_explicit_anim = False
     for ln_s in text.split("\n"):
         var ln = String(ln_s)
         var tr = String(ln.strip())
@@ -1181,8 +1303,38 @@ def extract_cell_plots(text: String) -> Tuple[String, List[String]]:
             if pp.byte_length() > 0:
                 plots.append(pp)
                 out_lines.append("[📊 plot saved: " + pp + "]")
+        elif tr.startswith("__TM_ANIM__ "):
+            var rest = String(tr[byte=12:].strip())
+            var toks = rest.split(" ")
+            var fps = 16
+            var start_k = 0
+            if len(toks) >= 2:
+                var pf = _parse_fps_token(String(toks[0].strip()))
+                if pf[0]:
+                    fps = pf[1]
+                    start_k = 1
+            var anim_frames = List[String]()
+            for k in range(start_k, len(toks)):
+                var fp = String(toks[k].strip())
+                if fp.byte_length() > 0:
+                    anim_frames.append(fp)
+            if len(anim_frames) >= 2:
+                has_explicit_anim = True
+                plots.append("ANIM|" + String(fps) + "|" + "|".join(anim_frames))
+            elif len(anim_frames) == 1:
+                plots.append(anim_frames[0])
+        elif tr.startswith("__TM_FRAME__ ") or tr.startswith("__TM_LIVE_FRAME__ "):
+            var off = 13 if tr.startswith("__TM_FRAME__ ") else 18
+            var fp = String(tr[byte=off:].strip())
+            if fp.byte_length() > 0:
+                frame_stream.append(fp)
         else:
             out_lines.append(ln)
+    if not has_explicit_anim and len(frame_stream) > 0:
+        if len(frame_stream) >= 2:
+            plots.append("ANIM|16|" + "|".join(frame_stream))
+        else:
+            plots.append(frame_stream[0])
     return ("\n".join(out_lines), plots^)
 
 

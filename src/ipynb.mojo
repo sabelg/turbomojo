@@ -29,6 +29,7 @@ struct IpynbDocument(Copyable, Movable):
     var nbformat: Int
     var nbformat_minor: Int
     var outputs: List[IpynbCellOutput]
+    var folded_headers: List[Int]
 
     def __init__(
         out self,
@@ -39,6 +40,7 @@ struct IpynbDocument(Copyable, Movable):
         nbformat: Int,
         nbformat_minor: Int,
         var outputs: List[IpynbCellOutput] = List[IpynbCellOutput](),
+        var folded_headers: List[Int] = List[Int](),
     ):
         self.ok = ok
         self.error = error
@@ -47,6 +49,7 @@ struct IpynbDocument(Copyable, Movable):
         self.nbformat = nbformat
         self.nbformat_minor = nbformat_minor
         self.outputs = outputs^
+        self.folded_headers = folded_headers^
 
     def lang_id(self) -> Int:
         from highlight import HL_MOJO, HL_PYTHON
@@ -165,16 +168,36 @@ def _parse_cell_outputs(
                     chunks.append(stxt)
             elif otype == "execute_result" or otype == "display_data":
                 var data_n = doc.get(o, "data")
+                var meta_n = doc.get(o, "metadata")
+                var added_anim = False
+                if doc.kind(meta_n) == J_OBJ:
+                    var frames_n = doc.get(meta_n, "turbomojo_frames_png")
+                    if doc.kind(frames_n) == J_ARR and doc.size(frames_n) >= 2:
+                        var afps = max(1, min(60, doc.int(doc.get(meta_n, "turbomojo_anim_fps"), 16)))
+                        var fb64 = List[String]()
+                        for fn_i in doc.children(frames_n):
+                            var fc = doc.str(fn_i, "").replace("\n", "").replace("\r", "").replace(" ", "")
+                            if fc.byte_length() > 0:
+                                fb64.append(fc)
+                        if len(fb64) >= 2:
+                            pngs.append("ANIM|" + String(afps) + "|" + "\t".join(fb64))
+                            added_anim = True
                 if doc.kind(data_n) == J_OBJ:
                     var png_raw = _extract_source(doc, doc.get(data_n, "image/png"))
                     var png_clean = png_raw.replace("\n", "").replace("\r", "").replace(" ", "")
-                    if png_clean.byte_length() > 0:
+                    if png_clean.byte_length() > 0 and not added_anim:
                         pngs.append(png_clean)
                     var plain_raw = _strip_ansi_str(_extract_source(doc, doc.get(data_n, "text/plain")).replace("\r\n", "\n"))
                     while plain_raw.endswith("\n"):
                         var sub_plain = String(plain_raw[byte=0 : plain_raw.byte_length() - 1])
                         plain_raw = sub_plain
-                    if plain_raw.byte_length() > 0 and not (png_clean.byte_length() > 0 and plain_raw.startswith("<Figure")):
+                    if plain_raw.byte_length() > 0 and not (
+                        png_clean.byte_length() > 0
+                        and (
+                            plain_raw.startswith("<Figure")
+                            or (plain_raw.startswith("<") and plain_raw.endswith(">"))
+                        )
+                    ):
                         chunks.append(plain_raw)
             elif otype == "error":
                 is_err = True
@@ -235,6 +258,7 @@ def ipynb_to_percent_text(raw_json: String, default_mojo: Bool = False) -> Ipynb
 
     var blocks = List[String]()
     var outputs = List[IpynbCellOutput]()
+    var folded_headers = List[Int]()
     var cur_row = 0
     var code_ord = 0
 
@@ -248,6 +272,12 @@ def ipynb_to_percent_text(raw_json: String, default_mojo: Bool = False) -> Ipynb
             var trimmed = String(src[byte=0 : src.byte_length() - 1])
             src = trimmed
         var title = doc.str(doc.path(c, "metadata/title"), doc.str(doc.path(c, "metadata/name"), ""))
+        var src_hidden = (
+            doc.bool(doc.path(c, "metadata/jupyter/source_hidden"), False)
+            or doc.bool(doc.path(c, "metadata/hide_input"), False)
+        )
+        if src_hidden:
+            folded_headers.append(cur_row)
         var blk: String
         if ctype == "heading":
             var lvl = max(1, min(6, doc.int(doc.get(c, "level"), 1)))
@@ -282,7 +312,7 @@ def ipynb_to_percent_text(raw_json: String, default_mojo: Bool = False) -> Ipynb
     var full = "\n".join(blocks)
     if full.byte_length() > 0 and not full.endswith("\n"):
         full += "\n"
-    return IpynbDocument(True, "", full, is_mj, nbf, nbf_min, outputs^)
+    return IpynbDocument(True, "", full, is_mj, nbf, nbf_min, outputs^, folded_headers^)
 
 
 @fieldwise_init
@@ -389,6 +419,49 @@ def _write_cell_outputs_json(mut w: JsonWriter, cell_out: IpynbCellOutput):
     for b64 in cell_out.png_b64:
         if b64.byte_length() == 0:
             continue
+        if b64.startswith("ANIM|"):
+            var body_a = String(b64[byte=5:])
+            var bar_i = body_a.find("|")
+            if bar_i > 0:
+                var fps_s = String(body_a[byte=0:bar_i])
+                var fps_v = 16
+                var valid_d = True
+                var acc_v = 0
+                for fb in fps_s.as_bytes():
+                    if fb >= 48 and fb <= 57:
+                        acc_v = acc_v * 10 + (Int(fb) - 48)
+                    else:
+                        valid_d = False
+                if valid_d and acc_v > 0:
+                    fps_v = max(1, min(60, acc_v))
+                var frames_joined = String(body_a[byte=bar_i + 1 :])
+                var f_list = List[String]()
+                for fs in frames_joined.split("\t"):
+                    var f_item = String(fs.strip())
+                    if f_item.byte_length() > 0:
+                        f_list.append(f_item)
+                if len(f_list) > 0:
+                    w.begin_obj()
+                    w.key("data")
+                    w.begin_obj()
+                    w.kv_str("image/png", f_list[0])
+                    w.key("text/plain")
+                    w.begin_arr()
+                    w.str("<Animation>")
+                    w.end_arr()
+                    w.end_obj()
+                    w.key("metadata")
+                    w.begin_obj()
+                    w.kv_int("turbomojo_anim_fps", fps_v)
+                    w.key("turbomojo_frames_png")
+                    w.begin_arr()
+                    for fi_s in f_list:
+                        w.str(fi_s)
+                    w.end_arr()
+                    w.end_obj()
+                    w.kv_str("output_type", "display_data")
+                    w.end_obj()
+                    continue
         w.begin_obj()
         w.key("data")
         w.begin_obj()
@@ -411,6 +484,7 @@ def percent_text_to_ipynb(
     is_mojo: Bool,
     existing_raw_json: String = "",
     live_outputs: List[IpynbCellOutput] = List[IpynbCellOutput](),
+    folded_cell_indices: List[Int] = List[Int](),
 ) -> String:
     """Serialize `# %%` / `# %% [markdown]` buffer text and live outputs to nbformat v4 `.ipynb` JSON."""
     var norm = text.replace("\r\n", "\n")
@@ -489,6 +563,11 @@ def percent_text_to_ipynb(
         if cells[idx].title.byte_length() > 0:
             w.kv_str("name", cells[idx].title)
             w.kv_str("title", cells[idx].title)
+        if idx in folded_cell_indices:
+            w.key("jupyter")
+            w.begin_obj()
+            w.kv_bool("source_hidden", True)
+            w.end_obj()
         w.end_obj()
         if cells[idx].cell_type == "code":
             if matched_idx >= 0:

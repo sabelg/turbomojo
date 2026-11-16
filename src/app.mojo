@@ -185,6 +185,8 @@ __extension App:
         self.scr.styled_ul = caps.styled_underline
         if caps.kitty_keyboard:
             self.term.set_kitty(True)
+        else:
+            self.term.set_modify_other_keys(True)
         if caps.grapheme:
             self.term.set_grapheme(True)
             self.scr.clustered = True
@@ -206,6 +208,10 @@ __extension App:
             if self.explorer_at_start:
                 self.explorer_at_start = False      # (once: closing it later is the user's)
                 self.explorer_start()
+            if not self.reduce_motion:
+                var anim_now = now_ns()
+                for wi in range(len(self.wins)):
+                    _ = self.wins[wi].step_anim(anim_now)
             self.draw()
             self.sixel_prepare()
             if self.gfx_out.byte_length() > 0:

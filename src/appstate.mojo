@@ -776,6 +776,8 @@ struct App(Movable):
     var cell_k_interrupt_ns: Int
     var cell_queue_target: String
     var cell_queue_indices: List[Int]
+    var cell_warmed_paths: List[String]
+    var cell_live_last_frame: String
     var cell_exec_counter: Int
     var codegen_line_map: List[Int]
     var codegen_base_marks: List[Int]
@@ -1439,6 +1441,8 @@ struct App(Movable):
         self.cell_k_interrupt_ns = 0
         self.cell_queue_target = ""
         self.cell_queue_indices = List[Int]()
+        self.cell_warmed_paths = List[String]()
+        self.cell_live_last_frame = ""
         self.cell_exec_counter = 0
         self.codegen_line_map = List[Int]()
         self.codegen_base_marks = List[Int]()
@@ -1731,6 +1735,15 @@ struct App(Movable):
         for wi in range(len(self.wins)):
             if self.wins[wi].kind == WK_GPU:
                 t = min(t, 1500)
+            if not self.reduce_motion:
+                var afps = self.wins[wi].visible_anim_fps()
+                if afps > 0:
+                    var period_ms = max(16, 1000 // afps)
+                    if self.wins[wi].anim_last_ns > 0:
+                        var elapsed_ms = max(0, (now - self.wins[wi].anim_last_ns) // 1000000)
+                        t = min(t, max(1, period_ms - elapsed_ms))
+                    else:
+                        t = min(t, period_ms)
                 break
         if self.show_clock:
             t = min(t, secs_to_minute * 1000 + 50)

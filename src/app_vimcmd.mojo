@@ -467,8 +467,15 @@ __extension App:
                         )
                         var prev_raw = bytes_to_str(read_file(path)) if path_exists(path) else String("")
                         var live_outs = self.collect_ipynb_outputs(t)
+                        var folded_cells = self.collect_ipynb_folded_cells(t)
                         out_bytes = str_bytes(
-                            percent_text_to_ipynb(bytes_to_str(self.wins[t].buf.to_bytes()), is_mj, prev_raw, live_outs)
+                            percent_text_to_ipynb(
+                                bytes_to_str(self.wins[t].buf.to_bytes()),
+                                is_mj,
+                                prev_raw,
+                                live_outs,
+                                folded_cells,
+                            )
                         )
                     else:
                         out_bytes = self.wins[t].buf.to_bytes()
@@ -568,6 +575,10 @@ __extension App:
                 self.exec(CM_CELL_RESTART)
             elif ca == "clear":
                 self.exec(CM_CELL_CLEAR_OUT)
+            elif ca == "fold" or ca == "hide":
+                self.exec(CM_CELL_TOGGLE_CODE)
+            elif ca == "foldall" or ca == "compact":
+                self.exec(CM_CELL_TOGGLE_ALL_CODE)
             else:
                 self.exec(CM_RUN_CELL)
         elif name == "cells" or name == "runall":

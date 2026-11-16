@@ -128,6 +128,7 @@ struct Terminal(Movable):
     var crash_header: String
     var grapheme_on: Bool
     var kitty_on: Bool        # kitty keyboard protocol flags are pushed
+    var mod_other_on: Bool    # xterm modifyOtherKeys (>4;1m) enabled when kitty_on is off
     var event_type: Int       # of the sequence being parsed: 0/1 press, 2 repeat, 3 release
     var scheme: Int           # the terminal's colour scheme (mode 2031): 0 unknown, 1 dark, 2 light
     var bg_scheme: Int        # the same, judged from its background colour (OSC 11)
@@ -148,6 +149,7 @@ struct Terminal(Movable):
         self.crash_header = ""
         self.grapheme_on = False
         self.kitty_on = False
+        self.mod_other_on = False
         self.event_type = 0
         self.scheme = 0
         self.bg_scheme = 0
@@ -177,6 +179,8 @@ struct Terminal(Movable):
             append_str(self.out, "\x1b[?2027h")
         if self.kitty_on:
             append_str(self.out, KITTY_PUSH)
+        elif self.mod_other_on:
+            append_str(self.out, "\x1b[>4;1m")
         # tell us when the terminal turns light or dark, and ask what it is now; and
         # when it gets and loses the focus
         append_str(self.out, "\x1b[?2031h\x1b[?996n\x1b[?1004h")
@@ -192,6 +196,15 @@ struct Terminal(Movable):
         self.kitty_on = on
         append_str(self.out, KITTY_PUSH if on else KITTY_POP)
 
+    def set_modify_other_keys(mut self, on: Bool):
+        """Enable xterm modifyOtherKeys level 1 (`CSI > 4 ; 1 m`) on terminals without the
+        kitty keyboard protocol (tmux, xterm, VTE/GNOME Terminal, Konsole, VS Code) so
+        `Shift-Enter`, `Ctrl-Enter` and `Ctrl-Shift-Enter` arrive as `CSI 27 ; mod ; 13 ~`."""
+        if on == self.mod_other_on:
+            return
+        self.mod_other_on = on
+        append_str(self.out, "\x1b[>4;1m" if on else "\x1b[>4;0m")
+
     def set_grapheme(mut self, on: Bool):
         """Turn the terminal's grapheme clustering (mode 2027) on or off. With it on the
         terminal draws a whole cluster as one glyph of a predictable width."""
@@ -205,6 +218,8 @@ struct Terminal(Movable):
         var s = String("\x1b[?2026l")
         if self.kitty_on:
             s += KITTY_POP
+        if self.mod_other_on:
+            s += "\x1b[>4;0m"
         if self.grapheme_on:
             s += "\x1b[?2027l"
         s += "\x1b[?2031l\x1b[?1004l"
@@ -539,7 +554,7 @@ struct Terminal(Movable):
 
     def csi_u_key(self, p: Int) -> Int:
         """Key code for the number in a "CSI number ; modifiers u" report (0: ignore)."""
-        if p == 13 or p == 57414:
+        if p == 13 or p == 10 or p == 57414:
             return KEY_ENTER
         if p == 9:
             return KEY_TAB
@@ -713,6 +728,18 @@ struct Terminal(Movable):
                 k = fkey(11)
             elif p == 24:
                 k = fkey(12)
+            elif p == 27 and len(params) >= 3:
+                # xterm modifyOtherKeys: CSI 27 ; modifier ; codepoint ~
+                k = self.csi_u_key(params[2])
+                if k >= 65 and k <= 90 and (mods & (MOD_CTRL | MOD_ALT)) != 0:
+                    k += 32
+                elif k >= 97 and k <= 122 and mods == MOD_SHIFT:
+                    k -= 32
+                    mods = 0
+                elif k >= 32 and k < K_BASE and mods == MOD_SHIFT:
+                    mods = 0
+                elif (k == KEY_BACKSPACE or k == KEY_ESC) and mods == MOD_SHIFT:
+                    mods = 0
         elif final == 117 and len(params) > 0:
             k = self.csi_u_key(params[0])
             if k >= 65 and k <= 90 and (mods & (MOD_CTRL | MOD_ALT)) != 0:

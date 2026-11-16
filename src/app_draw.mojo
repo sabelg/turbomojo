@@ -16,7 +16,7 @@ from palette import Palette, theme, THEME_COUNT
 from contrast import text_muted, text_disabled, dimmed
 from highlight import Highlighter, HL_MOJO, HL_PYTHON, HL_JSON, HL_MARKDOWN, HL_TOML, HL_C_CUDA
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_GITLOG, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, WK_DIFF, WK_BLAME, WK_AGENT, WK_EXPLAIN, WK_DOCPANE, WK_GIT, WK_GPU, WK_CODEGEN, ACT_OTHER, ACT_TYPE
 from window_search import *
 from window_multi import *
 from window_lines import *
@@ -336,6 +336,10 @@ __extension App:
                     for h in ["~Enter~ Open", "~/~ Filter", "~N~ New file", "~F~ Folder", "~R~ Rename", "~M~ Move", "~Del~ Trash"]:
                         items.append(h)
                         cmds.append(CM_NONE)
+                elif t >= 0 and self.wins[t].kind == WK_IMGVIEW:
+                    for h in ["~+~/~-~ Zoom", "~0~ Fit", "~←↑↓→~ Pan", "~[~/~]~ Plot", "~O~ Desktop viewer", "~F5~ Full", "~Esc~ Close"]:
+                        items.append(h)
+                        cmds.append(CM_NONE)
                 if t >= 0 and self.wins[t].kind == WK_CPU:
                     for h in ["~F7~/~F8~ Step instruction", "~G~ Memory at", "~+~/~-~ Next/prev memory"]:
                         items.append(h)
@@ -472,6 +476,8 @@ __extension App:
         """The terminal does not have the focus (mode 1004): every cell's text half way
         to its background, so it is plain that keys go elsewhere (ui.dim_unfocused)."""
         for k in range(self.scr.w * self.scr.h):
+            if self.scr.ch[k] == 0x10EEEE:
+                continue
             self.scr.fg[k] = dimmed(self.scr.fg[k], self.scr.bg[k])
 
     def scopes_update(mut self, i: Int):
@@ -551,18 +557,57 @@ __extension App:
         """A CRT look: the background of every other row a little darker (the theme's
         `scanlines`, or ui.scanlines)."""
         self.scr.no_clip()
+        var top_i = self.top()
+        var skip_img = top_i >= 0 and self.wins[top_i].kind == WK_IMGVIEW and not self.wins[top_i].hidden
+        var ix0 = self.wins[top_i].x + 1 if skip_img else -1
+        var ix1 = self.wins[top_i].x + self.wins[top_i].w - 1 if skip_img else -1
+        var iy0 = self.wins[top_i].y + 1 if skip_img else -1
+        var iy1 = self.wins[top_i].y + self.wins[top_i].h - 1 if skip_img else -1
         var y = 1
         while y < self.scr.h:
             for x in range(self.scr.w):
+                if skip_img and x >= ix0 and x < ix1 and y >= iy0 and y < iy1:
+                    continue
                 self.scr.set_bg(x, y, scanline_dim(self.scr.bg_at(x, y)))
             y += 2
 
+    def _nb_gfx_mode(self) -> Int:
+        from cellimg import (
+            NB_IMG_QUADRANT,
+            NB_IMG_KITTY_VIRTUAL,
+            NB_IMG_SIXEL,
+            NB_IMG_KITTY_DIRECT,
+        )
+        if not self.gfx_on or self.scr.plain:
+            return NB_IMG_QUADRANT
+        if self.gfx_sixel:
+            return NB_IMG_SIXEL
+        if self.images_mode != "kitty":
+            var tp = lower_str(env_or("TERM_PROGRAM", ""))
+            if (
+                env_or("WEZTERM_PANE", "").byte_length() > 0
+                or tp.find("wezterm") >= 0
+                or env_or("KONSOLE_VERSION", "").byte_length() > 0
+            ):
+                return NB_IMG_KITTY_DIRECT
+        return NB_IMG_KITTY_VIRTUAL
+
     def draw_window(mut self, i: Int, active: Bool):
+        from cellimg import NB_IMG_KITTY_VIRTUAL
         var p = self.pal.copy()
         self.wins[i].rel_nums = self.rel_numbers
         self.wins[i].indent_guides = self.indent_guides
         self.wins[i].rainbow_brackets = self.rainbow_brackets
+        var gmode = self._nb_gfx_mode()
+        self.wins[i].gfx_mode = gmode
+        self.wins[i].gfx_kitty = gmode == NB_IMG_KITTY_VIRTUAL
+        self.wins[i].gfx_tmux = self.gfx_tmux
+        self.wins[i].gfx_cell_w = self.gfx_cell_w
+        self.wins[i].gfx_cell_h = self.gfx_cell_h
         self.wins[i].draw(self.scr, p, self.hl, active, self.hl_line, self.insert_mode, self.show_ws)
+        if self.wins[i].img_cache[].pending_out.byte_length() > 0:
+            self.gfx_out += self.wins[i].img_cache[].pending_out
+            self.wins[i].img_cache[].pending_out = ""
 
     def draw_completion(mut self, cx: Int, cy: Int):
         """The completion popup under (or above) the cursor: a tag for the kind of each

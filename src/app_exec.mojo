@@ -890,6 +890,24 @@ __extension App:
             self.cell_toggle_markdown()
         elif cmd == CM_CELL_RESTART_RUN_ALL:
             self.cell_restart_and_run_all()
+        elif cmd == CM_CELL_TOGGLE_CODE:
+            var ti = self.top_editor()
+            if ti >= 0:
+                if self.wins[ti].toggle_cell_code_fold(self.wins[ti].cr):
+                    var hdr_f = self.wins[ti].cell_header_for_row(self.wins[ti].cr)
+                    var hidden_now = hdr_f >= 0 and self.wins[ti].buf.fold_index(hdr_f) >= 0
+                    self.say("Cell code " + ("collapsed (output & images stay visible)" if hidden_now else "expanded"))
+                else:
+                    self.say("No multi-line # %% cell at cursor")
+        elif cmd == CM_CELL_TOGGLE_ALL_CODE:
+            var ti = self.top_editor()
+            if ti >= 0:
+                var fold_cnt = self.wins[ti].toggle_all_cell_code_folds()
+                self.say(
+                    ("Collapsed " + String(fold_cnt) + " code cell(s) — compact notebook view")
+                    if fold_cnt > 0
+                    else "Expanded all notebook code cells"
+                )
         elif cmd == CM_DEBUG_ATTACH_PID:
             self.debug_attach_pid_open()
         elif cmd == CM_DEBUG_CORE:

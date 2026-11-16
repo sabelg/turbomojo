@@ -36,6 +36,8 @@ Pressing **Esc** inside an `.ipynb` buffer switches from **Edit Mode** (`NB:EDIT
 | **d d** / **x** | Delete / cut the selected cell (1-step Undo with **z** / **Ctrl-Z**) |
 | **c** / **v** | Copy cell / paste cell below |
 | **m** / **y** | Convert cell to **Markdown** (`# %% [markdown]`) / **Code** (`# %%`) |
+| **f** / **Tab** | Hide / show the selected cell's code (keeping `Out [k]` & images visible) |
+| **F** / **Shift-Tab** | Compact presentation view: collapse / expand **all** code cells |
 | **o** / **l** | Toggle inline cell outputs / toggle line numbers |
 | **0 0** / **i i** | Restart notebook kernel / interrupt running cell |
 | **h** / **?** | Open this Notebooks & Jupyter guide |
@@ -66,5 +68,7 @@ print("total =", total)
 
 - **Rendered Markdown cells**: `# %% [markdown]` cells automatically render headings, bullets, and quotes cleanly when the cursor is outside the cell (or in Command Mode), and reveal raw lines automatically when you edit them.
 - **IPython `!shell` & `%magic` support (Python kernel)**: `!cmd` shell escapes (with `{var}` interpolation), `%matplotlib inline`, `%pip`, `%pwd`, `%cd`, `%env`, `%who` / `%whos`, `%reset`, `%time`, `%timeit`, `%%time`, `%%bash` / `%%sh`, `%%capture`, and `%%writefile` work out of the box.
-- **Virtual inline output & Tensor / DataFrame cards**: stdout, bare trailing expressions (`Out [k]`), errors, and shape/dtype/NaN summary cards (`SIMD`, `Tensor`, `numpy`, `torch`, `pandas`, `polars`) appear directly beneath each cell without shifting file line numbers.
+- **Card-based Jupyter view & collapsible code cells**: `.ipynb` cells render as connected cards (`╭─ In [k] ─╮` ... `├─ Out [k] ─┤` ... `╰───╯`) with clickable **`[▾ Hide code]`** / **`[▸ +N lines]`** and **`[▶ Run]`** pills (persisted via standard `jupyter.source_hidden` metadata). Collapsing code cells hides only the code while keeping `Out [k]` and rendered images visible directly underneath.
+- **Inline editor image, animation & zoom window**: PNG plots (`matplotlib`, `PIL.Image`, `display()`, `_repr_png_()`) and animations (`matplotlib.animation.FuncAnimation`, animated GIFs, Python `clear_output(wait=True); display(fig)`, and Mojo `__TM_FRAME__ <path>` / `__TM_ANIM__ <fps> <f0.png> ...`) render **directly beneath each cell** across Kitty/Ghostty (`U+10EEEE`), Sixel / WezTerm / Konsole, and 24-bit 2×2 Quadrant canvases. Click `[⏸ Pause]` / `[▶ Play]` to toggle inline playback, or click any image/animation to open the dedicated **Image Zoom Window (`WK_IMGVIEW`)** (`Space` pause/play, `+/-` pan & zoom, `[/]` frame step, `o` OS viewer, `Esc` close).
+- **Virtual inline output, rapid `Shift-Enter` queueing & Tensor cards**: stdout, bare trailing expressions (`Out [k]`), errors, and shape/dtype/NaN summary cards (`SIMD`, `Tensor`, `numpy`, `torch`, `pandas`, `polars`) appear directly beneath each cell without shifting file line numbers; pressing **Shift-Enter** rapidly queues `[⋯ queued]` cells in FIFO order.
 - **Live Mojo LSP in notebooks**: pressing **F7** runs `mojo-lsp-server` over `NotebookVirtualDoc` so completions, hover (**Alt-I**), go-to-definition (**F12**), and error underlines map back to exact cell lines.

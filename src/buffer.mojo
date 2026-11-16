@@ -670,20 +670,24 @@ struct TextBuffer(Copyable, Movable):
 
     def cell_end_for_header(self, hdr_row: Int) -> Int:
         """Return the anchor buffer row where virtual output for `hdr_row` is rendered
-        (the last non-blank line of that cell, or -1 if invalid or folded)."""
+        (the last visible line of that cell, or `hdr_row` itself when the cell's code is
+        collapsed so `Out [k]` and inline images remain visible right below the card header)."""
         var count = self.core[].rope.line_count()
         if hdr_row < 0 or hdr_row >= count:
             return -1
         if hdr_row > 0 and not self.is_cell_header(hdr_row):
             return -1
         if self.fold_index(hdr_row) >= 0:
-            return -1
+            return hdr_row
         var jc = hdr_row + 1
         while jc < count and not self.is_cell_header(jc):
             jc += 1
         var end_r = jc - 1
         while end_r > hdr_row and self.core[].rope.line_len(end_r) == 0:
             end_r -= 1
+        var h = self.hidden_by(end_r)
+        if h >= hdr_row:
+            end_r = h
         return end_r
 
     def all_text(self) -> List[Int]:

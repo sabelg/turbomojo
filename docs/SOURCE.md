@@ -67,6 +67,7 @@ struct of `appstate.mojo`, one area each.
 | `src/breakpoints.mojo` | Breakpoints: where the debugger is to stop. |
 | `src/buffer.mojo` | Text buffer: a rope of UTF-8 text addressed by (row, column in codepoints), with grouped undo/redo and the per-file settings (line endings, indentation, final newline). |
 | `src/caps.mojo` | Terminal capabilities: what the terminal says it supports, and colour-depth handling. |
+| `src/cellimg.mojo` | Inline notebook image & plot renderer for `WK_EDITOR` virtual cell outputs. |
 | `src/cells.mojo` | Interactive `# %%` code cells ("Terminal Notebook" mode) for Mojo and Python. |
 | `src/codegen.mojo` | Mojo codegen & kernel inspector (`Compile > Inspect generated code`, WK_CODEGEN): parses `mojo build --emit=asm` and `--emit=llvm` output, strips noisy assembler metadata directives while keeping function labels and instructions, badges SIMD vector operations (`[SIMD]`) and register stack spills (`[SPILL]`), and summarizes vectorization density. |
 | `src/codequery.mojo` | What a search for help looks like, so one box can take code as well as words: a name (`append`), a dotted path (`List.append`, `std.collections.list`), or a pasted error line (`x.mojo:3:5: error: use of unknown declaration 'y'`), besides the finder's own syntax (words, "a phrase", @api, #heading, `code, in:book). |

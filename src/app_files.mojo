@@ -152,7 +152,39 @@ __extension App:
                     for co in nb_doc.outputs:
                         var plot_paths = List[String]()
                         for pi in range(len(co.png_b64)):
-                            var raw_png = ipynb_b64_decode(co.png_b64[pi])
+                            var pb_entry = co.png_b64[pi]
+                            if pb_entry.startswith("ANIM|"):
+                                var abody = String(pb_entry[byte=5:])
+                                var abar = abody.find("|")
+                                if abar > 0:
+                                    var afps_s = String(abody[byte=0:abar])
+                                    var arest = String(abody[byte=abar + 1 :])
+                                    var aframes = List[String]()
+                                    var f_ord = 0
+                                    for fb_s in arest.split("\t"):
+                                        var raw_af = ipynb_b64_decode(String(fb_s))
+                                        if len(raw_af) > 0:
+                                            var afp = (
+                                                env_or("TMPDIR", "/tmp")
+                                                + "/turbomojo-ipynb-anim-"
+                                                + String(own_pid())
+                                                + "-"
+                                                + String(co.code_ordinal)
+                                                + "-"
+                                                + String(pi)
+                                                + "-"
+                                                + String(f_ord)
+                                                + ".png"
+                                            )
+                                            if write_file(afp, raw_af):
+                                                aframes.append(afp)
+                                                f_ord += 1
+                                    if len(aframes) >= 2:
+                                        plot_paths.append("ANIM|" + afps_s + "|" + "|".join(aframes))
+                                    elif len(aframes) == 1:
+                                        plot_paths.append(aframes[0])
+                                continue
+                            var raw_png = ipynb_b64_decode(pb_entry)
                             if len(raw_png) > 0:
                                 var pp = env_or("TMPDIR", "/tmp") + "/turbomojo-ipynb-plot-" + String(own_pid()) + "-" + String(co.code_ordinal) + "-" + String(pi) + ".png"
                                 if write_file(pp, raw_png):
@@ -162,7 +194,7 @@ __extension App:
                         if co.execution_count > self.cell_exec_counter:
                             self.cell_exec_counter = co.execution_count
                         var p_joined = "\n".join(plot_paths)
-                        if co.text.byte_length() > 0 or p_joined.byte_length() > 0 or co.is_error:
+                        if co.text.byte_length() > 0 or p_joined.byte_length() > 0 or co.is_error or co.execution_count > 0:
                             self.wins[i].set_cell_output(
                                 co.header_row, co.text, co.is_error, p_joined, co.execution_count
                             )
@@ -174,6 +206,8 @@ __extension App:
                             len(plot_paths),
                         )
                         self.wins[i].set_cell_badge(co.header_row, bdg)
+                    for fh in nb_doc.folded_headers:
+                        _ = self.wins[i].buf.set_fold(fh, True)
                     self.wins[i].cr = 0
                     self.wins[i].cc = 0
                     self.wins[i].top = 0
@@ -184,7 +218,7 @@ __extension App:
                     self.wins[i].sync_ver = self.wins[i].buf.version
                     self.plugins_event("open", p)
                     var n_cells = len(parse_cells(self.wins[i].buf))
-                    self.say("Loaded Jupyter notebook (" + ("Mojo" if nb_doc.is_mojo else "Python") + ", " + String(n_cells) + (" cell" if n_cells == 1 else " cells") + ") — Ctrl-Enter runs cell")
+                    self.say("Loaded Jupyter notebook (" + ("Mojo" if nb_doc.is_mojo else "Python") + ", " + String(n_cells) + (" cell" if n_cells == 1 else " cells") + ") — Shift-Enter runs cell · Esc Command Mode")
                     if nb_doc.is_mojo and self.lsp_auto_start and self.lsp_auto_checked and self.log_path.byte_length() > 0 and not self.trust_held and self.trust_ok() and not self.lsp.active():
                         self.lsp_track(i, now_ns())
                     return
@@ -294,11 +328,13 @@ __extension App:
             self.wins[i].inline_cell_outputs = True
             var prev_raw = bytes_to_str(read_file(self.wins[i].path)) if path_exists(self.wins[i].path) else String("")
             var live_outs = self.collect_ipynb_outputs(i)
+            var folded_cells = self.collect_ipynb_folded_cells(i)
             var ipynb_json = percent_text_to_ipynb(
                 bytes_to_str(self.wins[i].buf.to_bytes()),
                 self.wins[i].lang_override == HL_MOJO,
                 prev_raw,
                 live_outs,
+                folded_cells,
             )
             b = str_bytes(ipynb_json)
         else:
@@ -608,6 +644,11 @@ __extension App:
         self.store_history(i)   # remembers the cursor position (if the file is unchanged)
         if not self.has_shared_sibling(i):
             self.drop_swap(i)   # closing the last view is a decision: nothing left to recover
+        self.wins[i].img_cache[].invalidate_shown(self.scr)
+        self.wins[i].img_cache[].clear(self.gfx_tmux)
+        if self.wins[i].img_cache[].pending_out.byte_length() > 0:
+            self.gfx_out += self.wins[i].img_cache[].pending_out
+            self.wins[i].img_cache[].pending_out = ""
         _ = self.wins.pop(i)
 
     def hex_view_toggle(mut self):
@@ -696,6 +737,24 @@ __extension App:
                     if pstr.byte_length() > 0:
                         for pp_s in pstr.split("\n"):
                             var pp = String(pp_s.strip())
+                            if pp.startswith("ANIM|"):
+                                var abody = String(pp[byte=5:])
+                                var abar = abody.find("|")
+                                if abar > 0:
+                                    var afps_s = String(abody[byte=0:abar])
+                                    var arest = String(abody[byte=abar + 1 :])
+                                    var fb64_list = List[String]()
+                                    for fp_s in arest.split("|"):
+                                        var fp_p = String(fp_s.strip())
+                                        if fp_p.byte_length() > 0 and path_exists(fp_p):
+                                            var raw_fp = read_file(fp_p)
+                                            if len(raw_fp) > 0:
+                                                fb64_list.append(base64(raw_fp))
+                                    if len(fb64_list) >= 2:
+                                        pngs.append("ANIM|" + afps_s + "|" + "\t".join(fb64_list))
+                                    elif len(fb64_list) == 1:
+                                        pngs.append(fb64_list[0])
+                                continue
                             if pp.byte_length() > 0 and path_exists(pp):
                                 var raw_p = read_file(pp)
                                 if len(raw_p) > 0:
@@ -720,6 +779,18 @@ __extension App:
             code_ord += 1
         return outs^
 
+    def collect_ipynb_folded_cells(self, i: Int) -> List[Int]:
+        """Return 0-based cell indices whose `# %%` header is folded (`jupyter.source_hidden`)."""
+        var out = List[Int]()
+        if i < 0 or i >= len(self.wins) or len(self.wins[i].buf.folds) == 0:
+            return out^
+        var cells = parse_cells(self.wins[i].buf)
+        for idx in range(len(cells)):
+            var hr = cells[idx].header_row
+            if hr >= 0 and self.wins[i].buf.fold_index(hr) >= 0:
+                out.append(idx)
+        return out^
+
     def export_ipynb(mut self) raises:
         """Export the active `# %%` notebook or script to `<stem>.ipynb` (nbformat v4)."""
         var i = self.top_editor()
@@ -736,11 +807,13 @@ __extension App:
         var prev_raw = bytes_to_str(read_file(out_path)) if path_exists(out_path) else String("")
         var is_mj = self.wins[i].effective_lang() == HL_MOJO
         var live_outs = self.collect_ipynb_outputs(i)
+        var folded_cells = self.collect_ipynb_folded_cells(i)
         var ipynb_json = percent_text_to_ipynb(
             bytes_to_str(self.wins[i].buf.to_bytes()),
             is_mj,
             prev_raw,
             live_outs,
+            folded_cells,
         )
         if not write_file(out_path, str_bytes(ipynb_json)):
             self.say("Could not write " + out_path)

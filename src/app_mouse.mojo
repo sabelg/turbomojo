@@ -12,7 +12,8 @@ from screen import Screen
 from palette import Palette, theme, THEME_COUNT
 from highlight import Highlighter
 from buffer import TextBuffer, Pos, ENC_UTF8, ENC_LATIN1
-from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, MINIMAP_W, ACT_OTHER, ACT_TYPE
+from window import Window, WK_EDITOR, WK_HEX, WK_MDPREVIEW, WK_IMGVIEW, WK_MESSAGE, WK_OUTLINE, WK_EXPLORER, MINIMAP_W, ACT_OTHER, ACT_TYPE
+from cellimg import decode_cell_img_line
 from layout import L_ROW, L_COL, RATIO_MIN, RATIO_MAX
 from window_search import *
 from window_multi import *
@@ -85,7 +86,9 @@ __extension App:
                 return
             var i = self.window_at(x, y)
             if i >= 0:
-                if self.wins[i].kind != WK_EDITOR and self.wins[i].kind != WK_MDPREVIEW:
+                if self.wins[i].kind == WK_IMGVIEW:
+                    self.wins[i].imgview_step_zoom(1 if d < 0 else -1)
+                elif self.wins[i].kind != WK_EDITOR and self.wins[i].kind != WK_MDPREVIEW:
                     self.wins[i].cr = max(0, min(self.wins[i].buf.count() - 1, self.wins[i].cr + d))
                     self.wins[i].follow = True
                 else:
@@ -322,9 +325,41 @@ __extension App:
                 self.drag = 5
                 self.drag_scroll_wi = t
             return
+        if self.wins[t].kind == WK_IMGVIEW and not self.wins[t].chromeless and y == wy + wh - 1:
+            var act = self.wins[t].imgview_bar_hit(x, y)
+            if act == 1:
+                self.wins[t].imgview_step_zoom(-1)
+            elif act == 2:
+                self.wins[t].imgview_step_zoom(1)
+            elif act == 3:
+                self.wins[t].imgview_reset_fit()
+            elif act == 4:
+                self.wins[t].imgview_step_plot(-1)
+            elif act == 5:
+                self.wins[t].imgview_step_plot(1)
+            elif act == 6:
+                var cur_p = self.wins[t].imgview_current_path()
+                self.open_plot_in_os_viewer(cur_p)
+            elif act == 7:
+                self.close_window(t, NEXT_CLOSE)
+            elif act == 8:
+                self.wins[t].img_anim_playing = not self.wins[t].img_anim_playing
+                self.wins[t].anim_last_ns = 0
+                self.wins[t].imgview_sync_title()
+            return
         if not self.wins[t].chromeless and (y == wy + wh - 1 or x == wx):
             return
         if self.wins[t].chromeless and self.wins[t].split_sep and x == wx + ww - 1:
+            return
+        if self.wins[t].kind == WK_IMGVIEW:
+            # Click inside the image canvas toggles 100% <-> 225% zoom centered toward the clicked spot!
+            if self.wins[t].img_zoom_pct > 100:
+                self.wins[t].imgview_reset_fit()
+            else:
+                self.wins[t].img_zoom_pct = 225
+                self.wins[t].img_pan_x = max(0, min(1000, ((x - (wx + pd)) * 1000) // max(1, ww - 2 * pd)))
+                self.wins[t].img_pan_y = max(0, min(1000, ((y - (wy + pd)) * 1000) // max(1, wh - 2 * pd)))
+                self.wins[t].imgview_sync_title()
             return
         if self.wins[t].kind == WK_EDITOR and self.wins[t].minimap and not self.scr.plain and x >= wx + ww - pd - MINIMAP_W and x < wx + ww - pd:
             var sy0 = wy + pd
@@ -350,15 +385,118 @@ __extension App:
         var br_click = scr_pos.r
         if scr_pos.c == 0 and br_click < self.wins[t].buf.count() and self.wins[t].buf.is_cell_header(br_click):
             var gut_end = wx + pd + self.wins[t].gut
-            var hdr_text_end = gut_end + self.wins[t].buf.llen(br_click)
-            if (x >= wx + pd and x < gut_end) or x >= hdr_text_end + 1:
-                var cells = parse_cells(self.wins[t].buf)
-                var ci = cell_at_row(cells, br_click)
-                if ci >= 0:
-                    self.wins[t].cr = br_click
-                    self.wins[t].cc = 0
-                    self.run_code_cell_by_index(t, ci, False)
+            if self.wins[t].is_notebook() and not self.wins[t].is_markdown_header(br_click) and not self.scr.plain:
+                var spans_m = self.wins[t].nb_card_action_spans(br_click)
+                var fold_x0 = spans_m[0]
+                var fold_x1 = spans_m[1]
+                var run_x0 = spans_m[2]
+                var run_x1 = spans_m[3]
+                if (fold_x0 >= 0 and x >= fold_x0 and x < fold_x1) or (
+                    x >= wx + pd
+                    and x < gut_end - 1
+                    and (self.wins[t].buf.fold_index(br_click) >= 0 or self.wins[t].buf.foldable(br_click))
+                ):
+                    _ = self.wins[t].toggle_cell_code_fold(br_click)
                     return
+                if (x >= gut_end and x < gut_end + 10) or (x >= run_x0 and x < run_x1):
+                    if not self.trust_gate(CM_RUN_CELL):
+                        return
+                    var cells = parse_cells(self.wins[t].buf)
+                    var ci = cell_at_row(cells, br_click)
+                    if ci >= 0:
+                        self.wins[t].cr = br_click
+                        self.wins[t].cc = 0
+                        self.run_code_cell_by_index(t, ci, False)
+                        return
+            else:
+                var hdr_text_end = gut_end + self.wins[t].buf.llen(br_click)
+                if (x >= wx + pd and x < gut_end) or x >= hdr_text_end + 1:
+                    if not self.trust_gate(CM_RUN_CELL):
+                        return
+                    var cells = parse_cells(self.wins[t].buf)
+                    var ci = cell_at_row(cells, br_click)
+                    if ci >= 0:
+                        self.wins[t].cr = br_click
+                        self.wins[t].cc = 0
+                        self.run_code_cell_by_index(t, ci, False)
+                        return
+        if br_click < self.wins[t].buf.count() and scr_pos.c >= self.wins[t].text_row_segs(br_click) and x >= wx + pd + self.wins[t].gut:
+            var vlines = self.wins[t].virtual_out_lines_at(br_click)[0].copy()
+            var vidx = scr_pos.c - self.wins[t].text_row_segs(br_click)
+            if vidx >= 0 and vidx < len(vlines):
+                var vl = vlines[vidx]
+                if (
+                    vl.startswith("\x01IMG\t")
+                    or vl.startswith("[📊 ")
+                    or vl.startswith("\x01NBHDR\t")
+                    or vl.startswith("\x01NBSUB\t")
+                ):
+                    for oi in range(len(self.wins[t].buf.cell_out_rows)):
+                        var hdr_r = self.wins[t].buf.cell_out_rows[oi]
+                        if self.wins[t].buf.cell_end_for_header(hdr_r) == br_click:
+                            var plots_s = self.wins[t].buf.cell_out_plots[oi] if oi < len(self.wins[t].buf.cell_out_plots) else String("")
+                            var clicked_plots = List[String]()
+                            for ps in plots_s.split("\n"):
+                                var pp = String(ps.strip())
+                                if pp.byte_length() > 0:
+                                    clicked_plots.append(pp)
+                            if len(clicked_plots) > 0:
+                                # Clicking `[⏸ Pause]` / `[▶ Play]` on an inline animation caption toggles play/pause in place!
+                                if (vl.find("[⏸ Pause]") >= 0 or vl.find("[▶ Play]") >= 0) and not vl.startswith("\x01IMG\t"):
+                                    var disp_s = vl
+                                    if vl.startswith("\x01NBSUB\t"):
+                                        var sub_t = String(vl[byte=7:])
+                                        disp_s = " " + sub_t
+                                    var p_pos = disp_s.find("[⏸ Pause]")
+                                    if p_pos < 0:
+                                        p_pos = disp_s.find("[▶ Play]")
+                                    if p_pos >= 0:
+                                        var pre_cps = cp_len(String(disp_s[byte=0:p_pos]))
+                                        var btn_x0 = wx + pd + self.wins[t].gut + 1 + pre_cps
+                                        if vl.startswith("\x01NBHDR\t"):
+                                            # Right-aligned caption on single-output card header
+                                            var hp_c = String(vl[byte=7:]).split("\t")
+                                            if len(hp_c) > 1:
+                                                var cap_full = " " + String(hp_c[1]) + " "
+                                                var card_x1_m = (wx + pd + self.wins[t].gut) + max(12, self.wins[t].cols() - 1) - 1
+                                                var cap_x0_m = card_x1_m - 1 - cp_len(cap_full)
+                                                var p2 = cap_full.find("[⏸ Pause]")
+                                                if p2 < 0:
+                                                    p2 = cap_full.find("[▶ Play]")
+                                                if p2 >= 0:
+                                                    btn_x0 = cap_x0_m + cp_len(String(cap_full[byte=0:p2]))
+                                        if x >= btn_x0 - 1 and x <= btn_x0 + 10:
+                                            self.wins[t].anim_playing = not self.wins[t].anim_playing
+                                            self.wins[t].anim_last_ns = 0
+                                            self.say("Notebook animation " + ("resumed" if self.wins[t].anim_playing else "paused"))
+                                            return
+                                var target_idx = 0
+                                if vl.startswith("\x01IMG\t"):
+                                    var dec_c = decode_cell_img_line(vl)
+                                    if dec_c[0]:
+                                        for pi in range(len(clicked_plots)):
+                                            if clicked_plots[pi] == dec_c[1] or (
+                                                clicked_plots[pi].startswith("ANIM|")
+                                                and clicked_plots[pi].find(dec_c[1]) >= 0
+                                            ):
+                                                target_idx = pi
+                                                break
+                                elif vl.startswith("\x01NBSUB\t") or vl.startswith("[📊 ") or vl.startswith("[🎬 "):
+                                    var seen_sub = 0
+                                    for kv in range(vidx + 1):
+                                        if (
+                                            vlines[kv].startswith("\x01NBSUB\t")
+                                            or vlines[kv].startswith("[📊 ")
+                                            or vlines[kv].startswith("[🎬 ")
+                                        ):
+                                            seen_sub += 1
+                                    if seen_sub > 0:
+                                        target_idx = min(len(clicked_plots) - 1, seen_sub - 1)
+                                var clbl = self.wins[t].clean_cell_title(hdr_r)
+                                var cur_tick = self.wins[t].anim_tick_count
+                                self.cell_last_plots = clicked_plots^
+                                self.cell_open_plot_preview(target_idx, clbl, cur_tick)
+                                return
         if self.wins[t].gut > 0 and x >= wx + pd and x < wx + pd + self.wins[t].gut - 1 and self.wins[t].path.byte_length() > 0:
             var br = br_click
             if br < self.wins[t].buf.count():
